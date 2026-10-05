@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="es" data-theme="papel">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perfil — ejemplo de Lienzo</title>
+<style>
+  :root {
+    --s0:#F4F1EA; --s1:#FCFBF7; --s2:#EAE6DC; --line:#D8D2C4; --ink:#1F1D1A; --muted:#655F54;
+    --accent:#2447C5; --on-accent:#FFFFFF; --ok:#2F7D4F; --warn:#9A6700; --danger:#B3261E;
+    --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  [data-theme="tinta"] {
+    --s0:#141311; --s1:#1D1B18; --s2:#282520; --line:#38342D; --ink:#ECE8DF; --muted:#A69F92;
+    --accent:#8FA8FF; --on-accent:#0C1330; --ok:#6CC08B; --warn:#E3B341; --danger:#F2867C;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--s0); color: var(--ink); font: 13px/19px var(--sans); -webkit-font-smoothing: antialiased; }
+  .label { font: 500 10.5px/14px var(--mono); letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+  .bar { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; background: var(--s1); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  .bar h1 { font: 600 17px/23px var(--serif); letter-spacing: -.1px; margin: 0; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  .spacer { flex: 1; }
+  .seg { display: inline-flex; padding: 2px; border-radius: 6px; background: var(--s2); }
+  .seg button { height: 28px; padding: 0 10px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--muted); font: 600 12px/17px var(--sans); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--s1); border-color: var(--line); color: var(--ink); }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 32px; display: grid; gap: 16px; }
+  .note { margin: 0; color: var(--muted); font-size: 12px; line-height: 17px; }
+  .card { background: var(--s1); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+  .card > header { display: flex; align-items: baseline; gap: 8px; }
+  .card h2 { font: 600 15px/20px var(--serif); margin: 0; }
+  .who { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 48px; height: 48px; flex: none; border-radius: 14px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font: 600 17px/1 var(--serif); }
+  .who strong { display: block; font: 600 14px/20px var(--sans); }
+  .who span { color: var(--muted); font: 12px/17px var(--mono); overflow-wrap: anywhere; }
+  .grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } .bar { padding: 0 12px; } main { padding: 16px 12px 24px; } .hide-narrow { display: none; } }
+  .field { display: grid; gap: 4px; min-width: 0; }
+  .field label { font: 600 12px/17px var(--sans); }
+  .field input { height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--s2); color: var(--ink); font: 13px/19px var(--sans); width: 100%; outline: none; }
+  .field input:focus-visible, button:focus-visible, .row input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .field input[aria-invalid="true"] { border-color: var(--danger); }
+  .help { font-size: 12px; line-height: 17px; color: var(--muted); min-height: 17px; }
+  .help.bad { color: var(--danger); }
+  .row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .row:first-of-type { border-top: 0; padding-top: 0; }
+  .row div { flex: 1; min-width: 0; }
+  .row b { display: block; font-weight: 600; }
+  .row small { color: var(--muted); font-size: 12px; line-height: 17px; }
+  .row input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch { width: 36px; height: 20px; flex: none; border-radius: 999px; background: var(--s2); border: 1px solid var(--line); position: relative; transition: background .12s; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform .12s, background .12s; }
+  .row input:checked + .switch { background: var(--accent); border-color: var(--accent); }
+  .row input:checked + .switch::after { transform: translateX(16px); background: var(--on-accent); }
+  .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .btn { height: 32px; padding: 0 12px; border-radius: 6px; font: 600 13px/18px var(--sans); cursor: pointer; border: 1px solid var(--line); background: var(--s2); color: var(--ink); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.ghost { background: none; border-color: transparent; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .status { font-size: 12px; line-height: 17px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .status i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .status.ok i { background: var(--ok); } .status.bad { color: var(--danger); } .status.bad i { background: var(--danger); }
+  .banner { border: 1.5px solid var(--danger); border-radius: 10px; background: var(--s1); padding: 12px; display: grid; gap: 8px; }
+  .banner b { font-weight: 600; }
+  .empty { text-align: center; justify-items: center; padding: 32px 16px; }
+  .empty .tile { width: 56px; height: 56px; border-radius: 14px; background: color-mix(in srgb, var(--accent) 10%, transparent); display: grid; place-items: center; color: var(--accent); font: 600 22px/1 var(--serif); }
+  .empty h2 { font: 600 22px/28px var(--serif); letter-spacing: -.2px; }
+  .empty p { margin: 0; color: var(--muted); max-width: 340px; }
+  .sk { border-radius: 6px; background: var(--s2); animation: pulse .9s ease-in-out infinite alternate; }
+  @keyframes pulse { from { opacity: .5 } to { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) { .sk { animation: none } .switch, .switch::after { transition: none } }
+  @media (max-width: 640px) { .hide-narrow { display: none; } .seg button { padding: 0 8px; } }
+  .bar { overflow-x: auto; } .bar > * { flex-shrink: 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Perfil</h1>
+  <span class="chip label" title="Página de ejemplo: los datos son ficticios y nada sale de esta página">Ejemplo</span>
+  <span class="spacer"></span>
+  <span class="label hide-narrow">Estado</span>
+  <div class="seg" id="states" role="group" aria-label="Estado de ejemplo">
+    <button data-s="listo" aria-pressed="true">Listo</button>
+    <button data-s="vacio" aria-pressed="false">Vacío</button>
+    <button data-s="cargando" aria-pressed="false">Cargando</button>
+    <button data-s="error" aria-pressed="false">Error</button>
+  </div>
+  <div class="seg" id="themes" role="group" aria-label="Tema">
+    <button data-t="papel" aria-pressed="true">Papel</button>
+    <button data-t="tinta" aria-pressed="false">Tinta</button>
+  </div>
+</div>
+
+<main>
+  <p class="note">Página de ejemplo para el bloque «Vista previa» de Lienzo. Datos ficticios; guardar solo cambia esta página, no se envía nada.</p>
+
+  <section id="v-listo" style="display:grid;gap:16px">
+    <form class="card" id="form" novalidate>
+      <header><h2>Datos de la cuenta</h2><span class="label">ProfileHeader</span></header>
+      <div class="who">
+        <div class="avatar" id="avatar" aria-hidden="true">JR</div>
+        <div><strong id="who-name">Julia Rivas</strong><span id="who-mail">julia@ejemplo.test</span></div>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label for="name">Nombre</label>
+          <input id="name" name="name" value="Julia Rivas" autocomplete="off" maxlength="60" aria-describedby="name-help">
+          <span class="help" id="name-help">Así te verán los demás.</span>
+        </div>
+        <div class="field">
+          <label for="mail">Correo</label>
+          <input id="mail" name="mail" type="email" value="julia@ejemplo.test" autocomplete="off" aria-describedby="mail-help">
+          <span class="help" id="mail-help">Para avisos de la cuenta.</span>
+        </div>
+      </div>
+    </form>
+
+    <section class="card">
+      <header><h2>Preferencias</h2><span class="label">PreferencesForm</span></header>
+      <label class="row"><div><b>Resumen semanal</b><small>Un correo los lunes con la actividad.</small></div><input type="checkbox" id="p1" checked><span class="switch"></span></label>
+      <label class="row"><div><b>Avisos de seguridad</b><small>Inicios de sesión desde equipos nuevos.</small></div><input type="checkbox" id="p2" checked><span class="switch"></span></label>
+      <label class="row"><div><b>Perfil visible</b><small>Otras personas pueden encontrar tu nombre.</small></div><input type="checkbox" id="p3"><span class="switch"></span></label>
+    </section>
+
+    <div class="actions">
+      <button class="btn primary" id="save" disabled>Guardar cambios</button>
+      <button class="btn ghost" id="reset" disabled>Descartar</button>
+      <span class="status" id="status" role="status"><i></i><span>Sin cambios</span></span>
+      <span class="spacer"></span><span class="label hide-narrow">SaveButton</span>
+    </div>
+  </section>
+
+  <section id="v-vacio" class="card empty" hidden>
+    <div class="tile" aria-hidden="true">¿</div>
+    <h2>Aún no hay perfil</h2>
+    <p>Completa tu nombre y tu correo para empezar. Puedes cambiarlos cuando quieras.</p>
+    <button class="btn primary" data-go="listo">Crear perfil</button>
+  </section>
+
+  <section id="v-cargando" class="card" hidden aria-busy="true" aria-label="Cargando perfil">
+    <div class="who"><div class="sk" style="width:48px;height:48px;border-radius:14px"></div><div style="flex:1;display:grid;gap:6px"><div class="sk" style="height:14px;width:40%"></div><div class="sk" style="height:12px;width:60%"></div></div></div>
+    <div class="grid"><div class="sk" style="height:32px"></div><div class="sk" style="height:32px"></div></div>
+    <div class="sk" style="height:12px;width:70%"></div>
+  </section>
+
+  <section id="v-error" class="banner" hidden role="alert">
+    <b>No se pudo cargar el perfil</b>
+    <span class="note">Estado de ejemplo de un error recuperable. No hubo ninguna solicitud real.</span>
+    <div class="actions"><button class="btn" data-go="listo">Reintentar</button></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var root = document.documentElement;
+  var views = ['listo', 'vacio', 'cargando', 'error'];
+  var fields = ['name', 'mail'], toggles = ['p1', 'p2', 'p3'];
+  var saved = snapshot();
+
+  function snapshot() {
+    var s = {};
+    fields.forEach(function (f) { s[f] = $(f).value.trim(); });
+    toggles.forEach(function (t) { s[t] = $(t).checked; });
+    return s;
+  }
+  function press(group, attr, value) {
+    Array.prototype.forEach.call(group.querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute(attr) === value));
+    });
+  }
+  function show(state) {
+    views.forEach(function (v) { var el = $('v-' + v); el.hidden = v !== state; if (v === 'listo') el.style.display = v === state ? 'grid' : 'none'; });
+    press($('states'), 'data-s', state);
+  }
+  function setStatus(kind, text) {
+    var el = $('status'); el.className = 'status' + (kind ? ' ' + kind : ''); el.lastElementChild.textContent = text;
+  }
+  function validate() {
+    var name = $('name').value.trim(), mail = $('mail').value.trim();
+    var badName = name.length < 2, badMail = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail);
+    mark('name', badName, 'Escribe al menos 2 letras.', 'Así te verán los demás.');
+    mark('mail', badMail, 'Escribe un correo con @ y dominio.', 'Para avisos de la cuenta.');
+    return !(badName || badMail);
+  }
+  function mark(id, bad, msg, hint) {
+    $(id).setAttribute('aria-invalid', String(bad));
+    var h = $(id + '-help'); h.textContent = bad ? msg : hint; h.className = 'help' + (bad ? ' bad' : '');
+  }
+  function refresh() {
+    var now = snapshot(), dirty = JSON.stringify(now) !== JSON.stringify(saved), ok = validate();
+    $('save').disabled = !dirty || !ok; $('reset').disabled = !dirty;
+    if (!dirty) setStatus('', 'Sin cambios');
+    else if (!ok) setStatus('bad', 'Revisa los campos marcados');
+    else setStatus('', 'Cambios sin guardar');
+  }
+  function paint() {
+    var n = saved.name || '—';
+    $('who-name').textContent = n; $('who-mail').textContent = saved.mail;
+    $('avatar').textContent = n.split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '—';
+  }
+
+  fields.concat(toggles).forEach(function (id) { $(id).addEventListener('input', refresh); $(id).addEventListener('change', refresh); });
+  $('form').addEventListener('submit', function (e) { e.preventDefault(); $('save').click(); });
+  $('save').addEventListener('click', function () {
+    if (!validate()) return;
+    saved = snapshot(); paint(); refresh();
+    setStatus('ok', 'Guardado en esta página (ejemplo)');
+  });
+  $('reset').addEventListener('click', function () {
+    fields.forEach(function (f) { $(f).value = saved[f]; });
+    toggles.forEach(function (t) { $(t).checked = saved[t]; });
+    refresh();
+  });
+  $('states').addEventListener('click', function (e) { var s = e.target.getAttribute('data-s'); if (s) show(s); });
+  $('themes').addEventListener('click', function (e) {
+    var t = e.target.getAttribute('data-t'); if (!t) return;
+    root.setAttribute('data-theme', t); press($('themes'), 'data-t', t);
+  });
+  document.addEventListener('click', function (e) { var go = e.target.getAttribute && e.target.getAttribute('data-go'); if (go) show(go); });
+
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) { root.setAttribute('data-theme', 'tinta'); press($('themes'), 'data-t', 'tinta'); }
+  var q = /[?&]tema=(papel|tinta)/.exec(location.search); if (q) { root.setAttribute('data-theme', q[1]); press($('themes'), 'data-t', q[1]); }
+  var st = /[?&]estado=(listo|vacio|cargando|error)/.exec(location.search); if (st) show(st[1]);
+})();
+</script>
+</body>
+</html>

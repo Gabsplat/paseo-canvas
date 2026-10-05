@@ -1,0 +1,8 @@
+node_modules/
+plugin/node_modules/
+dist/
+.DS_Store
+test-results/
+playwright-report/
+*.log
+.local-state/

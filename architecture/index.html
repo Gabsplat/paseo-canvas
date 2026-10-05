@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Lienzo · Arquitectura de Paseo Canvas</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script>
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem("paseo-canvas-arch-theme"); } catch (e) {}
+        if (!t) t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = t;
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>Lienzo</strong>
+          <span>Paseo Canvas · arquitectura v1</span>
+        </div>
+      </div>
+
+      <nav class="tabs" role="tablist" aria-label="Vistas">
+        <button role="tab" data-mode="explorar" aria-selected="true">Explorar</button>
+        <button role="tab" data-mode="flujos" aria-selected="false">Flujos</button>
+        <button role="tab" data-mode="multijugador" aria-selected="false">Multijugador</button>
+      </nav>
+
+      <div class="bar-actions">
+        <button class="icon-btn" id="theme-btn" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"></button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="stage" aria-label="Mapa de arquitectura">
+        <svg id="canvas" tabindex="0" role="application"
+             aria-label="Mapa de arquitectura. Arrastra para mover, usa la rueda o pellizca para acercar. Las flechas del teclado mueven la vista.">
+          <defs>
+            <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1.2" cy="1.2" r="1.2" class="dot" />
+            </pattern>
+            <marker id="arr" viewBox="0 0 8 8" markerWidth="7" markerHeight="7" refX="7" refY="4" orient="auto-start-reverse">
+              <path d="M0 0.6 L7.4 4 L0 7.4 z" class="arr" />
+            </marker>
+            <marker id="arr-on" viewBox="0 0 8 8" markerWidth="7" markerHeight="7" refX="7" refY="4" orient="auto-start-reverse">
+              <path d="M0 0.6 L7.4 4 L0 7.4 z" class="arr-on" />
+            </marker>
+          </defs>
+          <g id="world">
+            <rect x="-6000" y="-6000" width="14000" height="14000" fill="url(#dots)" />
+            <g id="zones"></g>
+            <g id="edges"></g>
+            <g id="nodes"></g>
+            <g id="packets"></g>
+          </g>
+        </svg>
+
+        <p class="hint" id="hint">Arrastra para mover · rueda o pellizco para acercar · pulsa un nodo</p>
+
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button type="button" id="zoom-out" aria-label="Alejar" title="Alejar (−)">−</button>
+          <output id="zoom-level" aria-live="off">100%</output>
+          <button type="button" id="zoom-in" aria-label="Acercar" title="Acercar (+)">+</button>
+          <button type="button" id="zoom-fit" class="wide" title="Ajustar todo (0)">Ajustar</button>
+        </div>
+
+        <div class="player" id="player" hidden>
+          <div class="player-row">
+            <button type="button" id="step-prev" class="icon-btn" aria-label="Paso anterior" title="Paso anterior (←)"></button>
+            <button type="button" id="step-play" class="icon-btn primary" aria-label="Reproducir" title="Reproducir o pausar (espacio)"></button>
+            <button type="button" id="step-next" class="icon-btn" aria-label="Paso siguiente" title="Paso siguiente (→)"></button>
+            <div class="player-text" aria-live="polite">
+              <span class="player-count" id="player-count"></span>
+              <span class="player-title" id="player-title"></span>
+            </div>
+            <label class="follow" title="Mover la cámara a cada paso">
+              <input type="checkbox" id="follow" checked />
+              <span>Seguir</span>
+            </label>
+          </div>
+          <div class="player-dots" id="player-dots"></div>
+        </div>
+      </section>
+
+      <aside class="side" id="side" aria-label="Detalles"></aside>
+    </main>
+
+    <noscript>
+      <p class="noscript">Este explicador necesita JavaScript. El contrato completo está en docs/architecture.md.</p>
+    </noscript>
+
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

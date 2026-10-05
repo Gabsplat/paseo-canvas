@@ -1,0 +1,6 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "lib": ["ES2023"] },
+  "include": ["../index.client.tsx", "./**/*.ts", "./**/*.tsx", "../shared/**/*.ts"],
+  "exclude": ["./**/*.test.ts"]
+}

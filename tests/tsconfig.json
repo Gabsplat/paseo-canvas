@@ -1,0 +1,5 @@
+{
+  "extends": "../plugin/tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["./**/*.ts", "../plugin/shared/**/*.ts", "../plugin/server/**/*.ts", "../plugin/index.server.ts"]
+}
