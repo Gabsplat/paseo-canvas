@@ -270,13 +270,16 @@
   function hideHint() { $("hint").classList.add("is-gone"); }
 
   svg.addEventListener("pointerdown", (ev) => {
-    if (ev.button > 0) return;
+    /* Botón central (ruedita): pan libre en X e Y; se evita el autoscroll del navegador. */
+    const middle = ev.button === 1;
+    if (ev.button > 1) return;
+    if (middle) ev.preventDefault();
     cancelAnimationFrame(tween);
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
     if (pointers.size === 1) {
-      const target = ev.target.closest ? ev.target.closest("[data-node]") : null;
-      drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y, moved: false, node: target ? target.dataset.node : null };
+      const target = !middle && ev.target.closest ? ev.target.closest("[data-node]") : null;
+      drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y, moved: middle, node: target ? target.dataset.node : null };
     } else if (pointers.size === 2) {
       const pts = [...pointers.values()];
       pinch = { d: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
@@ -330,6 +333,8 @@
     if (d.node) selectNode(d.node);
     else if (state.mode === "explorar" && state.selected) selectNode(null);
   }
+  svg.addEventListener("mousedown", (ev) => { if (ev.button === 1) ev.preventDefault(); });
+  svg.addEventListener("auxclick", (ev) => { if (ev.button === 1) ev.preventDefault(); });
   svg.addEventListener("pointerup", endPointer);
   svg.addEventListener("pointercancel", endPointer);
 

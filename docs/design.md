@@ -108,18 +108,18 @@ Disabled = opacity 0.45. Keyboard focus = 2 px `accent` border replacing the 1 p
 
 | Control | Height | Pad H | Radius | Fill | Border | Label |
 | --- | --- | --- | --- | --- | --- | --- |
-| Button primary | 32 (44 compact) | 12 | 6 | `accent` | — | `button`, `accentForeground` |
+| Button primary | 32 (44 compact) | 12 | 6 | `accent`; disabled `surface2` @0.7 | — | `button`, `accentForeground`; disabled `foregroundMuted` (a washed accent slab reads as an error, a quiet control reads as "not yet") |
 | Button secondary | 32 (44) | 12 | 6 | `surface2` | 1 `border` | `button`, `foreground` |
 | Button ghost | 32 (44) | 8 | 6 | transparent | — | `button`, `foreground` |
 | Button danger | 32 (44) | 12 | 6 | transparent | 1 `statusDanger`@.38 | `button`, `statusDanger` |
 | Button small | 26 | 8 | 6 | per variant | per variant | `small` 600 |
-| Icon button | 32×32 | — | 6 | transparent; active `surface2` | — | icon 16 `foregroundMuted`; active `foreground` |
+| Icon button | 32×32 | — | 6 | transparent; hover `foreground`@.06; active `surface2` | — | icon 16 `foregroundMuted`; active `foreground` |
 | Segmented | 28 in a 32 track | 10 | 4 in 6 | track `surface2`; active `surface1` + 1 `border` | — | `small` 600; inactive muted |
 | Input | 32 (44) | 10 | 6 | `surface2` | 1 `border`; focus 2 `accent` | `body` |
 | Text area | min 64 | 10 / 8 | 6 | `surface2` | as input | `body` (`code` for JSON) |
 | Chip | 20 | 6 | 4 | `wash(tone)` | — | `label` muted; optional 12 icon in tone |
-| Option row | min 36 | 10 | 6 | `surface2`; selected `washStrong(violeta)` | 1 `border`; selected 1.5 violeta | `body` + 16 radio |
-| Check row | min 28 | 0 | — | — | — | 16 box + `body` |
+| Option row | min 36 | 10 | 6 | transparent (outlined on the card); selected `washStrong(violeta)` | 1 `border`; hover `foregroundMuted`@.5; selected 1.5 violeta | `body` + 16 radio |
+| Check row | min 28, pad V 5 | 6 (bleeds −6) | 6 | hover `foreground`@.06 | — | 16 box aligned to the **first line** of a wrapping label + `body` |
 
 One primary per region. Icon+label: icon 14, gap 6. Radio/check glyphs are Views: 16×16, 1.5 px
 ring in `foregroundMuted`@0.7 (the host `border` colour can vanish on `surface2`); checked = tone fill + host `Check` 12 in `surface1`; radio radius 8 with a 6 px dot.
@@ -161,12 +161,15 @@ Web shortcuts are attached through `web.ts attachKeys` (§12).
 - Pan: `PanResponder` on the viewport background; the world is `pointerEvents="box-none"`.
   Movement < 4 px = tap = clear selection. During the gesture drive `Animated.Value`s; commit to
   state on release. Wheel (web): `attachWheel` → pan; with ⌘/Ctrl → zoom at the pointer.
-- Zoom control: bottom-right, inset 12, one `surface1` card (1 px border, radius 6), vertical:
-  `Plus` · mono `label` percent (press = 100 %) · `Minus` · divider · `Maximize` (fit). Steps
+- Zoom control: bottom-right, inset 12, one `surface1` card (1 px border, radius 8, padding 2),
+  **horizontal** so it takes one control row instead of a column over the content:
+  `Minus` · mono `label` percent (min width 48, press = 100 %) · `Plus` · 1×16 divider · `Maximize`
+  (fit). `Minus`/`Plus` disable at the zoom limits. The "Solo lienzo" exit button (top-right) uses the
+  same card. Steps
   `canvas.zoomSteps`. Fit = `min((vw−96)/cw, (vh−96)/ch)` clamped to `[0.4, 1]`, content centred.
   First open of a document: `s = clamp((vw − 96) / contentWidth, 0.8, 1)`, content centred
   horizontally when it fits and otherwise left-aligned at 48 px, its top at 48 px (fit-all on a tall stack made text unreadable). No pinch in v1.
-- No drawn grid. Positions snap to 8. Z-order: groups by depth < blocks < banners/zoom.
+- No drawn grid. Positions snap to 8. Z-order: groups by depth < connector lines < blocks < connector labels < link handle < banners/zoom (§15).
 
 ### 6.2 Geometry (what must result; nested flex or computed rects are both fine)
 
@@ -182,9 +185,21 @@ Positions are **relative to the parent group** (root = world). Nothing has a sto
 | `stack` | Pila | One column, gap `layout.gap ?? 12`. Column width = widest child; every child stretches to it. |
 | `grid` | Rejilla | `layout.columns ?? 2` columns (max 4) of 288, gap `?? 12`, items top-aligned. A `wide` block spans the full row. |
 | `flow` | Flujo | One row left→right, gap `?? 28`, items top-aligned, a `ChevronRight` 14 (`foregroundMuted`) centred in each gap at y = 20. Reads as a sequence. |
-| `free` | Libre | Children absolute at their `position`. Inner size = max(child.x + width), max(child.y + height); min inner width 288. Children without `position` are stacked below the positioned ones, gap 12. |
+| `free` | Libre | Children absolute at their `position` (subject to the collision and enclosure rules below). Inner size = max(child.x + width), max(child.y + height); min inner width 288. Children without `position` are stacked below the positioned ones, gap 12. |
 | *(absent)* | — | `stack` if no child has a `position`, otherwise `free`. |
 
+- **Collisions (client-side, never persisted).** A stored `position` has no size, so its author
+  could not know how big the neighbours measure. After sizes are known, `resolveOverlaps` runs over
+  each family of positioned siblings (root, and the children of a `free` group): siblings are visited
+  nearest-the-origin first; one that intersects an already placed sibling moves **right or down,
+  whichever is shorter**, to clear it by the family gap (root 32 = `canvas.groupGap`; in a group, its
+  `layout.gap ?? 12`), snapped up to 8. Siblings that do not intersect are never moved, so deliberate
+  free positioning is kept. Root siblings therefore never overlap.
+- **Frames enclose children.** In a `free` group a child stored left of the padding or above the
+  content top (header + padding + description) is clamped back inside; the frame is sized after
+  collisions are resolved.
+- **Group description** is measured (`heights[descriptionKey(groupId)]`, max 2 lines = 34) and
+  followed by a 12 gap; the content top is `header + padding + description + 12`.
 - **Root:** entities with `position` sit there. Root entities without one go on an *unplaced shelf*:
   a row-wrap strip (max width 1400, gap 48, top-aligned) at x = 0, y = (bottom of positioned content
   + 64), or (0, 0) if nothing is positioned. They are client-placed only; the first drag persists a
@@ -212,12 +227,14 @@ Positions are **relative to the parent group** (root = world). Nothing has a sto
 
 - Fill `surface1`, 1 px `border`, radius 10, `overflow: "hidden"`, min height 72.
 - **Spine:** absolute left strip 3 px, full height, `toneColor(tone)`; for `neutro` use `border`.
-- Padding 12 (left 15). Row gap 6.
-- Header (16 high): type icon 14 in tone colour; `label` = `BlockType.name` uppercased + optional
+- Padding 12 vertical, 14 right, 17 left (14 past the spine). Row gap 8; the title pulls 4 closer to
+  its label row so label + title read as one heading unit.
+- Header (**fixed 20 high**, 24 compact — the options button must never change the measured height,
+  or hovering a card would re-flow the canvas): type icon 14 in tone colour; `label` = `BlockType.name` uppercased + optional
   ` · QUALIFIER`; spacer; `Ellipsis` 14 when selected/hovered (menu: Duplicar, Subir, Bajar,
   Eliminar → as a `Modal` on compact, inline row list otherwise).
 - Title `heading`, max 3 lines. Empty title → omit the row.
-- Footer (only when it has content): left `Compass` 12 `accent` + `small` "Con instrucción" if
+- Footer (only when it has content): 1 px `border` hairline above, padding-top 8; left `Compass` 12 `accent` + `small` "Con instrucción" if
   `block.communication` exists; right = delivery state of the latest `AgentEvent` whose
   `action.targetIds` includes this block (§10.1).
 - Icon/tone/width come from `tokens.renderers[type.renderer]`; type without renderer → `generic`.
@@ -254,6 +271,7 @@ Block states:
 | State | Rendering |
 | --- | --- |
 | Hover (web) | Border `foregroundMuted`@0.5. |
+| Dragging | Opacity 0.92, 2 px `accent` border, drawn above its siblings (a dragged group lifts its children with it). |
 | Selected (`selectedIds`) | Halo wrapper (padding 3, radius 13, fill `halo`) + 2 px `accent` border; reduce inner padding by 1 so content does not shift. |
 | Keyboard focus | Same wrapper with `foregroundMuted`@0.3, border unchanged. |
 | Mutation in flight | Opacity 0.7 on the affected block; footer right "Guardando…". |
@@ -317,7 +335,15 @@ Wide card (592). Only `http:`/`https:` URLs count (use `safeUrl`); anything else
 - `description` (if non-empty): first content row, `small` muted, max 2 lines on canvas.
 - Empty group: content is one dashed box, height 56: `small` muted "Grupo vacío. Suelta un bloque o
   añade uno desde el catálogo."
-- Selected: 2 px `accent` border + `halo` wrapper (radius 17). Pressing the header or empty frame
+- Count: mono `label` inside an 18-high outlined pill (1 px `border`, radius 9, min width 20) so a
+  lone digit reads as a count. Title shrinks with an ellipsis before any chip does; the template chip
+  is capped at 112.
+- Content inset = group padding on all sides (16, nested 12); the description never touches the
+  header rule. Empty box: radius 6.
+- Hover (web): border `foregroundMuted`@0.5.
+- Drop target: 2 px dashed `accent` border + `halo` fill, header rule tinted `accent`@0.38 and the
+  count replaced by mono `label` "SOLTAR AQUÍ" in `accent`.
+- Selected: 2 px `accent` border + `halo` wrapper (radius 17; nested 13). Pressing the header or empty frame
   area selects the group, not its children.
 
 ## 7. Diagram block (`renderer: "diagram"`, `DiagramData`)
@@ -393,7 +419,8 @@ There is **one highlighted node at a time**: the *current step*.
 - **Current node:** 2 px `accent` border, fill `wash("acento")`, inside a `halo` wrapper (padding 3,
   radius 11). Edges **into** the current node: 2 px, `accent`, arrowhead `accent`, label
   `foreground`.
-- **Stepper** (footer row of the block, 28 high): ghost icon buttons `ChevronLeft` / `ChevronRight`
+- **Stepper** (footer row of the block, 1 px `border` hairline above; prev · centred label (min 92) ·
+  next sit together on the left, the 184-wide `Todo | Paso a paso` segmented on the right): ghost icon buttons `ChevronLeft` / `ChevronRight`
   around mono `label` `PASO {i} DE {n}` (order = node array order); spacer; segmented small
   `Todo | Paso a paso`.
   - `Todo` (default): every node solid.
@@ -646,7 +673,9 @@ default "Lienzo sin título").
 `Delete`/`Backspace` delete selection (no input focused) · arrows / `⇧` arrows nudge root or
 free-group entities 8 / 32 · `⌘/Ctrl Enter` Enviar al agente · `⌘/Ctrl K` catalog search · `Tab` /
 `⇧Tab` next/previous entity in reading order (groups' `blockIds` then `groupIds`, root last) ·
-`Enter` open inspector · inside a focused diagram: `←`/`→` previous/next step.
+`Enter` open inspector · inside a focused diagram: `←`/`→` previous/next step · `L` with exactly two
+entities selected: link the first to the second · `Delete`/`Backspace` with a link selected: delete
+the link · arrows also nudge entities inside a `graph` container (the nudge stores a position).
 
 Blocks and groups are focusable, `accessibilityRole="button"`,
 `accessibilityLabel="{Tipo}: {título}. {i} de {n} en {grupo}"`.
@@ -668,3 +697,150 @@ Blocks and groups are focusable, `accessibilityRole="button"`,
 2. A `"Workflow"`-style `icon`/tone per type is **not** needed; the client maps `renderer`.
 3. Built-in `preview` example may point `url` at `/design/demo.html` on the Tailscale host so the
    frontend example shows a real rendered page (labelled example).
+
+## 15. Graph canvas (architecture §13) — tokens `graph.*`, `layout.graph`, `layout.rows`
+
+**Intent.** A document should read as a map, not as a scroll: compact cards spread in two
+dimensions, joined by connectors, with groups as quiet dashed regions around what belongs together.
+Paper and ink stay: connectors are ink until something is in focus, and colour appears only to answer
+"what does this touch?".
+
+### 15.1 Which layout a container gets (`logic.ts` `graphIndex().mode`)
+
+Applies to the document root (`document.layout`) and to every group (`group.layout`).
+
+| Condition, first match wins | Mode |
+|---|---|
+| explicit `layout.mode` | that mode (`graph`, `stack`, `grid`, `flow`, `free`) |
+| a link joins two direct children (links are lifted: a link between cards in two different child groups joins those groups) | `graph` |
+| a child has a stored `position` | `free` |
+| group holding groups, or holding only `node` cards (2+ children) | `rows` (client-only) |
+| otherwise | `stack` for a group, `free` for the root |
+
+- **graph**: layered, `direction` `down` (default) or `right`. Cycles are broken on DFS back edges;
+  layer = longest path; a source drops to just above its nearest target; order inside a layer by
+  barycentre sweeps keeping the best crossing count; position by averaging towards neighbours. Gaps
+  `graph.gap.node` 32 / `graph.gap.layer` 80 (containers of groups: 48 / 120). An edge that skips
+  layers reserves a lane `graph.gap.lane` 20 wide and its connector follows that lane around the
+  cards. Children without links are packed in rows `graph.gap.unlinkedOffset` 40 under the graph.
+- **rows**: left to right, wrapping at the wrap width, tops aligned. Gap `layout.rows.gap` 24
+  (root: 48). Wrap width = `max(graph.wrap.min 960, (viewport − 96) / 0.8)`, i.e. what fits at the
+  smallest first-open zoom; 1400 when the viewport is unknown; a nested group gets its parent's width
+  minus padding. The root's unplaced entities use the same wrap, so an old document without links or
+  positions is rows of groups, never one column.
+- A stored `position` always wins, in every freeform mode (`free`, `graph`). Afterwards
+  `resolveOverlaps` separates what intersects, settling hand-placed entities first so the layout's
+  placements move out of their way. Dragging or nudging inside a `graph` container is allowed and
+  stores a position; nothing else is persisted by the layout.
+- Prose blocks keep their 288 / 592 widths; a `node` card is `graph.node.width` 224.
+
+### 15.2 Node card (`renderer: "node"`, data `kind`, `status`, `summary`, `details`)
+
+```
+┌──────────────────────────────┐  224 wide, radius 10, 1 px border, surface1, no tone spine
+│ MODULE              ( ready )│  eyebrow: mono label, muted · status pill
+│ Credential custody           │  heading 14/600, max 2 lines
+│ Guarda y renueva los tokens. │  small muted, max 2 lines (optional)
+└──────────────────────────────┘  padding 10 × 12, gap 4, min height 64
+```
+
+- Eyebrow = `data.kind`, else the type name. `Compass` 12 `accent` before the pill if the block has
+  an instruction.
+- Status pill: radius 999, wash of its tone, text in the tone, mono 10.5/600, not uppercased, max
+  width 96. Tone by word (`graph.status`, case-insensitive, Spanish and English): `exito` (ready,
+  listo…), `aviso` (wip, review, pendiente…), `riesgo` (blocked, error, bloqueado…), `acento` (new,
+  planned…); anything else neutral. The word is always shown, so the pill never speaks by colour
+  alone.
+- The whole card is the press target and the drag handle. Hover: border `foregroundMuted`@0.5.
+  Selected: 2 px `accent` border + halo, exactly like a block.
+- `details` never changes the card's size (a card that grows on selection would reshuffle the graph
+  under the pointer). With exactly one node selected it appears as a **side note**: 288 wide,
+  `surface1`, 1 px border, radius 10, 8 px from the card, on the side the graph does not flow to
+  (right of the card in a `down` graph, below it in a `right` graph), max 14 lines, with
+  "Inspeccionar". In the outline the details are printed in full inside the card.
+- Saving / not saved / delivery states use the same footer row as every block.
+
+### 15.3 Regions
+
+A group that is laid out as a graph, or that sits in a graph container, is drawn as a **region**:
+1.5 px **dashed** border `foregroundMuted`@0.45, fill `foregroundMuted`@0.025, no header rule, no
+ordinal. Chevron, serif title, count pill, selection, hover and drop-target states are unchanged, and
+header heights stay 36 / 32 so geometry is shared with framed groups. Groups elsewhere keep the solid
+frame of §6.6.
+
+### 15.4 Connectors
+
+- One connector per ordered pair of **visible** frames. A link whose end is inside a collapsed group
+  attaches to the outermost collapsed group; links wholly inside a collapsed group are not drawn; a
+  link between a group and its own descendant is not drawn (it is still listed in the inspector and
+  outline).
+- Sides: inside a graph container, along its direction (bottom → top for `down`, right → left for
+  `right`). Otherwise the axis with the clear gap (`graph.link.sideGap` 20; vertical wins ties).
+  Several connectors on one side fan out along it, `graph.link.port.spacing` 16 apart within 60 % of
+  the side, ordered by where the other end is, so they do not cross at the frame.
+- Shape: cubic Béziers leaving and arriving perpendicular to the frame, control reach
+  `clamp(distance / 2, 28, 120)`; through lane waypoints for edges that skip layers. Arrowhead: filled
+  triangle 9 × 8 at the target, its tip on the frame.
+- Kind → line: `flow` solid, `depends` dashed `6 5`, `reference` dotted `1.5 5`. Width 1.5.
+- Colour comes only from the tone system (`color.ts` `toneColor`). At rest: `foregroundMuted`@0.5.
+  A link with an explicit `tone` keeps that tone at 0.85 even at rest. The schema's `peligro` is
+  Lienzo's `riesgo`. In focus: full tone, width 2.25; default tone by kind when none is set — `flow`
+  `acento`, `depends` `violeta`, `reference` `turquesa`.
+- Label: sans 11, on the path with a `surface0` halo (5 px stroke, painted under the glyphs), max 32
+  characters; on a sideways connector it sits 10 px above the line so a long label never hides a
+  short link. Labels and counts are drawn **over** the cards; lines under them.
+- Bundles: parallel links in the same direction share one connector with a count disc (radius 8,
+  mono 10/700, `surface2`; `foreground` when lit) at 24 % of the path, or at its middle when no link
+  has a label; labels are joined with " · ". When the bundle is lit and holds ≤ 4 links it opens into
+  one strand per link, 5 px apart, each in its own tone and line style.
+- Web: one DOM `<svg>` for lines (under the cards) and one for labels (over them), created and
+  updated only by `web.ts` `mountLinkLayer`; each connector also has an invisible 14 px stroke as
+  pointer target. Native: the same routes as three-segment elbows made of `View`s (dashed/dotted via
+  border style), a chevron arrowhead, and the label as a pressable chip at the midpoint — the chip (a
+  6 px dot when there is no label) is how a link is selected by touch.
+
+### 15.5 Focus and dimming
+
+Focus, strongest first: connector under the pointer · linked entity under the pointer (web; leaving
+is delayed 90 ms so crossing between cards does not flash) · selected link · selection. If the
+focused thing has no links, nothing changes. Otherwise its connectors are lit, both ends of each stay
+at full strength, every other block drops to `graph.dim.node` 0.34 opacity and every other connector
+to 0.14. Region frames are never dimmed; a block inside a lit group stays lit. No focus while
+dragging.
+
+### 15.6 Making and editing links (all through `c.edit`)
+
+- **Handle.** The hovered or single-selected block (and a single-selected group) shows a 16 px disc
+  (`surface1`, 1.5 px `accent`, `Plus` 10) centred on the edge the graph flows out of (bottom; right
+  in a `right` graph), hit area 28. Dragging from it draws an `accent` connector to the pointer
+  (dashed and 60 % until it is over a valid target) with a chip "Conectar con «…»" / "Suelta sobre un
+  nodo o grupo"; the target gets a 2 px `accent` ring. Release on a target → `link.create` (`flow`),
+  history label "Conectar «A» → «B»"; release elsewhere → nothing. Not offered on compact, offline
+  or while a write is pending.
+- **Without dragging.** Inspector → "Conexiones" → "Conectar con…" (search by title, 8 results);
+  two entities selected → "Conectar «A» → «B»" in the inspector and in "Más acciones", or `L`.
+- An existing `(from, to, kind)` is never duplicated: the existing link is selected instead.
+- **Selecting a link** (press the connector; pressing again cycles through a bundle) clears the
+  entity selection — a link is not part of `selectedIds`, the highlight is view state like hover. The
+  inspector then shows "Enlace · A → B": Desde / Hacia (select that end), Etiqueta, Tipo (segmented
+  Flujo / Depende / Referencia with a one-line meaning), Color (Auto + six swatches; Auto replaces
+  the link by itself without a tone in one transaction because a patch cannot unset it), the other
+  links of the same pair, ID, "Invertir dirección", "Eliminar enlace". `Delete` removes it, `Esc`
+  deselects.
+- Group and document inspector: "Disposición" gains **Grafo** and, when the mode is graph,
+  "Dirección del grafo" (Hacia abajo / Hacia la derecha). While no layout is stored a muted line says
+  which automatic mode is in effect.
+
+### 15.7 Outline and compact
+
+There is no canvas there, so links are sentences. Under every block and group with links:
+`→ conecta con **Título** · etiqueta`, `← llega desde …`; `depends` reads "depende de" / "lo
+necesita", `reference` "menciona a" / "mencionado por". The arrow carries the link's tone; pressing
+a row selects the other end. The same rows open the inspector's "Conexiones" section, where pressing
+one selects the link.
+
+### 15.8 Visual harness
+
+`design/graph-harness/` runs the real layout, tokens and `mountLinkLayer` with plain-DOM stand-ins
+for the cards (the panel itself only mounts inside Paseo). See its README.
+

@@ -88,10 +88,15 @@ export class CanvasService {
       };
       next.blocks = restore(next.blocks, snapshot.blocks);
       next.groups = restore(next.groups, snapshot.groups);
-      if (affected.has("$document")) { next.title = snapshot.title; next.description = snapshot.description; next.example = snapshot.example; next.communication = clone(snapshot.communication); }
+      next.links = restore(next.links, snapshot.links);
+      if (affected.has("$document")) { next.title = snapshot.title; next.description = snapshot.description; next.example = snapshot.example; next.communication = clone(snapshot.communication); if (snapshot.layout) next.layout = clone(snapshot.layout); else delete next.layout; }
       const ids = new Set([...next.blocks, ...next.groups].map(entity => entity.id));
       next.selectedIds = next.selectedIds.filter(id => ids.has(id));
-      validateDocument(next);
+      try { validateDocument(next); }
+      catch (error) {
+        if (error instanceof CanvasError && error.code === "INVARIANT") throw new CanvasError("UNDO_BLOCKED", "Later edits depend on the entities being restored or removed.");
+        throw error;
+      }
       target.undone = !redo;
       recordEdit(record, next, actor, `${redo ? "Redo" : "Undo"}: ${target.label}`, redo ? "redo" : "undo", target.id, agentId);
       return view(record, actor, agentId);

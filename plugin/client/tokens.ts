@@ -1,11 +1,11 @@
-// Transcribed from the Opus-authored design/tokens.json v2.
+// Transcribed from the Opus-authored design/tokens.json v3.
 export const tokens = {
   "$meta": {
     "product": "Lienzo",
     "subtitle": "Paseo Canvas",
-    "version": 2,
+    "version": 3,
     "language": "es",
-    "note": "Fuente de verdad visual, alineada con plugin/shared (model.ts, rpc.ts, builtins.ts). Los neutros, el acento y los estados vienen SIEMPRE de theme.colors del host; aquí solo se fijan los valores propios de Lienzo. v2 añade: renderers, diagram, preview, media, size.blockWidth.wide, layout. Claves v1 se conservan; las marcadas deprecated no se usan."
+    "note": "Fuente de verdad visual, alineada con plugin/shared (model.ts, rpc.ts, builtins.ts). Los neutros, el acento y los estados vienen SIEMPRE de theme.colors del host; aquí solo se fijan los valores propios de Lienzo. v2 añade: renderers, diagram, preview, media, size.blockWidth.wide, layout. Claves v1 se conservan; las marcadas deprecated no se usan. v3 añade: graph (lienzo como grafo: nodos, enlaces, regiones), renderers.node, layout.graph/rows."
   },
   "hostColorRoles": {
     "canvas": "theme.colors.surface0",
@@ -249,7 +249,8 @@ export const tokens = {
       "standard": 288,
       "wide": 592,
       "m": 288,
-      "$deprecated": "s y l eliminados; m = standard. wide = diagram y preview-frame (2 columnas + 16)."
+      "$deprecated": "s y l eliminados; m = standard. wide = diagram y preview-frame (2 columnas + 16).",
+      "node": 224
     },
     "blockMinHeight": 72,
     "groupPadding": 16,
@@ -258,7 +259,13 @@ export const tokens = {
     "catalogCardMinHeight": 76,
     "emptyStateMaxWidth": 380,
     "groupHeaderNested": 32,
-    "groupPaddingNested": 12
+    "groupPaddingNested": 12,
+    "groupEmpty": 56,
+    "groupDescription": {
+      "maxLines": 2,
+      "maxHeight": 34,
+      "gap": 12
+    }
   },
   "canvas": {
     "snap": 8,
@@ -351,7 +358,7 @@ export const tokens = {
     "agent": "Bot"
   },
   "layout": {
-    "$doc": "Render de group.layout. Sin layout: stack si ningún hijo tiene position, si no free.",
+    "$doc": "Render de layout (grupo o documento). Sin layout: graph si hay enlaces entre hijos directos; si no, free si algún hijo tiene position; si no, rows cuando el grupo contiene grupos; si no, stack. La raíz sin layout ni enlaces: free con los no posicionados en filas.",
     "stack": {
       "gap": 12,
       "align": "stretch",
@@ -384,7 +391,22 @@ export const tokens = {
       "stack": "Pila",
       "grid": "Rejilla",
       "flow": "Flujo",
+      "graph": "Grafo",
       "free": "Libre"
+    },
+    "graph": {
+      "direction": "down",
+      "directions": {
+        "down": "Hacia abajo",
+        "right": "Hacia la derecha"
+      },
+      "unlinked": "filas debajo del grafo",
+      "positioned": "conservan su position; después se resuelven solapes"
+    },
+    "rows": {
+      "gap": 24,
+      "gapRoot": 48,
+      "note": "Modo interno (no se persiste): empaqueta en filas hasta graph.wrap."
     }
   },
   "renderers": {
@@ -458,6 +480,11 @@ export const tokens = {
       "icon": "Workflow",
       "tone": "acento",
       "width": "wide"
+    },
+    "node": {
+      "icon": "CircleDot",
+      "tone": "neutro",
+      "width": "node"
     },
     "generic": {
       "icon": "Square",
@@ -542,6 +569,176 @@ export const tokens = {
       "height": 28
     },
     "gapYLabeled": 48
+  },
+  "graph": {
+    "$doc": "Lienzo como grafo (architecture §13). Tarjetas nodo, enlaces curvos entre marcos y regiones punteadas. Colores siempre desde tones/theme.colors. Ver docs/design.md §15.",
+    "node": {
+      "width": 224,
+      "estimatedHeight": 80,
+      "minHeight": 64,
+      "radius": 10,
+      "paddingH": 12,
+      "paddingV": 10,
+      "gap": 4,
+      "titleLines": 2,
+      "summaryLines": 2,
+      "details": {
+        "width": 288,
+        "offset": 8,
+        "maxLines": 14
+      }
+    },
+    "gap": {
+      "node": 32,
+      "layer": 80,
+      "nodeGroups": 48,
+      "layerGroups": 120,
+      "lane": 20,
+      "unlinkedOffset": 40
+    },
+    "wrap": {
+      "min": 960,
+      "fallback": 1400,
+      "viewportInset": 96
+    },
+    "link": {
+      "width": 1.5,
+      "widthActive": 2.25,
+      "hitWidth": 14,
+      "alpha": {
+        "rest": 0.5,
+        "toned": 0.85,
+        "dim": 0.14
+      },
+      "dash": {
+        "flow": "",
+        "depends": "6 5",
+        "reference": "1.5 5"
+      },
+      "defaultTone": {
+        "flow": "acento",
+        "depends": "violeta",
+        "reference": "turquesa"
+      },
+      "toneAlias": {
+        "peligro": "riesgo"
+      },
+      "arrow": {
+        "length": 9,
+        "width": 8
+      },
+      "port": {
+        "spacing": 16,
+        "span": 0.6
+      },
+      "curve": {
+        "min": 28,
+        "max": 120
+      },
+      "label": {
+        "size": 11,
+        "lineHeight": 14,
+        "maxChars": 32,
+        "halo": 4,
+        "lift": 10
+      },
+      "badge": {
+        "radius": 8,
+        "size": 10
+      },
+      "sideGap": 20,
+      "strands": {
+        "max": 4,
+        "gap": 5
+      }
+    },
+    "dim": {
+      "node": 0.34
+    },
+    "handle": {
+      "size": 16,
+      "hit": 28,
+      "icon": "Plus"
+    },
+    "region": {
+      "borderStyle": "dashed",
+      "fillAlpha": 0.025
+    },
+    "kinds": {
+      "flow": "Flujo",
+      "depends": "Depende",
+      "reference": "Referencia"
+    },
+    "kindHelp": {
+      "flow": "Sigue o envía a",
+      "depends": "Necesita a",
+      "reference": "Menciona a"
+    },
+    "tones": [
+      "neutro",
+      "acento",
+      "violeta",
+      "turquesa",
+      "aviso",
+      "peligro"
+    ],
+    "status": {
+      "$doc": "Palabra de data.status (sin distinguir mayúsculas) → tono del chip. Lo no listado es neutro.",
+      "exito": [
+        "ready",
+        "ok",
+        "done",
+        "live",
+        "stable",
+        "listo",
+        "lista",
+        "hecho",
+        "hecha",
+        "estable",
+        "activo",
+        "activa",
+        "completo",
+        "completa"
+      ],
+      "aviso": [
+        "wip",
+        "review",
+        "pending",
+        "partial",
+        "beta",
+        "pendiente",
+        "parcial",
+        "en curso",
+        "en progreso",
+        "revisar",
+        "revisión"
+      ],
+      "riesgo": [
+        "blocked",
+        "error",
+        "failed",
+        "broken",
+        "down",
+        "bloqueado",
+        "bloqueada",
+        "fallo",
+        "falla",
+        "roto",
+        "rota",
+        "caído",
+        "caída"
+      ],
+      "acento": [
+        "new",
+        "next",
+        "planned",
+        "nuevo",
+        "nueva",
+        "siguiente",
+        "planeado",
+        "planeada"
+      ]
+    }
   },
   "preview": {
     "$doc": "Bloque preview (renderer preview-frame): data {description, url?}.",

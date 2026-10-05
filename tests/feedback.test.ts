@@ -5,7 +5,7 @@ import * as rpc from "../plugin/shared/rpc";
 import { FeedbackDispatcher, feedbackPrompt } from "../plugin/server/feedback";
 import { injectAgent, prepareCreation, ownerEnvironment } from "../plugin/server/agent-integration";
 import { CanvasBridge } from "../plugin/server/bridge";
-import { ToolRouter } from "../plugin/server/tools";
+import { ToolRouter, integrationInstructions } from "../plugin/server/tools";
 import type { PluginBeforeRequests } from "@getpaseo/plugin/server";
 import { CanvasStore } from "../plugin/server/store";
 import { CanvasService } from "../plugin/server/service";
@@ -13,6 +13,33 @@ import { setup, workspaceId, fakeGateway } from "./helpers";
 
 const reference = { workspaceId, documentId: "d" };
 const action = (eventId: string, delivery: "immediate" | "batched" = "immediate") => rpc.agentAction.input.parse({ ...reference, expectedRevision: 0, eventId, action: { kind: "selection.ask", label: "Explain selection", payload: { answer: "A" }, targetIds: ["b"], delivery } });
+
+test("feedback context durably captures graph links/layouts without later edits changing it", async t => {
+  const { service, store, directory } = await setup(t);
+  await service.mutate(rpc.mutateDocument.input.parse({ ...reference, expectedRevision: 0, operations: [
+    { type: "document.update", layout: { mode: "graph", direction: "right" } },
+    { type: "group.create", group: { id: "g", title: "Área", blockIds: ["b", "c"], layout: { mode: "graph" } } },
+    { type: "link.create", link: { id: "l", from: "b", to: "c", kind: "reference", label: "Contexto" } },
+  ] }));
+  const event = await service.action({ ...action("graph-action"), expectedRevision: 1 });
+  assert.deepEqual(event.context.links, [{ id: "l", from: "b", to: "c", kind: "reference", label: "Contexto" }]);
+  assert.deepEqual(event.context.layout, { mode: "graph", direction: "right" });
+  assert.equal(event.context.groups[0].layout?.mode, "graph");
+  await service.mutate(rpc.mutateDocument.input.parse({ ...reference, expectedRevision: 1, operations: [{ type: "link.delete", id: "l" }] }));
+  assert.deepEqual((await service.events(reference)).events[0].context, event.context);
+  await store.close();
+  const reopened = new CanvasStore(directory); t.after(() => reopened.close());
+  assert.deepEqual((await new CanvasService(reopened).events(reference)).events[0].context, event.context);
+});
+
+test("graph guidance reaches Codex without altering its preapproval visibility workaround", () => {
+  const request = { config: { provider: "codex", cwd: "/workspace/a", systemPrompt: "Original task", toolPolicy: { preapproved: [{ kind: "mcp", server: "paseo-canvas", tool: "canvas_apply" }, { kind: "mcp", server: "other", tool: "read" }] } } } as PluginBeforeRequests["agent.create"];
+  const result = injectAgent(request, { script: "/private/canvas.cjs", endpoint: "/private/bridge.json" }, "owner");
+  assert.equal(result.config.systemPrompt, `Original task\n\n${integrationInstructions}`);
+  assert.match(result.config.systemPrompt!, /node blocks joined by links/);
+  assert.deepEqual(result.config.toolPolicy?.preapproved, [{ kind: "mcp", server: "other", tool: "read" }]);
+  assert.equal(request.config.toolPolicy?.preapproved?.length, 2);
+});
 
 test("no connected agent leaves honest pending feedback; batched events require explicit flush", async t => {
   const { service } = await setup(t), mock = fakeGateway(service);
@@ -158,6 +185,10 @@ test("workspace opt-in controls new-agent injection; hook failure preserves orig
   await service.configureInjection({ workspaceId, enabled: true, expectedRevision: 0 });
   const next = await prepareCreation(request, mock.gateway, bridge);
   assert.ok(next.config.mcpServers?.["paseo-canvas"]);
+  const elsewhere: PluginBeforeRequests["agent.create"] = { config: { provider: "claude", cwd: "/somewhere/else" } };
+  assert.equal(await prepareCreation(elsewhere, mock.gateway, bridge), elsewhere);
+  await service.configureInjection({ workspaceId: "*", enabled: true, expectedRevision: 1 });
+  assert.ok((await prepareCreation(elsewhere, mock.gateway, bridge)).config.mcpServers?.["paseo-canvas"]);
   await service.store.close();
   assert.equal(await prepareCreation(request, mock.gateway, bridge), request);
 });

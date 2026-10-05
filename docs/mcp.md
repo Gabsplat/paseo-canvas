@@ -1,4 +1,4 @@
-# Canvas backend v1
+# Canvas backend v1.1
 
 The frontend contracts are in `plugin/shared/model.ts` and `plugin/shared/rpc.ts`.
 Import a named RPC and call `useRpc(contract)` from `@getpaseo/plugin/client`.
@@ -17,12 +17,61 @@ Positions are relative to the parent group. Moving a group changes its own posit
 keep their local coordinates. The frontend must sum ancestor positions when drawing.
 Create and update group membership through a transaction; the server maintains parent pointers.
 
+## Graph canvas
+
+`linkSchema` and its inferred type `CanvasLink` are exported from `plugin/shared/model.ts`.
+Each strict link is `{id, from, to, label?, kind?, tone?}` on input. `kind` defaults to `flow`
+and also accepts `depends` and `reference`. `label` is at most 200 characters; `tone` accepts
+`neutro`, `acento`, `violeta`, `turquesa`, `aviso`, or `peligro`. Endpoints identify any existing
+block or group. Link IDs must be unique and cannot collide with block/group IDs because reads,
+history and conflict details use one ID namespace. Self links and duplicate directed
+`(from,to,kind)` triples fail with `INVARIANT`. Reverse links and parallel links of different
+kinds are valid.
+
+Documents and templates have a `links` array, defaulting to `[]`, with at most 2,000 entries.
+The document also accepts optional `layout`. The existing `layoutSchema` now accepts mode
+`graph` and optional `direction: "down" | "right"`. Direction controls graph rendering only;
+omitting it means down in the client, with no coordinate calculation or direction materialization
+on the server. Existing layout modes and coordinates retain their meaning. `document.update`
+accepts `layout`, and its changes participate in history as `$document`.
+
+`operationSchema` and `CanvasOperation` include `link.create {link}`, `link.update {id,patch}`
+and `link.delete {id}`. `linkPatchSchema` permits optional `from`, `to`, `label`, `kind`, and
+`tone`, and never inserts a default kind into an update. A label-only patch therefore preserves
+an existing depends/reference link. Link changes/removals appear by ID in history, write results,
+and revision conflict details. Deleting a block, group or subtree removes touching links in the
+same transaction. Ungroup removes only links touching the deleted group, preserving its children
+and their connections. Undo/redo restores links and layout; later edits to the same IDs block
+undo, and a later link depending on an entity prevents undo from removing that endpoint.
+
+Duplication and template insertion remap links as `idPrefix.oldId`, including their endpoints,
+and keep only links whose endpoints are both in the copied set. Duplicating a lone block copies
+no incident links. Group export includes all internal subtree links, including links to groups,
+and excludes boundary links. Portable packs preserve document/template links and document/group
+layouts through validation, import, export, instantiation and reopening storage.
+
+The built-in `node` type uses renderer `node` and four optional text properties: `kind`, `status`,
+`summary`, `details`. Use the block title and a short summary for the compact card; longer
+explanations belong in details. Build systems, flows and lessons with node blocks joined by links,
+inside area groups with `layout.mode: "graph"`. Avoid stacking more than a few prose notes.
+Reserve the in-block `diagram` for small self-contained figures. Teach by adding actual nodes
+and links through confirmed transactions. `canvas_example {packId:"graph"}` creates the Spanish
+"Ejemplo: cómo funciona Lienzo" document with three graph groups and flow/depends/reference
+links, including cross-group connections. It has `example:true` and describes architecture,
+not live agent activity.
+
+`canvas_read` outline and full views include links and root/group layouts. An `ids` read can
+retrieve links too; links have document communication instructions because they have no own
+instruction field. Full UI RPC reads and feedback context snapshots retain graph data. Persisted
+`paseo-canvas-state/1` and `paseo-canvas-pack` version 1 are unchanged. Strict pre-v1.1 documents,
+templates, history snapshots and feedback contexts load with empty links and absent root layout.
+
 ## Intentional differences from architecture v1
 
 The coordinator approved a smaller model. RPC export names in `shared/rpc.ts` are authoritative.
 `canvas.mutate` is the transactional RPC and `canvas_apply` is its MCP equivalent. Arrays hold
-blocks and groups, and each group's two ID arrays define membership. This version has no links,
-combined child reading order, frame resizing, automatic layout engine, or provenance labels.
+blocks, groups and links, and each group's two child ID arrays define membership. This version has
+no combined child reading order, frame resizing, server layout engine, or provenance labels.
 The group layout field persists rendering intent; the frontend renders it. Instructions are the
 same `communication` object at document, group, and block levels and concatenate from the most
 specific entity through its ancestors. IDs can be supplied or generated; operations use concrete
@@ -69,7 +118,8 @@ Paseo SDK. A connection selects the feedback recipient; it is not a document ACL
 can read/edit any document in its workspace, including documents connected to another agent.
 Unknown owners and other-workspace documents are refused. UI RPCs are trusted host plugin RPCs
 and require an explicit workspace ID. Shared catalog writes are separate from document access
-and are not automatically preapproved. New-agent injection is opt-in per workspace.
+and are not automatically preapproved. New-agent injection is opt-in by workspace or by the
+installer's global `"*"` preference. The graph changes preserve that existing injection behavior.
 Agent history includes the real caller `agentId`; an agent can undo only its own edits, and later
 related edits by any actor block undo. User undo is scoped to the user actor class because Paseo
 0.10.3 does not expose separate human identities to a host plugin.
@@ -80,7 +130,7 @@ Checklist items accept strings or `{label: string, done: boolean}`. The exact pu
 RPC method names use the installed SDK's lowercase-only syntax. Stable TypeScript exports
 `agentAction`, `readAgentEvents`, and `flushAgentEvents` map to `canvas.agent.action`,
 `canvas.agent.events`, and `canvas.agent.events.flush`.
-Shipped `frontend` and `learn` pack exports are protected reference exports and cannot be imported
+Shipped `frontend`, `learn` and `graph` pack exports are protected reference exports and cannot be imported
 as replacements. User pack exports round-trip unchanged. To fork a shipped export, use a new pack
 ID and namespace every exported type/template ID as `newPackId.entry`, updating references.
 
@@ -124,7 +174,7 @@ required optimistic revision and either commits all operations or none.
 `canvas_group` actions are `create`, `update`, `insert_template`, `ungroup`, `export_template`.
 Deletion through `group.delete` deletes the subtree by default; `ungroup:true` retains children
 and converts their local positions into positions relative to the former group's parent.
-Template insertion and duplication use `idPrefix.oldId` for every copied entity. Exporting a
+Template insertion and duplication use `idPrefix.oldId` for every copied entity and link. Exporting a
 template does not save it automatically; save with `canvas_catalog` action `save_template`.
 
 `canvas_catalog` actions are `list`, `read`, `import_pack`, `export_pack`, `save_type`,
@@ -208,7 +258,7 @@ the handling signal. There is no fake activity or completion output.
 ## Limits and errors
 
 Documents and packs are limited to 1 MiB; a pack has at most 200 entries. Each document has up to
-1,000 blocks, 200 groups and four group levels. Batches contain 1..200 operations. JSON nesting
+1,000 blocks, 200 groups, 2,000 links and four group levels. Batches contain 1..200 operations. JSON nesting
 is limited to 32 levels, and prototype-mutating keys are rejected. History retains up to 50
 transactions and 8 MiB per document. Total atomic storage is capped at 64 MiB. There are at most
 100 pending/failed and 100 recent sent/acked events per document; terminal events belonging to an
@@ -240,3 +290,11 @@ recovery with new event arrivals. The official MCP SDK stdio client verifies rea
 shared RPC/MCP state, auth/scope/409 behavior and bridge/store reopen with the existing client.
 Tests use temporary private directories and loopback listeners; they do not launch a GUI or
 touch the daemon's installed plugin state.
+
+Graph regressions cover old state/1 compatibility, link schema defaults and patch omission,
+link invariants and rollback, directed parallel kinds, block/subtree/ungroup cascades,
+remapped subtree links, boundary-free group exports, packs and persistent graph context,
+layout/link undo and redo, later endpoint dependencies, optional node text properties,
+the labelled graph example, and graph guidance with Codex's existing preapproval workaround.
+Real MCP stdio tests exercise graph schema discovery, outline/full/ID reads, link create/update/delete,
+undo/redo, errors without writes, and bridge/store reopening with the original client.

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   documentSchema, diagramDataSchema, checklistDataSchema, type CanvasDocument, type CanvasOperation, type CanvasCatalog,
-  type CanvasBlock, type CanvasGroup, type GroupTemplate, type BlockType,
+  type CanvasBlock, type CanvasGroup, type CanvasLink, type GroupTemplate, type BlockType,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
 
@@ -80,6 +80,7 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
   documentSchema.parse(document);
   safeJson(document);
   validateTree(document.blocks, document.groups);
+  validateLinks(document.blocks, document.groups, document.links);
   const ids = new Set([...document.blocks, ...document.groups].map(entity => entity.id));
   if (new Set(document.selectedIds).size !== document.selectedIds.length || document.selectedIds.some(id => !ids.has(id)))
     throw new CanvasError("INVARIANT", "Selection must contain unique existing entity IDs.");
@@ -87,6 +88,26 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
     const type = catalog.blockTypes.find(type => type.id === block.typeId);
     if (type) validateBlockData(block, type);
   }
+}
+
+export function validateLinks(blocks: CanvasBlock[], groups: CanvasGroup[], links: CanvasLink[]): void {
+  const endpoints = new Set([...blocks, ...groups].map(entity => entity.id));
+  const ids = new Set<string>(), triples = new Set<string>();
+  for (const link of links) {
+    // IDs share the history/read namespace with entities.
+    if (ids.has(link.id) || endpoints.has(link.id)) throw new CanvasError("INVARIANT", `Duplicate link ID ${link.id}.`);
+    ids.add(link.id);
+    if (!endpoints.has(link.from) || !endpoints.has(link.to)) throw new CanvasError("INVARIANT", `Both endpoints of link ${link.id} must exist.`);
+    if (link.from === link.to) throw new CanvasError("INVARIANT", `Link ${link.id} cannot connect an entity to itself.`);
+    const triple = JSON.stringify([link.from, link.to, link.kind]);
+    if (triples.has(triple)) throw new CanvasError("INVARIANT", `Duplicate link (${link.from}, ${link.to}, ${link.kind}).`);
+    triples.add(triple);
+  }
+}
+
+function removeTouchingLinks(document: CanvasDocument, removed: string[]): void {
+  const ids = new Set(removed);
+  document.links = document.links.filter(link => !ids.has(link.from) && !ids.has(link.to));
 }
 
 export function mergePatch(target: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
@@ -149,8 +170,10 @@ function synchronizeChildren(document: CanvasDocument, group: CanvasGroup, block
 
 function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefix: string): void {
   const remap = (id: string) => `${prefix}.${id}`;
+  const copied = new Set([...template.blocks, ...template.groups].map(entity => entity.id));
   for (const block of template.blocks) document.blocks.push({ ...clone(block), id: remap(block.id), parentGroupId: block.parentGroupId ? remap(block.parentGroupId) : null });
   for (const group of template.groups) document.groups.push({ ...clone(group), id: remap(group.id), parentGroupId: group.parentGroupId ? remap(group.parentGroupId) : null, blockIds: group.blockIds.map(remap), groupIds: group.groupIds.map(remap), templateId: template.id });
+  for (const link of template.links) if (copied.has(link.from) && copied.has(link.to)) document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) });
 }
 
 export function reduce(document: CanvasDocument, operations: CanvasOperation[], catalog: CanvasCatalog): CanvasDocument {
@@ -158,6 +181,18 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
   for (const operation of operations) {
     switch (operation.type) {
       case "document.update": Object.assign(next, Object.fromEntries(Object.entries(operation).filter(([key]) => key !== "type"))); break;
+      case "link.create": next.links.push(clone(operation.link)); break;
+      case "link.update": {
+        const link = next.links.find(link => link.id === operation.id);
+        if (!link) throw new CanvasError("NOT_FOUND", `Link ${operation.id} does not exist.`);
+        Object.assign(link, clone(operation.patch));
+        break;
+      }
+      case "link.delete": {
+        if (!next.links.some(link => link.id === operation.id)) throw new CanvasError("NOT_FOUND", `Link ${operation.id} does not exist.`);
+        next.links = next.links.filter(link => link.id !== operation.id);
+        break;
+      }
       case "block.create": {
         const block = clone(operation.block);
         const type = catalog.blockTypes.find(type => type.id === block.typeId);
@@ -181,6 +216,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         if (!next.blocks.some(block => block.id === operation.id)) throw new CanvasError("NOT_FOUND", `Block ${operation.id} does not exist.`);
         detach(next, operation.id);
         next.blocks = next.blocks.filter(block => block.id !== operation.id);
+        removeTouchingLinks(next, [operation.id]);
         break;
       }
       case "group.create": {
@@ -217,6 +253,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         detach(next, group.id);
         next.blocks = next.blocks.filter(block => !removed.includes(block.id));
         next.groups = next.groups.filter(group => !removed.includes(group.id));
+        removeTouchingLinks(next, removed);
         break;
       }
       case "entity.move": {
@@ -228,7 +265,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const source = entity(next, operation.id);
         if ("groupIds" in source) {
           const subtree = new Set(groupSubtree(next, source.id));
-          const template: GroupTemplate = { id: "duplicate", name: source.title, description: source.description, blocks: clone(next.blocks.filter(block => subtree.has(block.id))), groups: clone(next.groups.filter(group => subtree.has(group.id))) };
+          const template: GroupTemplate = { id: "duplicate", name: source.title, description: source.description, blocks: clone(next.blocks.filter(block => subtree.has(block.id))), groups: clone(next.groups.filter(group => subtree.has(group.id))), links: clone(next.links.filter(link => subtree.has(link.from) && subtree.has(link.to))) };
           template.groups.find(group => group.id === source.id)!.parentGroupId = null;
           insertTemplate(next, template, operation.idPrefix);
           attach(next, `${operation.idPrefix}.${source.id}`, source.parentGroupId ?? null);
@@ -275,5 +312,5 @@ export function exportGroup(document: CanvasDocument, groupId: string, templateI
   const groups = clone(document.groups.filter(group => ids.has(group.id)));
   const root = groups.find(group => group.id === groupId)!;
   root.parentGroupId = null;
-  return { id: templateId, name, description: root.description, blocks: clone(document.blocks.filter(block => ids.has(block.id))), groups };
+  return { id: templateId, name, description: root.description, blocks: clone(document.blocks.filter(block => ids.has(block.id))), groups, links: clone(document.links.filter(link => ids.has(link.from) && ids.has(link.to))) };
 }

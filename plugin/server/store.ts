@@ -159,11 +159,11 @@ export function documentRecord(state: CanvasState, documentId: string, workspace
   return record;
 }
 export function changedEntities(before: CanvasDocument, after: CanvasDocument): { changed: string[]; removed: string[] } {
-  const old = new Map([...before.blocks, ...before.groups].map(entity => [entity.id, entity]));
-  const current = new Map([...after.blocks, ...after.groups].map(entity => [entity.id, entity]));
+  const old = new Map([...before.blocks, ...before.groups, ...before.links].map(entity => [entity.id, entity]));
+  const current = new Map([...after.blocks, ...after.groups, ...after.links].map(entity => [entity.id, entity]));
   const changed = [...current.keys()].filter(id => JSON.stringify(current.get(id)) !== JSON.stringify(old.get(id)));
   const removed = [...old.keys()].filter(id => !current.has(id));
-  if (["title", "description", "example", "communication"].some(key => JSON.stringify(before[key as keyof CanvasDocument]) !== JSON.stringify(after[key as keyof CanvasDocument]))) changed.push("$document");
+  if (["title", "description", "example", "communication", "layout"].some(key => JSON.stringify(before[key as keyof CanvasDocument]) !== JSON.stringify(after[key as keyof CanvasDocument]))) changed.push("$document");
   return { changed, removed };
 }
 export function assertRevision(record: DocumentRecord, expected: number): void {

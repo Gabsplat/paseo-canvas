@@ -2,7 +2,7 @@ import { z } from "zod";
 import { packSchema, blockTypeSchema, templateSchema, type CanvasPack, type CanvasCatalog, type BlockType, type GroupTemplate } from "../shared/model";
 import { builtinPacks, builtinTemplates, builtinTypes } from "../shared/builtins";
 import { CanvasError } from "../shared/errors";
-import { safeJson, validateTree, validateBlockData, validateDocument } from "./reducer";
+import { safeJson, validateTree, validateLinks, validateBlockData, validateDocument } from "./reducer";
 
 export const catalogStorageSchema = z.object({
   revision: z.number().int().nonnegative(),
@@ -30,6 +30,7 @@ export function validateType(type: BlockType): void {
 export function validateTemplate(template: GroupTemplate, catalog: CanvasCatalog): void {
   safeJson(template);
   validateTree(template.blocks, template.groups);
+  validateLinks(template.blocks, template.groups, template.links);
   for (const block of template.blocks) {
     const type = catalog.blockTypes.find(type => type.id === block.typeId);
     if (!type) throw new CanvasError("UNKNOWN_TYPE", `Template ${template.id} needs missing type ${block.typeId}.`);
@@ -43,7 +44,7 @@ export function parsePack(input: unknown, catalog: CanvasCatalog): CanvasPack {
   safeJson(pack);
   if (pack.blockTypes.length + pack.templates.length + pack.documents.length > 200)
     throw new CanvasError("TOO_LARGE", "A pack cannot exceed 200 entries.");
-  if (["frontend", "learn"].includes(pack.id)) throw new CanvasError("VALIDATION", "Shipped example pack IDs are reserved.");
+  if (builtinPacks.some(builtin => builtin.id === pack.id)) throw new CanvasError("VALIDATION", "Shipped example pack IDs are reserved.");
   const unique = (ids: string[]) => { if (new Set(ids).size !== ids.length) throw new CanvasError("VALIDATION", "Pack contains duplicate catalog IDs."); };
   unique(pack.blockTypes.map(type => type.id)); unique(pack.templates.map(template => template.id));
   for (const entry of [...pack.blockTypes, ...pack.templates]) {

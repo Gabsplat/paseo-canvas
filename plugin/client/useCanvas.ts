@@ -26,6 +26,9 @@ export function useCanvas(workspaceId: string) {
   const [selection, setSelection] = useState<string[]>([]), desired = useRef<string[] | null>(null), selecting = useRef(false);
   const generation = useRef(0), active = useRef(true);
   const selectionScope = useRef(0), eventEpoch = useRef(0);
+  // IDs already seen in this workspace. A document that appears later without being opened here was created elsewhere
+  // (normally by the agent through canvas_create), so the panel follows it.
+  const knownIds = useRef<Set<string> | null>(null), [arrival, setArrival] = useState<{ id: string; title: string } | null>(null);
   function accept(next: DocumentView) {
     if (!active.current || scopeRef.current !== scope || next.document.workspaceId !== workspaceId) return;
     const prev = current.current;
@@ -57,7 +60,7 @@ export function useCanvas(workspaceId: string) {
     try {
       const [list, cat] = await Promise.all([apiRef.current.list({ workspaceId }), apiRef.current.catalog({})]);
       if (!active.current || g !== generation.current) return;
-      setDocuments(list.documents); setCatalog(cat);
+      setDocuments(list.documents); setCatalog(cat); knownIds.current = new Set(list.documents.map(d => d.id));
       const id = initialDocumentId(hostId, workspaceId, list.documents);
       if (id) await open(id); else setFailure(null);
     } catch (error) { if (active.current && g === generation.current) fail(error, () => loadInitial()); }
@@ -65,7 +68,7 @@ export function useCanvas(workspaceId: string) {
   }
   useLayoutEffect(() => {
     active.current = true; const g = ++generation.current;
-    current.current = null; desired.current = null; setView(null); setSelection([]); setEvents([]); setDocuments([]); setCatalog(null); setFailure(null); setOffline(false); setLoading(true);
+    current.current = null; desired.current = null; knownIds.current = null; setArrival(null); setView(null); setSelection([]); setEvents([]); setDocuments([]); setCatalog(null); setFailure(null); setOffline(false); setLoading(true);
     void loadInitial(g);
     return () => { active.current = false; ++generation.current; };
   }, [hostId, workspaceId]);
@@ -79,6 +82,15 @@ export function useCanvas(workspaceId: string) {
           if (!stopped && g === generation.current) { if (change.view) accept(change.view); if (eventVersion === eventEpoch.current) setEvents(delivery.events); setOffline(false); }
         } catch { if (!stopped && g === generation.current) setOffline(true); }
       }
+      try {
+        const list = await apiRef.current.list({ workspaceId }), known = knownIds.current;
+        if (!stopped && g === generation.current && known) {
+          const fresh = list.documents.filter(d => !known.has(d.id)); knownIds.current = new Set(list.documents.map(d => d.id));
+          if (fresh.length || list.documents.length !== known.size) setDocuments(list.documents);
+          const target = fresh.filter(d => d.id !== current.current?.document.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+          if (target && !locked.current) { setArrival({ id: target.id, title: target.title }); void open(target.id); }
+        }
+      } catch { /* The document watch above already reports connectivity. */ }
       if (!stopped) timer = setTimeout(poll, 1500);
     };
     timer = setTimeout(poll, 500); return () => { stopped = true; clearTimeout(timer); };
@@ -163,6 +175,6 @@ export function useCanvas(workspaceId: string) {
     const v = current.current; if (!v) return;
     try { accept(await apiRef.current.read({ workspaceId, documentId: v.document.id })); setOffline(false); } catch (e) { fail(e, refresh); }
   }
-  return { api, workspaceId, view, current, documents, catalog, setCatalog, events, setEvents: setScopedEvents, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, send, task, create, example, refreshList, settle };
+  return { api, workspaceId, view, current, documents, catalog, setCatalog, events, setEvents: setScopedEvents, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, send, task, create, example, refreshList, settle, arrival };
 }
 export type CanvasController = ReturnType<typeof useCanvas>;

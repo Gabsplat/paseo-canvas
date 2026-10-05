@@ -5,6 +5,7 @@ import type { CanvasService } from "./service";
 import { integrationInstructions, preapprovedTools } from "./tools";
 
 export const ownerEnvironment = "PASEO_CANVAS_OWNER";
+export const allWorkspaces = "*";
 export type Paseo = PluginHandlerContext["paseo"];
 type Creation = PluginBeforeRequests["agent.create"];
 export function managedMcp(bridge: Pick<CanvasBridge, "script" | "endpoint">, owner: string) {
@@ -52,14 +53,17 @@ export class AgentGateway {
   }
 }
 
-/** Hooks fail open, and opt-in is matched against the actual workspace directory. */
+/** Hooks fail open. Opt-in is global ("*") or matched against the actual workspace directory. */
 export async function prepareCreation(request: Creation, gateway: AgentGateway, bridge: CanvasBridge): Promise<Creation> {
   try {
     if (request.config.internal || request.config.mcpServers?.["paseo-canvas"] || !["codex", "claude", "opencode"].includes(request.config.provider)) return request;
     const enabled = (await gateway.service.injection()).workspaceIds;
     if (!enabled.length) return request;
-    const workspaces = await gateway.api().workspaces.list();
-    if (!workspaces.entries.some(workspace => enabled.includes(workspace.id) && workspace.workspaceDirectory === request.config.cwd)) return request;
+    // "*" is the installer's global opt-in: every new agent on this host gets the tools, whatever its workspace.
+    if (!enabled.includes(allWorkspaces)) {
+      const workspaces = await gateway.api().workspaces.list();
+      if (!workspaces.entries.some(workspace => enabled.includes(workspace.id) && workspace.workspaceDirectory === request.config.cwd)) return request;
+    }
     await bridge.ensure();
     const owner = await gateway.service.allocateOwner();
     return injectAgent(request, bridge, owner);

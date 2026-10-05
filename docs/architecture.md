@@ -508,3 +508,80 @@ return the original request on internal failure.
    dispatcher assumes it must queue itself.
 4. Whether `mcpServers` injected at create survive `resume`/`import` for all three providers; if
    not, `agent.setup` RPC is the manual path.
+
+---
+
+## 13. v1.1 — Graph canvas (contract, in implementation)
+
+**Why.** Agents currently produce one tall column of groups filled with prose notes ("un chorizo
+largo", see `/tmp/lienzo-chorizo-current.png`). The user wants documents that read as a **spatial
+graph**: compact node cards laid out in two dimensions and joined by connectors, with groups as
+dashed regions around related nodes (reference: `/tmp/lienzo-graph-reference.png`). The in-block
+`diagram` type stays, but the canvas itself becomes the diagram.
+
+This promotes "persisted links" from §0's planned list into the product. Everything else in §0
+still holds. `plugin/shared/model.ts` remains authoritative once it lands; this section is the
+contract the backend and frontend implement against.
+
+### 13.1 Model additions (all optional or defaulted — stored v1 documents must still parse)
+
+```ts
+linkSchema = { id: idSchema, from: idSchema, to: idSchema,          // endpoints: any block or group id
+               label?: string (≤200),
+               kind: "flow" | "depends" | "reference" (default "flow"),
+               tone?: "neutro" | "acento" | "violeta" | "turquesa" | "aviso" | "peligro" }  // strict
+documentContentSchema += links: linkSchema[] (max 2000, default [])
+documentContentSchema += layout?: layoutSchema          // how root-level entities are arranged
+layoutSchema.mode    += "graph"                         // free | stack | grid | flow | graph
+layoutSchema         += direction?: "down" | "right"    // graph only; default "down"
+templateSchema       += links: linkSchema[] (default [])
+blockTypeSchema.renderer += "node"
+```
+
+New built-in block type **`node`** (renderer `node`): the compact card of the reference image.
+Properties: `kind` (text, short eyebrow such as MODULE / SERVICE / STEP), `status` (text, short
+chip such as ready / draft / blocked), `summary` (text, one or two lines), `details` (text, longer
+body shown only when the node is selected/expanded). All optional except the block `title`.
+
+Operations (added to `operationSchema`):
+
+```ts
+{ type: "link.create", link }            { type: "link.update", id, patch }       { type: "link.delete", id }
+{ type: "document.update", …, layout? }   // existing op gains the optional layout field
+```
+
+Invariants (reducer): link ids unique; both endpoints exist; `from !== to`; no duplicate
+`(from, to, kind)` triple. Deleting a block or group (including a subtree) removes every link that
+touches a removed entity, in the same transaction. `entity.duplicate` and `template.insert` remap
+link ids and endpoints with the same `idPrefix`, keeping only links whose two endpoints are inside
+the copied set. `canvas.group.export` includes the links internal to the exported subtree. Packs
+round-trip links. Undo/redo restores them. History `changed`/`removed` may contain link ids.
+
+### 13.2 Layout semantics (client-side, nothing persisted)
+
+- A container (the document root or a group) in mode `graph` — or with **no explicit mode but at
+  least one link between its direct children** — is laid out as a layered graph: longest-path
+  layering along `direction`, ordering inside a layer to reduce crossings, siblings without links
+  packed in rows after the graph (never one endless column). Root default when there are no links
+  and no positions: wrap into rows by available width instead of a single column.
+- An entity with an explicit `position` keeps it (existing free-position rule), and the existing
+  overlap resolution still applies afterwards.
+- A link whose endpoints live in different groups is drawn between the visible ancestors; a link
+  to something inside a collapsed group attaches to that group's frame.
+
+### 13.3 Interaction and rendering (visual decisions belong to the Opus designer)
+
+Curved connectors with arrowheads, colour by `kind`/`tone`; hovering or selecting a node highlights
+its links and neighbours and dims the rest; parallel links between the same pair are bundled with a
+count; link label on the path. React Native has no SVG in the host: on web the connector layer may
+be a DOM `<svg>` created only inside `plugin/client/web.ts`; native falls back to elbow segments
+built from `View`s. The person can create a link by dragging from a node handle to another node,
+select a link, relabel it and delete it; all through `canvas.mutate`.
+
+### 13.4 Agent guidance
+
+`integrationInstructions` and the tool descriptions must steer agents away from the tall column:
+model systems, flows and explanations as `node` blocks joined by links, grouped by area with
+`layout.mode: "graph"`; keep text in `summary`/`details` or a single short note; never stack more
+than a few prose notes; reserve the in-block `diagram` for small self-contained figures. Ship one
+example document in a built-in pack that demonstrates this style (labelled example).

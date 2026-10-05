@@ -9,7 +9,18 @@ export const communicationSchema = z.object({
   intent: z.string().max(1000).default(""),
   audience: z.string().max(500).default(""),
 }).strict();
-export const layoutSchema = z.object({ mode: z.enum(["free", "stack", "grid", "flow"]), gap: z.number().nonnegative().max(1000).optional(), columns: z.number().int().min(1).max(20).optional() }).strict();
+export const layoutSchema = z.object({ mode: z.enum(["free", "stack", "grid", "flow", "graph"]), direction: z.enum(["down", "right"]).optional(), gap: z.number().nonnegative().max(1000).optional(), columns: z.number().int().min(1).max(20).optional() }).strict();
+export const linkSchema = z.object({
+  id: idSchema, from: idSchema, to: idSchema, label: z.string().max(200).optional(),
+  kind: z.enum(["flow", "depends", "reference"]).default("flow"),
+  tone: z.enum(["neutro", "acento", "violeta", "turquesa", "aviso", "peligro"]).optional(),
+}).strict();
+// Like groupPatchSchema, omitted fields must not acquire their creation defaults.
+export const linkPatchSchema = z.object({
+  from: idSchema.optional(), to: idSchema.optional(), label: z.string().max(200).optional(),
+  kind: z.enum(["flow", "depends", "reference"]).optional(),
+  tone: linkSchema.shape.tone,
+}).strict();
 export const diagramNodeSchema = z.object({ id: idSchema, label: z.string().min(1).max(200), description: z.string().max(1000).optional(), position: positionSchema.optional() }).strict();
 export const diagramEdgeSchema = z.object({ id: idSchema, from: idSchema, to: idSchema, label: z.string().max(200).optional() }).strict();
 export const diagramDataSchema = z.object({ nodes: z.array(diagramNodeSchema).max(100), edges: z.array(diagramEdgeSchema).max(200), caption: z.string().max(2000).optional() }).strict().superRefine((data, context) => {
@@ -49,6 +60,7 @@ export const documentContentSchema = z.object({
   title: z.string().min(1).max(300), description: z.string().max(4000).default(""),
   example: z.boolean().default(false),
   blocks: z.array(blockSchema).max(1000), groups: z.array(groupSchema).max(200),
+  links: z.array(linkSchema).max(2000).default([]), layout: layoutSchema.optional(),
   selectedIds: z.array(idSchema).max(1200).default([]),
   communication: communicationSchema,
 }).strict();
@@ -65,11 +77,12 @@ export const propertySchema = z.object({
 export const blockTypeSchema = z.object({
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
   properties: z.array(propertySchema).max(50), defaults: jsonObjectSchema,
-  renderer: z.enum(["text", "note", "code", "checklist", "choice", "form", "metric", "image-ref", "step", "callout", "preview-frame", "quiz", "progress", "diagram"]).optional(),
+  renderer: z.enum(["text", "note", "code", "checklist", "choice", "form", "metric", "image-ref", "step", "callout", "preview-frame", "quiz", "progress", "diagram", "node"]).optional(),
 }).strict();
 export const templateSchema = z.object({
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
   blocks: z.array(blockSchema).max(1000), groups: z.array(groupSchema).max(200),
+  links: z.array(linkSchema).max(2000).default([]),
 }).strict();
 export const packSchema = z.object({
   format: z.literal("paseo-canvas-pack"), version: z.literal(1),
@@ -94,7 +107,10 @@ export const documentSummarySchema = documentSchema.pick({
 });
 
 export const operationSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("document.update"), title: z.string().min(1).max(300).optional(), description: z.string().max(4000).optional() }).strict(),
+  z.object({ type: z.literal("document.update"), title: z.string().min(1).max(300).optional(), description: z.string().max(4000).optional(), layout: layoutSchema.optional() }).strict(),
+  z.object({ type: z.literal("link.create"), link: linkSchema }).strict(),
+  z.object({ type: z.literal("link.update"), id: idSchema, patch: linkPatchSchema }).strict(),
+  z.object({ type: z.literal("link.delete"), id: idSchema }).strict(),
   z.object({ type: z.literal("block.create"), block: blockSchema }).strict(),
   z.object({ type: z.literal("block.update"), id: idSchema, patch: blockSchema.omit({ id: true }).partial() }).strict(),
   z.object({ type: z.literal("block.delete"), id: idSchema }).strict(),
@@ -138,6 +154,7 @@ export const agentEventSchema = z.object({
 }).strict();
 
 export type CanvasBlock = z.infer<typeof blockSchema>;
+export type CanvasLink = z.infer<typeof linkSchema>;
 export type CanvasGroup = z.infer<typeof groupSchema>;
 export type CanvasDocument = z.infer<typeof documentSchema>;
 export type DocumentContent = z.infer<typeof documentContentSchema>;

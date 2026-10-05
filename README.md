@@ -3,10 +3,24 @@
 Plugin local de Paseo para construir documentos visuales junto a una conversación con un agente.
 Los agentes usan MCP y la interfaz usa RPC; ambas entradas comparten el mismo servicio y almacenamiento.
 
-Instalado y verificado en Paseo 0.10.3. La suite pasa 42 pruebas y el typecheck completo.
-Abrir el [workspace de Lienzo](https://omarchy.tailff08b5.ts.net:15443/h/srv_T1b7PG6C2vvD/workspace/wks_5d51b3a95e377433)
-por Tailscale y elegir **Abrir Lienzo** en el Command Center. El documento **Lienzo en vivo**
-contiene una explicación, un diagrama ampliado por un agente real y una preview interactiva.
+Probado con Paseo 0.10.3 (el plugin declara `>=0.10.3 <0.11.0`). Tras instalarlo, elige
+**Abrir Lienzo** en el Command Center de cualquier workspace, o escribe `/lienzo` en el chat de un agente.
+
+## Instalar
+
+En la máquina donde corre el daemon de Paseo, con **Settings → Plugins → Enable plugins** activado:
+
+```sh
+paseo plugin add Gabsplat/paseo-canvas:plugin
+paseo plugin ls        # debe mostrar `canvas` como running
+```
+
+También se puede pegar `Gabsplat/paseo-canvas:plugin` en **Settings → Plugins → Plugin source**.
+Los plugins de Paseo son código de confianza sin sandbox: instálalo solo si confías en este repositorio.
+
+Para que un agente pueda leer y editar el lienzo: abre el panel, entra al diálogo de agente, marca
+«Dar las herramientas de Lienzo a los agentes nuevos de todos los espacios» y crea un agente **nuevo**
+(los que ya existían no reciben las herramientas). Después conéctalo desde ese mismo diálogo.
 
 Los contratos publicados están en
 [`plugin/shared/model.ts`](plugin/shared/model.ts) y [`plugin/shared/rpc.ts`](plugin/shared/rpc.ts).
@@ -29,9 +43,6 @@ Abrir `architecture/index.html` permite explorar componentes y reproducir los fl
 La vista Multijugador distingue el comportamiento actual de las funciones futuras.
 No requiere CDN ni una licencia de tldraw.
 
-La versión de revisión en esta máquina está disponible por Tailscale:
-[Explorar arquitectura](https://omarchy.tailff08b5.ts.net:37443/architecture/index.html).
-
 ## Desarrollo
 
 Requiere pnpm y Paseo 0.10.3. El rango del plugin es `>=0.10.3 <0.11.0`.
@@ -42,10 +53,10 @@ pnpm typecheck
 pnpm test
 ```
 
-Para instalar en otro host con plugins habilitados, usar el directorio `plugin`:
+Para instalar desde un clon local, usar la ruta absoluta del directorio `plugin`:
 
 ```sh
-paseo plugin install /home/gabsplat/Labs/paseo-canvas/plugin
+paseo plugin install /ruta/absoluta/a/paseo-canvas/plugin
 paseo plugin ls
 ```
 
