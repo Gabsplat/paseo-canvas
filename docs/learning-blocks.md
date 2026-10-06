@@ -248,6 +248,37 @@ or unmount cancels that loop. Sampling never writes runtime or sends assistant e
 At most 256 tokens are drawn across the canvas per frame; excess tokens are omitted in
 stable document/event order. Native retains static links and the honest block summary.
 
+## Step sequencer (`step-sequencer`)
+
+Data is declarative and strict: `question`; a locked `scale {root, mode, octave}` (roots `C..B`
+with sharps or `Db/Eb/Gb/Ab/Bb`; modes `major`, `minor`, `dorian`, `pentatonic-major`,
+`pentatonic-minor`, `blues`; octave 2..5); `rows`, 1..6 distinct one-based scale degrees up to
+15; `labels` (`note` or `degree`); `steps` 2..16; `stepsPerBeat` 1..4; `tempo {bpm,min,max}`
+inside 40..240; `pattern`, one string per row of exactly `steps` characters (`x` sounds, `.` is
+silent); `voice` (`sine`, `triangle`, `square`). Pitches must fall in MIDI 36..96. There is no
+URL, sample, script or autoplay field. Rows display highest first; `pattern[i]` always belongs
+to `rows[i]`.
+
+Runtime holds `{pattern, bpm, heard?}` and falls back to the authored pattern when the stored
+shape no longer fits. `heard` is a short fingerprint of the exact music that completed a cycle
+(scale, rows, voice, steps, subdivision, tempo and pattern), so an authored change to any of them
+is unheard again while a still-fitting learner pattern and tempo are kept. The moving step
+counter is hidden from assistive technology; a polite live region announces only playback state
+and audio errors. The learner toggles cells (click, Space or Enter; arrows, Home and End
+move between cells) and moves tempo inside the declared range. One coalescing settled event,
+`step-sequencer.pattern`, describes the final pattern, tempo and whether a full cycle was heard:
+600 ms after the last toggle, on tempo release, and once when a first full cycle has been heard.
+`step-sequencer.reset` follows Reiniciar. Playback position is never stored or sent.
+
+Audio lives behind `openStepAudio` in `client/web.ts`, the only Web Audio entry, and the pure
+lookahead scheduler in `client/sequencer-audio.ts`. A context is created and resumed inside the
+Reproducir press and closed, never suspended, on pause, reset, read-only, unmount, document
+change, hidden tab, the grid leaving the viewport, a browser suspension, or another sequencer
+starting: one live context across the plugin. Master gain 0.2, per-note peak at most 0.3, notes
+at most 0.5 s, 24 voices, 30..4200 Hz. A refused start shows "No se pudo activar el sonido" with
+"Activar sonido" and keeps the grid editable; a browser without Web Audio says so. Native shows
+the labelled grid and its text description as static and never reaches for audio.
+
 ## Skeleton and verification
 
 ```ts

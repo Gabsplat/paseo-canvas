@@ -1,0 +1,60 @@
+[
+  {
+    "name": "No audio context exists before a press; the grid shows the authored pattern",
+    "result": "pass"
+  },
+  {
+    "name": "A real press starts a running context with audible signal; playback writes no runtime and sends no event",
+    "result": "pass",
+    "note": "peak 0.060, 8 playhead positions"
+  },
+  {
+    "name": "Pause closes the context at once and schedules nothing further; one settled event says the cycle was heard",
+    "result": "pass"
+  },
+  {
+    "name": "Cell presses toggle and persist; three quick edits settle as one event and the card does not move",
+    "result": "pass"
+  },
+  {
+    "name": "Arrow keys move between cells and Space toggles the focused one without reaching the canvas",
+    "result": "pass"
+  },
+  {
+    "name": "Tempo slider changes speed live and settles once on release",
+    "result": "pass",
+    "note": "bpm 147"
+  },
+  {
+    "name": "Starting a second sequencer silences the first: one live context",
+    "result": "pass"
+  },
+  {
+    "name": "Switching documents while playing closes audio",
+    "result": "pass"
+  },
+  {
+    "name": "A hidden tab (simulated visibilitychange) stops playback and returns to Reproducir",
+    "result": "pass"
+  },
+  {
+    "name": "Panning the playing card out of view stops it",
+    "result": "pass"
+  },
+  {
+    "name": "Refused activation (simulated NotAllowedError) is stated, keeps the grid editable, and Activar sonido retries",
+    "result": "pass"
+  },
+  {
+    "name": "Reiniciar restores the authored pattern and tempo and stops sound",
+    "result": "pass"
+  },
+  {
+    "name": "Dark theme and compact outline render the labelled grid",
+    "result": "pass"
+  },
+  {
+    "name": "Uncaught page errors",
+    "result": "pass"
+  }
+]

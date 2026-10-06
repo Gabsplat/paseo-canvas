@@ -3,7 +3,7 @@ import { Animated, PanResponder, Pressable, View, type GestureResponderEvent, ty
 import { Icon, ScrollView } from '@getpaseo/plugin/client/react-native';
 import type { CanvasBlock, CanvasDocument, CanvasGroup } from '../shared/model';
 import type { CanvasController } from './useCanvas';
-import { alignmentGuides, boundsOf, connectOperations, descriptionKey, dropTarget, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
+import { alignmentGuides, anchorCard, boundsOf, connectOperations, descriptionKey, dropTarget, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows } from './Blocks';
@@ -280,7 +280,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     if (c.busy || c.offline || gesture.current || resize.current || linkGesture.current) return;
     const page = pointer(event, gs), ids = c.selection.includes(id) ? c.selection : [id];
     if (!c.selection.includes(id)) void c.select([id]);
-    const moving = travellers(doc, ids).filter(m => anims.current.get(m)?.target), home = layout.index.parent.get(id) || null, origin = vp.current ?? { x: 0, y: 0 };
+    // A drawing anchored to a card that is also moving rides on that card's motion instead of its own.
+    const all = new Set(travellers(doc, ids)), moving = [...all].filter(m => anims.current.get(m)?.target && !all.has(anchorCard(doc, doc.blocks.find(b => b.id === m))?.id ?? '')), home = layout.index.parent.get(id) || null, origin = vp.current ?? { x: 0, y: 0 };
     halt(); measureViewport();
     // Picked up from wherever it is drawn right now, so a card can be caught again while it is still settling.
     const epoch = ++gestureEpoch.current;
@@ -420,7 +421,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     if (cancelled || !changed || !block || doc.id !== state.documentId || c.offline || c.busy) { finish(); return; }
     const kind = c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer;
     if (isWhiteboardRenderer(kind)) {
-      const parent = block.parentGroupId ? latest.current.rects.get(block.parentGroupId) : null;
+      const card = anchorCard(doc, block), parent = card ? latest.current.rects.get(card.id) : block.parentGroupId ? latest.current.rects.get(block.parentGroupId) : null;
       const position = { x: state.nextPosition.x - (parent?.x ?? 0), y: state.nextPosition.y - (parent?.y ?? 0) };
       const patch: Partial<Omit<CanvasBlock, 'id'>> = kind === 'wb-text' ? { position, data: { width: state.next.width } } : { position, size: state.next, ...(state.from ? { data: { from: state.from } } : {}) };
       void c.edit([{ type: 'block.update', id: state.id, patch }], kind === 'wb-text' ? 'Redimensionar texto' : 'Redimensionar forma').then(next => finish(next?.document)); return;
@@ -563,11 +564,11 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const wbKind = (b: CanvasBlock) => c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer;
   function whiteboardItems(kinds: WbRenderer[]) {
     return doc.blocks.filter(b => !rects.get(b.id)?.hidden && kinds.includes(wbKind(b) as WbRenderer)).map(b => {
-      const r = rects.get(b.id)!, a = animOf(b.id, NATIVE), kind = wbKind(b) as WbRenderer, selected = c.selection.includes(b.id), lifted = !!drag?.ids.has(b.id), line = kind === 'wb-shape' && b.data.shape === 'line';
+      const r = rects.get(b.id)!, a = animOf(b.id, NATIVE), kind = wbKind(b) as WbRenderer, card = kind === 'wb-draw' ? anchorCard(doc, b) : undefined, ride = card ? animOf(card.id, NATIVE) : null, selected = c.selection.includes(b.id), lifted = !!drag?.ids.has(b.id), line = kind === 'wb-shape' && b.data.shape === 'line';
       const handles: ResizeHandle[] = kind === 'wb-text' ? ['w','e'] : line ? ['start','end'] : ['nw','n','ne','e','se','s','sw','w'];
       const ends = line ? lineEnds(b.data as unknown as Parameters<typeof lineEnds>[0], r.width, r.height) : null;
       const hpos = (handle: ResizeHandle) => ends && (handle === 'start' || handle === 'end') ? { x: ends[handle === 'start' ? 0 : 1].x / r.width, y: ends[handle === 'start' ? 0 : 1].y / r.height } : { x: handle.includes('w') ? 0 : handle.includes('e') ? 1 : .5, y: handle.includes('n') ? 0 : handle.includes('s') ? 1 : .5 };
-      return <Animated.View key={b.id} nativeID={`lienzo-entity-${b.id}`} pointerEvents="box-none" {...(!web && canDrag ? dragHandlers(b.id) : {})} style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: a.target ? a.w : r.width, height: kind === 'wb-text' && resizeId !== b.id ? r.height : a.target ? a.h : r.height, zIndex: kind === 'wb-text' ? 4 : kind === 'wb-draw' ? 5 : 0, opacity: lifted ? .85 : 1, transform: [{ translateX: a.x }, { translateY: a.y }] }}>
+      return <Animated.View key={b.id} nativeID={`lienzo-entity-${b.id}`} pointerEvents="box-none" {...(!web && canDrag ? dragHandlers(b.id) : {})} style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: a.target ? a.w : r.width, height: kind === 'wb-text' && resizeId !== b.id ? r.height : a.target ? a.h : r.height, zIndex: kind === 'wb-text' ? 4 : kind === 'wb-draw' ? 5 : 0, opacity: lifted ? .85 : 1, transform: [{ translateX: a.x }, { translateY: a.y }, ...(ride ? [{ translateX: ride.x }, { translateY: ride.y }] : [])] }}>
         <WhiteboardContent block={b} kind={kind} width={r.width} height={r.height} scale={cam.current.scale} onSelect={event => select(b.id,event)} onHover={inside => hovering(b.id,inside)} onMeasure={height => measure(b.id,height)} />
         {(selected || hover === b.id) && <View pointerEvents="none" style={{position:'absolute',inset:-4,borderWidth:selected?1.5:1,borderColor:selected?u.c.accent:withAlpha(u.c.foregroundMuted,.35)}}/>}
         {selected && canDrag && c.selection.length === 1 && cam.current.scale >= .25 && handles.map(handle => { const p = hpos(handle); return <View key={handle} nativeID={`lienzo-interactive-resize-${b.id}-${handle}`} {...resizeHandlers(b.id,handle)} style={{position:'absolute',left:`${p.x*100}%`,top:`${p.y*100}%`,width:20,height:20,marginLeft:-10,marginTop:-10,zIndex:8,alignItems:'center',justifyContent:'center',transform:[{scale:Animated.divide(1,camS)}]}}><View pointerEvents="none" style={{width:line?10:8,height:line?10:8,borderRadius:line?5:2,backgroundColor:u.c.surface1,borderColor:u.c.accent,borderWidth:1.5}}/></View>; })}

@@ -26,7 +26,7 @@ export function friendlyError(error: unknown): string {
   if (/revision conflict|latest revision|Expected revision|selection version/i.test(message)) return errorMessages.REVISION_CONFLICT;
   if (error instanceof SyntaxError || /ZodError|Invalid input|invalid_type|invalid_format/.test(message)) return 'Revisa el formato del JSON y los datos obligatorios.';
   // Only client-authored validation messages may pass through unchanged.
-  const local = ['JSON no válido', 'Número no válido', 'Máximo 200 caracteres.', 'El cambio no se aplicó.', 'El archivo supera 1 MB.', 'El bloque cambió. Vuelve a seleccionarlo.', 'El documento cambió antes de completar la acción.', 'Escribe un título de hasta 300 caracteres.', 'No se guardó el formulario.'];
+  const local = ['JSON no válido', 'Número no válido', 'Máximo 200 caracteres.', 'El cambio no se aplicó.', 'El archivo supera 1 MB.', 'El bloque cambió. Vuelve a seleccionarlo.', 'El documento cambió antes de completar la acción.', 'Escribe un título de hasta 300 caracteres.', 'No se guardó el formulario.', 'La capa alcanzó su límite de tamaño. Se conserva el dibujo anterior.'];
   if (local.includes(message)) return message;
   if (/network|fetch|connection|offline|socket|timeout/i.test(message)) return 'No se pudo conectar con Paseo. Reintenta en un momento.';
   return 'No se pudo completar la acción. Vuelve a intentarlo.';

@@ -29,6 +29,7 @@ export function learningFixture(base: CanvasDocument, lesson: string): CanvasDoc
       events: [{ t: 0, from: 'sender', to: 'receiver', linkId: 'ruta', payload: 'Ejemplo', kind: 'message' }] }),
       block('sender', 'node', 'Origen de ejemplo', 500, 60, {}, 220, 140), block('receiver', 'node', 'Destino de ejemplo', 810, 280, {}, 220, 140)],
     shader: [block('shader', 'glsl-shader', 'Shader de ejemplo', 0, 0)],
+    sequencer: [block('sequencer', 'step-sequencer', 'Secuenciador de ejemplo', 0, 0, {}, 560, 520), block('sequencer-b', 'step-sequencer', 'Segundo secuenciador de ejemplo', 620, 0, { steps: 16, stepsPerBeat: 4, labels: 'degree', rows: [6, 5, 4, 3, 2, 1], tempo: { bpm: 120, min: 60, max: 200 }, pattern: Array.from({ length: 6 }, (_, i) => `${'.'.repeat(i * 2)}x${'.'.repeat(15 - i * 2)}`) }, 560, 560)],
     annotations: [block('image-annotation', 'annotated-content', 'Imagen anotada de ejemplo', 0, 0, annotations(true)),
       block('text-annotation', 'annotated-content', 'Texto anotado de ejemplo', 500, 0, annotations(false))],
   };

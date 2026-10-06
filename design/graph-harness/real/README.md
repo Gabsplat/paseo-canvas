@@ -27,6 +27,10 @@ schemas. The transport applies block/scope changes in memory with simulated late
 it has no disk persistence, host RPC, polling, undo or agent delivery. Settled actions
 are recorded as simulated, and never represented as a real agent response.
 
+`?lesson=sequencer` mounts two step sequencers. `sequencer-smoke.cjs` drives them with real
+Chromium input and Web Audio; its probe wraps the page's `AudioContext` to observe state,
+oscillator starts and analyser signal, and simulates only a hidden tab and a refused resume.
+
 After building, start an isolated box from this worktree. Use the worktree's absolute
 path for the server directory and script. Keep GPU enabled to exercise WebGL:
 

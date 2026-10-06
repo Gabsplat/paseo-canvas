@@ -23,7 +23,7 @@ import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOpti
 import { islandStyle } from './whiteboard-visuals';
 import { mediaSource } from './media';
 import { needsContentInteraction } from './interaction';
-import { isWhiteboardRenderer, type WbRenderer, type WbDrawData } from '../shared/whiteboard';
+import { isWhiteboardRenderer, learnerLayerIds, strokeLayers, type WbRenderer, type WbDrawData } from '../shared/whiteboard';
 
 type CatalogTab = 'types' | 'templates' | 'packs';
 type InspectorSection = 'document' | 'communication' | 'history' | 'activity';
@@ -351,7 +351,10 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     if (renderer === 'wb-draw') { const stroke = (data as WbDrawData).strokes[0]; return { ...toolStyle, color: stroke.color, scale: stroke.weight }; }
     return { ...toolStyle, ...Object.fromEntries(Object.keys(DEFAULT_TOOL_STYLE).filter(key => data[key] !== undefined).map(key => [key, data[key]])), ...(data.weight ? { scale: data.weight as ToolStyle['scale'] } : {}) };
   })() : toolStyle;
-  const showStyle = selectionKinds.size > 0 || ['text', 'shape', 'draw'].includes(tool);
+  const showStyle = selectionKinds.size > 0 || ['text', 'shape', 'draw', 'eraser'].includes(tool);
+  // "Borrar mis trazos": only the learner's own drawings, in one undoable transaction. Assistant and authored strokes stay.
+  const myLayers = strokeLayers(doc?.blocks ?? [], b => c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer === 'wb-draw').filter(layer => layer.author === 'learner');
+  const clearMyStrokes = () => { const ids = learnerLayerIds(myLayers); if (ids.length && !c.busy && !c.offline) void c.edit(ids.map(id => ({ type: 'block.delete' as const, id })), 'Borrar mis trazos'); };
   const toolWidth = width < 560 ? 218 : 362;
   const toolsLeft = Math.min(Math.max((width - toolWidth) / 2, tokens.island.inset + islandWidth + 8), Math.max(tokens.island.inset, width - toolWidth - tokens.island.inset));
   const toolsTop = tokens.island.inset + islandWidth + 8 + toolWidth > width - tokens.island.inset ? tokens.island.bannerTop : tokens.island.inset;
@@ -467,7 +470,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
         <IconButton label="Duplicar" icon="CopyPlus" disabled={disabled} onPress={duplicateSelection} /><IconButton label="Eliminar" icon="Trash2" disabled={disabled} onPress={removeSelection} /><IconButton label="Más" icon="Ellipsis" onPress={() => inspectorOpen()} />
       </View> : undefined;
   const toolIsland = <ToolIsland tool={tool} onToolChange={chooseTool} locked={toolLocked} onLockChange={setToolLocked} shape={toolStyle.shape} onOpenShapes={() => { setOverlay(null); setToolPopover('shapes'); }} onOpenLibrary={() => { setOverlay(null); setLibraryError(''); setToolPopover('library'); setMode('canvas'); }} onOpenPicker={() => openCatalog()} width={width} touch={u.compact} disabled={!doc || disabled} />;
-  const styleIsland = <StyleIsland tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation={u.compact || width < 880 ? 'horizontal' : 'vertical'} touch={u.compact} disabled={disabled} />;
+  const styleIsland = <StyleIsland tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation={u.compact || width < 880 ? 'horizontal' : 'vertical'} touch={u.compact} disabled={disabled} myStrokes={myLayers.reduce((sum, layer) => sum + layer.strokes, 0)} onClearMyStrokes={clearMyStrokes} />;
   const title = doc ? rename ? <Field key={doc.id} hideLabel label="Título del lienzo" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
     if (!value.trim() || value.trim().length > 300) throw new Error('Escribe un título de hasta 300 caracteres.');
     await c.settle(); if (c.current.current?.document.id !== doc.id) return;

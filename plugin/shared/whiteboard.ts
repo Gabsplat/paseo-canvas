@@ -35,9 +35,16 @@ export const wbSvgDataSchema = z.object({
 });
 const extentSchema = z.object({ width: z.number().finite().min(1).max(4096), height: z.number().finite().min(1).max(4096) }).strict();
 const pointsSchema = z.array(z.number().finite().min(0).max(4096)).min(4).max(WB_LIMITS.inputPointsPerStroke * 2).refine(points => points.length % 2 === 0, 'Los puntos deben ser pares x,y.');
+export const WB_AUTHORS = ['learner', 'assistant'] as const;
+export type WbAuthor = typeof WB_AUTHORS[number];
+const anchorSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/).refine(id => !['__proto__', 'constructor', 'prototype'].includes(id));
 export const wbDrawDataSchema = z.object({
   extent: extentSchema,
   strokes: z.array(z.object({ points: pointsSchema, color, weight: scale }).strict()).min(1).max(WB_LIMITS.strokes),
+  /** Who drew this layer. Absent: authored content (a template, a pack, a document author). */
+  author: z.enum(WB_AUTHORS).optional(),
+  /** The card this layer annotates. `position` is then relative to that card's top-left corner. */
+  anchor: anchorSchema.optional(),
 }).strict().superRefine((data, context) => {
   const total = data.strokes.reduce((sum, stroke) => sum + stroke.points.length / 2, 0);
   if (total > WB_LIMITS.inputPointsPerStroke) context.addIssue({ code: 'custom', path: ['strokes'], message: 'El dibujo supera el límite de puntos de entrada.' });
@@ -107,6 +114,39 @@ export function appendStroke(drawing: WbDrawing, worldPoints: readonly number[],
   const width = Math.ceil(Math.max(position.x + size.width, ...xs) * 2) / 2 - x, height = Math.ceil(Math.max(position.y + size.height, ...ys) * 2) / 2 - y;
   if (width > 4096 || height > 4096) throw new Error('El dibujo supera una caja de 4096 unidades.');
   const previous = data.strokes.map(stroke => ({ ...stroke, points: stroke.points.map((v, i) => i % 2 ? v * size.height / data.extent.height + position.y - y : v * size.width / data.extent.width + position.x - x) }));
-  const next = wbDrawDataSchema.parse({ extent: { width, height }, strokes: [...previous, { ...style, points: points.map((v, i) => v - (i % 2 ? y : x)) }] });
+  const next = wbDrawDataSchema.parse({ ...data, extent: { width, height }, strokes: [...previous, { ...style, points: points.map((v, i) => v - (i % 2 ? y : x)) }] });
   return { position: { x, y }, size: { width, height }, data: next };
+}
+
+/** A drawing follows the copy of its card when both are copied; an outside card keeps its id. */
+export function remapDrawAnchor<Data extends Record<string, unknown>>(data: Data, ids: ReadonlyMap<string, string>): Data {
+  const anchor = typeof data.anchor === 'string' ? ids.get(data.anchor) : undefined;
+  return anchor ? { ...data, anchor } : data;
+}
+type StrokeBlock = { id: string; typeId: string; title: string; parentGroupId?: string | null; data: Record<string, unknown> };
+export type StrokeLayer = { id: string; author: WbAuthor | 'authored'; anchor?: string; strokes: number };
+/** Drawings of a document as layers. `isDraw` decides by renderer, so custom types that reuse wb-draw count too. */
+export function strokeLayers(blocks: readonly StrokeBlock[], isDraw: (block: StrokeBlock) => boolean): StrokeLayer[] {
+  return blocks.filter(isDraw).map(block => ({
+    id: block.id, author: block.data.author === 'learner' || block.data.author === 'assistant' ? block.data.author : 'authored',
+    ...(typeof block.data.anchor === 'string' ? { anchor: block.data.anchor } : {}), strokes: Array.isArray(block.data.strokes) ? block.data.strokes.length : 0,
+  }));
+}
+/** The learner's own experiment: what "Borrar mis trazos" removes. Assistant and authored layers stay. */
+export const learnerLayerIds = (layers: readonly StrokeLayer[]) => layers.filter(layer => layer.author === 'learner').map(layer => layer.id);
+/** Bounded settled description of the stroke layers: counts and anchor titles, never points. */
+export function strokeSummary(blocks: readonly StrokeBlock[], isDraw: (block: StrokeBlock) => boolean) {
+  const layers = strokeLayers(blocks, isDraw), count = (author: StrokeLayer['author']) => layers.filter(l => l.author === author).reduce((sum, l) => sum + l.strokes, 0);
+  const anchors = [...new Set(layers.filter(l => l.author === 'learner' && l.anchor).map(l => l.anchor!))];
+  return { learner: { drawings: layers.filter(l => l.author === 'learner').length, strokes: count('learner') }, assistant: { strokes: count('assistant') }, authored: { strokes: count('authored') },
+    anchors: anchors.slice(0, 8).map(id => ({ id, title: (blocks.find(b => b.id === id)?.title ?? '').slice(0, 80) })), ...(anchors.length > 8 ? { moreAnchors: anchors.length - 8 } : {}) };
+}
+export const WB_LAYER_LIMIT_MESSAGE = 'La capa alcanzó su límite de tamaño. Se conserva el dibujo anterior.';
+const utf8Length = (text: string) => { let bytes = 0; for (const char of text) { const code = char.codePointAt(0)!; bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4; } return bytes; };
+/**
+ * Client-side estimate of the 1 MiB document cap, so a stroke that cannot be stored is refused with a clear
+ * message before it is sent. The server remains the authority.
+ */
+export function layerFits(document: unknown, addition: unknown, limit = 1024 * 1024): boolean {
+  return utf8Length(JSON.stringify(document)) + utf8Length(JSON.stringify(addition)) + 64 <= limit;
 }

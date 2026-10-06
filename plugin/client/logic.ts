@@ -353,6 +353,13 @@ export function resizeBlockSize(start: BlockSize, delta: Point, minimum: BlockSi
   const w = clamp(start.width + delta.x, minimum.width), h = clamp(start.height + delta.y, minimum.height);
   return { width: clamp(grid ? snap(w) : Math.round(w), minimum.width), height: clamp(grid ? snap(h) : Math.round(h), minimum.height) };
 }
+/** The card a drawing annotates, when it names one. */
+export const drawAnchor = (block?: { data: Record<string, unknown> } | null): string | undefined => typeof block?.data.anchor === 'string' ? block.data.anchor : undefined;
+/** Resolved only when the card exists in the same container; otherwise the drawing stays where its position says. */
+export function anchorCard(doc: CanvasDocument, block?: CanvasBlock | null): CanvasBlock | undefined {
+  const id = drawAnchor(block), card = id ? doc.blocks.find(b => b.id === id) : undefined;
+  return card && block && card.id !== block.id && (card.parentGroupId ?? null) === (block.parentGroupId ?? null) ? card : undefined;
+}
 /** `viewportWidth` only decides where rows wrap; without it the layout is the same on every screen. */
 export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number> = {}, catalog?: CanvasCatalog | null, viewportWidth?: number): CanvasLayout {
   const index = graphIndex(doc, catalog), { groups } = index, blocks = new Map(doc.blocks.map(b => [b.id, b]));
@@ -366,7 +373,8 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
     if (overlays.length) {
       const ordinary = children.filter(id => !overlays.includes(id));
       arrange(container, ordinary, ordinary.map(id => childRects[children.indexOf(id)]), origin, wrap, clamp);
-      for (const id of overlays) { const r = childRects[children.indexOf(id)], p = entity(id).position ?? origin; r.x = p.x; r.y = p.y; }
+      // A drawing anchored to a card keeps its offset from that card, wherever the arrangement puts the card.
+      for (const id of overlays) { const r = childRects[children.indexOf(id)], p = entity(id).position ?? origin, anchor = drawAnchor(blocks.get(id)), card = anchor ? childRects[ordinary.includes(anchor) ? children.indexOf(anchor) : -1] : undefined; r.x = p.x + (card?.x ?? 0); r.y = p.y + (card?.y ?? 0); }
       return;
     }
     const hasGroups = children.some(id => groups.has(id)), packGap = layout?.gap ?? (container ? tokens.layout.rows.gap : tokens.layout.rows.gapRoot);
@@ -688,6 +696,9 @@ export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, id
   for (const parent of parents) if (manual(index.mode(parent))) result.push(...freezeOperations(doc, rects, parent, moving).filter(op => op.type !== 'group.update'));
   const frozen = result.length;
   for (const { e, to } of moves) {
+    // An anchored drawing travels with its card. Moved on its own, only its offset from the card changes.
+    const card = 'typeId' in e ? anchorCard(doc, e) : undefined, cardRect = card && rects.get(card.id);
+    if (card && cardRect) { if (!moving.has(card.id)) { const own = rects.get(e.id)!; result.push({ type: 'entity.move', id: e.id, parentGroupId: e.parentGroupId ?? null, position: { x: Math.round(own.x + delta.x - cardRect.x), y: Math.round(own.y + delta.y - cardRect.y) } }); } continue; }
     const r = rects.get(e.id)!, origin = to ? rects.get(to) : null;
     result.push({ type: 'entity.move', id: e.id, parentGroupId: to, position: { x: Math.round(r.x + delta.x - (origin?.x ?? 0)), y: Math.round(r.y + delta.y - (origin?.y ?? 0)) } });
   }
@@ -733,7 +744,8 @@ export function releaseOperations(doc: CanvasDocument, ids: string[], catalog?: 
  * Rounded, not snapped: header and padding are not multiples of the grid, and snapping would nudge every member.
  */
 export function groupOperations(doc: CanvasDocument, rects: Map<string, Rect>, ids: string[], id: string, catalog?: CanvasCatalog | null): CanvasOperation[] {
-  const items = topSelection(doc, ids).filter(e => rects.has(e.id)); if (!items.length) return [];
+  // Anchored drawings are not members in their own right: the server keeps each one in its card's group.
+  const items = topSelection(doc, ids).filter(e => rects.has(e.id) && !('typeId' in e && anchorCard(doc, e))); if (!items.length) return [];
   const index = graphIndex(doc, catalog), parent = items.every(e => (e.parentGroupId ?? null) === (items[0].parentGroupId ?? null)) ? items[0].parentGroupId ?? null : null;
   const nested = !!parent, pad = nested ? tokens.size.groupPaddingNested : tokens.size.groupPadding, head = nested ? tokens.size.groupHeaderNested : tokens.size.groupHeader;
   const left = Math.min(...items.map(e => rects.get(e.id)!.x)), top = Math.min(...items.map(e => rects.get(e.id)!.y)), origin = parent ? rects.get(parent) : null;

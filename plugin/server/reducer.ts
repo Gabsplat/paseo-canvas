@@ -217,9 +217,42 @@ function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefi
   for (const link of template.links) if (copied.has(link.from) && copied.has(link.to)) document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) });
 }
 
-export function reduce(document: CanvasDocument, operations: CanvasOperation[], catalog: CanvasCatalog): CanvasDocument {
-  const next = clone(document);
+/**
+ * Stroke layers (§18.12). An assistant cannot sign a drawing as the learner; a drawing anchored to a card
+ * shares that card's group and is removed with it. An anchor that was never in this document stays unresolved.
+ */
+function settleStrokeLayers(next: CanvasDocument, before: ReadonlyMap<string, CanvasBlock>, operation: CanvasOperation, catalog: CanvasCatalog, actor: 'user' | 'agent' | 'system'): void {
+  const renderer = (block: CanvasBlock) => catalog.blockTypes.find(type => type.id === block.typeId)?.renderer;
+  if (actor === 'agent' && (operation.type === 'block.create' || operation.type === 'block.update')) {
+    const block = next.blocks.find(item => item.id === (operation.type === 'block.create' ? operation.block.id : operation.id));
+    if (block && renderer(block) === 'wb-draw') {
+      const prior = before.get(block.id), author = prior ? prior.data.author : 'assistant';
+      if (author === undefined) delete block.data.author; else block.data.author = author;
+    }
+  }
+  const blocks = new Map(next.blocks.map(block => [block.id, block]));
+  for (const block of next.blocks) {
+    if (renderer(block) !== 'wb-draw' || typeof block.data.anchor !== 'string') continue;
+    const anchor = blocks.get(block.data.anchor);
+    if (!anchor) continue;
+    if (anchor.id === block.id || isWhiteboardRenderer(renderer(anchor))) throw new CanvasError('VALIDATION', 'Un dibujo solo puede anclarse a una tarjeta, no a otro elemento de pizarra.');
+    if ((anchor.parentGroupId ?? null) !== (block.parentGroupId ?? null)) attach(next, block.id, anchor.parentGroupId ?? null);
+  }
+}
+/** Once the whole transaction has run: a card that was here and is gone takes its annotations with it. */
+function removeOrphanedStrokeLayers(next: CanvasDocument, known: ReadonlySet<string>, catalog: CanvasCatalog): void {
+  const present = new Set(next.blocks.map(block => block.id));
+  const orphaned = next.blocks.filter(block => catalog.blockTypes.find(type => type.id === block.typeId)?.renderer === 'wb-draw' && typeof block.data.anchor === 'string' && !present.has(block.data.anchor) && known.has(block.data.anchor)).map(block => block.id);
+  if (!orphaned.length) return;
+  for (const id of orphaned) detach(next, id);
+  next.blocks = next.blocks.filter(block => !orphaned.includes(block.id)); removeTouchingLinks(next, orphaned);
+  next.selectedIds = next.selectedIds.filter(id => !orphaned.includes(id));
+  validateDocument(next, catalog);
+}
+export function reduce(document: CanvasDocument, operations: CanvasOperation[], catalog: CanvasCatalog, actor: 'user' | 'agent' | 'system' = 'user'): CanvasDocument {
+  const next = clone(document), known = new Set(document.blocks.map(block => block.id));
   for (const operation of operations) {
+    const before = new Map(next.blocks.map(block => [block.id, block.id === (operation.type === 'block.update' ? operation.id : '') ? clone(block) : block]));
     switch (operation.type) {
       case "document.update": Object.assign(next, Object.fromEntries(Object.entries(operation).filter(([key]) => key !== "type"))); break;
       case "link.create": next.links.push(clone(operation.link)); break;
@@ -333,10 +366,13 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         break;
       }
     }
+    settleStrokeLayers(next, before, operation, catalog, actor);
     const ids = new Set([...next.blocks, ...next.groups].map(entity => entity.id));
     next.selectedIds = next.selectedIds.filter(id => ids.has(id));
     validateDocument(next, catalog);
+    for (const block of next.blocks) known.add(block.id);
   }
+  removeOrphanedStrokeLayers(next, known, catalog);
   return next;
 }
 

@@ -1,6 +1,6 @@
 import type { RendererSpec } from './spec';
-import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema } from '../whiteboard';
-const guidance = 'Usa wb-text para rótulos sueltos, wb-shape para cajas y flechas simples, wb-svg con iconos de la biblioteca para arquitectura. Para explicar relaciones usa links, no flechas dibujadas. No generes wb-draw salvo petición explícita. Todos llevan position y usan operaciones normales de bloque; wb-text usa data.width y no block.size. wb-svg acepta SVG estático local, nunca URLs; el servidor fija viewBox. wb-draw requiere size y extent, pares x,y y roles color/weight.';
+import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema, remapDrawAnchor } from '../whiteboard';
+const guidance = 'Usa wb-text para rótulos sueltos, wb-shape para cajas y flechas simples, wb-svg con iconos de la biblioteca para arquitectura. Para explicar relaciones usa links, no flechas dibujadas. No generes wb-draw salvo petición explícita. Todos llevan position y usan operaciones normales de bloque; wb-text usa data.width y no block.size. wb-svg acepta SVG estático local, nunca URLs; el servidor fija viewBox. wb-draw requiere size y extent, pares x,y y roles color/weight; un wb-draw creado por el asistente queda marcado author assistant y se pinta discontinuo y rotulado; anchor opcional es el id de la tarjeta que anota (mismo grupo) y entonces position es relativa a la esquina de esa tarjeta.';
 const property = (key: string, kind: 'text' | 'number' | 'json', required = false) => ({ key, label: key, kind, required });
 export const whiteboardSpecs: RendererSpec[] = [
   {
@@ -19,8 +19,8 @@ export const whiteboardSpecs: RendererSpec[] = [
       properties: [property('svg', 'text', true), property('viewBox', 'json'), property('color', 'text'), property('caption', 'text'), property('source', 'text'), property('license', 'text')], defaults: { svg: '<svg viewBox="0 0 24 24"/>' } },
   },
   {
-    id: 'wb-draw', dataSchema: wbDrawDataSchema, interactive: false, minSize: { width: 8, height: 8 }, guidance,
+    id: 'wb-draw', dataSchema: wbDrawDataSchema, interactive: false, minSize: { width: 8, height: 8 }, guidance, remapReferences: remapDrawAnchor,
     blockType: { id: 'wb-draw', renderer: 'wb-draw', name: 'Dibujo', description: 'Trazos libres persistentes, acotados y simplificados. Crear solo por petición explícita.',
-      properties: [property('extent', 'json', true), property('strokes', 'json', true)], defaults: { extent: { width: 8, height: 8 }, strokes: [{ points: [0, 0, 0, 0], color: 'tinta', weight: 'm' }] } },
+      properties: [property('extent', 'json', true), property('strokes', 'json', true), property('author', 'text'), property('anchor', 'text')], defaults: { extent: { width: 8, height: 8 }, strokes: [{ points: [0, 0, 0, 0], color: 'tinta', weight: 'm' }] } },
   },
 ];

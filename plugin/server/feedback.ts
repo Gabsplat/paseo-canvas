@@ -12,7 +12,7 @@ export function feedbackPrompt(events: AgentEvent[]): string {
     return { id: event.id, documentId: event.documentId, revision: event.revision, action: event.action, selection: event.context.selectedIds, targets: targets.map(id => {
       const entity = [...document.blocks, ...document.groups].find(entity => entity.id === id);
       const block = entity && 'typeId' in entity ? entity : undefined;
-      const summary = block?.typeId === 'wb-draw' ? { strokes: Array.isArray(block.data.strokes) ? block.data.strokes.length : 0, extent: block.data.extent }
+      const summary = block?.typeId === 'wb-draw' ? { strokes: Array.isArray(block.data.strokes) ? block.data.strokes.length : 0, extent: block.data.extent, author: block.data.author ?? 'authored', ...(block.data.anchor ? { anchor: block.data.anchor } : {}) }
         : block?.typeId === 'wb-svg' ? { caption: block.data.caption, source: block.data.source } : undefined;
       return { id, title: entity?.title, typeId: block?.typeId ?? "group", ...(summary ? { summary } : {}), effectiveInstructions: entity ? effectiveInstructions(document, id) : [document.communication] };
     }), communication: event.context.communication };

@@ -72,7 +72,7 @@ export class CanvasService {
     return this.store.transaction(state => {
       const record = documentRecord(state, input.documentId, input.workspaceId);
       assertRevision(record, input.expectedRevision);
-      const next = reduce(record.document, input.operations, catalogView(state.catalog));
+      const next = reduce(record.document, input.operations, catalogView(state.catalog), actor);
       if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
       recordEdit(record, next, actor, input.label, "edit", undefined, agentId);
       return view(record, actor, agentId);
