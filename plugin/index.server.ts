@@ -1,6 +1,7 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { canvasPreferences } from './shared/preferences';
 import * as rpc from "./shared/rpc";
 import { CanvasStore } from "./server/store";
 import { CanvasService } from "./server/service";
@@ -10,6 +11,7 @@ import { AgentGateway, managedMcp, ownerEnvironment, prepareCreation } from "./s
 import { FeedbackDispatcher } from "./server/feedback";
 
 export default function contribute(server: PluginServerContext) {
+  server.registerSettings(canvasPreferences);
   const directory = join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "canvas");
   const store = new CanvasStore(directory), service = new CanvasService(store), gateway = new AgentGateway(service);
   const bridge = new CanvasBridge(directory, new ToolRouter(service, owner => gateway.scope(owner)));

@@ -31,11 +31,11 @@ export function Onboarding({ open, close, catalog, onAction }: { open: boolean; 
         <Button label={step === guideSections.length - 1 ? 'Usar mi lienzo' : 'Siguiente'} variant="primary" onPress={() => step === guideSections.length - 1 ? close() : setStep(v => v + 1)} />
       </View>
     </> : <>
-      <Input label="Buscar en la guía" placeholder="Buscar: resize, videos, agente…" value={query} onChange={setQuery} />
+      <Input label="Buscar en la guía" placeholder="Buscar: resize, videos, asistente…" value={query} onChange={setQuery} />
       {!matches.length && !types.length && !shortcuts.length && <Txt muted>No hay opciones con ese texto.</Txt>}
       {matches.map(s => <View key={s.id} style={{ gap: 12, paddingTop: 8 }}><View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}><Icon name={s.icon} size={16} color={u.c.foregroundMuted} /><Txt kind="heading">{s.title}</Txt></View>{features(s.features)}</View>)}
       {!!types.length && <View style={{ gap: 8 }}><Txt kind="heading">Tipos de tu catálogo</Txt><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{types.map(type => <Chip key={type.id} label={type.name} />)}</View><Button label="Abrir catálogo" small variant="ghost" onPress={() => action('catalog')} /></View>}
-      {!!shortcuts.length && <View style={{ gap: 8 }}><Txt kind="heading">Atajos de teclado</Txt>{u.layout.platform === 'web' ? shortcuts.map(([key, label]) => <View key={key} style={{ gap: 4, paddingVertical: 6, borderBottomWidth: 1, borderColor: u.c.border }}><Txt kind="code">{key}</Txt><Txt kind="small" muted>{label}</Txt></View>) : <Txt kind="small" muted>Los atajos están disponibles en la versión web. En móvil usá el inspector, Esquema y Más acciones.</Txt>}</View>}
+      {!!shortcuts.length && <View style={{ gap: 8 }}><Txt kind="heading">Atajos de teclado</Txt>{u.layout.platform === 'web' ? shortcuts.map(([key, label]) => <View key={key} style={{ gap: 4, paddingVertical: 6, borderBottomWidth: 1, borderColor: u.c.border }}><Txt kind="code">{key}</Txt><Txt kind="small" muted>{label}</Txt></View>) : <Txt kind="small" muted>Los atajos están disponibles en la versión web. En móvil usá Detalles, Lista y Más acciones.</Txt>}</View>}
       <Button label="Volver al lienzo" variant="primary" onPress={close} />
     </>}
   </Modal.Content></Modal>;

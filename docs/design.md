@@ -1002,10 +1002,21 @@ Actions open the actual document, catalog, inspector or agent UI; they do not cr
 documents or send agent feedback automatically. Without a document, document-specific actions
 open the document list first.
 
-Show the guide once after the catalog finishes loading. **Después**, completion and closing
-record a personal preference, scoped to host/workspace, using guarded browser localStorage;
-native or unavailable storage uses process-session memory. This preference is not shared
-document metadata. **Guía de Lienzo** reopens it from the desktop bar or compact **Más acciones**.
+Show the guide once per host after the catalog and persisted settings finish loading.
+Use Paseo 0.10.3 `defineSettings` with `scope: "host"`, `server.registerSettings` and
+`useSettings`. Save `guideSeen: true` before opening the tour; only a successful save
+opens it, so concurrent clients cannot show it twice. Loading, invalid data, read
+errors and save failures never open the guide automatically. Failed saves offer retry.
+The preference survives workspace changes, web/native clients and host restarts.
+It is separate from document metadata and browser storage. **Guía de Lienzo** always
+reopens it from the desktop bar or **Más acciones**.
+
+Documentos opens a plain list. **Nuevo lienzo** creates "Lienzo sin título" with empty
+communication and opens it immediately, including from the empty-workspace state.
+The title edits in the top bar. Catalog starts closed; Detalles renders only for a
+selection. Document settings open from Más acciones. The context tray stays hidden
+unless there is a selection or queued context. The guide describes a single
+"Indicaciones para el asistente" field and uses Lista, Detalles and Colecciones.
 Long steps use the host modal's scrolling; progress steps are also directly selectable.
 The tour's new content enters with opacity/scale over 180 ms, using the existing ease-out curve.
 Keyboard canvas commands pause while the guide is open. UI copy is conversational Spanish.

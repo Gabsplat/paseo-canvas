@@ -1,19 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, View } from 'react-native';
-import { type PluginWorkspacePanelProps, useAgent } from '@getpaseo/plugin/client';
-import { Icon, ScrollView, copyText, useToast } from '@getpaseo/plugin/client/react-native';
+import { type PluginWorkspacePanelProps, useAgent, useSettings } from '@getpaseo/plugin/client';
+import { Icon, ScrollView, useToast } from '@getpaseo/plugin/client/react-native';
 import type { BlockType, CanvasGroup, CanvasOperation, CanvasPack } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
-import { Button, Chip, IconButton, Input, Modal, Segments, Txt, UIProvider, useUI } from './ui';
+import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Segments, Txt, UIProvider, useUI } from './ui';
 import { Canvas, type CanvasApi } from './Canvas';
 import { Catalog, PackExport, PackImport } from './Catalog';
 import { Inspector } from './Inspector';
 import { AgentModal } from './AgentModal';
 import { Delivery } from './Blocks';
 import { connectOperations, documentContent, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, selectionPack, topSelection, type Point, type Rect } from './logic';
-import { dismissGuide, focusInput, guideWasDismissed, keyboard } from './web';
+import { focusInput, keyboard } from './web';
 import { Onboarding } from './Onboarding';
-import type { GuideAction } from './guide';
+import { claimFirstGuide, type GuideAction } from './guide';
+import { canvasPreferences } from '../shared/preferences';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
 
@@ -27,7 +28,7 @@ function EmptyState({ title, description, error, children }: { title: string; de
       <View style={{ width: 56, height: 56, borderRadius: tokens.radius.group, backgroundColor: u.wash(error ? 'riesgo' : 'acento'), alignItems: 'center', justifyContent: 'center' }}><Icon name={error ? 'CircleAlert' : 'Frame'} size={24} color={error ? u.c.statusDanger : u.c.accent} /></View>
       <Txt kind="display" style={{ textAlign: 'center' }}>{title}</Txt>
       {description && <Txt muted style={{ textAlign: 'center' }}>{description}</Txt>}
-      {error && <View style={{ alignSelf: 'stretch', backgroundColor: u.c.surface2, borderRadius: 6, padding: 10 }}><Txt kind="code" selectable numberOfLines={4}>{error}</Txt></View>}
+      {error && <View style={{ alignSelf: 'stretch', backgroundColor: u.c.surface2, borderRadius: 6, padding: 10 }}><Txt kind="small" numberOfLines={4}>{error}</Txt></View>}
       {children}
     </View>
   </ScrollView>;
@@ -78,7 +79,7 @@ function DocumentRow({ summary, selected, disabled, open }: { summary: CanvasCon
   const u = useUI();
   return <Pressable accessibilityRole="button" accessibilityLabel={'Abrir ' + summary.title} accessibilityState={{ selected, disabled }} disabled={disabled} onPress={open} style={({ pressed }) => ({ minHeight: 52, padding: 10, gap: 10, flexDirection: 'row', alignItems: 'center', borderRadius: 6, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : selected ? u.c.surface2 : 'transparent', opacity: disabled ? .45 : 1 })}>
     <View style={{ width: 16 }}><Icon name="Frame" size={16} color={u.c.foregroundMuted} /></View>
-    <View style={{ flex: 1, gap: 4 }}><Txt kind="groupTitle" numberOfLines={1}>{summary.title}</Txt>{summary.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" />}<Txt kind="small" muted>{'REV ' + summary.revision + ' · ' + relativeTime(summary.updatedAt)}</Txt></View>
+    <View style={{ flex: 1, gap: 4 }}><Txt kind="groupTitle" numberOfLines={1}>{summary.title}</Txt>{summary.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" />}<Txt kind="small" muted>{relativeTime(summary.updatedAt)}</Txt></View>
     {selected && <Icon name="Check" size={16} color={u.c.accent} />}
   </Pressable>;
 }
@@ -95,13 +96,13 @@ function ExampleRow({ title, disabled, create }: { title: string; disabled: bool
 }
 
 function ContextTray({ controller: c, note, setNote, sending, error, lastId, send, retry, inspect, connect, wide }: { controller: CanvasController; note: string; setNote: (value: string) => void; sending: boolean; error: string; lastId?: string; send: () => void; retry: () => void; inspect: (section?: InspectorSection) => void; connect: () => void; wide: boolean }) {
-  const u = useUI(), doc = c.view!.document, queued = c.events.filter(e => e.status === 'pending').length;
+  const u = useUI(), doc = c.view!.document, queued = c.events.filter(e => e.status === 'pending' || e.status === 'failed').length;
   const lastEvent = lastId ? c.events.find(e => e.id === lastId) : [...c.events].reverse().find(e => e.action.kind === 'selection.send');
   const disabled = sending || c.busy || c.offline;
   return <View style={{ minHeight: tokens.size.tray, maxHeight: tokens.size.trayExpandedMax, borderTopWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
     <ScrollView contentContainerStyle={{ padding: 12, gap: 8 }} keyboardShouldPersistTaps="handled">
       {error && <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><Txt kind="small" style={{ flex: 1, color: u.c.statusDanger }} numberOfLines={2}>{error}</Txt><Button label="Reintentar" variant="ghost" small disabled={disabled} onPress={retry} /></View>}
-      {!c.selection.length ? <Txt kind="small" muted>Selecciona bloques o grupos para darle contexto al agente.</Txt> : <>
+      {!c.selection.length ? <View style={{ gap: 8 }}><Button label={queued + ' acciones pendientes'} small variant="ghost" onPress={() => inspect('activity')} />{!c.view?.connection && <Button label="Conectar asistente" small variant="ghost" onPress={connect} />}</View> : <>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}><Txt kind="label" muted>Contexto</Txt>
           {c.selection.slice(0, 3).map(id => {
             const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id);
@@ -111,14 +112,14 @@ function ContextTray({ controller: c, note, setNote, sending, error, lastId, sen
             </Pressable>;
           })}
           {c.selection.length > 3 && <Txt kind="small" muted>{'+' + (c.selection.length - 3)}</Txt>}
-          {!wide && <Button label="Inspeccionar" small variant="ghost" onPress={() => inspect()} />}
+          {!wide && <Button label="Ver detalles" small variant="ghost" onPress={() => inspect()} />}
         </View>
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: u.compact ? 'wrap' : 'nowrap' }}>
-          <View style={{ flex: 1, minWidth: u.compact ? '100%' : 80 }}><Input value={note} onChange={setNote} readOnly={sending || c.offline} multiline placeholder="Añade una nota para el agente (opcional)" style={{ minHeight: u.compact ? 44 : 32, maxHeight: 84, paddingVertical: 4 }} /></View>
+          <View style={{ flex: 1, minWidth: u.compact ? '100%' : 80 }}><Input value={note} onChange={setNote} readOnly={sending || c.offline} multiline placeholder="Añade una nota para el asistente (opcional)" style={{ minHeight: u.compact ? 44 : 32, maxHeight: 84, paddingVertical: 4 }} /></View>
           {queued > 0 && <Pressable accessibilityRole="button" accessibilityLabel="Ver acciones en cola" onPress={() => inspect('activity')} hitSlop={12}><Chip label={queued + ' en cola'} icon="Clock" center style={{ flexShrink: 0 }} /></Pressable>}
-          {c.view?.connection ? <Button label={sending ? 'Enviando…' : 'Enviar al agente'} variant="primary" icon="SendHorizontal" disabled={disabled} onPress={send} /> : <><Chip label="Sin agente" icon="Unplug" center style={{ flexShrink: 0 }} /><Button label="Conectar" small variant="ghost" onPress={connect} /></>}
+          {c.view?.connection ? <Button label={sending ? 'Enviando…' : 'Enviar al asistente'} variant="primary" icon="SendHorizontal" disabled={disabled} onPress={send} /> : <><Chip label="Sin asistente" icon="Unplug" center style={{ flexShrink: 0 }} /><Button label="Conectar" small variant="ghost" onPress={connect} /></>}
         </View>
-        {!c.view?.connection && <Txt kind="small" muted>Se guardará en cola hasta que conectes un agente.</Txt>}
+        {!c.view?.connection && <Txt kind="small" muted>Se guardará en cola hasta que conectes un asistente.</Txt>}
       </>}
       {lastEvent && <Delivery event={lastEvent} retry={lastEvent.status === 'failed' && !disabled ? retry : undefined} />}
     </ScrollView>
@@ -128,29 +129,35 @@ function Presence({ id, open }: { id: string | null; open: () => void }) {
   const u = useUI(), agent = useAgent(id ?? '', a => ({ title: a.title, status: a.status }));
   const status = agent?.status === 'running' ? 'trabajando' : agent?.status === 'idle' ? 'inactivo' : agent?.status === 'error' ? 'con error' : agent?.status === 'closed' ? 'cerrado' : agent ? 'iniciando' : 'sin datos';
   const color = agent?.status === 'running' ? u.c.accent : agent?.status === 'idle' ? u.c.statusSuccess : agent?.status === 'error' || agent?.status === 'closed' ? u.c.statusDanger : u.c.foregroundMuted;
-  return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agente conectado: ' + (agent?.title || id) + ', ' + status : 'Conectar agente'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View>{id && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />}<Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'Agente no disponible' : 'Sin agente'}</Txt></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Asistente conectado: ' + (agent?.title || 'Asistente no disponible') + ', ' + status : 'Conectar asistente'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View>{id && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />}<Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'Asistente no disponible' : 'Sin asistente'}</Txt></Pressable>;
 }
 export function LienzoPanel(props: PluginWorkspacePanelProps) { return <UIProvider theme={props.theme} layout={props.layout} host={props.host}><Panel key={`${props.host.id}:${props.workspaceId}`} workspaceId={props.workspaceId} /></UIProvider>; }
 function Panel({ workspaceId }: { workspaceId: string }) {
-  const u = useUI(), c = useCanvas(workspaceId), toast = useToast(), doc = c.view?.document;
+  const u = useUI(), raw = useCanvas(workspaceId), toast = useToast(), settings = useSettings(canvasPreferences);
+  const c = useMemo<CanvasController>(() => ({ ...raw,
+    failure: raw.failure ? { ...raw.failure, message: friendlyError(raw.failure.message) } : null,
+    events: raw.events.map(event => event.error ? { ...event, error: friendlyError(event.error) } : event),
+    send: async (...args) => { const event = await raw.send(...args); return event?.error ? { ...event, error: friendlyError(event.error) } : event; },
+  }), [raw]);
+  const doc = c.view?.document;
   const [width, setWidth] = useState(0), [barHeight, setBarHeight] = useState<number>(tokens.size.topBar), wide = !u.compact && width >= 980;
-  const [mode, setMode] = useState<'canvas' | 'outline'>(u.compact ? 'outline' : 'canvas'), [catalogOpen, setCatalogOpen] = useState(true), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null);
+  const [mode, setMode] = useState<'canvas' | 'outline'>(u.compact ? 'outline' : 'canvas'), [catalogOpen, setCatalogOpen] = useState(false), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('types'), [catalogKey, setCatalogKey] = useState(0);
   const [inspectorSection, setInspectorSection] = useState<InspectorSection>('document'), [inspectorKey, setInspectorKey] = useState(0);
   const [docsError, setDocsError] = useState(''), [docsLoading, setDocsLoading] = useState(false);
-  const [newIntent, setNewIntent] = useState(''), [newAudience, setNewAudience] = useState(''), [newInstructions, setNewInstructions] = useState('');
   const [showAllWarnings, setShowAllWarnings] = useState(false), [templateError, setTemplateError] = useState('');
-  const [docsOpen, setDocsOpen] = useState(false), [agentsOpen, setAgentsOpen] = useState(false), [overflow, setOverflow] = useState(false), [importOpen, setImportOpen] = useState(false), [exported, setExported] = useState<CanvasPack | null>(null), [template, setTemplate] = useState<CanvasGroup | null>(null), [templateName, setTemplateName] = useState(''), [newTitle, setNewTitle] = useState('Lienzo sin título'), [reload, setReload] = useState(false);
+  const [documentSettingsOpen, setDocumentSettingsOpen] = useState(false), [docsOpen, setDocsOpen] = useState(false), [agentsOpen, setAgentsOpen] = useState(false), [overflow, setOverflow] = useState(false), [importOpen, setImportOpen] = useState(false), [exported, setExported] = useState<CanvasPack | null>(null), [template, setTemplate] = useState<CanvasGroup | null>(null), [templateName, setTemplateName] = useState(''), [reload, setReload] = useState(false);
   const [note, setNote] = useState(''), [sending, setSending] = useState(false), [sendError, setSendError] = useState('');
   // Solo lienzo: hides the bar, catalog, inspector and tray. Failure banners stay visible.
   const [immersive, setImmersive] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false), guideScope = JSON.stringify([u.host.id, workspaceId]), guideShown = useRef<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false), guideClaim = useRef(false), guideMounted = useRef(true);
+  useEffect(() => { guideMounted.current = true; return () => { guideMounted.current = false; }; }, []);
   useEffect(() => {
-    if (!c.catalog || c.loading || guideShown.current === guideScope) return;
-    guideShown.current = guideScope;
-    if (!guideWasDismissed(guideScope)) setGuideOpen(true);
-  }, [c.catalog, c.loading, guideScope]);
-  const closeGuide = () => { dismissGuide(guideScope); setGuideOpen(false); };
+    if (!c.catalog || c.loading || guideClaim.current || settings.status !== 'ready' || settings.values.guideSeen || settings.saving || settings.saveError) return;
+    guideClaim.current = true;
+    void claimFirstGuide(settings).then(show => { if (show && guideMounted.current) setGuideOpen(true); });
+  }, [c.catalog, c.loading, settings]);
+  const closeGuide = () => setGuideOpen(false);
   const guideAction = (action: GuideAction) => {
     if (!doc && ['agents', 'inspector', 'communication', 'history', 'activity'].includes(action)) { openDocuments(); return; }
     if (action === 'documents') openDocuments();
@@ -164,7 +171,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   const root = useRef<View>(null), searchRef = useRef<View>(null), canvas = useRef<CanvasApi>(null), geometry = useRef<{ rects: Map<string, Rect>; center: Point }>({ rects: new Map(), center: { x: 24, y: 24 } });
   const disabled = c.busy || c.offline || sending || c.loading;
   useEffect(() => { if (c.arrival) toast.show(`Documento nuevo: «${c.arrival.title}»`, { variant: 'info' }); }, [c.arrival?.id]);
-  useEffect(() => { setNote(''); setSendError(''); setSending(false); retrySend.current = null; setReload(false); setTemplate(null); setTemplateError(''); setLinkId(null); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
+  useEffect(() => { setNote(''); setSendError(''); setSending(false); retrySend.current = null; setReload(false); setDocumentSettingsOpen(false); setTemplate(null); setTemplateError(''); setLinkId(null); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
   useEffect(() => { if (u.compact) setMode('outline'); setOverlay(null); }, [u.compact, wide]);
   useEffect(() => { if (linkId && (c.selection.length || !doc?.links.some(l => l.id === linkId))) setLinkId(null); }, [linkId, c.selection, doc?.links]);
   const selectLink = (id: string | null) => { setLinkId(id); if (id && !wide && !u.compact) setOverlay('inspector'); };
@@ -178,17 +185,22 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   const inspectorOpen = (section: InspectorSection = 'document') => {
     setImmersive(false); // asking for the inspector or catalog leaves Solo lienzo so the request is visible
     setInspectorSection(section); setInspectorKey(key => key + 1);
-    if (section !== 'document') void c.select([]);
-    if (!wide) setOverlay('inspector');
+    if (section !== 'document' || (!c.selection.length && !linkId)) { void c.select([]); setLinkId(null); setOverlay(null); setDocumentSettingsOpen(true); }
+    else if (!wide) setOverlay('inspector');
   };
   const openCatalog = (tab: CatalogTab = 'types') => { setImmersive(false); setCatalogTab(tab); setCatalogKey(key => key + 1); if (wide) setCatalogOpen(true); else setOverlay('catalog'); };
   const toggleCatalog = () => { if (wide) setCatalogOpen(!catalogOpen); else setOverlay(overlay === 'catalog' ? null : 'catalog'); };
   async function refreshDocuments() {
     setDocsLoading(true); setDocsError('');
-    try { await c.refreshList(); } catch (e) { setDocsError(e instanceof Error ? e.message : String(e)); }
+    try { await c.refreshList(); } catch (e) { setDocsError(friendlyError(e)); }
     finally { setDocsLoading(false); }
   }
   function openDocuments() { setDocsOpen(true); void refreshDocuments(); }
+  async function newCanvas() {
+    if (disabled) return;
+    const next = await c.create({ title: 'Lienzo sin título', description: '', example: false, blocks: [], groups: [], links: [], selectedIds: [], communication: { instructions: '', intent: '', audience: '' } });
+    if (next) { setDocsOpen(false); setDocumentSettingsOpen(false); setOverlay(null); setLinkId(null); }
+  }
   async function changeRevision(kind: 'undo' | 'redo') {
     if (disabled || !(kind === 'undo' ? c.view?.canUndo : c.view?.canRedo)) return;
     const next = await c.revision(kind);
@@ -200,11 +212,6 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     [ids[index], ids[to]] = [ids[to], ids[index]]; void c.edit([{ type: 'group.update', id: group.id, patch: { [key]: ids } }], delta < 0 ? 'Subir elemento' : 'Bajar elemento');
   }
   const rectsNow = () => geometry.current.rects.size ? geometry.current.rects : layoutDocument(doc!, {}, c.catalog);
-  // Chosen from a list, not dropped somewhere: it joins the new container's automatic layout without a place of its own.
-  function reparent(id: string, parent: string | null) {
-    if (!doc || disabled) return; const operations = releaseOperations(doc, [id], c.catalog, parent);
-    if (operations.length) void c.edit(operations, 'Cambiar grupo').then(next => { if (next) void c.select([id]); });
-  }
   /** "Soltar posición" / "Reordenar automáticamente": hands pinned entities back to the layout of their container. */
   function release(ids: string[], label = ids.length === 1 ? 'Soltar posición' : 'Reordenar automáticamente') {
     if (!doc || disabled || !ids.length) return;
@@ -256,9 +263,9 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     try { await c.settle(); const event = await c.send({ kind: 'selection.send', label: 'Enviar contexto seleccionado', payload: { note: request.note }, targetIds: request.ids, delivery: 'immediate' }, request.id);
       if (c.current.current?.document.id !== request.documentId) return;
       if (!event) setSendError('No se envió. Revisa el aviso del lienzo.');
-      else if (event.status === 'failed') setSendError(event.error ?? 'No se envió');
-      else { if ((event.status === 'sent' || event.status === 'pending') && note === request.note) setNote(''); toast.show(event.status === 'pending' ? 'En cola: el agente está ocupado o no conectado' : event.status === 'acked' ? 'Recibido por el agente' : 'Contexto enviado', { variant: event.status === 'pending' ? 'info' : 'success' }); }
-    } catch (e) { if (c.current.current?.document.id === request.documentId) setSendError(String(e)); } finally { if (c.current.current?.document.id === request.documentId) setSending(false); }
+      else if (event.status === 'failed') setSendError(event.error ?? 'No se envió. Revisa el aviso del lienzo.');
+      else { if ((event.status === 'sent' || event.status === 'pending') && note === request.note) setNote(''); toast.show(event.status === 'pending' ? 'En cola: el asistente está ocupado o no conectado' : event.status === 'acked' ? 'Recibido por el asistente' : 'Contexto enviado', { variant: event.status === 'pending' ? 'info' : 'success' }); }
+    } catch (e) { if (c.current.current?.document.id === request.documentId) setSendError(friendlyError(e)); } finally { if (c.current.current?.document.id === request.documentId) setSending(false); }
   }
   function retryFeedback() {
     if (!doc || disabled) return;
@@ -273,10 +280,10 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       if (c.current.current?.document.id !== documentId) return;
       c.setEvents(result.events);
       const event = result.events.find(e => e.id === previous.id);
-      setSendError(event?.status === 'failed' ? event.error ?? 'No se envió' : '');
+      setSendError(event?.status === 'failed' ? friendlyError(event.error) : '');
       if ((event?.status === 'sent' || event?.status === 'pending') && note === previous.action.payload.note) setNote('');
-      if (event?.status === 'pending') toast.show('En cola: el agente está ocupado o no conectado');
-      else if (event?.status === 'sent' || event?.status === 'acked') toast.show(event.status === 'acked' ? 'Recibido por el agente' : 'Contexto enviado', { variant: 'success' });
+      if (event?.status === 'pending') toast.show('En cola: el asistente está ocupado o no conectado');
+      else if (event?.status === 'sent' || event?.status === 'acked') toast.show(event.status === 'acked' ? 'Recibido por el asistente' : 'Contexto enviado', { variant: 'success' });
       return result;
     }).finally(() => { if (c.current.current?.document.id === documentId) setSending(false); });
   }
@@ -342,81 +349,79 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     });
   }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, wide, note, overlay, sending, immersive, linkId, mode, guideOpen]);
   const catalog = <Catalog key={catalogKey} initialTab={catalogTab} controller={c} insert={insert} insertTemplate={insertTemplate} onImport={() => setImportOpen(true)} onExport={setExported} searchRef={searchRef} />;
-  const inspector = <Inspector key={inspectorKey} linkId={linkId} onLink={selectLink} initialSection={inspectorSection} controller={c} onClose={wide || u.compact ? undefined : () => setOverlay(null)} groupSelection={groupSelection} reparent={reparent} release={release} rects={rectsNow} onTemplate={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} onExportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} reorder={reorder} />;
+  const inspector = <Inspector key={inspectorKey} linkId={linkId} onLink={selectLink} initialSection={inspectorSection} controller={c} onClose={wide || u.compact ? undefined : () => setOverlay(null)} groupSelection={groupSelection} release={release} rects={rectsNow} onTemplate={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} onExportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} reorder={reorder} />;
   return <View ref={root} onLayout={e => setWidth(e.nativeEvent.layout.width)} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
     {!immersive && <View onLayout={e => setBarHeight(e.nativeEvent.layout.height)} style={{ height: u.compact ? tokens.size.topBarCompact : tokens.size.topBar, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
       {!u.compact && <IconButton label="Catálogo" icon="LibraryBig" active={wide ? catalogOpen : overlay === 'catalog'} onPress={toggleCatalog} />}
-      <Pressable accessibilityRole="button" accessibilityLabel="Documentos" onPress={openDocuments} style={{ flex: u.compact ? 1 : undefined, flexShrink: 1, maxWidth: 360, flexDirection: 'row', gap: 6, alignItems: 'center' }}><Txt kind="title" numberOfLines={1} style={{ flexShrink: 1 }}>{doc?.title ?? 'Lienzo'}</Txt>{doc?.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" center style={{ flexShrink: 0 }} />}<Icon name="ChevronDown" size={14} color={u.c.foregroundMuted} /></Pressable>
-      {!u.compact && <>{doc && <Pressable accessibilityRole="button" accessibilityLabel="Historial de revisiones" onPress={() => inspectorOpen('history')} style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.failure ? u.c.statusDanger : c.busy ? u.c.statusWarning : u.c.statusSuccess }} /><Txt kind="label" muted>{doc ? 'REV ' + doc.revision : ''}</Txt></Pressable>}<View style={{ flex: 1 }} /><IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} /></>}
-      <View style={{ width: u.compact ? 168 : 156 }}><Segments value={mode} options={[{ value: 'canvas', label: 'Lienzo' }, { value: 'outline', label: 'Esquema' }]} onChange={setMode} /></View>
-      {!u.compact && <><Presence id={c.view?.connection?.agentId ?? null} open={() => setAgentsOpen(true)} />{!wide && <IconButton label="Inspector" icon="PanelRight" active={overlay === 'inspector'} onPress={() => setOverlay(overlay === 'inspector' ? null : 'inspector')} />}</>}{!u.compact && <IconButton icon="BookOpen" label="Guía de Lienzo" onPress={() => setGuideOpen(true)} />}{doc && <IconButton icon="Maximize2" label="Solo lienzo" onPress={() => { setOverlay(null); setImmersive(true); }} />}{u.compact && <IconButton icon="Ellipsis" label="Más acciones" onPress={() => setOverflow(true)} />}
+      <IconButton label="Documentos" icon="FolderOpen" onPress={openDocuments} />
+      <View style={{ flex: u.compact ? 1 : undefined, flexShrink: 1, minWidth: 80, maxWidth: 300 }}>{doc ? <Field key={doc.id} hideLabel label="Título del lienzo" value={doc.title} disabled={disabled} inputStyle={u.font('title')} onSave={async title => {
+        if (!title.trim() || title.trim().length > 300) throw new Error('Escribe un título de hasta 300 caracteres.');
+        await c.settle(); if (c.current.current?.document.id !== doc.id) return undefined;
+        return c.edit([{ type: 'document.update', title: title.trim() }], 'Editar título');
+      }} /> : <Txt kind="title">Lienzo</Txt>}</View>
+      {doc?.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" center />}
+      {!u.compact && <><View style={{ flex: 1 }} /><IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} /></>}
+      <View style={{ width: u.compact ? 168 : 156 }}><Segments value={mode} options={[{ value: 'canvas', label: 'Lienzo' }, { value: 'outline', label: 'Lista' }]} onChange={setMode} /></View>
+      {!u.compact && <><Presence id={c.view?.connection?.agentId ?? null} open={() => setAgentsOpen(true)} />{!wide && !!(c.selection.length || linkId) && <IconButton label="Detalles" icon="PanelRight" active={overlay === 'inspector'} onPress={() => setOverlay(overlay === 'inspector' ? null : 'inspector')} />}</>}{!u.compact && <IconButton icon="BookOpen" label="Guía de Lienzo" onPress={() => setGuideOpen(true)} />}{doc && <IconButton icon="Maximize2" label="Solo lienzo" onPress={() => { setOverlay(null); setImmersive(true); }} />}<IconButton icon="Ellipsis" label="Más acciones" onPress={() => setOverflow(true)} />
     </View>}
     <View style={{ flex: 1, flexDirection: 'row', minHeight: 0 }}>
       {wide && !immersive && catalogOpen && <View style={{ width: 288, borderRightWidth: 1, borderColor: u.c.border }}>{catalog}</View>}
       <View style={{ flex: 1, minWidth: 0 }}>
         {doc && (c.failure || c.offline || reload) && <View style={{ padding: 12, gap: 8 }}>
-          {c.failure && <Banner title={c.failure.conflict ? 'El lienzo cambió mientras editabas' : 'No se guardó el cambio'} icon={c.failure.conflict ? 'GitCompareArrows' : 'CircleAlert'} color={c.failure.conflict ? u.c.statusWarning : u.c.statusDanger} message={c.failure.conflict ? 'Tu cambio se hizo sobre REV ' + (c.failure.revision ?? '?') + '; el documento ya va en REV ' + doc.revision + '. No se aplicó.' : c.failure.message}>
+          {c.failure && <Banner title={c.failure.conflict ? 'El lienzo cambió mientras editabas' : 'No se guardó el cambio'} icon={c.failure.conflict ? 'GitCompareArrows' : 'CircleAlert'} color={c.failure.conflict ? u.c.statusWarning : u.c.statusDanger} message={c.failure.conflict ? 'Otra edición cambió el lienzo y tu cambio no se guardó. Puedes reaplicarlo sobre el contenido actual o descartarlo.' : c.failure.message}>
             {c.failure.retry && <Button label={c.failure.conflict ? 'Reaplicar mi cambio' : 'Reintentar'} variant="primary" small disabled={disabled} onPress={() => { void c.failure?.retry?.().catch(e => c.fail(e)); }} />}<Button label="Descartar" variant="ghost" small onPress={c.clearFailure} />
           </Banner>}
           {c.offline && <Banner title="Sin conexión con Paseo" icon="Unplug" color={u.c.border} message="Puedes seguir leyendo; los cambios se desactivan."><Button label="Reintentar" small onPress={() => { void c.refresh(); }} /></Banner>}
-          {reload && !(c.failure && c.offline) && <Banner title="Este agente no tiene las herramientas de Lienzo" icon="Info" color={u.c.statusWarning} message="Quedó conectado y recibirá tus acciones como mensajes, pero se creó sin las herramientas, así que no puede leer ni editar el lienzo. Activa las herramientas en el diálogo de agente y crea un agente nuevo, o usa «Configurar un agente existente»."><Button label="Entendido" small variant="ghost" onPress={() => setReload(false)} /></Banner>}
+          {reload && !(c.failure && c.offline) && <Banner title="Este asistente no tiene las herramientas de Lienzo" icon="Info" color={u.c.statusWarning} message="Quedó conectado y recibirá tus acciones como mensajes, pero se creó sin las herramientas, así que no puede leer ni editar el lienzo. Activa las herramientas en el diálogo de asistente y crea un asistente nuevo, o usa «Configurar un asistente existente»."><Button label="Entendido" small variant="ghost" onPress={() => setReload(false)} /></Banner>}
           {c.failure && c.offline && reload && <Button label="+1 aviso" small variant="ghost" onPress={() => setShowAllWarnings(true)} />}
         </View>}
         {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="No se pudo abrir el documento" error={c.failure.message}>
           <Button label="Reintentar" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(e => c.fail(e)); }} />
-          <Button label="Copiar detalle" variant="ghost" icon="Copy" onPress={() => { void copyText(c.failure?.message ?? '').then(() => toast.show('Detalle copiado')).catch(() => toast.error('No se pudo copiar. Selecciona el texto.')); }} />
+
         </EmptyState> : !doc ? <EmptyState title="Lienzo">
-          <Txt kind="label" muted>Paseo Canvas</Txt><Button label="Crear documento" variant="primary" disabled={disabled} onPress={openDocuments} />
+          <Button label="Nuevo lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />
           <Txt kind="label" muted>Ejemplos</Txt>
           {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-        </EmptyState> : !doc.blocks.length && !doc.groups.length ? <EmptyState title="Un lienzo en blanco" description="Añade un bloque desde el catálogo o pide al agente que empiece. Los grupos enmarcan bloques que van juntos.">
+        </EmptyState> : !doc.blocks.length && !doc.groups.length ? <EmptyState title="Un lienzo en blanco" description="Añade un bloque desde el catálogo o pide al asistente que empiece. Los grupos enmarcan bloques que van juntos.">
           <Button label="Añadir primer bloque" variant="primary" disabled={c.offline} onPress={() => openCatalog('types')} /><Button label="Usar una plantilla" disabled={c.offline} onPress={() => openCatalog('templates')} />
         </EmptyState> : <Canvas key={doc.id} api={canvas} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={selectLink} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
-        {doc && !immersive && <ContextTray controller={c} wide={wide} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} />}
-      </View>{wide && !immersive && <View style={{ width: 328, borderLeftWidth: 1, borderColor: u.c.border }}>{inspector}</View>}
+        {doc && !immersive && (c.selection.length > 0 || c.events.some(event => event.status === 'pending' || event.status === 'failed')) && <ContextTray controller={c} wide={wide} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} />}
+      </View>{wide && !immersive && !!(c.selection.length || linkId) && <View style={{ width: 328, borderLeftWidth: 1, borderColor: u.c.border }}>{inspector}</View>}
     </View>
     {immersive && <View style={{ position: 'absolute', top: 12, right: 12, padding: 2, backgroundColor: u.c.surface1, borderWidth: 1, borderColor: u.c.border, borderRadius: 8 }}><IconButton icon="Minimize2" label="Salir de solo lienzo" onPress={() => setImmersive(false)} /></View>}
-    {!wide && !u.compact && !immersive && overlay && <View style={{ position: 'absolute', top: barHeight, left: 0, right: 0, bottom: 0 }}><Pressable accessibilityLabel="Cerrar panel" onPress={() => setOverlay(null)} style={{ position: 'absolute', inset: 0, backgroundColor: withAlpha('#000', .45) }} /><View style={{ position: 'absolute', top: 0, bottom: 0, ...(overlay === 'catalog' ? { left: 0, width: 288, borderRightWidth: 1 } : { right: 0, width: 328, borderLeftWidth: 1 }), borderColor: u.c.border }}>{overlay === 'catalog' ? <>{catalog}<View style={{ position: 'absolute', top: 4, right: 4 }}><IconButton label="Cerrar catálogo" icon="X" onPress={() => setOverlay(null)} /></View></> : inspector}</View></View>}
-    {u.compact && <Modal title={overlay === 'catalog' ? 'Catálogo local' : 'Inspector'} open={!!overlay && !immersive} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>{overlay === 'catalog' ? catalog : inspector}</Modal.Content></Modal>}
-    <Modal title="Avisos" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="Este agente no tiene las herramientas de Lienzo" icon="Info" color={u.c.statusWarning} message="Quedó conectado y recibirá tus acciones como mensajes, pero se creó sin las herramientas, así que no puede leer ni editar el lienzo. Activa las herramientas en el diálogo de agente y crea un agente nuevo, o usa «Configurar un agente existente»."><Button label="Entendido" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
+    {!wide && !u.compact && !immersive && overlay && (overlay === 'catalog' || !!(c.selection.length || linkId)) && <View style={{ position: 'absolute', top: barHeight, left: 0, right: 0, bottom: 0 }}><Pressable accessibilityLabel="Cerrar panel" onPress={() => setOverlay(null)} style={{ position: 'absolute', inset: 0, backgroundColor: withAlpha('#000', .45) }} /><View style={{ position: 'absolute', top: 0, bottom: 0, ...(overlay === 'catalog' ? { left: 0, width: 288, borderRightWidth: 1 } : { right: 0, width: 328, borderLeftWidth: 1 }), borderColor: u.c.border }}>{overlay === 'catalog' ? <>{catalog}<View style={{ position: 'absolute', top: 4, right: 4 }}><IconButton label="Cerrar catálogo" icon="X" onPress={() => setOverlay(null)} /></View></> : inspector}</View></View>}
+    {u.compact && <Modal title={overlay === 'catalog' ? 'Catálogo local' : 'Detalles'} open={!!overlay && !immersive && (overlay === 'catalog' || !!(c.selection.length || linkId))} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>{overlay === 'catalog' ? catalog : inspector}</Modal.Content></Modal>}
+    <Modal title="Avisos" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="Este asistente no tiene las herramientas de Lienzo" icon="Info" color={u.c.statusWarning} message="Quedó conectado y recibirá tus acciones como mensajes, pero se creó sin las herramientas, así que no puede leer ni editar el lienzo. Activa las herramientas en el diálogo de asistente y crea un asistente nuevo, o usa «Configurar un asistente existente»."><Button label="Entendido" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
     <Modal title="Documentos" open={docsOpen} onOpenChange={setDocsOpen}><Modal.Content>
       {docsLoading && <Txt kind="small" muted>Cargando documentos…</Txt>}
-      {docsError && <View style={{ gap: 8 }}><Txt kind="code" selectable style={{ color: u.c.statusDanger }}>{docsError}</Txt><Button label="Reintentar" small onPress={() => { void refreshDocuments(); }} /></View>}
+      {docsError && <View style={{ gap: 8 }}><Txt kind="small" style={{ color: u.c.statusDanger }}>{docsError}</Txt><Button label="Reintentar" small onPress={() => { void refreshDocuments(); }} /></View>}
       <Txt kind="label" muted>Tus documentos</Txt>
       {!docsLoading && !c.documents.some(d => !d.example) && <Txt kind="small" muted>Aún no tienes documentos propios.</Txt>}
       {c.documents.filter(d => !d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy || sending} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
+      <Button label={c.busy ? 'Creando…' : 'Nuevo lienzo'} variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />
       <Txt kind="label" muted>Ejemplos</Txt>
       {c.documents.filter(d => d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy || sending} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
       {c.catalog?.packs.filter(p => ['frontend', 'learn'].includes(p.id)).flatMap(p => p.documents.map((d, i) => <View key={p.id + ':' + i} style={{ gap: 4 }}><Chip label="Ejemplo" tone="aviso" icon="FlaskConical" /><Button label={'Crear ' + d.title} variant="ghost" disabled={disabled} onPress={() => { void c.example(p.id, i).then(next => { if (next) setDocsOpen(false); }); }} /></View>))}
-      <View style={{ gap: 12, paddingTop: 20, borderTopWidth: 1, borderColor: u.c.border }}>
-        <Txt kind="label" muted>Nuevo documento</Txt><Txt kind="small" style={{ fontWeight: '600' }}>Título</Txt><Input value={newTitle} onChange={setNewTitle} label="Título del nuevo documento" readOnly={disabled} style={{ fontFamily: u.font('title').fontFamily }} />
-        <View style={{ borderRadius: 10, borderWidth: 1, borderColor: u.toneBorder('acento'), backgroundColor: u.wash('acento'), padding: 12, gap: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Icon name="Compass" size={14} color={u.c.accent} /><Txt kind="bodyStrong" style={{ flex: 1 }}>Instrucción</Txt><Txt kind="label" muted>Documento</Txt></View>
-          <Txt kind="small" style={{ fontWeight: '600' }}>Intención</Txt><Input label="Intención" value={newIntent} onChange={setNewIntent} readOnly={disabled} placeholder="Para qué se usa esto: enseñar, revisar, decidir…" />
-          <Txt kind="small" style={{ fontWeight: '600' }}>Audiencia</Txt><Input label="Audiencia" value={newAudience} onChange={setNewAudience} readOnly={disabled} placeholder="A quién le habla el agente" />
-          <Txt kind="small" style={{ fontWeight: '600' }}>Instrucciones</Txt><Input label="Instrucciones" value={newInstructions} onChange={setNewInstructions} readOnly={disabled} multiline placeholder="Cómo debe comunicarse el agente a través de este lienzo" /><Txt kind="small" muted>{newInstructions.length + '/8000'}</Txt>
-        </View>
-        {(newTitle.length > 300 || newIntent.length > 1000 || newAudience.length > 500 || newInstructions.length > 8000) && <Txt kind="small" style={{ color: u.c.statusDanger }}>Revisa los límites: título 300, intención 1000, audiencia 500 e instrucciones 8000 caracteres.</Txt>}
-        {c.failure && <Txt kind="small" style={{ color: u.c.statusDanger }}>{c.failure.message}</Txt>}
-        <Button label={c.busy ? 'Creando…' : 'Nuevo documento'} variant="primary" disabled={disabled || !newTitle.trim() || newTitle.length > 300 || newIntent.length > 1000 || newAudience.length > 500 || newInstructions.length > 8000} onPress={() => { void c.create({ title: newTitle.trim(), description: '', example: false, blocks: [], groups: [], links: [], selectedIds: [], communication: { instructions: newInstructions, intent: newIntent, audience: newAudience } }).then(next => { if (next) { setDocsOpen(false); setNewTitle('Lienzo sin título'); setNewIntent(''); setNewAudience(''); setNewInstructions(''); } }); }} />
-      </View>
-      {doc && <><Button label="Duplicar como documento propio" icon="CopyPlus" disabled={disabled} onPress={() => { const content = documentContent(doc, true); content.title = content.title.slice(0, 300); content.selectedIds = []; void c.create(content).then(next => { if (next) setDocsOpen(false); }); }} /><Button label="Exportar documento como pack" icon="FileOutput" disabled={!c.catalog} onPress={() => { setDocsOpen(false); exportDocument(); }} /></>}
     </Modal.Content></Modal>
     <Modal title="Más acciones" open={overflow} onOpenChange={setOverflow}><Modal.Content>
       <Button label="Guía de Lienzo" icon="BookOpen" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); setGuideOpen(true); }} />
       <Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />
-      {doc && <Button label={'REV ' + doc.revision + ' · Historial'} icon="History" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); inspectorOpen('history'); }} />}
+      {doc && <Button label="Historial" icon="History" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); inspectorOpen('history'); }} />}
       <Button label="Deshacer" icon="Undo2" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />
       <Button label="Rehacer" icon="Redo2" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />
       <Button label="Documentos" icon="Frame" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); openDocuments(); }} />
       <Button label="Catálogo" icon="LibraryBig" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); openCatalog(); }} />
-      <Button label="Acuerdo de comunicación" icon="Compass" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
-      <Button label="Agente conectado" icon="Plug" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); setAgentsOpen(true); }} />
+      <Button label="Ajustes del lienzo" icon="Settings" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); void c.select([]); setLinkId(null); setOverlay(null); setInspectorSection('document'); setInspectorKey(key => key + 1); setDocumentSettingsOpen(true); }} />
+      <Button label="Indicaciones para el asistente" icon="Compass" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
+      <Button label="Asistente conectado" icon="Plug" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); setAgentsOpen(true); }} />
       <Button label="Actividad" icon="Clock" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('activity'); }} />
       {c.selection.length === 2 && <Button label="Conectar los dos seleccionados" icon="Spline" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled} onPress={() => { setOverflow(false); connectSelection(); }} />}{!!c.selection.length && <><Button label="Agrupar selección" icon="Group" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled} onPress={() => { setOverflow(false); groupSelection(); }} /><Button label="Duplicar selección" icon="CopyPlus" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled} onPress={() => { setOverflow(false); duplicateSelection(); }} /><Button label="Eliminar selección" icon="Trash2" variant="danger" disabled={disabled} onPress={() => { setOverflow(false); removeSelection(); }} /></>}
-      <Button label="Importar pack" icon="FileInput" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={c.offline} onPress={() => { setOverflow(false); setImportOpen(true); }} />
+      {doc && <><Button label="Duplicar como documento propio" icon="CopyPlus" variant="ghost" disabled={disabled} onPress={() => { setOverflow(false); const content = documentContent(doc, true); content.title = content.title.slice(0, 300); content.selectedIds = []; void c.create(content); }} /><Button label="Exportar documento como colección" icon="FileOutput" variant="ghost" disabled={!c.catalog} onPress={() => { setOverflow(false); exportDocument(); }} /></>}
+      <Button label="Importar colección" icon="FileInput" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={c.offline} onPress={() => { setOverflow(false); setImportOpen(true); }} />
     </Modal.Content></Modal>
 
+    <Modal title="Ajustes del lienzo" open={documentSettingsOpen && !!doc} onOpenChange={setDocumentSettingsOpen}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>{documentSettingsOpen && doc && inspector}</Modal.Content></Modal>
+    {settings.saveError && <View style={{ padding: 8 }}><Txt kind="small" muted>No se pudo recordar que ya viste la guía.</Txt><Button label="Reintentar" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}
     <Onboarding open={guideOpen} close={closeGuide} catalog={c.catalog} onAction={guideAction} />
     <Modal title="Guardar como plantilla" open={!!template} onOpenChange={v => { if (!v) setTemplate(null); }}><Modal.Content>
       <Txt kind="small" style={{ fontWeight: '600' }}>Nombre</Txt><Input label="Nombre de la plantilla" value={templateName} onChange={setTemplateName} readOnly={disabled} />

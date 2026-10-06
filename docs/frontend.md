@@ -18,10 +18,22 @@ runtime import crosses into `design/`, `architecture/`, or `server/`.
 
 ## Working with a document
 
-Create or open a document from the title switcher. The two shipped packs can create
-the frontend review and progressive learning examples. Example documents retain
-their EJEMPLO labels; duplicating as your own document clears the example flag on
-the new copy. An empty canvas offers the local block and template catalog.
+Documentos opens a list of your documents and labelled examples. Nuevo lienzo creates
+and opens an empty document titled "Lienzo sin título" with empty communication;
+there is no creation form. The workspace empty state uses that same action.
+The top-bar title edits in place, saving after idle or blur. Document rows show their
+last update time without revision numbers. Duplication and document export live in
+Más acciones. Duplicating as your own document clears the example flag.
+An empty canvas offers the local block and template catalog.
+
+The guide uses the SDK's host-scoped `onboarding` settings document, registered by
+the server and read with `useSettings`. It waits for ready settings and a loaded
+catalog, then saves `guideSeen: true` before opening. A failed save does not open the
+modal; it offers retry. Concurrent clients cannot both claim the same settings
+revision. Paseo persists and broadcasts this preference across workspaces, web and
+native clients, and restarts. Guía de Lienzo always opens it manually. The legacy
+exports in `web.ts` remain only for the isolated design harness's session memory.
+
 The last successfully opened document is remembered for this process session,
 scoped to the Paseo host ID and workspace. A compact-navigation remount restores
 that ID only when it is present in the freshly fetched document list; removed or
@@ -32,8 +44,8 @@ wheel pan or Ctrl/Command wheel zoom. First open centres content horizontally at
 80–100% scale with its top at 48 px; Ajustar al lienzo still fits all content.
 Cards use their measured content heights.
 Root items and children of free groups drag by their headers. Children in stack,
-grid, or flow groups use Subir/Bajar or the inspector's parent chooser. Compact
-clients default to Esquema and support pan/zoom but do not drag cards. Group movement
+grid, or flow groups use Subir/Bajar. Dragging moves elements between groups. Compact
+clients default to Lista and support pan/zoom but do not drag cards. Group movement
 uses parent-relative persisted positions; collapse hides descendants and preserves
 their membership. Frame resizing is not part of the shared model.
 
@@ -43,13 +55,26 @@ separate selection version, and never sends an agent message. Grouping and delet
 operate on the highest selected ancestors so selecting a group and its child does
 not delete the same subtree twice.
 
-The inspector edits real typed properties and the communication keys `intent`,
-`audience`, and `instructions`. Fields commit after 600 ms idle or on blur, show
-pending and failed feedback, preserve rejected drafts, and offer retry. Block and
-group instructions display two-line inherited previews from nearest ancestor to document;
-pressing a row selects that level. Vaciar instrucción clears all three keys in one
-undoable edit. The shared update contracts cannot remove the communication object;
-all-empty fields are treated as absent by the editor, markers, and inherited list.
+Detalles appears only with selected blocks, groups or a link. Multiple selection
+shows shared actions without an item list. Document settings, history and activity
+open in a modal from Más acciones. The catalog starts closed; the context tray
+appears only with a selection or pending/failed deliveries.
+
+Detalles edits typed properties and one "Indicaciones para el asistente" field.
+Editing that field preserves existing `intent` and `audience`; those keys remain
+available to MCP and JSON but have no UI editor. Fields commit after 600 ms idle or
+on blur, preserve rejected drafts, and offer retry. IDs, type IDs, numeric dimensions,
+pin coordinates, parent-group radios and link endpoint controls are absent.
+Manual block sizes retain Tamaño automático; resize handles remain on the canvas.
+Soltar posición remains available for pinned entities. In compact/list mode, where
+there are no resize or drag handles, numeric resizing and moving into an existing
+group no longer have a direct UI path. MCP can still perform those operations.
+
+Known server error codes map to short Spanish messages, with a generic fallback.
+Raw server messages are not rendered by the panel, catalog, settings or agent modal.
+The panel also translates feedback errors before passing them to canvas/block
+components. The conflict banner describes the rejected change and offers reapply
+or discard without revision numbers.
 
 Document edits are transactions with the current revision. A rejected revision
 reloads the latest document before showing the retained failure. Reapplying submits
@@ -63,7 +88,7 @@ another document or changing workspace.
 ## Actual actions and agents
 
 Use the agent dialog to choose an existing agent in the workspace. It shows the
-current agent title, provider, selectable ID, and a selected option row. Lifecycle
+current assistant title, provider and a selected option row; it hides the raw ID. Lifecycle
 statuses have Spanish labels. Connecting
 selects the recipient of UI feedback. Workspace tool authorization is separate;
 injection enables tools for new agents in that workspace. Existing-agent setup
@@ -74,7 +99,7 @@ Explicit sends use a generated event ID retained for retry:
 
 | Control | Action | Delivery |
 | --- | --- | --- |
-| Enviar al agente | `selection.send`, selection IDs and note | Immediate |
+| Enviar al asistente | `selection.send`, selection IDs and note | Immediate |
 | Enviar respuesta | `block.answer`, answer and block ID | Immediate |
 | Form Enviar | `block.submit`, committed typed values and block ID | Immediate |
 | Preguntar por este paso | `diagram.step`, node ID, label, block ID | Immediate |
@@ -97,8 +122,8 @@ RPC itself does not save it. Inserting a template uses a fresh ID prefix.
 
 Paste JSON on every platform. Browsers also offer Elegir archivo with a 1 MiB limit.
 Revisar runs the real validator and a noncommitting dry run against a freshly read
-catalog revision. The review lists every added and replaced ID in a scrollable
-area; only unchanged IDs collapse to a count. Replacing an existing pack requires
+catalog revision. The review lists added and replaced entries by their display
+names; unchanged entries collapse to a count. Catalog rows hide type and pack IDs. Replacing an existing pack requires
 the explicit checkbox and explains why the import button remains disabled;
 commit uses the reviewed revision and shows a real conflict if the catalog changed.
 
@@ -153,9 +178,8 @@ and no DOM library in the TypeScript configuration.
 Run with pnpm:
 
 ```sh
-pnpm exec tsc --noEmit -p plugin/client/tsconfig.json
-pnpm exec tsc --noEmit -p tests/tsconfig.json
-pnpm exec tsx --test tests/frontend.test.ts
+pnpm typecheck
+pnpm test
 ```
 
 The frontend checks cover layered/progressive diagrams, cycles and unclipped rails,
@@ -167,11 +191,13 @@ portable pack forks, and real
 RPC-parser/service transactions preserving nested groups during rename/collapse/layout
 and undo. Native visual and interaction QA belongs to the coordinator's installed
 plugin run through omabox. These headless checks do not claim that screenshots or
-live agent delivery have already been exercised.
+live agent delivery have already been exercised. Headless component tests exercise
+creation, title editing, visibility, instruction preservation and friendly errors.
+Guide tests cover loading/error states, failed saves and concurrent client claims.
+Labels use the UI sans face in sentence case; monospace remains for code.
 
 The panel integrator owns `client/Panel.tsx` and `docs/frontend-integration.md`.
 `Catalog.initialTab` accepts `types`, `templates`, or `packs`.
 `Inspector.initialSection` accepts `document`, `communication`, `history`, or
-`activity`; a remount key can repeat a same-section navigation request. Existing
-component props remain compatible. `useCanvas.settle()` waits for edits and selection
+`activity`; a remount key can repeat a same-section navigation request. The parent-group chooser and its `reparent` prop were removed. `useCanvas.settle()` waits for edits and selection
 to finish and rejects if the document scope changes.

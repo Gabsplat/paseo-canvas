@@ -174,12 +174,11 @@ export const tokens = {
         "letterSpacing": 0
       },
       "label": {
-        "family": "mono",
-        "size": 10.5,
-        "lineHeight": 14,
-        "weight": "500",
-        "letterSpacing": 0.6,
-        "transform": "uppercase"
+        "family": "sans",
+        "size": 11,
+        "lineHeight": 15,
+        "weight": "400",
+        "letterSpacing": 0
       },
       "code": {
         "family": "mono",
