@@ -1,7 +1,9 @@
 // The only browser/DOM adapter. Loading this module never touches the DOM on native.
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Platform } from 'react-native';
 import { safeUrl } from './logic';
 import { tokens } from './tokens';
+import { frameSandbox } from './media';
 interface BrowserEventTarget {
   addEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
   removeEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
@@ -16,11 +18,13 @@ interface BrowserElement extends BrowserEventTarget {
 }
 interface BrowserKeyEvent { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; target: BrowserElement | null; preventDefault(): void; stopPropagation(): void; deltaX: number; deltaY: number; clientX: number; clientY: number }
 interface BrowserHost {
-  document?: BrowserEventTarget & { body: BrowserElement; createElement(tag: string): BrowserElement };
+  document?: BrowserEventTarget & { hidden?: boolean; body: BrowserElement; createElement(tag: string): BrowserElement };
+  location?: { origin: string };
+  localStorage?: { getItem(key: string): string | null; setItem(key: string, value: string): void };
   Blob: new (parts: string[], options: { type: string }) => unknown;
   URL: { createObjectURL(blob: unknown): string; revokeObjectURL(url: string): void };
 }
-const browser = () => globalThis as unknown as BrowserHost;
+const browser = () => (Platform.OS === 'web' ? globalThis : {}) as unknown as BrowserHost;
 let lastInputWasKeyboard = false, stopFocusTracking: (() => void) | undefined;
 const focusSubscribers = new Set<() => void>();
 function setKeyboardInput(value: boolean) {
@@ -44,12 +48,35 @@ const noKeyboardInput = () => false, noFocusSubscription = () => () => {};
 export function useKeyboardFocus(web: boolean) {
   return useSyncExternalStore(web ? subscribeKeyboardInput : noFocusSubscription, web ? () => lastInputWasKeyboard : noKeyboardInput, noKeyboardInput);
 }
-export function WebFrame({ url, title, border, height, surface, onLoaded, onTimeout }: { url: string; title: string; border: string; height: number; surface: string; onLoaded?: () => void; onTimeout?: () => void }) {
+export function WebFrame({ url, title, border, height, surface, player = false, onLoaded, onTimeout }: { url: string; title: string; border: string; height: number | '100%'; surface: string; player?: boolean; onLoaded?: () => void; onTimeout?: () => void }) {
   const safe = safeUrl(url), [loaded, setLoaded] = useState(false);
-  useEffect(() => { setLoaded(false); const timer = setTimeout(() => onTimeout?.(), 8000); return () => clearTimeout(timer); }, [safe]);
-  if (!safe) return null;
-  return React.createElement('div', { style: { position: 'relative', height, width: '100%', border: `1px solid ${border}`, borderRadius: 6, overflow: 'hidden', backgroundColor: surface } },
-    React.createElement('iframe', { key: safe, src: safe, title, sandbox: tokens.preview.sandbox, referrerPolicy: 'no-referrer', loading: 'lazy', onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0 }, 'aria-label': loaded ? title : `Cargando ${title}` }));
+  useEffect(() => { if (Platform.OS !== 'web') return; setLoaded(false); const timer = setTimeout(() => onTimeout?.(), 8000); return () => clearTimeout(timer); }, [safe]);
+  if (Platform.OS !== 'web' || !safe) return null;
+  return React.createElement('div', { id: `lienzo-interactive-frame-${title}`, style: { position: 'relative', height, width: '100%', border: `1px solid ${border}`, borderRadius: 6, overflow: 'hidden', backgroundColor: surface } },
+    React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0 }, 'aria-label': loaded ? title : `Cargando ${title}` }));
+}
+/** Uses browser controls, with no playback loop in React. No media implementation is loaded on native. */
+export function WebMedia({ url, title, kind, height, surface, onError }: { url: string; title: string; kind: 'video' | 'audio'; height: number | '100%'; surface: string; onError: () => void }) {
+  const element = useRef<{ pause(): void } | null>(null), safe = safeUrl(url);
+  useEffect(() => {
+    const doc = browser().document; if (!doc || !element.current) return;
+    const media = element.current;
+    const visibility = () => { if (doc.hidden) media.pause(); };
+    const host = globalThis as unknown as { IntersectionObserver?: new (cb: (entries: { isIntersecting: boolean }[]) => void) => { observe(node: unknown): void; disconnect(): void } };
+    const observer = host.IntersectionObserver ? new host.IntersectionObserver(entries => { if (entries.some(e => !e.isIntersecting)) media.pause(); }) : null;
+    observer?.observe(media); doc.addEventListener('visibilitychange', visibility);
+    return () => { observer?.disconnect(); doc.removeEventListener('visibilitychange', visibility); media.pause(); };
+  }, [safe, kind]);
+  if (Platform.OS !== 'web' || !safe) return null;
+  return React.createElement(kind, { key: safe, ref: element, src: safe, controls: true, preload: tokens.media[kind].preload, playsInline: true, 'aria-label': title, onError, style: { display: 'block', width: '100%', height: kind === 'audio' ? tokens.media.audio.height : height, borderRadius: 6, backgroundColor: surface, objectFit: 'contain' } });
+}
+// Personal guide dismissal, independent of shared canvas data. Native retains it for the process session.
+const guideDismissals = new Set<string>();
+export function guideWasDismissed(scope: string): boolean {
+  try { return guideDismissals.has(scope) || browser().localStorage?.getItem(`lienzo-guide-v1:${scope}`) === 'done'; } catch { return guideDismissals.has(scope); }
+}
+export function dismissGuide(scope: string) {
+  guideDismissals.add(scope); try { browser().localStorage?.setItem(`lienzo-guide-v1:${scope}`, 'done'); } catch { /* Browsers without storage keep the session preference. */ }
 }
 export function downloadJson(value: unknown, filename: string): boolean {
   try { const host = browser(); if (!host.document) return false;
@@ -69,17 +96,25 @@ export function pickJsonFile(maxBytes = 1048576): Promise<string | null> {
 }
 export function attachWheel(element: unknown, handler: (e: { x: number; y: number; dx: number; dy: number; command: boolean }) => void) {
   const node = element as BrowserElement | null; if (!browser().document || !node?.addEventListener) return () => {};
-  const listener = (e: BrowserKeyEvent) => { const origin = node.getBoundingClientRect(); handler({ x: e.clientX - origin.left, y: e.clientY - origin.top, dx: e.deltaX, dy: e.deltaY, command: e.ctrlKey || e.metaKey }); e.preventDefault(); };
+  const listener = (e: BrowserKeyEvent) => {
+    // An active player, page or resized card scrolls independently; command-wheel still zooms the canvas.
+    if (!e.ctrlKey && !e.metaKey && e.target?.closest('video,audio,iframe,[id^="lienzo-interactive-"],[id^="lienzo-scroll-"]')) return;
+    const origin = node.getBoundingClientRect(); handler({ x: e.clientX - origin.left, y: e.clientY - origin.top, dx: e.deltaX, dy: e.deltaY, command: e.ctrlKey || e.metaKey }); e.preventDefault();
+  };
   node.addEventListener('wheel', listener); return () => node.removeEventListener('wheel', listener);
 }
 // Middle mouse button (wheel click) drags the canvas on both axes, including over blocks.
-export function attachMiddlePan(element: unknown, handler: (delta: { dx: number; dy: number }) => void) {
+// `onEnd` receives the release velocity in px/ms (zero when the pointer had stopped), so the canvas can keep gliding.
+export function attachMiddlePan(element: unknown, handler: (delta: { dx: number; dy: number }) => void, onEnd?: (velocity: { vx: number; vy: number }) => void) {
   const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
   type PointerLike = BrowserKeyEvent & { button?: number };
-  let last: { x: number; y: number } | null = null;
-  const down = (e: PointerLike) => { if (e.button !== 1) return; last = { x: e.clientX, y: e.clientY }; e.preventDefault(); e.stopPropagation(); };
-  const move = (e: PointerLike) => { if (!last) return; handler({ dx: e.clientX - last.x, dy: e.clientY - last.y }); last = { x: e.clientX, y: e.clientY }; e.preventDefault(); };
-  const up = (e: PointerLike) => { if (last && (e.button === 1 || e.button === undefined)) last = null; };
+  let last: { x: number; y: number; t: number } | null = null, velocity = { vx: 0, vy: 0 };
+  const down = (e: PointerLike) => { if (e.button !== 1) return; last = { x: e.clientX, y: e.clientY, t: Date.now() }; velocity = { vx: 0, vy: 0 }; handler({ dx: 0, dy: 0 }); e.preventDefault(); e.stopPropagation(); };
+  const move = (e: PointerLike) => {
+    if (!last) return; const now = Date.now(), dx = e.clientX - last.x, dy = e.clientY - last.y, dt = Math.max(1, now - last.t);
+    velocity = { vx: .6 * dx / dt + .4 * velocity.vx, vy: .6 * dy / dt + .4 * velocity.vy }; handler({ dx, dy }); last = { x: e.clientX, y: e.clientY, t: now }; e.preventDefault();
+  };
+  const up = (e: PointerLike) => { if (last && (e.button === 1 || e.button === undefined)) { const still = Date.now() - last.t > 80; last = null; onEnd?.(still ? { vx: 0, vy: 0 } : velocity); } };
   const cancel = () => { last = null; };
   // mousedown preventDefault stops the browser's middle-click autoscroll; auxclick stops paste/open-link side effects.
   const block = (e: PointerLike) => { if (e.button === 1) e.preventDefault(); };
@@ -95,10 +130,43 @@ export function keyboard(element: unknown, handler: (event: { key: string; shift
   if (!browser().document || !node?.addEventListener) return () => {};
   const listener = (event: BrowserKeyEvent) => {
     const target = event.target;
-    if (target?.closest('input,textarea,[contenteditable="true"],iframe')) return;
+    if (target?.closest('input,textarea,select,[contenteditable="true"],iframe,video,audio,[id^="lienzo-interactive-"]')) return;
     if (handler({ key: event.key, shift: event.shiftKey, command: event.ctrlKey || event.metaKey })) { event.preventDefault(); event.stopPropagation(); }
   };
   node.addEventListener('keydown', listener); return () => node.removeEventListener('keydown', listener);
+}
+/**
+ * After a drag or a pan the browser still sends a click to whatever is under the pointer when the button comes up,
+ * and a Pressable there would take it as a press (selecting, or collapsing a multi-selection). Call this when a
+ * gesture that moved ends: the one click that follows is dropped before React sees it. Nothing happens on native.
+ */
+export function swallowClick() {
+  const doc = browser().document; if (!doc) return;
+  const stop = (event: BrowserKeyEvent) => { if ((event as BrowserKeyEvent & { detail?: number }).detail !== 0) { event.stopPropagation(); event.preventDefault(); } done(); };
+  const timer = setTimeout(() => done(), 300), done = () => { clearTimeout(timer); doc.removeEventListener('click', stop, true); doc.removeEventListener('pointerdown', done, true); doc.removeEventListener('keydown', done, true); };
+  doc.addEventListener('click', stop, true);
+  // A new press is deliberate. Do not swallow it if the browser never generated a post-drag click.
+  doc.addEventListener('pointerdown', done, true); doc.addEventListener('keydown', done, true);
+}
+/** True when a press starts on something the browser should keep: an input, an embedded page, or text that can be selected. */
+export function isTextTarget(target: unknown): boolean {
+  if (Platform.OS !== 'web') return false;
+  const node = target as (BrowserElement & { nodeType?: number; parentElement?: BrowserElement }) | null, host = globalThis as unknown as { document?: unknown; getComputedStyle?: (element: unknown) => { userSelect?: string; webkitUserSelect?: string } };
+  if (!host.document || !node) return false;
+  try {
+    const element = node.nodeType === 3 ? node.parentElement : node; if (!element?.closest) return false;
+    if (element.closest('input,textarea,select,iframe,video,audio,[contenteditable="true"],[id^="lienzo-interactive-"],[id^="lienzo-scroll-"]')) return true;
+    const style = host.getComputedStyle?.(element), select = style?.userSelect ?? style?.webkitUserSelect;
+    return select === 'text' || select === 'all';
+  } catch { return false; }
+}
+/** Main card/group grab areas, excluding nested action buttons. Native keeps move-based responder negotiation. */
+export function isDragHandle(target: unknown): boolean {
+  if (Platform.OS !== 'web') return false;
+  const node = target as (BrowserElement & { nodeType?: number; parentElement?: BrowserElement }) | null;
+  const element = node?.nodeType === 3 ? node.parentElement : node;
+  const handle = element?.closest?.('[id^="lienzo-grab-"]');
+  return !!handle && (!element?.closest('button') || element.closest('button') === handle);
 }
 export function focusInput(element: unknown) {
   const node = element as BrowserElement | null;
@@ -121,16 +189,17 @@ interface SvgNode {
 }
 type SvgHost = { document?: { createElementNS(namespace: string, tag: string): SvgNode } };
 /** `element` holds the lines (under the cards); `marksElement`, when given, holds labels and counts (over the cards). */
-export function mountLinkLayer(element: unknown, handlers: { onPress(key: string): void; onHover(key: string | null): void }, marksElement?: unknown): { update(scene: LinkScene): void; destroy(): void } | null {
+export function mountLinkLayer(element: unknown, handlers: { onPress(key: string): void; onHover(key: string | null): void }, marksElement?: unknown): { update(scene: LinkScene): void; preview(draw: Pick<LinkDraw, 'd' | 'color' | 'width' | 'opacity' | 'dash'> | null): void; destroy(): void } | null {
+  if (Platform.OS !== 'web') return null;
   type Host = { appendChild?(child: SvgNode): void } | null;
   const doc = (globalThis as unknown as SvgHost).document, host = element as Host, marksHost = marksElement as Host;
   if (!doc?.createElementNS || !host?.appendChild) return null;
   const make = (tag: string, attributes: Record<string, string> = {}) => { const node = doc.createElementNS('http://www.w3.org/2000/svg', tag); for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value); return node; };
   const surface = () => make('svg', { width: '100%', height: '100%', style: 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none', 'aria-hidden': 'true' });
-  const svg = surface(), root = make('g'), lines = make('g'), marks = make('g'); root.appendChild(lines); svg.appendChild(root); host.appendChild(svg);
+  const svg = surface(), root = make('g'), lines = make('g'), marks = make('g'), draft = make('path', { fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'pointer-events': 'none', 'data-lienzo-draft': 'true' }); root.appendChild(lines); root.appendChild(draft); svg.appendChild(root); host.appendChild(svg);
   const above = marksHost?.appendChild ? surface() : null;
   if (above) { above.appendChild(marks); marksHost!.appendChild!(above); } else root.appendChild(marks);
-  type Entry = { group: SvgNode; line: SvgNode; hit: SvgNode; head: SvgNode; mark: SvgNode; label: SvgNode; badge: SvgNode; badgeDisc: SvgNode; badgeText: SvgNode; tip: SvgNode; seen: boolean };
+  type Entry = { group: SvgNode; line: SvgNode; hit: SvgNode; head: SvgNode; mark: SvgNode; label: SvgNode; badge: SvgNode; badgeDisc: SvgNode; badgeText: SvgNode; tip: SvgNode; seen: boolean; drawn: string };
   const entries = new Map<string, Entry>();
   const entry = (key: string): Entry => {
     let e = entries.get(key); if (e) return e;
@@ -143,16 +212,24 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
     const mark = make('g', { style: 'pointer-events:none' }), label = make('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'paint-order': 'stroke', 'stroke-linejoin': 'round' });
     const badge = make('g'), badgeDisc = make('circle'), badgeText = make('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-weight': '700' });
     badge.appendChild(badgeDisc); badge.appendChild(badgeText); mark.appendChild(label); mark.appendChild(badge); marks.appendChild(mark);
-    e = { group, line, hit, head, mark, label, badge, badgeDisc, badgeText, tip, seen: true }; entries.set(key, e); return e;
+    e = { group, line, hit, head, mark, label, badge, badgeDisc, badgeText, tip, seen: true, drawn: '' }; entries.set(key, e); return e;
   };
   const n = (value: number) => String(Math.round(value * 10) / 10);
   return {
+    // One path per gesture. Updating it never walks the 150-card document or rewrites its existing connectors.
+    preview(draw) {
+      if (!draw) { draft.setAttribute('d', ''); return; }
+      draft.setAttribute('d', draw.d); draft.setAttribute('stroke', draw.color); draft.setAttribute('stroke-width', n(draw.width)); draft.setAttribute('opacity', n(draw.opacity));
+      if (draw.dash) draft.setAttribute('stroke-dasharray', draw.dash); else draft.removeAttribute('stroke-dasharray');
+    },
     update(scene) {
       root.setAttribute('transform', `translate(${n(-scene.origin.x)} ${n(-scene.origin.y)})`);
       if (above) marks.setAttribute('transform', `translate(${n(-scene.origin.x)} ${n(-scene.origin.y)})`);
       entries.forEach(e => { e.seen = false; });
       for (const draw of scene.draws) {
         const e = entry(draw.key); e.seen = true;
+        // While something is dragged this runs every frame: connectors that did not change are left alone.
+        const drawn = JSON.stringify(draw) + scene.halo + scene.labelSize + scene.badgeSize + scene.hitWidth; if (drawn === e.drawn) continue; e.drawn = drawn;
         e.group.setAttribute('transform', draw.shift ? `translate(${n(draw.shift.x)} ${n(draw.shift.y)})` : '');
         e.line.setAttribute('d', draw.d); e.line.setAttribute('stroke', draw.color); e.line.setAttribute('stroke-width', n(draw.width)); e.line.setAttribute('opacity', n(draw.opacity));
         if (draw.dash) e.line.setAttribute('stroke-dasharray', draw.dash); else e.line.removeAttribute('stroke-dasharray');

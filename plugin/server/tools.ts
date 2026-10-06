@@ -55,7 +55,11 @@ export class ToolRouter {
     const scope = await this.resolveScope(owner);
     if (!scope.workspaceId || !scope.agentId) throw new CanvasError("FORBIDDEN", "Bind this MCP to a Paseo agent using canvas.agent.setup, then reload the idle agent.");
     const value = definition.schema.parse(input);
+    const documentId = value && typeof value === "object" && "documentId" in value && typeof value.documentId === "string" ? value.documentId : undefined;
+    if (documentId) await this.service.assertReachable(documentId, scope.workspaceId, scope.agentId);
     const result = await this.dispatch(name, value, scope);
+    // Using a canvas connects the agent to it; no manual step in the panel.
+    if (documentId) await this.service.autoConnect(documentId, scope.workspaceId, scope.agentId, ["canvas_apply", "canvas_undo", "canvas_redo"].includes(name) || name === "canvas_group" && groupInput.parse(input).action !== "export_template");
     if (Buffer.byteLength(JSON.stringify(result)) > 24 * 1024) {
       if (name === "canvas_read") {
         const current = await this.service.read({ documentId: readInput.parse(input).documentId, workspaceId: scope.workspaceId });
@@ -70,13 +74,13 @@ export class ToolRouter {
   private async dispatch(name: string, input: unknown, scope: CallerScope): Promise<unknown> {
     const workspaceId = scope.workspaceId;
     switch (name) {
-      case "canvas_list": return this.service.list({ workspaceId });
+      case "canvas_list": return this.service.list({ workspaceId }, scope.agentId);
       case "canvas_create": {
         const current = await this.service.create({ ...rpc.createDocument.input.omit({ workspaceId: true }).parse(input), workspaceId }, "agent", scope);
         return { documentId: current.document.id, revision: current.document.revision };
       }
       case "canvas_example": {
-        const current = await this.service.instantiatePack({ ...exampleInput.parse(input), workspaceId });
+        const current = await this.service.instantiatePack({ ...exampleInput.parse(input), workspaceId }, "agent", scope);
         return { documentId: current.document.id, revision: current.document.revision, example: true };
       }
       case "canvas_read": {

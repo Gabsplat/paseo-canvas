@@ -118,8 +118,22 @@ Paseo SDK. A connection selects the feedback recipient; it is not a document ACL
 can read/edit any document in its workspace, including documents connected to another agent.
 Unknown owners and other-workspace documents are refused. UI RPCs are trusted host plugin RPCs
 and require an explicit workspace ID. Shared catalog writes are separate from document access
-and are not automatically preapproved. New-agent injection is opt-in by workspace or by the
-installer's global `"*"` preference. The graph changes preserve that existing injection behavior.
+and are not automatically preapproved. New-agent injection is on for every workspace
+(`"*"`) until the user turns it off in the agent dialog; an explicit choice is stored and respected.
+
+Connection is automatic. A document-scoped tool call makes the caller the feedback recipient: a
+read claims a document nobody receives, a write takes it over, and neither changes the document
+revision. A recipient picked in the panel is stored with `pinned: true` and is never replaced.
+A UI action on a document with no recipient goes to the most recently bound agent of that
+workspace that is still open. Archiving an agent releases its documents.
+
+`canvas.sharing` stores a per-workspace mode. `shared` is the default. With `agent`, MCP calls
+reach a document only for its creating agent (`ownerAgentId`), its recipient, or any agent while
+it has neither; `canvas_list` filters the same way. Panel RPCs always see every document.
+
+The bridge starts when the plugin loads and `agent.turn_started` rebinds the SDK handle, so open
+agents keep their tools across `paseo plugin reload`. The stdio entry sets
+`ELECTRON_RUN_AS_NODE=1` because the packaged desktop daemon's `process.execPath` is Electron.
 Agent history includes the real caller `agentId`; an agent can undo only its own edits, and later
 related edits by any actor block undo. User undo is scoped to the user actor class because Paseo
 0.10.3 does not expose separate human identities to a host plugin.
@@ -154,7 +168,7 @@ ID and namespace every exported type/template ID as `newPackId.entry`, updating 
 | `agentSetup` | `canvas.agent.setup` | Workspace, agent ID and provider return a private manual MCP snippet |
 | `agentAction` | `canvas.agent.action` | Scoped document, revision, stable event ID and action persist real feedback |
 | `readAgentEvents`, `flushAgentEvents` | `canvas.agent.events`, `canvas.agent.events.flush` | Scoped document lists events or retries/flushes queued events |
-| `readInjection`, `configureInjection` | `canvas.injection.read`, `canvas.injection` | Read opt-in workspace IDs; change with preferences revision |
+| `readInjection`, `configureInjection` | `canvas.injection.read`, `canvas.injection` | Read enabled workspace IDs (`"*"` by default); change with preferences revision |
 
 `DocumentView.document` contains content, workspace and revision. `connection` is separate runtime
 metadata; connecting advances document revision but undo never changes connections. `selectedIds`

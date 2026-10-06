@@ -5,13 +5,15 @@ import { Icon, ScrollView, copyText, useToast } from '@getpaseo/plugin/client/re
 import type { BlockType, CanvasGroup, CanvasOperation, CanvasPack } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
 import { Button, Chip, IconButton, Input, Modal, Segments, Txt, UIProvider, useUI } from './ui';
-import { Canvas } from './Canvas';
+import { Canvas, type CanvasApi } from './Canvas';
 import { Catalog, PackExport, PackImport } from './Catalog';
 import { Inspector } from './Inspector';
 import { AgentModal } from './AgentModal';
 import { Delivery } from './Blocks';
-import { connectOperations, documentContent, layoutDocument, moveOperations, newId, selectionPack, snap, topSelection, type Point, type Rect } from './logic';
-import { focusInput, keyboard } from './web';
+import { connectOperations, documentContent, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, selectionPack, topSelection, type Point, type Rect } from './logic';
+import { dismissGuide, focusInput, guideWasDismissed, keyboard } from './web';
+import { Onboarding } from './Onboarding';
+import type { GuideAction } from './guide';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
 
@@ -142,10 +144,24 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   const [note, setNote] = useState(''), [sending, setSending] = useState(false), [sendError, setSendError] = useState('');
   // Solo lienzo: hides the bar, catalog, inspector and tray. Failure banners stay visible.
   const [immersive, setImmersive] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false), guideScope = JSON.stringify([u.host.id, workspaceId]), guideShown = useRef<string | null>(null);
+  useEffect(() => {
+    if (!c.catalog || c.loading || guideShown.current === guideScope) return;
+    guideShown.current = guideScope;
+    if (!guideWasDismissed(guideScope)) setGuideOpen(true);
+  }, [c.catalog, c.loading, guideScope]);
+  const closeGuide = () => { dismissGuide(guideScope); setGuideOpen(false); };
+  const guideAction = (action: GuideAction) => {
+    if (!doc && ['agents', 'inspector', 'communication', 'history', 'activity'].includes(action)) { openDocuments(); return; }
+    if (action === 'documents') openDocuments();
+    else if (action === 'catalog' || action === 'templates' || action === 'packs') openCatalog(action === 'catalog' ? 'types' : action);
+    else if (action === 'agents') setAgentsOpen(true);
+    else inspectorOpen(action === 'inspector' ? 'document' : action);
+  };
   // A selected link is view state, like the selection highlight; every change to the link itself goes through c.edit.
   const [linkId, setLinkId] = useState<string | null>(null);
   const retrySend = useRef<{ id: string; documentId: string; ids: string[]; note: string } | null>(null);
-  const root = useRef<View>(null), searchRef = useRef<View>(null), geometry = useRef<{ rects: Map<string, Rect>; center: Point }>({ rects: new Map(), center: { x: 24, y: 24 } });
+  const root = useRef<View>(null), searchRef = useRef<View>(null), canvas = useRef<CanvasApi>(null), geometry = useRef<{ rects: Map<string, Rect>; center: Point }>({ rects: new Map(), center: { x: 24, y: 24 } });
   const disabled = c.busy || c.offline || sending || c.loading;
   useEffect(() => { if (c.arrival) toast.show(`Documento nuevo: «${c.arrival.title}»`, { variant: 'info' }); }, [c.arrival?.id]);
   useEffect(() => { setNote(''); setSendError(''); setSending(false); retrySend.current = null; setReload(false); setTemplate(null); setTemplateError(''); setLinkId(null); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
@@ -183,16 +199,44 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     const key = 'typeId' in entity! ? 'blockIds' : 'groupIds', ids = [...group[key]], index = ids.indexOf(id), to = index + delta; if (to < 0 || to >= ids.length) return;
     [ids[index], ids[to]] = [ids[to], ids[index]]; void c.edit([{ type: 'group.update', id: group.id, patch: { [key]: ids } }], delta < 0 ? 'Subir elemento' : 'Bajar elemento');
   }
+  const rectsNow = () => geometry.current.rects.size ? geometry.current.rects : layoutDocument(doc!, {}, c.catalog);
+  // Chosen from a list, not dropped somewhere: it joins the new container's automatic layout without a place of its own.
   function reparent(id: string, parent: string | null) {
-    if (!doc || disabled) return; const rects = geometry.current.rects.size ? geometry.current.rects : layoutDocument(doc, {}, c.catalog);
-    const operations = moveOperations(doc, rects, [id], { x: 0, y: 0 }, parent); if (operations.length) void c.edit(operations, 'Cambiar grupo');
+    if (!doc || disabled) return; const operations = releaseOperations(doc, [id], c.catalog, parent);
+    if (operations.length) void c.edit(operations, 'Cambiar grupo').then(next => { if (next) void c.select([id]); });
+  }
+  /** "Soltar posición" / "Reordenar automáticamente": hands pinned entities back to the layout of their container. */
+  function release(ids: string[], label = ids.length === 1 ? 'Soltar posición' : 'Reordenar automáticamente') {
+    if (!doc || disabled || !ids.length) return;
+    // A transaction carries 200 operations; a large container is released in consecutive transactions, one entity never split.
+    const items = topSelection(doc, ids);
+    for (const item of items) {
+      const operations = releaseOperations(doc, [item.id], c.catalog);
+      if (operations.length > 200 || item.position && !operations.length) { c.fail(new Error(`No se puede soltar la posición de «${item.title || item.id}»: ${operations.length > 200 ? 'supera las 200 operaciones de una transacción' : 'su tipo ya no está en el catálogo'}.`)); return; }
+    }
+    const selection = [...c.selection];
+    void (async () => {
+      await c.settle();
+      const remaining = items.map(e => e.id); let changed = false;
+      while (remaining.length) {
+        const latest = c.current.current?.document; if (!latest || latest.id !== doc.id) return;
+        const batch: CanvasOperation[] = [];
+        while (remaining.length) {
+          const operations = releaseOperations(latest, [remaining[0]], c.catalog), item = [...latest.blocks, ...latest.groups].find(e => e.id === remaining[0]);
+          if (operations.length > 200 || item?.position && !operations.length) { c.fail(new Error(`No se pudo soltar la posición de «${item?.title || remaining[0]}».`)); return; }
+          if (batch.length + operations.length > 200) break;
+          remaining.shift(); batch.push(...operations);
+        }
+        if (!batch.length) continue;
+        const next = await c.edit(batch, label); if (!next) return;
+        changed = true; await c.select(selection.filter(id => [...next.document.blocks, ...next.document.groups].some(e => e.id === id)));
+      }
+      toast.show(changed ? ids.length === 1 ? 'Vuelve al orden automático' : 'Reordenado automáticamente' : 'No hay posiciones que soltar');
+    })();
   }
   function groupSelection() {
-    if (!doc || !c.selection.length || disabled) return; const items = topSelection(doc, c.selection), id = newId('group'); if (!items.length) return;
-    const parent = items.every(e => e.parentGroupId === items[0]?.parentGroupId) ? items[0]?.parentGroupId ?? null : null;
-    const rects = geometry.current.rects.size ? geometry.current.rects : layoutDocument(doc, {}, c.catalog);
-    const position = parent ? items[0].position : { x: snap(Math.min(...items.map(e => rects.get(e.id)?.x ?? 0))), y: snap(Math.min(...items.map(e => rects.get(e.id)?.y ?? 0))) };
-    void (async () => { const result = await c.edit([{ type: 'group.create', group: { id, title: 'Nuevo grupo', description: '', blockIds: items.filter(e => 'typeId' in e).map(e => e.id), groupIds: items.filter(e => 'groupIds' in e).map(e => e.id), parentGroupId: parent, position, layout: { mode: 'stack' } } }], `Agrupar ${items.length} elementos`); if (result) { await c.select([id]); inspectorOpen(); } })();
+    if (!doc || !c.selection.length || disabled) return; const id = newId('group'), operations = groupOperations(doc, rectsNow(), c.selection, id, c.catalog); if (!operations.length) return;
+    void (async () => { const result = await c.edit(operations, `Agrupar ${operations.length - 1} elementos`); if (result) { await c.select([id]); inspectorOpen(); } })();
   }
   function removeSelection() { if (doc && !disabled) { const items = topSelection(doc, c.selection); if (items.length > 200) { toast.error('Elimina como máximo 200 elementos por vez.'); return; } if (items.length) void c.edit(items.map(e => ({ type: 'groupIds' in e ? 'group.delete' : 'block.delete', id: e.id } as CanvasOperation)), 'Eliminar selección').then(next => { if (next) toast.show('Selección eliminada'); }); } }
   function duplicateSelection() {
@@ -266,6 +310,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     if (u.layout.platform !== 'web') return;
     return keyboard(root.current, e => {
+      if (guideOpen) return false;
       if (e.key === 'Escape' && immersive) { setImmersive(false); return true; }
       if (e.key === 'Escape') { setOverlay(null); setOverflow(false); setLinkId(null); void c.select([]); return true; }
       if (!e.command && e.key.toLowerCase() === 'f' && doc) { setOverlay(null); setImmersive(v => !v); return true; }
@@ -284,19 +329,27 @@ function Panel({ workspaceId }: { workspaceId: string }) {
         const current = ids.indexOf(c.selection[0]), next = (current + (e.shift ? -1 : 1) + ids.length) % ids.length; void c.select([ids[next]]); return true;
       }
       const distance = e.shift ? 32 : 8, delta = e.key === 'ArrowLeft' ? { x: -distance, y: 0 } : e.key === 'ArrowRight' ? { x: distance, y: 0 } : e.key === 'ArrowUp' ? { x: 0, y: -distance } : e.key === 'ArrowDown' ? { x: 0, y: distance } : null;
-      if (delta && c.selection.length) { const operations = moveOperations(doc, geometry.current.rects, c.selection, delta); if (operations.length) void c.edit(operations, 'Mover selección'); return true; }
+      // A held arrow key repeats: nudges land at once, they do not glide.
+      if (delta && c.selection.length) { const operations = moveOperations(doc, geometry.current.rects, c.selection, delta, undefined, { catalog: c.catalog }); if (operations.length) { canvas.current?.instant(); void c.edit(operations, 'Mover selección'); } return true; }
+      if (!e.command && mode === 'canvas') {
+        if (e.key === '1') { canvas.current?.fit(); return true; }
+        if (e.key === '2') { canvas.current?.zoomToSelection(); return true; }
+        if (e.key === '0') { canvas.current?.zoomTo(1); return true; }
+        if (e.key === '+' || e.key === '=') { canvas.current?.zoomStep(1); return true; }
+        if (e.key === '-') { canvas.current?.zoomStep(-1); return true; }
+      }
       return false;
     });
-  }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, wide, note, overlay, sending, immersive, linkId]);
+  }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, wide, note, overlay, sending, immersive, linkId, mode, guideOpen]);
   const catalog = <Catalog key={catalogKey} initialTab={catalogTab} controller={c} insert={insert} insertTemplate={insertTemplate} onImport={() => setImportOpen(true)} onExport={setExported} searchRef={searchRef} />;
-  const inspector = <Inspector key={inspectorKey} linkId={linkId} onLink={selectLink} initialSection={inspectorSection} controller={c} onClose={wide || u.compact ? undefined : () => setOverlay(null)} groupSelection={groupSelection} reparent={reparent} onTemplate={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} onExportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} reorder={reorder} />;
+  const inspector = <Inspector key={inspectorKey} linkId={linkId} onLink={selectLink} initialSection={inspectorSection} controller={c} onClose={wide || u.compact ? undefined : () => setOverlay(null)} groupSelection={groupSelection} reparent={reparent} release={release} rects={rectsNow} onTemplate={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} onExportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} reorder={reorder} />;
   return <View ref={root} onLayout={e => setWidth(e.nativeEvent.layout.width)} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
     {!immersive && <View onLayout={e => setBarHeight(e.nativeEvent.layout.height)} style={{ height: u.compact ? tokens.size.topBarCompact : tokens.size.topBar, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
       {!u.compact && <IconButton label="Catálogo" icon="LibraryBig" active={wide ? catalogOpen : overlay === 'catalog'} onPress={toggleCatalog} />}
       <Pressable accessibilityRole="button" accessibilityLabel="Documentos" onPress={openDocuments} style={{ flex: u.compact ? 1 : undefined, flexShrink: 1, maxWidth: 360, flexDirection: 'row', gap: 6, alignItems: 'center' }}><Txt kind="title" numberOfLines={1} style={{ flexShrink: 1 }}>{doc?.title ?? 'Lienzo'}</Txt>{doc?.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" center style={{ flexShrink: 0 }} />}<Icon name="ChevronDown" size={14} color={u.c.foregroundMuted} /></Pressable>
       {!u.compact && <>{doc && <Pressable accessibilityRole="button" accessibilityLabel="Historial de revisiones" onPress={() => inspectorOpen('history')} style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.failure ? u.c.statusDanger : c.busy ? u.c.statusWarning : u.c.statusSuccess }} /><Txt kind="label" muted>{doc ? 'REV ' + doc.revision : ''}</Txt></Pressable>}<View style={{ flex: 1 }} /><IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} /></>}
       <View style={{ width: u.compact ? 168 : 156 }}><Segments value={mode} options={[{ value: 'canvas', label: 'Lienzo' }, { value: 'outline', label: 'Esquema' }]} onChange={setMode} /></View>
-      {!u.compact && <><Presence id={c.view?.connection?.agentId ?? null} open={() => setAgentsOpen(true)} />{!wide && <IconButton label="Inspector" icon="PanelRight" active={overlay === 'inspector'} onPress={() => setOverlay(overlay === 'inspector' ? null : 'inspector')} />}</>}{doc && <IconButton icon="Maximize2" label="Solo lienzo" onPress={() => { setOverlay(null); setImmersive(true); }} />}{u.compact && <IconButton icon="Ellipsis" label="Más acciones" onPress={() => setOverflow(true)} />}
+      {!u.compact && <><Presence id={c.view?.connection?.agentId ?? null} open={() => setAgentsOpen(true)} />{!wide && <IconButton label="Inspector" icon="PanelRight" active={overlay === 'inspector'} onPress={() => setOverlay(overlay === 'inspector' ? null : 'inspector')} />}</>}{!u.compact && <IconButton icon="BookOpen" label="Guía de Lienzo" onPress={() => setGuideOpen(true)} />}{doc && <IconButton icon="Maximize2" label="Solo lienzo" onPress={() => { setOverlay(null); setImmersive(true); }} />}{u.compact && <IconButton icon="Ellipsis" label="Más acciones" onPress={() => setOverflow(true)} />}
     </View>}
     <View style={{ flex: 1, flexDirection: 'row', minHeight: 0 }}>
       {wide && !immersive && catalogOpen && <View style={{ width: 288, borderRightWidth: 1, borderColor: u.c.border }}>{catalog}</View>}
@@ -318,7 +371,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
           {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
         </EmptyState> : !doc.blocks.length && !doc.groups.length ? <EmptyState title="Un lienzo en blanco" description="Añade un bloque desde el catálogo o pide al agente que empiece. Los grupos enmarcan bloques que van juntos.">
           <Button label="Añadir primer bloque" variant="primary" disabled={c.offline} onPress={() => openCatalog('types')} /><Button label="Usar una plantilla" disabled={c.offline} onPress={() => openCatalog('templates')} />
-        </EmptyState> : <Canvas key={doc.id} controller={c} mode={mode} linkId={linkId} onLink={selectLink} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
+        </EmptyState> : <Canvas key={doc.id} api={canvas} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={selectLink} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
         {doc && !immersive && <ContextTray controller={c} wide={wide} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} />}
       </View>{wide && !immersive && <View style={{ width: 328, borderLeftWidth: 1, borderColor: u.c.border }}>{inspector}</View>}
     </View>
@@ -350,6 +403,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       {doc && <><Button label="Duplicar como documento propio" icon="CopyPlus" disabled={disabled} onPress={() => { const content = documentContent(doc, true); content.title = content.title.slice(0, 300); content.selectedIds = []; void c.create(content).then(next => { if (next) setDocsOpen(false); }); }} /><Button label="Exportar documento como pack" icon="FileOutput" disabled={!c.catalog} onPress={() => { setDocsOpen(false); exportDocument(); }} /></>}
     </Modal.Content></Modal>
     <Modal title="Más acciones" open={overflow} onOpenChange={setOverflow}><Modal.Content>
+      <Button label="Guía de Lienzo" icon="BookOpen" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); setGuideOpen(true); }} />
       <Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />
       {doc && <Button label={'REV ' + doc.revision + ' · Historial'} icon="History" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); inspectorOpen('history'); }} />}
       <Button label="Deshacer" icon="Undo2" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />
@@ -363,6 +417,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       <Button label="Importar pack" icon="FileInput" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={c.offline} onPress={() => { setOverflow(false); setImportOpen(true); }} />
     </Modal.Content></Modal>
 
+    <Onboarding open={guideOpen} close={closeGuide} catalog={c.catalog} onAction={guideAction} />
     <Modal title="Guardar como plantilla" open={!!template} onOpenChange={v => { if (!v) setTemplate(null); }}><Modal.Content>
       <Txt kind="small" style={{ fontWeight: '600' }}>Nombre</Txt><Input label="Nombre de la plantilla" value={templateName} onChange={setTemplateName} readOnly={disabled} />
       {(templateError || c.failure) && <Txt kind="small" style={{ color: u.c.statusDanger }}>{c.failure?.message ?? templateError}</Txt>}

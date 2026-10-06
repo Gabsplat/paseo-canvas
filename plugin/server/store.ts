@@ -2,7 +2,7 @@ import { mkdir, open, readFile, rename, rm, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { agentEventSchema, connectionSchema, documentSchema, type CanvasDocument } from "../shared/model";
+import { agentEventSchema, connectionSchema, documentSchema, sharingModeSchema, type CanvasDocument } from "../shared/model";
 import { catalogStorageSchema, catalogView } from "./catalog";
 import { CanvasError } from "../shared/errors";
 import { clone, validateDocument } from "./reducer";
@@ -25,12 +25,15 @@ const recordSchema = z.object({
   connection: connectionSchema.nullable(), selectionVersion: z.number().int().nonnegative(),
   runtimeVersion: z.number().int().nonnegative(), events: z.array(agentEventSchema),
   outboundBatches: z.array(outboundBatchSchema).default([]),
+  // Agent that created the document through MCP. Scopes access when the workspace keeps one canvas per agent.
+  ownerAgentId: z.string().optional(),
 }).strict();
 const stateSchema = z.object({
   format: z.literal("paseo-canvas-state/1"), commit: z.number().int().nonnegative(),
   documents: z.record(z.string(), recordSchema), catalog: catalogStorageSchema,
   owners: z.record(z.string(), z.object({ agentId: z.string().nullable() }).strict()),
   injection: z.object({ revision: z.number().int().nonnegative(), workspaceIds: z.array(z.string()) }).strict(),
+  sharing: z.record(z.string(), sharingModeSchema).default({}),
 }).strict();
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
 export type OutboundBatch = z.infer<typeof outboundBatchSchema>;
@@ -107,7 +110,7 @@ export class CanvasStore {
     try { this.state = stateSchema.parse(JSON.parse(await readFile(this.file, "utf8"))); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new CanvasError("UNAVAILABLE", "Canvas state is unreadable or invalid; it was not overwritten.");
-      this.state = { format: "paseo-canvas-state/1", commit: 0, documents: {}, catalog: { revision: 0, localTypes: [], localTemplates: [], packs: [] }, owners: {}, injection: { revision: 0, workspaceIds: [] } };
+      this.state = { format: "paseo-canvas-state/1", commit: 0, documents: {}, catalog: { revision: 0, localTypes: [], localTemplates: [], packs: [] }, owners: {}, injection: { revision: 0, workspaceIds: [] }, sharing: {} };
       await this.persist(this.state);
     }
     for (const record of Object.values(this.state.documents)) validateDocument(record.document);

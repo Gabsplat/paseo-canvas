@@ -5,6 +5,7 @@ import * as rpc from '../shared/rpc';
 import type { AgentEvent, CanvasCatalog, CanvasOperation, DocumentView } from '../shared/model';
 import { useHostId } from './ui';
 import { initialDocumentId, rememberOpenDocument } from './session';
+import { reuseDocumentEntities } from './logic';
 export type Failure = { message: string; conflict: boolean; revision?: number; retry?: () => Promise<unknown>; affectedIds?: string[]; operationKey?: string };
 export const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 export function useCanvas(workspaceId: string) {
@@ -33,7 +34,8 @@ export function useCanvas(workspaceId: string) {
     if (!active.current || scopeRef.current !== scope || next.document.workspaceId !== workspaceId) return;
     const prev = current.current;
     if (prev?.document.id === next.document.id && (next.document.revision < prev.document.revision || next.runtimeVersion < prev.runtimeVersion)) return;
-    current.current = next; setView(next);
+    const shared = { ...next, document: reuseDocumentEntities(prev?.document, next.document) };
+    current.current = shared; setView(shared);
     if (prev?.document.id !== next.document.id) rememberOpenDocument(hostId, workspaceId, next.document.id);
     if (desired.current === null) setSelection(next.document.selectedIds);
   }

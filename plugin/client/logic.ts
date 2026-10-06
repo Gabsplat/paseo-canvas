@@ -3,6 +3,22 @@ import { tokens } from './tokens';
 export type Entity = CanvasBlock | CanvasGroup;
 export type Point = { x: number; y: number };
 export type Rect = Point & { width: number; height: number; depth: number; hidden: boolean };
+/** RPC replies contain fresh JSON objects. Keep unchanged entity references so one saved drag does not render every card. */
+export function reuseDocumentEntities(previous: CanvasDocument | undefined, next: CanvasDocument): CanvasDocument {
+  if (!previous || previous.id !== next.id || previous.workspaceId !== next.workspaceId) return next;
+  const equal = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+    const left = a as Record<string, unknown>, right = b as Record<string, unknown>, keys = Object.keys(left);
+    return keys.length === Object.keys(right).length && keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && equal(left[key], right[key]));
+  };
+  const reuse = <T extends { id: string }>(before: T[], after: T[]): T[] => {
+    const byId = new Map(before.map(item => [item.id, item]));
+    const shared = after.map(item => { const old = byId.get(item.id); return old && equal(old, item) ? old : item; });
+    return before.length === shared.length && shared.every((item, i) => item === before[i]) ? before : shared;
+  };
+  return { ...next, blocks: reuse(previous.blocks, next.blocks), groups: reuse(previous.groups, next.groups), links: reuse(previous.links, next.links) };
+}
 export function initialCamera(viewportWidth: number, content: Pick<Rect, 'x' | 'y' | 'width'>) {
   const t = tokens.canvas.initialZoom, scale = Math.max(t.min, Math.min(t.max, (viewportWidth - 96) / Math.max(1, content.width)));
   const left = content.width * scale > viewportWidth - 96 ? 48 : (viewportWidth - content.width * scale) / 2;
@@ -181,15 +197,22 @@ export function graphIndex(doc: CanvasDocument, catalog?: CanvasCatalog | null) 
     const children = [...g.blockIds, ...g.groupIds];
     // Prose reads best as a column. Sections and compact node cards read best side by side.
     const spread = children.length > 1 && (g.groupIds.length > 0 || children.every(child => { const e = entities.get(child); return !!e && 'typeId' in e && isNodeBlock(e, catalog); }));
-    return g.layout?.mode ?? (edges.has(id) ? 'graph' : children.some(child => entities.get(child)?.position) ? 'free' : spread ? 'rows' : 'stack');
+    // A stored position pins one child; it does not turn its container into a free one. Only a container whose every child
+    // was placed by hand reads as free, where the two are the same thing.
+    return g.layout?.mode ?? (edges.has(id) ? 'graph' : children.length > 0 && children.every(child => entities.get(child)?.position) ? 'free' : spread ? 'rows' : 'stack');
   };
   const direction = (id: string | null): Direction => (id ? groups.get(id)?.layout : doc.layout)?.direction ?? 'down';
   return { groups, entities, parent, chain, edges: (id: string | null) => edges.get(id ?? ROOT) ?? [], mode, direction };
 }
 export type GraphIndex = ReturnType<typeof graphIndex>;
 export const containerMode = (doc: CanvasDocument, id: string | null, catalog?: CanvasCatalog | null) => graphIndex(doc, catalog).mode(id);
-/** A container where people place things by hand: dragging stores a position that the layout then respects. */
-export const freeform = (mode: LayoutMode) => mode === 'free' || mode === 'graph';
+/**
+ * Pinning (docs/design.md §16.1). A stored `position` pins an entity inside its container, whatever the container's
+ * layout: the automatic layout arranges the unpinned children as if the pinned ones were not there, then anything a
+ * pinned child lands on is pushed aside. `free` is the one mode with no automatic arrangement to keep.
+ */
+export const manual = (mode: LayoutMode) => mode === 'free';
+export const isPinned = (entity: Pick<Entity, 'position'>) => !!entity.position;
 export const isNodeBlock = (block: CanvasBlock, catalog?: CanvasCatalog | null) => (catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer ?? (block.typeId === 'node' ? 'node' : undefined)) === 'node';
 
 type Sized = { id: string; width: number; height: number };
@@ -306,6 +329,24 @@ function packRows(rects: Box[], x: number, y: number, wrap: number, gap: number)
   for (const r of rects) { if (cx > x && cx + r.width > x + wrap) { cx = x; y += rowHeight + gap; rowHeight = 0; } r.x = cx; r.y = y; cx += r.width + gap; rowHeight = Math.max(rowHeight, r.height); }
 }
 export type CanvasLayout = { rects: Map<string, Rect>; lanes: Map<string, Point[]>; index: GraphIndex };
+export type BlockSize = NonNullable<CanvasBlock['size']>;
+export function minimumBlockSize(block: CanvasBlock, catalog?: CanvasCatalog | null): BlockSize {
+  const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer;
+  const min = tokens.canvas.resize.minimum;
+  return renderer === 'node' ? min.node : renderer === 'preview-frame' ? min.web : renderer === 'image-ref' ? min.media : min.standard;
+}
+/** A resize changes only the frame, never text scale. Shift preserves the starting aspect ratio. */
+export function resizeBlockSize(start: BlockSize, delta: Point, minimum: BlockSize, proportional = false, grid = false): BlockSize {
+  const max = tokens.canvas.resize.max, clamp = (v: number, min: number) => Math.max(min, Math.min(max, Number.isFinite(v) ? v : min));
+  if (proportional) {
+    const factor = Math.abs(delta.x / start.width) >= Math.abs(delta.y / start.height) ? (start.width + delta.x) / start.width : (start.height + delta.y) / start.height;
+    const high = Math.min(max / start.width, max / start.height), low = Math.min(high, Math.max(minimum.width / start.width, minimum.height / start.height));
+    const scale = Math.max(low, Math.min(high, Number.isFinite(factor) ? factor : low));
+    return { width: Math.round(start.width * scale), height: Math.round(start.height * scale) };
+  }
+  const w = clamp(start.width + delta.x, minimum.width), h = clamp(start.height + delta.y, minimum.height);
+  return { width: clamp(grid ? snap(w) : Math.round(w), minimum.width), height: clamp(grid ? snap(h) : Math.round(h), minimum.height) };
+}
 /** `viewportWidth` only decides where rows wrap; without it the layout is the same on every screen. */
 export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number> = {}, catalog?: CanvasCatalog | null, viewportWidth?: number): CanvasLayout {
   const index = graphIndex(doc, catalog), { groups } = index, blocks = new Map(doc.blocks.map(b => [b.id, b]));
@@ -319,22 +360,30 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
     const spacing = layout?.gap ?? (mode === 'flow' ? tokens.layout.flow.gap : hasGroups && !container ? tokens.canvas.groupGap : tokens.layout.stack.gap);
     const place = (r: Rect, p: Point) => { r.x = clamp ? Math.max(origin.x, p.x) : p.x; r.y = clamp ? Math.max(origin.y, p.y) : p.y; };
     const positionedRects = () => children.map((id, i) => entity(id).position ? childRects[i] : null).filter((r): r is Rect => !!r);
+    // In the automatic modes below, pinned children step out of the arrangement and the rest close ranks.
+    const flowing = mode === 'graph' || mode === 'free' ? childRects : childRects.filter((_, i) => !entity(children[i]).position);
+    const pin = () => {
+      if (flowing.length === childRects.length) return;
+      const held = new Set<Box>(); children.forEach((id, i) => { const p = entity(id).position; if (p) { place(childRects[i], p); held.add(childRects[i]); } });
+      resolveOverlaps(childRects, mode === 'rows' ? packGap : spacing, held);
+    };
     if (mode === 'stack') {
-      const maxWidth = Math.max(container ? tokens.size.blockWidth.standard : 0, ...childRects.map(r => r.width)); let y = origin.y;
-      childRects.forEach(r => { r.x = origin.x; r.y = y; r.width = maxWidth; y += r.height + spacing; });
-    } else if (mode === 'flow') { let x = origin.x; childRects.forEach(r => { r.x = x; r.y = origin.y; x += r.width + spacing; }); }
-    else if (mode === 'rows') packRows(childRects, origin.x, origin.y, wrap, packGap);
+      const maxWidth = Math.max(container ? tokens.size.blockWidth.standard : 0, ...flowing.map(r => r.width)); let y = origin.y;
+      flowing.forEach((r) => { r.x = origin.x; r.y = y; if (!blocks.get(children[childRects.indexOf(r)])?.size) r.width = maxWidth; y += r.height + spacing; }); pin();
+    } else if (mode === 'flow') { let x = origin.x; flowing.forEach(r => { r.x = x; r.y = origin.y; x += r.width + spacing; }); pin(); }
+    else if (mode === 'rows') { packRows(flowing, origin.x, origin.y, wrap, packGap); pin(); }
     else if (mode === 'grid') {
-      const cols = Math.min(tokens.layout.grid.columnsMax, layout?.columns ?? tokens.layout.grid.columns), cell = Math.max(tokens.size.blockWidth.standard, ...childRects.filter(r => r.width <= tokens.size.blockWidth.standard || hasGroups).map(r => r.width));
+      const cols = Math.min(tokens.layout.grid.columnsMax, layout?.columns ?? tokens.layout.grid.columns), cell = Math.max(tokens.size.blockWidth.standard, ...flowing.filter(r => r.width <= tokens.size.blockWidth.standard || hasGroups).map(r => r.width));
       let y = origin.y, rowH = 0, column = 0;
-      childRects.forEach(r => {
-        const span = r.width > cell ? cols : 1;
+      flowing.forEach(r => {
+        const sized = !!blocks.get(children[childRects.indexOf(r)])?.size, span = r.width > cell ? sized ? Math.min(cols, Math.ceil((r.width + spacing) / (cell + spacing))) : cols : 1;
         if (column + span > cols) { y += rowH + spacing; column = 0; rowH = 0; }
         r.x = origin.x + column * (cell + spacing); r.y = y;
-        if (span > 1) r.width = Math.max(r.width, cols * cell + (cols - 1) * spacing);
+        if (span > 1 && !sized) r.width = Math.max(r.width, cols * cell + (cols - 1) * spacing);
         rowH = Math.max(rowH, r.height); column += span;
         if (column >= cols) { y += rowH + spacing; column = 0; rowH = 0; }
       });
+      pin();
     } else if (mode === 'graph') {
       const edges = index.edges(container), linked = new Set(edges.flatMap(e => [e.from, e.to]));
       const nodes = children.map((id, i) => ({ id, width: childRects[i].width, height: childRects[i].height })).filter(n => linked.has(n.id));
@@ -363,7 +412,7 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
     const block = blocks.get(id);
     if (block) {
       const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = renderer === 'diagram' || renderer === 'preview-frame';
-      const r = { x: 0, y: 0, width: node ? G.node.width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard, height: heights[id] ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
+      const r = { x: 0, y: 0, width: block.size?.width ?? (node ? G.node.width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size?.height ?? heights[id] ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
       rects.set(id, r); return r;
     }
     const g = groups.get(id)!, children = [...g.blockIds, ...g.groupIds].filter(child => index.entities.has(child));
@@ -405,7 +454,34 @@ export function visibleEnd(index: GraphIndex, id: string): string {
   for (let i = chain.length - 2; i > 0; i--) if (index.groups.get(chain[i])?.collapsed) return chain[i];
   return id;
 }
-export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (id: string) => Point | undefined): LinkRoute[] {
+export type FrameShift = Point & { width?: number; height?: number };
+export type MagnetTarget = { id: string; point: Point; side: Side };
+/** Ports attract in screen pixels. Cards win over containing regions; a lock has a wider release radius. */
+export function linkMagnet(layout: CanvasLayout, from: string, point: Point, scale = 1, previous: MagnetTarget | null = null, shift?: (id: string) => FrameShift | undefined): MagnetTarget | null {
+  const { index, rects } = layout, source = rects.get(from), factor = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  if (!source || source.hidden || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const eligible = (id: string) => id !== from && !index.chain(id).includes(from) && !index.chain(from).includes(id) && !rects.get(id)?.hidden;
+  const box = (id: string) => { const r = rects.get(id)!, d = shift?.(id); return d ? { ...r, x: r.x + d.x, y: r.y + d.y, width: d.width ?? r.width, height: d.height ?? r.height } : r; };
+  const ports = (id: string): MagnetTarget[] => { const r = box(id); return [
+    { id, side: 'top', point: { x: r.x + r.width / 2, y: r.y } }, { id, side: 'right', point: { x: r.x + r.width, y: r.y + r.height / 2 } },
+    { id, side: 'bottom', point: { x: r.x + r.width / 2, y: r.y + r.height } }, { id, side: 'left', point: { x: r.x, y: r.y + r.height / 2 } },
+  ]; };
+  const distance = (target: MagnetTarget) => Math.hypot(target.point.x - point.x, target.point.y - point.y);
+  const inside = (id: string) => { const r = box(id); return point.x >= r.x && point.x <= r.x + r.width && point.y >= r.y && point.y <= r.y + r.height; };
+  const nearest = (id: string) => ports(id).sort((a, b) => distance(a) - distance(b))[0];
+  const candidates = [...rects.keys()].filter(eligible), blocks = candidates.filter(id => !index.groups.has(id)), groups = candidates.filter(id => index.groups.has(id)).sort((a, b) => rects.get(b)!.depth - rects.get(a)!.depth);
+  const hit = [...blocks].reverse().find(inside);
+  if (hit) return previous?.id === hit ? ports(hit).find(p => p.side === previous.side)! : nearest(hit);
+  const held = previous && eligible(previous.id) ? ports(previous.id).find(p => p.side === previous.side) : undefined;
+  if (held && !index.groups.has(held.id) && distance(held) <= tokens.motion.magnet.releaseRadius / factor) return held;
+  const nearby = blocks.flatMap(ports).filter(p => distance(p) <= tokens.motion.magnet.radius / factor).sort((a, b) => distance(a) - distance(b))[0];
+  if (nearby) return nearby;
+  const region = groups.find(inside);
+  if (region) return previous?.id === region ? ports(region).find(p => p.side === previous.side)! : nearest(region);
+  if (held && distance(held) <= tokens.motion.magnet.releaseRadius / factor) return held;
+  return groups.flatMap(ports).filter(p => distance(p) <= tokens.motion.magnet.radius / factor).sort((a, b) => distance(a) - distance(b))[0] ?? null;
+}
+export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (id: string) => FrameShift | undefined): LinkRoute[] {
   const { index, rects } = layout, L = tokens.graph.link, bundles = new Map<string, CanvasLink[]>();
   for (const link of doc.links ?? []) {
     if (!rects.has(link.from) || !rects.has(link.to)) continue;
@@ -413,7 +489,7 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
     if (from === to || index.chain(from).includes(to) || index.chain(to).includes(from)) continue;
     const key = `${from}>${to}`; (bundles.get(key) ?? bundles.set(key, []).get(key)!).push(link);
   }
-  const box = (id: string): Box => { const r = rects.get(id)!, delta = shift?.(id); return delta ? { ...r, x: r.x + delta.x, y: r.y + delta.y } : r; };
+  const box = (id: string): Box => { const r = rects.get(id)!, delta = shift?.(id); return delta ? { ...r, x: r.x + delta.x, y: r.y + delta.y, width: delta.width ?? r.width, height: delta.height ?? r.height } : r; };
   type Draft = { key: string; links: CanvasLink[]; from: string; to: string; a: Box; b: Box; sides: [Side, Side]; lane?: Point[]; vertical: boolean };
   const drafts: Draft[] = [];
   for (const [key, links] of bundles) {
@@ -482,24 +558,157 @@ export function connectOperations(doc: CanvasDocument, from: string, to: string,
   const existing = (doc.links ?? []).find(l => l.from === from && l.to === to && l.kind === kind); if (existing) return { existing, operations: [] };
   const id = newId('link'); return { id, operations: [{ type: 'link.create', link: { id, from, to, kind } }] };
 }
-export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, ids: string[], delta: Point, target?: string | null): CanvasOperation[] {
-  const result: CanvasOperation[] = [], index = graphIndex(doc);
-  const preservedLayouts = new Set<string>();
-  const entities = topSelection(doc, ids);
-  for (const e of entities) {
-    const r = rects.get(e.id); if (!r) continue;
-    const parentId = target === undefined ? e.parentGroupId ?? null : target;
-    if (parentId === e.id || ancestors(doc, doc.groups.find(g => g.id === parentId) ?? e).some(g => g.id === e.id)) continue;
-    const parent = parentId ? rects.get(parentId) : null;
-    const g = doc.groups.find(g => g.id === parentId);
-    const effectiveMode = index.mode(parentId), placed = freeform(effectiveMode);
-    if (target === undefined && !placed) continue;
-    // The reducer retains old coordinates on reparent. Pin the existing stack intent
-    // when layout is absent, so a positioned root cannot turn the target into free layout.
-    if (target !== undefined && g && !g.layout && !placed && !preservedLayouts.has(g.id)) {
-      preservedLayouts.add(g.id); result.push({ type: 'group.update', id: g.id, patch: { layout: { mode: 'stack' } } });
+const inside = (p: Point, r: Box, slack = 0) => p.x >= r.x - slack && p.x <= r.x + r.width + slack && p.y >= r.y - slack && p.y <= r.y + r.height + slack;
+/** Every id that travels when `ids` are dragged: the top-most of them and everything they contain. */
+export function travellers(doc: CanvasDocument, ids: string[]): string[] {
+  const out: string[] = [], seen = new Set<string>();
+  const add = (id: string) => { if (seen.has(id)) return; seen.add(id); out.push(id); const g = doc.groups.find(g => g.id === id); if (g) [...g.blockIds, ...g.groupIds].forEach(add); };
+  topSelection(doc, ids).forEach(e => add(e.id)); return out;
+}
+/**
+ * The container a drag would land in: the innermost open group under the pointer, or null for the canvas itself.
+ * A group being dragged, and anything inside it, is never a target. `current` is kept until the pointer is clearly
+ * outside it (`slack`), so a hand resting on a frame edge does not flicker between two targets.
+ */
+export function dropTarget(doc: CanvasDocument, layout: Pick<CanvasLayout, 'rects' | 'index'>, ids: string[], point: Point, current?: string | null, slack = 0): string | null {
+  const moving = new Set(ids), { rects, index } = layout;
+  const open = doc.groups.filter(g => { const r = rects.get(g.id); return !!r && !r.hidden && !g.collapsed && !index.chain(g.id).some(id => moving.has(id)) && inside(point, r, g.id === current ? slack : 0); });
+  return open.sort((a, b) => rects.get(b.id)!.depth - rects.get(a.id)!.depth)[0]?.id ?? null;
+}
+export type Guide = { axis: 'x' | 'y'; at: number; from: number; to: number };
+/**
+ * Alignment against siblings: the moving box snaps when one of its edges or its centre comes within `threshold` of
+ * the same line on another box (or its edge meets the facing edge). One guide per axis, the nearest match.
+ */
+export function alignmentGuides(box: Box, others: Box[], threshold: number): { dx: number; dy: number; guides: Guide[] } {
+  const guides: Guide[] = [], shift = { x: 0, y: 0 };
+  for (const axis of ['x', 'y'] as const) {
+    const size = axis === 'x' ? 'width' : 'height', cross = axis === 'x' ? 'y' : 'x', crossSize = axis === 'x' ? 'height' : 'width';
+    const lines = (b: Box) => [b[axis], b[axis] + b[size] / 2, b[axis] + b[size]];
+    let best: { d: number; at: number } | null = null;
+    for (const other of others) {
+      const mine = lines(box), theirs = lines(other);
+      for (const [i, j] of [[0, 0], [1, 1], [2, 2], [0, 2], [2, 0]] as const) { const d = theirs[j] - mine[i]; if (Math.abs(d) <= threshold && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at: theirs[j] }; }
     }
-    result.push({ type: 'entity.move', id: e.id, parentGroupId: parentId, ...(!placed ? {} : { position: { x: snap(r.x + delta.x - (parent?.x ?? 0)), y: snap(r.y + delta.y - (parent?.y ?? 0)) } }) });
+    if (!best) continue;
+    shift[axis] = best.d;
+    const at = best.at, touching = others.filter(o => lines(o).some(line => Math.abs(line - at) < .5));
+    const from = Math.min(box[cross], ...touching.map(o => o[cross])), to = Math.max(box[cross] + box[crossSize], ...touching.map(o => o[cross] + o[crossSize]));
+    guides.push({ axis, at, from, to });
+  }
+  return { dx: shift.x, dy: shift.y, guides };
+}
+/** How fast the camera offset should move (px/s) while something is dragged near a viewport edge. Zero away from edges. */
+export function edgePan(pointer: Point, viewport: { width: number; height: number }, edge: number = tokens.motion.autoPan.edge, max: number = tokens.motion.autoPan.maxSpeed): Point {
+  const along = (p: number, length: number) => { const near = p < edge ? (edge - p) / edge : p > length - edge ? -(p - (length - edge)) / edge : 0, k = Math.max(-1, Math.min(1, near)); return Math.sign(k) * k * k * max; };
+  return { x: along(pointer.x, viewport.width), y: along(pointer.y, viewport.height) };
+}
+export type Camera = { scale: number; offset: Point };
+/** The camera that shows `box` whole and centred, never closer than `max`. */
+export function fitCamera(viewport: { width: number; height: number }, box: Box, max = 1, inset: number = tokens.canvas.fitInset): Camera {
+  const scale = Math.max(tokens.canvas.zoomMin, Math.min(max, (viewport.width - 2 * inset) / Math.max(1, box.width), (viewport.height - 2 * inset) / Math.max(1, box.height)));
+  return { scale, offset: { x: (viewport.width - box.width * scale) / 2 - box.x * scale, y: (viewport.height - box.height * scale) / 2 - box.y * scale } };
+}
+/** Zoom to `scale` keeping the world point under the screen point `anchor` where it is. */
+export function zoomAround(camera: Camera, scale: number, anchor: Point): Camera {
+  scale = Math.max(tokens.canvas.zoomMin, Math.min(tokens.canvas.zoomMax, scale));
+  return { scale, offset: { x: anchor.x - (anchor.x - camera.offset.x) * scale / camera.scale, y: anchor.y - (anchor.y - camera.offset.y) * scale / camera.scale } };
+}
+export function boundsOf(boxes: Box[]): Box | null {
+  if (!boxes.length) return null;
+  const x = Math.min(...boxes.map(b => b.x)), y = Math.min(...boxes.map(b => b.y));
+  return { x, y, width: Math.max(...boxes.map(b => b.x + b.width)) - x, height: Math.max(...boxes.map(b => b.y + b.height)) - y };
+}
+const childrenOf = (doc: CanvasDocument, parent: string | null): Entity[] => {
+  if (!parent) return [...doc.groups, ...doc.blocks].filter(e => !e.parentGroupId);
+  const g = doc.groups.find(g => g.id === parent), all = new Map<string, Entity>([...doc.blocks, ...doc.groups].map(e => [e.id, e]));
+  return g ? [...g.blockIds, ...g.groupIds].map(id => all.get(id)).filter((e): e is Entity => !!e) : [];
+};
+/** Direct children of a container (null = the canvas) that hold a stored position. */
+export const pinnedChildren = (doc: CanvasDocument, parent: string | null) => childrenOf(doc, parent).filter(isPinned).map(e => e.id);
+// `entity.move` re-attaches at the end of its parent. This puts a group's members back in reading order, newcomers last.
+const keepOrder = (group: CanvasGroup, arrived: Entity[], departed = new Set<string>()): CanvasOperation => ({ type: 'group.update', id: group.id, patch: {
+  blockIds: [...group.blockIds.filter(id => !departed.has(id)), ...arrived.filter(e => 'typeId' in e && !group.blockIds.includes(e.id)).map(e => e.id)],
+  groupIds: [...group.groupIds.filter(id => !departed.has(id)), ...arrived.filter(e => 'groupIds' in e && !group.groupIds.includes(e.id)).map(e => e.id)] } });
+/** Positions of unplaced children of a free container, as they are drawn now, so that nothing jumps when one of them moves. */
+export function freezeOperations(doc: CanvasDocument, rects: Map<string, Rect>, parent: string | null, except = new Set<string>()): CanvasOperation[] {
+  const origin = parent ? rects.get(parent) : null;
+  const operations: CanvasOperation[] = childrenOf(doc, parent).filter(e => !e.position && !except.has(e.id) && rects.has(e.id) && !rects.get(e.id)!.hidden)
+    .map(e => { const r = rects.get(e.id)!; return { type: 'entity.move', id: e.id, parentGroupId: parent, position: { x: Math.round(r.x - (origin?.x ?? 0)), y: Math.round(r.y - (origin?.y ?? 0)) } }; });
+  const group = parent ? doc.groups.find(g => g.id === parent) : undefined;
+  if (operations.length && group) operations.push(keepOrder(group, []));
+  return operations;
+}
+/**
+ * Moving by hand always stores a position, relative to the parent, in whatever layout the parent has: that is the pin.
+ * `target` undefined keeps each entity in its own container; a target (or null for the canvas) also re-parents.
+ * In a free container the unplaced siblings are frozen where they are drawn in the same transaction.
+ * The first selected top-level entity anchors grid snapping; the whole selection shares its delta.
+ * `grid: false` rounds instead of snapping, for a delta that was already aligned to a guide.
+ */
+export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, ids: string[], delta: Point, target?: string | null, options: { catalog?: CanvasCatalog | null; grid?: boolean } = {}): CanvasOperation[] {
+  const index = graphIndex(doc, options.catalog);
+  const moves = topSelection(doc, ids).map(e => ({ e, to: target === undefined ? e.parentGroupId ?? null : target }))
+    .filter(({ e, to }) => rects.has(e.id) && (!to || index.groups.has(to) && !index.chain(to).includes(e.id)));
+  if (!moves.length) return [];
+  if (options.grid !== false) {
+    const anchor = moves.find(m => m.e.id === ids[0]) ?? moves[0], r = rects.get(anchor.e.id)!, origin = anchor.to ? rects.get(anchor.to) : null;
+    const local = { x: r.x + delta.x - (origin?.x ?? 0), y: r.y + delta.y - (origin?.y ?? 0) };
+    delta = { x: delta.x + snap(local.x) - local.x, y: delta.y + snap(local.y) - local.y };
+  }
+  const moving = new Set(moves.map(m => m.e.id)), parents = [...new Set(moves.flatMap(m => [m.to, m.e.parentGroupId ?? null]))], result: CanvasOperation[] = [];
+  for (const parent of parents) if (manual(index.mode(parent))) result.push(...freezeOperations(doc, rects, parent, moving).filter(op => op.type !== 'group.update'));
+  const frozen = result.length;
+  for (const { e, to } of moves) {
+    const r = rects.get(e.id)!, origin = to ? rects.get(to) : null;
+    result.push({ type: 'entity.move', id: e.id, parentGroupId: to, position: { x: Math.round(r.x + delta.x - (origin?.x ?? 0)), y: Math.round(r.y + delta.y - (origin?.y ?? 0)) } });
+  }
+  for (const parent of parents) {
+    const g = parent ? index.groups.get(parent) : undefined;
+    if (g && ([...g.blockIds, ...g.groupIds].some(id => moving.has(id)) || result.slice(0, frozen).some(op => op.type === 'entity.move' && op.parentGroupId === parent))) {
+      const departed = new Set(moves.filter(m => (m.e.parentGroupId ?? null) === parent && m.to !== parent).map(m => m.e.id));
+      result.push(keepOrder(g, moves.filter(m => m.to === parent).map(m => m.e), departed));
+    }
+  }
+  // One transaction carries at most 200 operations; past that, freezing the siblings is what gives way.
+  return result.length > 200 ? result.filter((op, i) => i >= frozen) : result;
+}
+/**
+ * "Soltar posición": hands entities back to the automatic layout of their container (or of `parent`, to re-parent
+ * without a place). The reducer cannot unset a position, so a positioned entity is re-created without one in the same
+ * transaction, keeping its id, contents, members, order and links. One undo step.
+ */
+export function releaseOperations(doc: CanvasDocument, ids: string[], catalog?: CanvasCatalog | null, parent?: string | null): CanvasOperation[] {
+  const index = graphIndex(doc, catalog), result: CanvasOperation[] = [];
+  for (const e of topSelection(doc, ids)) {
+    const from = e.parentGroupId ?? null, to = parent === undefined ? from : parent;
+    if (to && (!index.groups.has(to) || index.chain(to).includes(e.id))) continue;
+    if (!e.position) { if (to !== from) result.push({ type: 'entity.move', id: e.id, parentGroupId: to }); continue; }
+    const links = (doc.links ?? []).filter(l => l.from === e.id || l.to === e.id), { position: _position, ...rest } = e;
+    if ('typeId' in e) {
+      if (catalog && !catalog.blockTypes.some(t => t.id === e.typeId)) continue; // an unknown type could not be created again
+      result.push({ type: 'block.delete', id: e.id }, { type: 'block.create', block: { ...rest, parentGroupId: to } as CanvasBlock });
+    } else {
+      // Members wait outside while the empty frame is replaced, then the new frame takes them back in order.
+      for (const child of [...e.blockIds, ...e.groupIds]) result.push({ type: 'entity.move', id: child, parentGroupId: from });
+      result.push({ type: 'group.delete', id: e.id }, { type: 'group.create', group: { ...rest, parentGroupId: to } as CanvasGroup });
+    }
+    const home = to === from && to ? index.groups.get(to) : undefined; if (home) result.push(keepOrder(home, []));
+    links.forEach(link => result.push({ type: 'link.create', link }));
   }
   return result;
+}
+/**
+ * Grouping keeps everything where it is drawn: members get positions relative to the new frame, and in a free
+ * container the frame itself is placed around them. In an automatic container the frame joins the arrangement.
+ * Rounded, not snapped: header and padding are not multiples of the grid, and snapping would nudge every member.
+ */
+export function groupOperations(doc: CanvasDocument, rects: Map<string, Rect>, ids: string[], id: string, catalog?: CanvasCatalog | null): CanvasOperation[] {
+  const items = topSelection(doc, ids).filter(e => rects.has(e.id)); if (!items.length) return [];
+  const index = graphIndex(doc, catalog), parent = items.every(e => (e.parentGroupId ?? null) === (items[0].parentGroupId ?? null)) ? items[0].parentGroupId ?? null : null;
+  const nested = !!parent, pad = nested ? tokens.size.groupPaddingNested : tokens.size.groupPadding, head = nested ? tokens.size.groupHeaderNested : tokens.size.groupHeader;
+  const left = Math.min(...items.map(e => rects.get(e.id)!.x)), top = Math.min(...items.map(e => rects.get(e.id)!.y)), origin = parent ? rects.get(parent) : null;
+  const position = manual(index.mode(parent)) ? { x: Math.round(left - pad - (origin?.x ?? 0)), y: Math.round(top - head - pad - (origin?.y ?? 0)) } : undefined;
+  return [{ type: 'group.create', group: { id, title: 'Nuevo grupo', description: '', blockIds: [], groupIds: [], parentGroupId: parent, ...(position ? { position } : {}) } },
+    ...items.map((e): CanvasOperation => { const r = rects.get(e.id)!; return { type: 'entity.move', id: e.id, parentGroupId: id, position: { x: Math.round(r.x - left) + pad, y: Math.round(r.y - top) + head + pad } }; })];
 }

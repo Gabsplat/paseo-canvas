@@ -73,16 +73,19 @@ Una vez instalado el plugin:
    llevan una etiqueta visible.
 3. Inserta bloques o plantillas desde el catálogo. Selecciona un bloque, grupo o el documento
    para editar contenido e instrucciones de comunicación en el inspector.
-4. Conecta el agente que debe recibir tus acciones. Para agentes nuevos, habilita las
-   herramientas de Lienzo en ese workspace antes de crearlos. Para agentes existentes,
-   consulta su configuración MCP desde el panel y sigue la guía manual.
+4. No hace falta conectar nada: los agentes que crees después de instalar el plugin reciben
+   las herramientas de Lienzo, y el agente que usa un lienzo pasa a recibir tus acciones.
+   Desde el diálogo de agente puedes fijar un destinatario, desactivar las herramientas
+   para agentes nuevos o elegir entre lienzos compartidos y un lienzo por agente. Un agente
+   creado antes de instalar el plugin necesita la guía manual del mismo diálogo.
 5. Envía una acción explícita para pedir cambios, responder o consultar un paso. La selección
    por sí sola no inicia un turno. La interfaz muestra el estado real de entrega.
 6. Importa y exporta packs desde el catálogo. Los ejemplos integrados se pueden copiar a
    un pack portable propio; la referencia original está protegida.
 
-El acceso a documentos por MCP se autoriza por workspace. Conectar un agente elige el
-destinatario del feedback. Cambiar esa conexión no cambia el alcance de las herramientas.
+El acceso a documentos por MCP se autoriza por workspace. Con «Uno por agente», cada agente
+alcanza solo los lienzos que creó, los que recibe y los que nadie reclamó todavía. La conexión
+elige el destinatario del feedback.
 
 ## Contratos y diseño
 

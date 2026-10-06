@@ -1,13 +1,14 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { Platform, Pressable, Text, View, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, Text, View, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon, Modal as HostModal, ScrollView, TextInput, copyText, useToast } from '@getpaseo/plugin/client/react-native';
 import type { PluginHostProps } from '@getpaseo/plugin/client';
 import { toneColor, withAlpha, type Tone } from './color';
 import { tokens } from './tokens';
 import { downloadJson, useKeyboardFocus } from './web';
+import { usePressScale, useReducedMotion } from './motion';
 type Font = keyof typeof tokens.font.style;
 const Context = createContext<PluginHostProps | null>(null);
-export function UIProvider({ children, ...props }: PluginHostProps & { children: React.ReactNode }) { return <Context.Provider value={props}>{children}</Context.Provider>; }
+export function UIProvider({ children, ...props }: PluginHostProps & { children: React.ReactNode }) { useReducedMotion(); return <Context.Provider value={props}>{children}</Context.Provider>; }
 export function useHostId(): string | undefined { return useContext(Context)?.host.id; }
 export function useUI() {
   const props = useContext(Context); if (!props) throw new Error('Lienzo UI context unavailable');
@@ -44,9 +45,11 @@ export function Button({ label, icon, onPress, disabled = false, variant = 'seco
   </Pressable>;
 }
 export function IconButton({ icon, label, onPress, active, disabled }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
-  const u = useUI(), [focused, setFocus] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus;
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled, selected: !!active }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} hitSlop={6}
-    style={({ pressed, ...state }) => ({ width: u.compact ? 44 : 32, height: u.compact ? 44 : 32, borderRadius: 6, borderWidth: focus ? 2 : 0, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center', opacity: disabled ? .45 : 1, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : active ? u.c.surface2 : (state as { hovered?: boolean }).hovered && !disabled ? withAlpha(u.c.foreground, .06) : 'transparent' })}><Icon name={icon} size={16} color={active ? u.c.foreground : u.c.foregroundMuted} /></Pressable>;
+  const u = useUI(), [focused, setFocus] = useState(false), [hovered, setHovered] = useState(false), [pressed, setPressed] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus, feedback = usePressScale();
+  // The hit area stays put; the visual inside it scales on press (tokens.motion.press).
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled, selected: !!active }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }} onPressIn={() => { setPressed(true); feedback.press(true); }} onPressOut={() => { setPressed(false); feedback.press(false); }} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} hitSlop={6} style={{ width: u.compact ? 44 : 32, height: u.compact ? 44 : 32, opacity: disabled ? .45 : 1 }}>
+    <Animated.View style={{ flex: 1, borderRadius: 6, borderWidth: focus ? 2 : 0, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : active ? u.c.surface2 : hovered && !disabled ? withAlpha(u.c.foreground, .06) : 'transparent', transform: [{ scale: feedback.scale }] }}><Icon name={icon} size={16} color={active ? u.c.foreground : u.c.foregroundMuted} /></Animated.View>
+  </Pressable>;
 }
 export function Chip({ label, tone = 'neutro', icon, center = false, style }: { label: string; tone?: Tone; icon?: string; center?: boolean; style?: StyleProp<ViewStyle> }) {
   const u = useUI(); return <View style={[{ alignSelf: center ? 'center' : 'flex-start', flexShrink: 1, minHeight: 20, paddingHorizontal: 6, borderRadius: 4, backgroundColor: u.wash(tone), flexDirection: 'row', alignItems: 'center', gap: 4 }, style]}>{icon && <Icon name={icon} size={12} color={u.tone(tone)} />}<Txt kind="label" muted numberOfLines={1} style={{ flexShrink: 1 }}>{label}</Txt></View>;

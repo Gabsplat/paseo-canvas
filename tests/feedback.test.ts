@@ -9,7 +9,7 @@ import { ToolRouter, integrationInstructions } from "../plugin/server/tools";
 import type { PluginBeforeRequests } from "@getpaseo/plugin/server";
 import { CanvasStore } from "../plugin/server/store";
 import { CanvasService } from "../plugin/server/service";
-import { setup, workspaceId, fakeGateway } from "./helpers";
+import { setup, workspaceId, fakeGateway, content } from "./helpers";
 
 const reference = { workspaceId, documentId: "d" };
 const action = (eventId: string, delivery: "immediate" | "batched" = "immediate") => rpc.agentAction.input.parse({ ...reference, expectedRevision: 0, eventId, action: { kind: "selection.ask", label: "Explain selection", payload: { answer: "A" }, targetIds: ["b"], delivery } });
@@ -177,18 +177,54 @@ test("Codex injection avoids the SDK visibility allowlist and preserves unrelate
   }
 });
 
-test("workspace opt-in controls new-agent injection; hook failure preserves original request", async t => {
+test("new agents get the tools by default; opting out and per-workspace choices are respected; hook failure preserves the request", async t => {
   const { directory, service } = await setup(t), mock = fakeGateway(service);
   const bridge = new CanvasBridge(directory, new ToolRouter(service, owner => mock.gateway.scope(owner))); t.after(() => bridge.close());
   const request: PluginBeforeRequests["agent.create"] = { config: { provider: "codex", cwd: "/workspace/a" } };
-  assert.equal(await prepareCreation(request, mock.gateway, bridge), request);
-  await service.configureInjection({ workspaceId, enabled: true, expectedRevision: 0 });
-  const next = await prepareCreation(request, mock.gateway, bridge);
-  assert.ok(next.config.mcpServers?.["paseo-canvas"]);
   const elsewhere: PluginBeforeRequests["agent.create"] = { config: { provider: "claude", cwd: "/somewhere/else" } };
+  assert.deepEqual(await service.injection(), { revision: 0, workspaceIds: ["*"] });
+  const entry = (await prepareCreation(elsewhere, mock.gateway, bridge)).config.mcpServers?.["paseo-canvas"];
+  assert.ok(entry && entry.type === "stdio");
+  assert.equal(entry.env?.ELECTRON_RUN_AS_NODE, "1");
+  assert.deepEqual(await service.configureInjection({ workspaceId: "*", enabled: false, expectedRevision: 0 }), { revision: 1, workspaceIds: [] });
+  assert.equal(await prepareCreation(request, mock.gateway, bridge), request);
+  await service.configureInjection({ workspaceId, enabled: true, expectedRevision: 1 });
+  assert.ok((await prepareCreation(request, mock.gateway, bridge)).config.mcpServers?.["paseo-canvas"]);
   assert.equal(await prepareCreation(elsewhere, mock.gateway, bridge), elsewhere);
-  await service.configureInjection({ workspaceId: "*", enabled: true, expectedRevision: 1 });
-  assert.ok((await prepareCreation(elsewhere, mock.gateway, bridge)).config.mcpServers?.["paseo-canvas"]);
   await service.store.close();
   assert.equal(await prepareCreation(request, mock.gateway, bridge), request);
+});
+
+test("using a canvas connects the agent without bumping its revision; a pinned recipient stays; archived agents release", async t => {
+  const { service } = await setup(t), owners = new Map([["owner-a", "a"], ["owner-b", "b"]]);
+  const router = new ToolRouter(service, async owner => ({ agentId: owners.get(owner)!, workspaceId }));
+  await router.call("canvas_read", { documentId: "d" }, "owner-a");
+  let current = await service.read({ workspaceId, documentId: "d" });
+  assert.equal(current.connection?.agentId, "a"); assert.equal(current.document.revision, 0);
+  await router.call("canvas_read", { documentId: "d" }, "owner-b");
+  assert.equal((await service.read({ workspaceId, documentId: "d" })).connection?.agentId, "a", "a read does not take a canvas from its recipient");
+  await router.call("canvas_apply", { documentId: "d", expectedRevision: 0, operations: [{ type: "block.update", id: "b", patch: { title: "B2" } }] }, "owner-b");
+  current = await service.read({ workspaceId, documentId: "d" });
+  assert.equal(current.connection?.agentId, "b", "the agent that edits becomes the recipient"); assert.equal(current.document.revision, 1);
+  await service.connect({ workspaceId, documentId: "d", expectedRevision: 1, connection: { agentId: "a", workspaceId, pinned: true } });
+  await router.call("canvas_apply", { documentId: "d", expectedRevision: 2, operations: [{ type: "block.update", id: "b", patch: { title: "B3" } }] }, "owner-b");
+  assert.equal((await service.read({ workspaceId, documentId: "d" })).connection?.agentId, "a", "a hand-picked recipient is kept");
+  await service.releaseAgent("a");
+  assert.equal((await service.read({ workspaceId, documentId: "d" })).connection, null);
+});
+
+test("one canvas per agent hides other agents' documents; shared mode shows them all", async t => {
+  const { service } = await setup(t), owners = new Map([["owner-a", "a"], ["owner-b", "b"]]);
+  const router = new ToolRouter(service, async owner => ({ agentId: owners.get(owner)!, workspaceId }));
+  const ids = async (owner: string) => ((await router.call("canvas_list", {}, owner)) as { documents: { id: string }[] }).documents.map(d => d.id).sort();
+  await router.call("canvas_create", { id: "mine", content: content() }, "owner-a");
+  assert.deepEqual(await ids("owner-b"), ["d", "mine"]);
+  assert.deepEqual(await service.configureSharing({ workspaceId, mode: "agent" }), { mode: "agent" });
+  assert.deepEqual(await ids("owner-a"), ["d", "mine"]);
+  assert.deepEqual(await ids("owner-b"), ["d"], "the unclaimed document stays reachable; the other agent's does not");
+  await assert.rejects(router.call("canvas_read", { documentId: "mine" }, "owner-b"), /belongs to another agent/);
+  await router.call("canvas_read", { documentId: "d" }, "owner-b");
+  assert.deepEqual(await ids("owner-a"), ["mine"], "claimed by b");
+  await service.configureSharing({ workspaceId, mode: "shared" });
+  assert.deepEqual(await ids("owner-a"), ["d", "mine"]);
 });

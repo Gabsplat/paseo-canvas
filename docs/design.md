@@ -1,4 +1,4 @@
-# Lienzo — visual design specification (v2, aligned with `plugin/shared`)
+# Lienzo — visual design specification (v5, aligned with `plugin/shared`)
 
 Owner: visual designer (Opus). Audience: the frontend implementer of `plugin/client/` and
 `plugin/index.client.tsx`. Normative. Field, operation and RPC names below are the ones in
@@ -7,14 +7,15 @@ and shapes, this file wins on how things look**.
 
 | Artifact | Status | Role |
 | --- | --- | --- |
-| `design/tokens.json` (v2) | ready | Every number, colour, font style, icon name. Re-transcribe into `plugin/client/tokens.ts`. v2 adds `renderers`, `layout`, `diagram`, `preview`, `media`, `web`, `size.blockWidth.{standard,wide}`; `blockWidth.s/l`, `size.handle`, `blockTypes.*`, `icons.lock` are gone. |
+| `design/tokens.json` (v5) | ready | Numbers, colours, font styles and icon names. Transcribed into `plugin/client/tokens.ts`. v3 adds graph geometry; v4 adds gesture, camera, layout and accessibility motion (§16); v5 adds resize, media navigation, onboarding and link magnetism (§17). |
 | `design/demo.html` | ready | A small real interactive profile/settings page in the Lienzo palette. It is *example content* for the `preview` block (served under `/design/demo.html`), not a mock of the plugin. |
 | `docs/design-audit.md` | rolling | Designer's review of the implemented UI with concrete fixes. |
-| Standalone mock of the plugin | **deferred** | Not built. The real UI is audited instead. |
+| `design/graph-harness/real/` | ready | Real RN canvas components mounted under react-native-web, with example data and stand-in host/controller. Verification scope and reproduction in its README. |
 
 Not in the contract, therefore **not designed and must not be rendered**: per-block author/provenance
-glyphs, locked/gated groups, per-block tone or size overrides, group resize handles, links between
-blocks on the canvas (connectors exist only *inside* a diagram block).
+glyphs, locked/gated groups, per-block tone overrides and group resize handles.
+Optional block sizes are now part of the contract, by explicit user authorization (§17.2).
+Canvas links are part of the contract and are specified in §15.
 
 ---
 
@@ -23,7 +24,8 @@ blocks on the canvas (connectors exist only *inside* a diagram block).
 - **Name:** *Lienzo*. "Paseo Canvas" appears only as the mono subtitle of the no-documents state.
 - **Idea:** a drafting table shared by a person and an agent. Paper surface, ink text, one
   blueprint-blue accent. Blocks are index cards; groups are frames with a labelled header. No
-  gradients, glows or shadows — depth is a surface step plus a 1 px border.
+  gradients or glows. At rest, depth is a surface step plus a 1 px border. A shadow appears only
+  while an object is picked up (§16).
 - **Language:** Spanish (neutral "tú"), sentence case, no exclamation marks, no emoji. Verbs on
   buttons. Identifiers stay mono and untranslated (`REV 14`, ids, URLs).
 - **Three typographic voices** (strict):
@@ -52,7 +54,8 @@ blocks on the canvas (connectors exist only *inside* a diagram block).
 - Overlays are host `Modal`s (dialog on wide, sheet on compact).
 - **DOM is allowed only in `plugin/client/web.ts`**, guarded by `layout.platform === "web"` and
   `typeof document !== "undefined"`. Its whole surface (see §9.3, §6.3, §5):
-  `downloadJson`, `pickJsonFile`, `WebFrame`, `attachWheel`, `attachKeys`.
+  `downloadJson`, `pickJsonFile`, `WebFrame`, `attachWheel`, `attachKeys`, `attachMiddlePan`,
+  `isTextTarget`, `isDragHandle`, `swallowClick` and `mountLinkLayer`. Each stays inert on native.
 
 ### 2.1 Colour helpers (`color.ts` — already matches)
 
@@ -159,43 +162,48 @@ Web shortcuts are attached through `web.ts attachKeys` (§12).
 - View state `{ s, o }` means `screen = s · world + o`. Pan adds the gesture delta to `o`. Zoom to
   `s'` around screen anchor `a` (default viewport centre): `o' = a − (a − o) · s'/s`.
 - Pan: `PanResponder` on the viewport background; the world is `pointerEvents="box-none"`.
-  Movement < 4 px = tap = clear selection. During the gesture drive `Animated.Value`s; commit to
-  state on release. Wheel (web): `attachWheel` → pan; with ⌘/Ctrl → zoom at the pointer.
+  Movement < 4 px remains a tap. Empty background taps clear selection; panning preserves it.
+  The camera lives in refs and `Animated.Value`s; moving it does not render the card contents.
+  Middle mouse pans over cards as well as background. Wheel (web): `attachWheel` → pan; with
+  ⌘/Ctrl → zoom at the pointer. Trackpad pinch follows small deltas directly; wheel notches ease.
 - Zoom control: bottom-right, inset 12, one `surface1` card (1 px border, radius 8, padding 2),
   **horizontal** so it takes one control row instead of a column over the content:
   `Minus` · mono `label` percent (min width 48, press = 100 %) · `Plus` · 1×16 divider · `Maximize`
   (fit). `Minus`/`Plus` disable at the zoom limits. The "Solo lienzo" exit button (top-right) uses the
   same card. Steps
-  `canvas.zoomSteps`. Fit = `min((vw−96)/cw, (vh−96)/ch)` clamped to `[0.4, 1]`, content centred.
+  `canvas.zoomSteps`. Fit = `min((vw−96)/cw, (vh−96)/ch)` clamped to `[0.25, 1]`, content centred.
   First open of a document: `s = clamp((vw − 96) / contentWidth, 0.8, 1)`, content centred
-  horizontally when it fits and otherwise left-aligned at 48 px, its top at 48 px (fit-all on a tall stack made text unreadable). No pinch in v1.
+  horizontally when it fits and otherwise left-aligned at 48 px, its top at 48 px (fit-all on a tall
+  stack made text unreadable). Fit and fit-selection animate for 280 ms. Native pinch is not implemented.
 - No drawn grid. Positions snap to 8. Z-order: groups by depth < connector lines < blocks < connector labels < link handle < banners/zoom (§15).
 
 ### 6.2 Geometry (what must result; nested flex or computed rects are both fine)
 
-Positions are **relative to the parent group** (root = world). Nothing has a stored size.
+Positions are **relative to the parent group** (root = world). Blocks can store an optional
+`size: { width, height }`; groups continue to size themselves around their children (§17.2).
 
 - **Block width:** `standard` 288, or `wide` 592 for renderers `diagram` and `preview-frame`
-  (`tokens.renderers[*].width`). Height is content height (measure with `onLayout`).
+  (`tokens.renderers[*].width`). These are defaults. Height is content height (measure with
+  `onLayout`); an explicit block size takes precedence over both default dimensions.
 - **Group box:** header 36 on top, then padding 16 around its content (nested: header 32, padding 12).
   Content is laid out by `group.layout.mode`; children are `blockIds` in order, then `groupIds`.
 
 | `layout.mode` | Label | Result |
 | --- | --- | --- |
-| `stack` | Pila | One column, gap `layout.gap ?? 12`. Column width = widest child; every child stretches to it. |
-| `grid` | Rejilla | `layout.columns ?? 2` columns (max 4) of 288, gap `?? 12`, items top-aligned. A `wide` block spans the full row. |
+| `stack` | Pila | One column, gap `layout.gap ?? 12`. Column width = widest child; children without an explicit size stretch to it. |
+| `grid` | Rejilla | `layout.columns ?? 2` columns (max 4) of 288, gap `?? 12`, items top-aligned. Default `wide` blocks span the full row. Explicitly sized blocks span the needed columns, bounded by the column count, and keep their own width. |
 | `flow` | Flujo | One row left→right, gap `?? 28`, items top-aligned, a `ChevronRight` 14 (`foregroundMuted`) centred in each gap at y = 20. Reads as a sequence. |
 | `free` | Libre | Children absolute at their `position` (subject to the collision and enclosure rules below). Inner size = max(child.x + width), max(child.y + height); min inner width 288. Children without `position` are stacked below the positioned ones, gap 12. |
-| *(absent)* | — | `stack` if no child has a `position`, otherwise `free`. |
+| *(absent)* | — | Infer by §15.1. A few pinned children do not change the automatic layout of their siblings. |
 
-- **Collisions (client-side, never persisted).** A stored `position` has no size, so its author
-  could not know how big the neighbours measure. After sizes are known, `resolveOverlaps` runs over
-  each family of positioned siblings (root, and the children of a `free` group): siblings are visited
-  nearest-the-origin first; one that intersects an already placed sibling moves **right or down,
+- **Collisions (client-side, never persisted).** Content, neighbours and stored sizes can change.
+  After sizes are known, `resolveOverlaps` runs over
+  each family of siblings, in every mode: pinned siblings are visited first, nearest-the-origin;
+  one that intersects an already placed sibling moves **right or down,
   whichever is shorter**, to clear it by the family gap (root 32 = `canvas.groupGap`; in a group, its
   `layout.gap ?? 12`), snapped up to 8. Siblings that do not intersect are never moved, so deliberate
   free positioning is kept. Root siblings therefore never overlap.
-- **Frames enclose children.** In a `free` group a child stored left of the padding or above the
+- **Frames enclose children.** A child stored left of the padding or above the
   content top (header + padding + description) is clamped back inside; the frame is sized after
   collisions are resolved.
 - **Group description** is measured (`heights[descriptionKey(groupId)]`, max 2 lines = 34) and
@@ -205,14 +213,16 @@ Positions are **relative to the parent group** (root = world). Nothing has a sto
   + 64), or (0, 0) if nothing is positioned. They are client-placed only; the first drag persists a
   position.
 - `group.collapsed === true` → the box is the header alone (width kept, min 320).
-- **Dragging** (wide/medium only): the grab zone is the block's header row (top 32 px) and the
-  group's header. Root entities and children of `free` groups move freely; one `entity.move`
-  (`{id, parentGroupId, position}`) on release, label `"Mover «{título}»"`. Children of
-  stack/grid/flow groups do not drag in v1 — reorder with "Subir"/"Bajar" (a `group.update` of
-  `blockIds`), change parent with the inspector's "Grupo" selector (`entity.move`).
-  While dragging: opacity 0.92, 2 px `accent` border; frames re-flow on release.
-- Drop on a group (pointer inside its box on release) → `entity.move` with that `parentGroupId`.
-  Target feedback: 2 px dashed `accent` border + `halo` fill.
+- **Dragging** (wide/medium): the whole node card, a prose card's header/title, or a group's header.
+  Every layout permits dragging. Selection moves together; selected descendants travel once with
+  their selected ancestor. Dragging pins an entity with `entity.move` (`{id, parentGroupId,
+  position}`); unpinned siblings continue to arrange automatically. The transaction also preserves
+  sibling order and freezes unplaced siblings when a manual container needs that (§16.1).
+  Inputs, selectable body text, embedded previews and action buttons keep their own interaction.
+  While held, a card stays opaque, lifts to scale 1.02 and its connectors follow directly.
+- Drop on the innermost open group under the pointer → parent-relative `entity.move`; release on
+  background → root. Own descendants and collapsed groups are excluded. Target feedback: 2 px
+  dashed `accent` border, "Soltar aquí" and `accent` fill at 0.08, entering over 120 ms.
 
 ### 6.3 Block card
 
@@ -280,37 +290,59 @@ Block states:
 
 ### 6.4 Preview block (`preview`: `{ description, url? }`)
 
-Wide card (592). Only `http:`/`https:` URLs count (use `safeUrl`); anything else is treated as absent.
+Default wide card (592); a saved size overrides it. Only safe `http:`/`https:` URLs count
+(use `safeUrl`); anything else is treated as absent.
 
 - **With URL:**
   - URL bar: 28 high, radius 6, fill `surface2`, pad H 8: `Globe` 12 muted · URL in `code`, one
     line, middle-ellipsised · `ExternalLink` icon button 26 (host `ExternalLink` / workspace browser).
   - Frame: height 360 (240 compact), radius 6, 1 px `border`, `surface0` fill, `overflow: hidden`.
-    - **Web:** `WebFrame` from `web.ts` (an `<iframe>` created with `createElement`, `sandbox` =
-      `tokens.preview.sandbox`, `referrerPolicy="no-referrer"`, `loading="lazy"`, title = block title).
-      The iframe swallows pointer events, so a transparent overlay `Pressable` covers it until the
-      block is selected (first click selects, then the page is interactive). While loading: skeleton
-      fill. If it has not fired `load` after 8 s: keep the frame and show under it `small` muted "Si
-      no se ve, el sitio puede no permitir incrustarse." + ghost small "Abrir".
+    - **Web:** `WebFrame` from `web.ts` (an `<iframe>` created with `createElement`,
+      `referrerPolicy="strict-origin-when-cross-origin"`, `loading="lazy"`, title = block title).
+      The page is interactive immediately: input, buttons and scrolling stay inside the iframe.
+      Loading feedback never intercepts the pointer. Baseline sandbox = `allow-scripts allow-forms`.
+      A cross-origin page additionally gets `allow-same-origin allow-popups
+      allow-popups-to-escape-sandbox`, so its own storage and sign-in popups can work. A URL on
+      Paseo's own origin keeps the baseline sandbox. This does not bypass embedding, cookie or
+      browser restrictions. After 8 s without `load`, show the honest timeout message and retain
+      the external-open action. A `load` event is not evidence that the embedded app works.
     - **Native:** no web view. The frame shows a centred column: `AppWindow` 24 muted, `small`
       "La vista en vivo se abre en el navegador.", secondary small "Abrir vista previa".
   - Description below the frame in `body`.
+  - A sized card fills its remaining space with the frame, keeping a 200 px frame minimum and
+    scrolling its body if necessary. Move the card by its header; resize it by its corner.
 - **Without URL (conceptual reference):** no URL bar, no frame. A box min-height 96, 1 px dashed
   `border`, radius 6, pad 12: mono `label` "REFERENCIA CONCEPTUAL" + description in `body`. It must
   not look like a running app.
-- Qualifier: `EN VIVO` when a URL is present, otherwise none. In an example document the header
+- Qualifier: `Web` when a URL is present, otherwise none. In an example document the header
   also carries the `EJEMPLO` chip.
 
 ### 6.5 Media block (`media`: `{ url, caption?, mediaKind? }`)
 
-- `mediaKind === "image"` and a safe URL: RN `Image`, height 180, `resizeMode="contain"`, fill
-  `surface2`, radius 6, `accessibilityLabel` = caption or title. On `onError` fall back to the
-  reference row.
-- Any other kind (`video`, `audio`, `reference`, absent): **reference row** — 32×32 tile (radius 6,
-  `wash(turquesa)`, icon from `tokens.media.kinds`, default `Link`) · column: host name in
-  `bodyStrong`, full URL in `code` muted, one line · `ExternalLink` icon button. Never autoplay or
-  embed.
-- `caption` below in `small` muted. Unsafe/empty URL → row with `CircleAlert` 12 + "Enlace no válido".
+- Accept links first; there is no local media upload. Infer familiar image/video/audio file
+  extensions; `mediaKind` can identify a URL without an extension. Unknown URLs remain references.
+- **Image:** RN `Image`, default height 180, `resizeMode="contain"`, fill `surface2`, radius 6.
+  Press to open `ImageViewer`: zoom 1–4× in 0.5 increments, reset-to-fit, and local image panning.
+  Viewer height 440 desktop / 320 compact. Its gesture never reaches the canvas.
+- **Direct video/audio on web:** browser-native controls in `web.ts`; video default height 200,
+  audio 48. `preload="none"`, inline playback, no autoplay. Controls handle playback, seeking,
+  fullscreen or picture-in-picture where the browser offers them. Direct media pauses when
+  offscreen or when the page becomes hidden; no React playback loop.
+- **YouTube/Vimeo on web:** show a quiet provider tile and `Cargar reproductor` first. Only that
+  explicit press mounts a player. Build the embed URL from a validated provider ID; YouTube uses
+  `youtube-nocookie.com` and preserves start times, Vimeo preserves valid unlisted `h` hashes.
+  Original query strings cannot enable autoplay. `Cerrar reproductor` unmounts it. Provider
+  permissions, availability and embedding policies still apply.
+- **Native video/audio/web:** open the original URL in the browser; no unprovided native WebView
+  or player dependency is assumed. Image viewing uses RN primitives.
+- Unknown or failed media shows its host, original URL and an honest fallback message.
+  Keep `Abrir referencia` and the optional caption visible. Invalid URLs explain how to supply
+  a valid HTTP/HTTPS link in the inspector. A sized card grows its media area without stretching
+  the image or scaling text; a short card scrolls its body.
+
+Provider URL decisions follow the [YouTube player parameters](https://developers.google.com/youtube/player_parameters),
+[YouTube embedding guidance](https://support.google.com/youtube/answer/171780?expand=PrivacyEnhancedMode&hl=en)
+and [Vimeo's unlisted embed guidance](https://help.vimeo.com/hc/en-us/articles/12426470858001-Embedded-player-displays-This-video-does-not-exist-message).
 
 ### 6.6 Group frame
 
@@ -532,6 +564,8 @@ Plantillas.
 | `downloadJson(filename, text): boolean` | `Blob` (`application/json`) → object URL → temporary `<a download>` click → revoke. `false` if no DOM or it throws. |
 | `pickJsonFile(maxBytes = 1048576): Promise<string \| null>` | Temporary `<input type="file" accept=".json,application/json">`; resolves text, `null` on cancel, rejects over the limit. |
 | `WebFrame({ url, height, title })` | §6.4. |
+| `WebMedia({ url, height, title, kind })` | §6.5. Browser-native video/audio controls; inert on native. |
+| `guideWasDismissed(scope)`, `dismissGuide(scope)` | Personal guide preference, separate from shared document state (§17.1). |
 | `attachWheel`, `attachKeys` | Return an unsubscribe. No-ops off web. |
 
 ## 10. Inspector and context tray
@@ -670,12 +704,12 @@ default "Lienzo sin título").
 ## 12. Keyboard (web, through `attachKeys`)
 
 `Esc` clear selection/close overlay · `⌘/Ctrl Z`, `⇧⌘/Ctrl Z` undo/redo · `⌘/Ctrl G` group ·
-`Delete`/`Backspace` delete selection (no input focused) · arrows / `⇧` arrows nudge root or
-free-group entities 8 / 32 · `⌘/Ctrl Enter` Enviar al agente · `⌘/Ctrl K` catalog search · `Tab` /
+`Delete`/`Backspace` delete selection (no input focused) · arrows / `⇧` arrows nudge entities in
+every layout 8 / 32, pinning them without animation · `⌘/Ctrl Enter` Enviar al agente · `⌘/Ctrl K` catalog search · `Tab` /
 `⇧Tab` next/previous entity in reading order (groups' `blockIds` then `groupIds`, root last) ·
 `Enter` open inspector · inside a focused diagram: `←`/`→` previous/next step · `L` with exactly two
 entities selected: link the first to the second · `Delete`/`Backspace` with a link selected: delete
-the link · arrows also nudge entities inside a `graph` container (the nudge stores a position).
+the link · `1` fit the document · `2` fit selection · `0` reset zoom to 100 % · `+` / `−` zoom steps.
 
 Blocks and groups are focusable, `accessibilityRole="button"`,
 `accessibilityLabel="{Tipo}: {título}. {i} de {n} en {grupo}"`.
@@ -713,7 +747,7 @@ Applies to the document root (`document.layout`) and to every group (`group.layo
 |---|---|
 | explicit `layout.mode` | that mode (`graph`, `stack`, `grid`, `flow`, `free`) |
 | a link joins two direct children (links are lifted: a link between cards in two different child groups joins those groups) | `graph` |
-| a child has a stored `position` | `free` |
+| every direct child in a nonempty group has a stored `position` | `free` |
 | group holding groups, or holding only `node` cards (2+ children) | `rows` (client-only) |
 | otherwise | `stack` for a group, `free` for the root |
 
@@ -728,10 +762,11 @@ Applies to the document root (`document.layout`) and to every group (`group.layo
   smallest first-open zoom; 1400 when the viewport is unknown; a nested group gets its parent's width
   minus padding. The root's unplaced entities use the same wrap, so an old document without links or
   positions is rows of groups, never one column.
-- A stored `position` always wins, in every freeform mode (`free`, `graph`). Afterwards
+- A stored `position` wins in every mode (`stack`, `grid`, `flow`, `rows`, `graph`, `free`);
+  automatic placement only arranges unpinned siblings. Afterwards
   `resolveOverlaps` separates what intersects, settling hand-placed entities first so the layout's
-  placements move out of their way. Dragging or nudging inside a `graph` container is allowed and
-  stores a position; nothing else is persisted by the layout.
+  placements move out of their way. Dragging or nudging stores a position without changing the
+  container's explicit mode; nothing else is persisted by the layout.
 - Prose blocks keep their 288 / 592 widths; a `node` card is `graph.node.width` 224.
 
 ### 15.2 Node card (`renderer: "node"`, data `kind`, `status`, `summary`, `details`)
@@ -842,5 +877,219 @@ one selects the link.
 ### 15.8 Visual harness
 
 `design/graph-harness/` runs the real layout, tokens and `mountLinkLayer` with plain-DOM stand-ins
-for the cards (the panel itself only mounts inside Paseo). See its README.
+for the cards. `design/graph-harness/real/` additionally mounts the real `Canvas`, `BlockCard`,
+`LinkLayer` and motion code under react-native-web. Its controller parses operations with the real
+schema and applies the real reducer, with simulated latency and rejection. Host UI, transport,
+polling and panel chrome are stand-ins; this does not verify an installed Paseo panel. See the
+[real-component harness README](../design/graph-harness/real/README.md).
 
+## 16. Free dragging and motion — tokens v4
+
+This completes the direct-manipulation design from the Path, Rauno, Cosmos and Soumya references.
+Keep Lienzo's paper/ink palette; use motion to explain picking up, moving and placing an object.
+No sound or coloured glow. The parameters below are the implemented Opus motion choices.
+
+### 16.1 Positions and automatic layouts
+
+- A stored `position` pins an entity in its parent group's coordinate system, including the
+  header/padding inset. Root coordinates are world coordinates. Dragging never changes the
+  container's explicit layout mode.
+- In `stack`, `grid`, `flow`, inferred `rows` and `graph`, unpinned siblings arrange in their
+  original reading order around pins. Pins keep their intended positions subject to the existing
+  enclosure and overlap rules (§6.2). Dropping a pin onto occupied space may separate it to avoid
+  covering another card; rendered collision adjustments are not persisted automatically.
+- In `free`, moving or removing an entity first pins unplaced siblings where they are already
+  drawn. This happens in both the source and destination container, preserving their reading
+  order. Switching a partly pinned container to Libre freezes all remaining children before
+  changing its mode, including offsets that are not multiples of 8.
+- A multi-selection translates by one shared delta. Grid snapping uses the grabbed entity as
+  anchor and preserves spacing between selected entities. A selected child of a selected group
+  travels with the group and keeps its local coordinates; it is not moved twice.
+- **Soltar posición** releases an entity to its container's automatic placement. The selected
+  or hovered pinned entity in an automatic layout also shows a small `Pin` control. A container's
+  **Reordenar automáticamente** releases direct-child positions; it keeps the container's explicit
+  mode. In an explicit Libre container, the unplaced shelf becomes the fallback arrangement.
+- The current reducer has no operation to unset `position`. Release therefore deletes and
+  recreates the same ID without the position in one transaction, restoring its contents, members,
+  order and links. A group temporarily detaches its direct children before recreation. This is
+  tested against the actual schema, reducer, persistence and undo/redo; releasing a pin adds no
+  server operation. Selection is restored by the controller after successful release.
+- Transactions are limited to 200 operations. A large release is split into consecutive complete
+  entity transactions, with one undo step per batch. An entity whose release alone exceeds the
+  limit, or whose block type is absent from the catalog, reports an error before release. A drag
+  whose sibling freezing exceeds the budget prioritises the actual moves and membership order.
+
+### 16.2 Gesture behaviour
+
+On web, marked grab zones claim the initial press before their nested `Pressable` can swallow
+subsequent movement. They still select on a tap and add/toggle selection on a 500 ms long press.
+Dragging starts after 4 screen px, with the full press-to-pointer delta preserved. On native,
+move negotiation is used; compact mode retains the existing outline/read-mostly interaction.
+Nested action buttons, inputs, selectable body text and embedded pages keep their own controls.
+The click generated after a drag or pan is consumed; the next deliberate press works normally.
+
+While held, offsets follow the pointer directly, without a timing animation or document mutation.
+Connectors use the same offsets. A group travels with all descendants; frames around a moving
+child make room without recomputing the document layout on every pointer move. The innermost
+open group under the pointer is the drop target; its 8 screen px edge tolerance prevents flicker.
+A dragged group and its descendants are excluded as targets. Background drops return to root.
+
+Positions settle on the 8 world px grid. A sibling edge or centre within 6 screen px supplies an
+alignment guide instead of grid snapping on that axis. Guides are 1 screen px wide and fade out
+over 100 ms. Inside the viewport's last 48 screen px, auto-pan increases quadratically to a
+maximum of 900 screen px/s, while keeping the grabbed point under the hand.
+
+A rejected edit springs back to the saved position. Gesture epochs prevent a late rejection of
+an older edit from resetting an entity already picked up again. Persisted changes go through
+`c.edit`; the drag preview is local presentation until the transaction succeeds.
+
+### 16.3 Motion parameters
+
+All timed responses use `Easing.bezier(0.22, 1, 0.36, 1)`. The token set also reserves the
+`[0.65, 0, 0.35, 1]` curve; current canvas transitions do not use it.
+
+| Response | Implemented parameters |
+| --- | --- |
+| Icon-button press | scale `0.97`, 100 ms; hit area stays fixed |
+| Pick-up | scale `1.02`, 140 ms; opaque card; shadow `0px 14px 32px`, alpha `0.24`, derived from host ink/surface colours |
+| Put-down | lift/shadow return over 180 ms; position uses the spring below |
+| Gesture settle / rejected save | stiffness `380`, damping `32`, mass `1`; carry velocity in world px/s, clamped to ±`500`; rest distance `0.25` px, rest speed `2` px/s |
+| Automatic placement change | position offsets ease to zero over 240 ms |
+| Group-frame resize | width/height ease over 220 ms with the JS driver, preserving border/radius geometry |
+| New entity | opacity and scale `0.96 → 1`, 180 ms; move from 12 px toward its linked neighbour or parent header when available |
+| Drop target | opacity enters over 120 ms; accent wash alpha `0.08` |
+| Fit / fit selection | one progress value drives scale and offset together over 280 ms |
+| Zoom button / reset | 160 ms, anchored at viewport centre |
+| Command-wheel notch | 120 ms, anchored at pointer; notch threshold `40`; small trackpad-pinch deltas follow directly |
+| Pan momentum | velocity in screen px/ms; start above `0.2`, multiply by `0.995^dt`, stop below `0.02`; middle-button velocity uses a 0.6/0.4 filter and becomes zero after 80 ms idle |
+
+Transform and opacity use the native driver where available. Frame dimensions are the one layout
+property exception, so the frame's border, radius and label stay readable while its size changes.
+Springs and momentum finish at their rest thresholds, not at a fixed 280 ms deadline. Repeated
+arrow-key nudges are immediate. `AccessibilityInfo.isReduceMotionEnabled` and the shared live
+`reduceMotionChanged` subscription make subsequent motion instant and disable momentum; direct
+pointer following still works.
+
+### 16.4 Rendering and verification
+
+Camera state and gesture offsets live in refs/Animated values. Web connector geometry updates
+imperatively; unchanged SVG draws are skipped. Card contents are memoised separately from their
+position/dimming wrappers. RPC replies reuse unchanged block, group and link references so a
+saved move does not invalidate every card. Selection-count changes only invalidate selected
+cards that may show a detail note. Layout recalculates on document/measurement/viewport changes.
+
+`tests/frontend.test.ts` covers pin/release semantics in all modes, parent-relative moves, source
+and destination freezing, selected ancestor/child handling, sibling order, target exclusion,
+grid/guides, camera anchors and edge-pan. Service/store tests exercise real persisted pin/release,
+undo/redo and stale-revision rejection without losing links. The real-component harness drives
+pointer events, live connectors, repeated reparenting, groups, rejected saves, the `+` link handle,
+reduced-motion changes and a 150-node document in an isolated omabox. Exact commands, frame
+measurements and the limits of that validation are recorded in its README.
+
+## 17. Guide, interactive media, block sizes and link magnetism — tokens v5
+
+The user requested this extension and authorized the narrow model change needed to persist
+block sizes. Reuse the existing paper/ink palette, control geometry and motion curves. No new
+plugin dependencies, DOM in RN components, native player assumptions or decorative glows.
+
+### 17.1 Onboarding and feature reference
+
+`Onboarding.tsx` uses the host modal and RN controls. Six short steps cover documents/catalog,
+arrangement/groups/resize/navigation, connections, interactive material, agent communication,
+and revisions/packs/conflicts. A searchable **Todas las opciones** view includes the real
+catalog's type names and the existing keyboard shortcuts. Search ignores accents and case.
+Actions open the actual document, catalog, inspector or agent UI; they do not create example
+documents or send agent feedback automatically. Without a document, document-specific actions
+open the document list first.
+
+Show the guide once after the catalog finishes loading. **Después**, completion and closing
+record a personal preference, scoped to host/workspace, using guarded browser localStorage;
+native or unavailable storage uses process-session memory. This preference is not shared
+document metadata. **Guía de Lienzo** reopens it from the desktop bar or compact **Más acciones**.
+Long steps use the host modal's scrolling; progress steps are also directly selectable.
+The tour's new content enters with opacity/scale over 180 ms, using the existing ease-out curve.
+Keyboard canvas commands pause while the guide is open. UI copy is conversational Spanish.
+
+### 17.2 Persistent sizes and automatic placement
+
+`CanvasBlock.size` is optional and nullable, outside the type-specific `data` object:
+
+```ts
+size?: { width: number; height: number } | null
+```
+
+Both dimensions are finite world-pixel numbers. Schema bounds: width **160–4096**, height
+**104–4096**. Missing or `null` means automatic. The exact numeric inspector accepts these
+bounds and rounds to integer pixels. Dragging the corner uses readability minima from
+`canvas.resize.minimum`: node **160×104**, prose/other **224×144**, web **320×288**, media
+**240×320**. A size changes the frame; text, controls and images keep their normal scale.
+Body scrolling retains content when the frame is small.
+
+Select exactly one block in the canvas to reveal a **28 px** corner hit area with a **10 px**
+square grip, radius **3 px**. Drag in screen space converted by the current zoom. Shift keeps
+the starting aspect ratio, within the maximum bound. Normal release snaps both dimensions to
+the **8 world-pixel** grid; proportional release retains the ratio instead. The inspector
+offers width, height and **Tamaño automático** for keyboard and compact use.
+
+One release writes one `block.update` with `patch.size` through `c.edit`. While held, only the
+card's Animated width/height and its ancestor frames change; the document and sibling layout
+do not recompute on every pointer move. Live connector ports use those drawn dimensions.
+On confirmation, automatic placement and collision resolution run once; neighbours and group
+frames animate to accommodate the result. A rejected or cancelled resize restores confirmed
+geometry. Snap/rollback use the existing spring **380 / 32 / 1**; frame changes use **220 ms**
+and bezier **[0.22, 1, 0.36, 1]**. Dimensions use the JS driver so borders and content reflow
+correctly; feedback effects continue to animate transform/opacity.
+
+Size and pin state are independent. Resizing does not create or remove a position, change a
+container's layout mode or stretch other cards. Stack/grid/flow/graph use saved dimensions;
+stack stretching and grid spanning never overwrite a saved width. **Soltar posición** and
+**Reordenar automáticamente** preserve sizes. **Tamaño automático** writes `size: null` and
+preserves the pin. Duplicates, templates, JSON packs, persisted reopen and undo/redo preserve
+sizes through the existing schemas/reducer/store; no reducer or RPC operation is added.
+Groups still derive their frames from children and have no manual resize handle.
+
+### 17.3 Magnetic connection gesture
+
+While dragging the existing `+` handle, evaluate visible midpoint ports on all four sides.
+Acquire within **28 screen px**, retain within **40 screen px** to prevent flicker. Keep the
+side stable while inside a card; prefer a card to its containing group, with the innermost group
+as fallback. Exclude the source, its ancestors/descendants and hidden entities. Tolerances stay
+constant at every zoom level and port geometry includes live positions/sizes.
+
+An unsnapped endpoint follows the hand directly. On acquisition it springs to the port using
+the existing **stiffness 380, damping 32, mass 1**, hand velocity converted to world px/s and
+clamped to **±500**; rest thresholds **0.25 px / 2 px/s**. The marker is a restrained **10 px**
+accent ring with a surface fill. One burst emits **four 2×4 px marks**, starting 6 px from the
+port and travelling another **12 px**, with transform/opacity over **180 ms**, ease-out
+**[0.22, 1, 0.36, 1]**. Cooldown **240 ms**. There is no particle loop, glow, sound or shader.
+Reduced motion makes attraction immediate and suppresses the burst; the destination ring stays.
+
+Only target changes enter React state. Web updates one pointerless SVG preview path
+imperatively rather than rebuilding every stored connector on each pointer move. The scan is
+linear in visible endpoints, independent of layout calculation. Release creates the existing
+reducer-validated connection transaction; hovering or attracting never writes a link.
+
+### 17.4 Verification and delivery scope
+
+`pnpm test` passes **82 tests** and `pnpm typecheck` passes against the installed 0.10.3 SDK.
+New pure tests cover media URL rebuilding, sizes/bounds/ratio/grid, automatic layout geometry,
+live ports and magnet target hysteresis/exclusion. Real reducer/service/store checks cover
+persisted resize, size reset, duplicate/unpin, packs, reopen, undo/redo and revision conflicts.
+
+The isolated real-component harness tests corner resize (including Shift), ports following
+before save, one save per release, rejection rollback, magnetic acquisition outside a card,
+spring arrival, and link creation on release. It also mounts the actual guide, image viewer
+and media components: six guide steps, search, dismissal/reload, direct video play/pause,
+cross-origin web input/form/storage/scroll, image zoom/pan/reset and provider loading intent.
+Compact verification is RN-web at 390×844 with a stand-in host modal, not an iOS/Android run.
+
+External YouTube/Vimeo playback is not verified in the isolated network; provider recognition,
+validated embed URLs and lazy mounting are verified. Actual native touch/player behavior,
+Paseo modal portals, onboarding activation, inspector editing and Panel shortcuts through the
+live host/RPC are still unverified. The harness retains its explicit example label and has no
+live agent. Exact commands, measurements and host stand-ins are documented in the
+[harness README](../design/graph-harness/real/README.md).
+
+Changes remain local source changes. To load them, the coordinator reloads the installed
+`canvas` plugin (`paseo plugin reload canvas`) and refreshes the client panel. This version
+needs the shared size schema loaded as well as the client. Stored documents require no reset.

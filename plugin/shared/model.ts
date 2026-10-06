@@ -4,6 +4,8 @@ export const idSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9
 export const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const jsonObjectSchema = z.record(z.string().max(100), z.json());
 export const positionSchema = z.object({ x: z.number().finite(), y: z.number().finite() }).strict();
+// Optional presentation size. Old documents stay automatic; null explicitly returns a resized block to automatic.
+export const blockSizeSchema = z.object({ width: z.number().finite().min(160).max(4096), height: z.number().finite().min(104).max(4096) }).strict();
 export const communicationSchema = z.object({
   instructions: z.string().max(8000),
   intent: z.string().max(1000).default(""),
@@ -37,7 +39,7 @@ export const checklistDataSchema = z.object({ items: z.array(checklistItemSchema
 export type ChecklistItem = z.infer<typeof checklistItemSchema>;
 export const blockSchema = z.object({
   id: idSchema, typeId: idSchema, title: z.string().max(300),
-  data: jsonObjectSchema, position: positionSchema.optional(),
+  data: jsonObjectSchema, position: positionSchema.optional(), size: blockSizeSchema.nullable().optional(),
   parentGroupId: idSchema.nullable().optional(), communication: communicationSchema.optional(),
 }).strict();
 export const groupSchema = z.object({
@@ -96,7 +98,11 @@ export const catalogSchema = z.object({
 }).strict();
 export const connectionSchema = z.object({
   agentId: z.string().min(1).max(200), workspaceId: z.string().min(1).max(200),
+  // Set when the user picks the recipient by hand. Automatic connection never replaces a pinned one.
+  pinned: z.boolean().optional(),
 }).strict();
+export const sharingModeSchema = z.enum(["shared", "agent"]);
+export type SharingMode = z.infer<typeof sharingModeSchema>;
 export const documentViewSchema = z.object({
   document: documentSchema, connection: connectionSchema.nullable(),
   canUndo: z.boolean(), canRedo: z.boolean(),

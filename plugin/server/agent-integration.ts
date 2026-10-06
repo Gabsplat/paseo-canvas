@@ -9,7 +9,9 @@ export const allWorkspaces = "*";
 export type Paseo = PluginHandlerContext["paseo"];
 type Creation = PluginBeforeRequests["agent.create"];
 export function managedMcp(bridge: Pick<CanvasBridge, "script" | "endpoint">, owner: string) {
-  return { type: "stdio" as const, command: process.execPath, args: [bridge.script, bridge.endpoint, owner] };
+  // The packaged desktop daemon runs on Electron's binary and Paseo strips ELECTRON_RUN_AS_NODE from agent
+  // environments; without it the provider would launch the app instead of this script. Plain Node ignores it.
+  return { type: "stdio" as const, command: process.execPath, args: [bridge.script, bridge.endpoint, owner], env: { ELECTRON_RUN_AS_NODE: "1" }, alwaysLoad: true };
 }
 export function injectAgent(request: Creation, bridge: Pick<CanvasBridge, "script" | "endpoint">, owner: string): Creation {
   if (request.config.internal || !["codex", "claude", "opencode"].includes(request.config.provider)) return request;

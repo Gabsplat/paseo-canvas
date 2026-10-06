@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   idSchema, revisionInputSchema, revisionSchema, createInputSchema, mutateInputSchema,
   documentViewSchema, documentSummarySchema, catalogSchema, catalogMutateInputSchema,
-  packSchema, templateSchema, agentActionInputSchema, agentEventSchema, connectionSchema,
+  packSchema, templateSchema, agentActionInputSchema, agentEventSchema, connectionSchema, sharingModeSchema,
 } from "./model";
 
 export const scopeSchema = z.object({ workspaceId: z.string().min(1).max(200) }).strict();
@@ -32,6 +32,9 @@ export const importPack = defineRpc({ name: "canvas.pack.import", input: z.objec
 export const readHistory = defineRpc({ name: "canvas.history", input: readInputSchema, output: z.object({ revision: revisionSchema, transactions: z.array(z.object({ id: idSchema, revision: revisionSchema, actor: z.enum(["user", "agent", "system"]), agentId: z.string().optional(), label: z.string(), at: z.iso.datetime(), changed: z.array(z.string()), removed: z.array(idSchema), kind: z.enum(["edit", "undo", "redo"]) })) }) });
 export const agentSetup = defineRpc({ name: "canvas.agent.setup", input: scopeSchema.extend({ agentId: z.string().min(1).max(200), provider: z.enum(["codex", "claude", "opencode"]) }), output: z.object({ configuration: z.string(), instructions: z.string(), requiresReload: z.boolean() }) });
 export const flushAgentEvents = defineRpc({ name: "canvas.agent.events.flush", input: readInputSchema, output: readAgentEvents.output });
-// Opt-in by workspace. Does not grant document access until a UI connection is made.
+// On for every workspace ("*") until the user turns it off. Affects agents created afterwards.
 export const configureInjection = defineRpc({ name: "canvas.injection", input: z.object({ workspaceId: z.string().min(1).max(200), enabled: z.boolean(), expectedRevision: revisionSchema }).strict(), output: z.object({ revision: revisionSchema, workspaceIds: z.array(z.string()) }) });
+// One canvas set per workspace ("shared") or documents private to the agent that created or received them ("agent").
+export const readSharing = defineRpc({ name: "canvas.sharing.read", input: scopeSchema, output: z.object({ mode: sharingModeSchema }) });
+export const configureSharing = defineRpc({ name: "canvas.sharing", input: scopeSchema.extend({ mode: sharingModeSchema }), output: readSharing.output });
 export const readInjection = defineRpc({ name: "canvas.injection.read", input: z.object({}).strict(), output: configureInjection.output });

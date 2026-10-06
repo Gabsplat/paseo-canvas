@@ -1,11 +1,11 @@
-// Transcribed from the Opus-authored design/tokens.json v3.
+// Generated from design/tokens.json. Keep both files in sync.
 export const tokens = {
   "$meta": {
     "product": "Lienzo",
     "subtitle": "Paseo Canvas",
-    "version": 3,
+    "version": 5,
     "language": "es",
-    "note": "Fuente de verdad visual, alineada con plugin/shared (model.ts, rpc.ts, builtins.ts). Los neutros, el acento y los estados vienen SIEMPRE de theme.colors del host; aquí solo se fijan los valores propios de Lienzo. v2 añade: renderers, diagram, preview, media, size.blockWidth.wide, layout. Claves v1 se conservan; las marcadas deprecated no se usan. v3 añade: graph (lienzo como grafo: nodos, enlaces, regiones), renderers.node, layout.graph/rows."
+    "note": "Fuente de verdad visual, alineada con plugin/shared (model.ts, rpc.ts, builtins.ts). Los neutros, el acento y los estados vienen SIEMPRE de theme.colors del host; aquí solo se fijan los valores propios de Lienzo. v2 añade: renderers, diagram, preview, media, size.blockWidth.wide, layout. Claves v1 se conservan; las marcadas deprecated no se usan. v3 añade: graph (lienzo como grafo: nodos, enlaces, regiones), renderers.node, layout.graph/rows. v4 añade: motion (curvas, muelles, arrastre, cámara, guías, auto-pan), canvas.fitInset, canvas.pin y zoom mínimo 0.25 para la vista general. Ver docs/design.md §16. v5: guía consultable, medios interactivos, tamaño de bloque opcional y adquisición magnética de enlaces."
   },
   "hostColorRoles": {
     "canvas": "theme.colors.surface0",
@@ -269,9 +269,10 @@ export const tokens = {
   },
   "canvas": {
     "snap": 8,
-    "zoomMin": 0.4,
+    "zoomMin": 0.25,
     "zoomMax": 1.6,
     "zoomSteps": [
+      0.25,
       0.4,
       0.5,
       0.67,
@@ -287,14 +288,121 @@ export const tokens = {
       "min": 0.8,
       "max": 1,
       "topInset": 48
+    },
+    "fitInset": 48,
+    "fitMax": 1,
+    "pin": {
+      "size": 18,
+      "icon": "Pin",
+      "iconSize": 10,
+      "offset": -7,
+      "label": "Soltar posición",
+      "container": "Reordenar automáticamente"
+    },
+    "resize": {
+      "hit": 28,
+      "size": 10,
+      "radius": 3,
+      "max": 4096,
+      "minimum": {
+        "node": {
+          "width": 160,
+          "height": 104
+        },
+        "standard": {
+          "width": 224,
+          "height": 144
+        },
+        "web": {
+          "width": 320,
+          "height": 288
+        },
+        "media": {
+          "width": 240,
+          "height": 320
+        }
+      }
     }
   },
   "motion": {
     "fast": 120,
     "base": 180,
     "slow": 260,
-    "easing": "Easing.out(Easing.cubic)",
-    "rule": "Solo opacidad y translate. Sin rebotes. Respetar AccessibilityInfo.isReduceMotionEnabled → duración 0."
+    "easing": "Easing.bezier(0.22, 1, 0.36, 1)",
+    "rule": "Solo transform y opacidad (única excepción: ancho/alto del marco de un grupo). Entradas y respuestas con ease-out propio; muelles solo para lo que viene de un gesto. Las transiciones temporizadas duran como máximo 280 ms; los muelles y la inercia terminan al llegar a sus umbrales de reposo. Las acciones de teclado repetibles no se animan. AccessibilityInfo.isReduceMotionEnabled → todo instantáneo.",
+    "curve": {
+      "out": [
+        0.22,
+        1,
+        0.36,
+        1
+      ],
+      "inOut": [
+        0.65,
+        0,
+        0.35,
+        1
+      ]
+    },
+    "press": {
+      "scale": 0.97,
+      "ms": 100
+    },
+    "drag": {
+      "threshold": 4,
+      "liftScale": 1.02,
+      "liftMs": 140,
+      "dropMs": 180,
+      "shadow": "0px 14px 32px",
+      "shadowAlpha": 0.24,
+      "targetSlack": 8,
+      "targetFadeMs": 120,
+      "targetFillAlpha": 0.08
+    },
+    "spring": {
+      "stiffness": 380,
+      "damping": 32,
+      "mass": 1,
+      "velocityMax": 500,
+      "restDistance": 0.25,
+      "restSpeed": 2
+    },
+    "layout": {
+      "ms": 240,
+      "frameMs": 220
+    },
+    "enter": {
+      "ms": 180,
+      "scale": 0.96,
+      "offset": 12
+    },
+    "camera": {
+      "fitMs": 280,
+      "stepMs": 160,
+      "wheelMs": 120,
+      "wheelNotch": 40,
+      "deceleration": 0.995,
+      "flickMin": 0.2,
+      "stopBelow": 0.02
+    },
+    "guides": {
+      "threshold": 6,
+      "width": 1,
+      "fadeMs": 100
+    },
+    "autoPan": {
+      "edge": 48,
+      "maxSpeed": 900
+    },
+    "magnet": {
+      "radius": 28,
+      "releaseRadius": 40,
+      "sparkCount": 4,
+      "sparkMs": 180,
+      "sparkTravel": 12,
+      "sparkSize": 2,
+      "cooldownMs": 240
+    }
   },
   "breakpoints": {
     "compact": "layout.compact === true",
@@ -355,7 +463,8 @@ export const tokens = {
     "globe": "Globe",
     "diagram": "Workflow",
     "edgeOut": "CornerDownRight",
-    "agent": "Bot"
+    "agent": "Bot",
+    "guide": "BookOpen"
   },
   "layout": {
     "$doc": "Render de layout (grupo o documento). Sin layout: graph si hay enlaces entre hijos directos; si no, free si algún hijo tiene position; si no, rows cuando el grupo contiene grupos; si no, stack. La raíz sin layout ni enlaces: free con los no posicionados en filas.",
@@ -772,6 +881,22 @@ export const tokens = {
       "video": "Film",
       "audio": "AudioLines",
       "reference": "Link"
+    },
+    "video": {
+      "height": 200,
+      "preload": "none",
+      "autoplay": false
+    },
+    "audio": {
+      "height": 48,
+      "preload": "none"
+    },
+    "viewer": {
+      "height": 440,
+      "heightCompact": 320,
+      "zoomMin": 1,
+      "zoomMax": 4,
+      "zoomStep": 0.5
     }
   },
   "web": {

@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="es"><meta charset="utf-8"><title>Web de ejemplo</title>
+<style>body{margin:0;padding:24px;font:16px system-ui;background:#f8f6f2;color:#252722}input,button{font:inherit;padding:10px;border:1px solid #bfc4b8;border-radius:6px}button{cursor:pointer;background:#e9ece6}section{padding:24px 0;border-bottom:1px solid #d3d7cd}#result{min-height:24px;color:#465b3c}</style>
+<h2>WEB DE EJEMPLO</h2><p>Formulario y scroll para probar interacción dentro de Lienzo.</p>
+<form id="form"><label for="name">Tu nombre</label><p><input id="name" aria-label="Nombre de prueba" placeholder="Escribí acá" autocomplete="off"></p><button>Probar formulario</button></form><p id="result" role="status"></p>
+<section>Sección de ejemplo 1</section><section>Sección de ejemplo 2</section><section>Sección de ejemplo 3</section><section>Sección de ejemplo 4</section><section>Sección de ejemplo 5</section><section>Sección de ejemplo 6</section><section>Sección de ejemplo 7</section>
+<script>document.getElementById('form').onsubmit=e=>{e.preventDefault();const name=document.getElementById('name').value;document.getElementById('result').textContent='Hola, '+name;localStorage.setItem('example-name',name);};</script></html>
