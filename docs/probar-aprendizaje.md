@@ -62,7 +62,7 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-La integración hasta `1039c03` pasa typecheck y 207 pruebas headless. Estas pruebas
+La integración hasta `ba9cd9c` pasa typecheck y 213 pruebas headless. Estas pruebas
 cubren persistencia, conflictos, packs, runtime y protección de resultados, entre otros
 casos. La revisión de interacciones en navegador está en curso. El host real de Paseo,
 los clientes nativos y la GPU real requieren comprobaciones separadas.

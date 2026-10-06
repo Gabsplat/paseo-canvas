@@ -1,7 +1,7 @@
 # Ola 2 de aprendizaje
 
 Estado: Apuesta, Gráfica, Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto
-anotado integrados en `aprendizaje`. Typecheck y 207/207 pruebas verdes, incluida la
+anotado integrados en `aprendizaje`. Typecheck y 213/213 pruebas verdes, incluida la
 protección de resultados ocultos en el dispatcher y los documentos que reciben los
 renderers vecinos. Trazos, Secuenciador y la implementación de UI flotante siguen pendientes.
 La revisión de interacciones browser/native es independiente de estas pruebas headless.
@@ -54,6 +54,13 @@ Shader registrado pasa typecheck y 206/206 pruebas. Source/uniforms excedidos re
 transacciones sin tocar el documento; errores de sintaxis GLSL se conservan para que el
 compilador cliente muestre diagnósticos. fakeGL verifica uniforms compartidos por frame,
 recompilación, contexto perdido y limpieza idempotente. GPU/GUI/native reales omitidos.
+
+La revisión de publicación añade seis regresiones de ciclo de vida del dispatcher.
+Reiniciar Apuesta o cambiar de documento oculta el resultado desde el primer render,
+sin esperar al efecto de reconciliación. Las respuestas tardías no escriben runtime ni
+variables en el documento nuevo. La suite completa pasa 213/213 pruebas y typecheck.
+El dueño autorizó publicar `aprendizaje`; la PR de progreso es un borrador y la comprobación
+de interacciones en navegador continúa en un worktree separado.
 
 ## Forma de trabajo
 
