@@ -10,5 +10,6 @@ function registerClientRenderer<Data>(renderer: ClientRenderer<Data>) {
 import { diagramRenderer } from './diagram'; registerClientRenderer(diagramRenderer);
 import { controlsRenderer } from './controls'; registerClientRenderer(controlsRenderer);
 import { predictionGateRenderer } from './prediction-gate'; registerClientRenderer(predictionGateRenderer);
+import { functionPlotRenderer } from './function-plot'; registerClientRenderer(functionPlotRenderer);
 export const getClientRenderer = (id?: string) => entries.find(entry => entry.id === id);
 export type { RendererProps, ClientRenderer, RendererVisual } from './types';

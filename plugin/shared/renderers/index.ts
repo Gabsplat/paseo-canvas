@@ -8,6 +8,7 @@ function registerRenderer(spec: RendererSpec) {
 import { diagramSpec } from './diagram'; registerRenderer(diagramSpec);
 import { controlsSpec } from './controls'; registerRenderer(controlsSpec);
 import { predictionGateSpec, remapPredictionGateReferences } from './prediction-gate'; registerRenderer({ ...predictionGateSpec, remapReferences: remapPredictionGateReferences });
+import { functionPlotSpec } from './function-plot'; registerRenderer(functionPlotSpec);
 export const rendererSpecs: readonly RendererSpec[] = entries;
 export const legacyRendererNames = ['text', 'note', 'code', 'checklist', 'choice', 'form', 'metric', 'image-ref', 'step', 'callout', 'preview-frame', 'quiz', 'progress', 'diagram', 'node'] as const;
 export const rendererNames: [string, ...string[]] = [...new Set([...legacyRendererNames, ...entries.map(s => s.id)])] as [string, ...string[]];
