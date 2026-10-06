@@ -1,8 +1,9 @@
 # Probar aprendizaje
 
-La rama `aprendizaje` incluye el arrastre libre, resize guardado, onboarding y medios
-interactivos, además de Apuesta, Gráfica, Figura por pasos, Flujo animado, Shader GLSL e
-Imagen/texto anotado. Es una rama de desarrollo para probar el progreso.
+La rama `aprendizaje` incluye el arrastre libre, resize guardado, onboarding, medios
+interactivos y la pizarra con herramientas flotantes. También incluye Apuesta, Gráfica,
+Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto anotado. Es una rama de
+desarrollo para probar el progreso.
 
 ## Cargarla en Paseo
 
@@ -41,9 +42,30 @@ predeterminada del repositorio.
 
 ## Probar las interacciones
 
-Abre un lienzo existente o crea uno. Arrastra una tarjeta desde su encabezado, agrupa
-tarjetas y prueba el resize desde la esquina. Usa la ayuda del onboarding para consultar
-los controles de cámara, selección, enlaces, medios y posiciones automáticas.
+Abre un lienzo existente o crea uno. Arrastra una tarjeta desde cualquier zona pasiva
+de su cuerpo, agrupa tarjetas y prueba el resize desde la esquina. Un clic corto conserva
+la acción de los controles; mover más de 4 px inicia el arrastre. Los sliders, los puertos
+de enlaces y las asas de resize conservan sus propios gestos.
+
+Prueba las herramientas de la pizarra desde la barra flotante:
+
+- Texto libre: elige Texto, pulsa en el lienzo y guarda el borrador. Escape permite
+  cancelarlo. Selecciona el texto para cambiar color, tamaño, fuente o alineación.
+- Formas: elige Forma y arrastra para fijar sus dimensiones. Cambia relleno y trazo desde
+  el panel de estilo; prueba resize y deshacer.
+- Lápiz y goma: dibuja varios trazos en la misma capa. La goma quita trazos completos;
+  deshacer recupera el último cambio. Este dibujo libre es distinto del bloque progresivo
+  Trazos, todavía pendiente de integración.
+- SVG: abre la biblioteca de arquitectura o importa código, un archivo o una URL. El
+  servidor rechaza contenido activo de forma atómica. La carga por URL necesita CORS.
+- Medios y webs: mueve el bloque mientras está pasivo. Usa Interactuar para seleccionar
+  texto o usar el contenido embebido y el chip de salida para volver al lienzo. Los eventos
+  dentro de un iframe activo pertenecen a esa web.
+
+El botón central y la rueda permiten panear también sobre bloques pasivos. Los atajos
+de herramientas son V para seleccionar, H para mano, T para texto, R para forma, D para
+lápiz y E para goma. Los controles enfocados conservan sus teclas. La ayuda del onboarding
+reúne los controles de cámara, selección, enlaces, medios y posiciones automáticas.
 
 Los seis bloques nuevos están en el catálogo. Para armar un ejemplo con variables,
 enlaces y resultados referenciados, crea un agente nuevo después de cargar esta versión
@@ -62,14 +84,19 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-La integración hasta `4373025` pasa typecheck y 214 pruebas headless. Estas pruebas
-cubren persistencia, conflictos, packs, runtime y protección de resultados, entre otros
-casos. Siete escenarios pasan con los componentes reales bajo RN-web en omabox aislado,
-incluidos controles compartidos, reinicio de Apuesta, enlaces en movimiento y hotspots.
-Shader se comprobó con WebGL real del navegador. El transporte del harness es simulado;
-el host real de Paseo y los clientes nativos siguen sin comprobar.
-[Informe y capturas](../design/qa-learning-2026-10-06/report.md).
+La entrega de pizarra `8a7051c` pasa typecheck y 257 pruebas headless. Cubren persistencia,
+conflictos, packs, runtime, protección de resultados y validación de los cuatro tipos de
+pizarra. Pasan 24 casos de navegador con el Panel, useCanvas, reducer y esquemas RPC reales
+bajo RN-web en omabox aislado. El host y el transporte son sustitutos. Se probaron texto,
+formas, resize, lápiz/goma, SVG, iframes, compacto claro/oscuro y arrastre de 150 bloques.
+[Informe de pizarra y capturas](../design/qa-whiteboard-2026-10-06/report.md).
 
-Trazos, Secuenciador y la implementación completa de la interfaz flotante siguen
-pendientes. El diseño de esa interfaz ya está documentado; esta rama todavía conserva
-parte de los paneles actuales.
+Los bloques de aprendizaje conservan la QA anterior de siete escenarios RN-web, incluidos
+controles compartidos, reinicio de Apuesta, enlaces en movimiento y hotspots. Shader se
+comprobó con WebGL real del navegador.
+[Informe de aprendizaje y capturas](../design/qa-learning-2026-10-06/report.md).
+
+Secuenciador está implementado en una rama separada y Trazos está en curso. Esos dos bloques
+todavía no forman parte de esta entrega publicada. La interfaz flotante ya funciona y
+tiene una auditoría final en curso. Paseo instalado, dispositivos nativos y nuevas
+interacciones con un agente real siguen sin verificarse.
