@@ -9,13 +9,16 @@ import { ConnectionRows, Delivery } from './Blocks';
 import { linkTone } from './Links';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
+import { usePresentation } from './usePresentation';
+import { HiddenResult } from './HiddenResult';
+import { RegisteredRenderer } from './renderers/RegisteredRenderer';
 type Communication = NonNullable<CanvasBlock['communication']>;
 function CommunicationEditor({ value, save, disabled }: { value?: Communication; save: (v: Partial<Communication>) => Promise<unknown>; disabled: boolean }) {
   return <Field label="Indicaciones para el asistente" value={value?.instructions ?? ''} disabled={disabled} multiline placeholder="Cómo debe comunicarse el asistente a través de este lienzo" onSave={instructions => save({ instructions })} />;
 }
 const G = tokens.graph, toneNames = { neutro: 'Neutro', acento: 'Acento', violeta: 'Violeta', turquesa: 'Turquesa', aviso: 'Aviso', peligro: 'Peligro' } as const;
 function LinkEditor({ controller: c, link, onLink }: { controller: CanvasController; link: CanvasLink; onLink: (id: string | null) => void }) {
-  const u = useUI(), doc = c.view!.document, disabled = c.busy || c.offline, title = (id: string) => [...doc.blocks, ...doc.groups].find(e => e.id === id)?.title || id;
+  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document, disabled = c.busy || c.offline, title = (id: string) => [...doc.blocks, ...doc.groups].find(e => e.id === id)?.title || id;
   const update = (patch: Partial<Omit<CanvasLink, 'id'>>, label: string) => c.edit([{ type: 'link.update', id: link.id, patch }], label);
   const parallel = doc.links.filter(l => l.id !== link.id && (l.from === link.from && l.to === link.to || l.from === link.to && l.to === link.from));
   // A tone cannot be unset by a patch, so "automatic" replaces the link by itself without one, in one transaction.
@@ -40,7 +43,7 @@ function LinkEditor({ controller: c, link, onLink }: { controller: CanvasControl
   </>;
 }
 function ConnectPicker({ controller: c, from, onLink }: { controller: CanvasController; from: string; onLink: (id: string | null) => void }) {
-  const u = useUI(), doc = c.view!.document, [open, setOpen] = useState(false), [query, setQuery] = useState(''), disabled = c.busy || c.offline;
+  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document, [open, setOpen] = useState(false), [query, setQuery] = useState(''), disabled = c.busy || c.offline;
   const self = [...doc.blocks, ...doc.groups].find(e => e.id === from)!, family = new Set([from, ...ancestors(doc, self).map(g => g.id)]);
   const needle = query.trim().toLowerCase(), candidates = [...doc.blocks, ...doc.groups].filter(e => !family.has(e.id) && !ancestors(doc, e).some(g => g.id === from) && (!needle || (e.title || e.id).toLowerCase().includes(needle)));
   const connect = (to: string) => {
@@ -58,14 +61,23 @@ function ConnectPicker({ controller: c, from, onLink }: { controller: CanvasCont
   </View>;
 }
 export function Inspector({ controller: c, linkId, onLink, onClose, groupSelection, release, rects, onTemplate, onExportSelection, reorder, initialSection }: { controller: CanvasController; linkId: string | null; onLink: (id: string | null) => void; onClose?: () => void; groupSelection: () => void; release: (ids: string[], label?: string) => void; rects: () => Map<string, Rect>; onTemplate: (g: CanvasGroup) => void; onExportSelection: () => void; reorder: (id: string, direction: number) => void; initialSection?: 'document' | 'communication' | 'history' | 'activity' }) {
-  const u = useUI(), doc = c.view?.document, [history, setHistory] = useState<Awaited<ReturnType<typeof c.api.history>>['transactions']>([]);
+  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view?.document, [history, setHistory] = useState<Awaited<ReturnType<typeof c.api.history>>['transactions']>([]);
   const scroller = React.useRef<React.ComponentRef<typeof ScrollView>>(null), anchors = React.useRef<Record<string, number>>({});
   const anchor = (section: string) => (event: { nativeEvent: { layout: { y: number } } }) => { anchors.current[section] = event.nativeEvent.layout.y; if (initialSection === section) scroller.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: false }); };
   useEffect(() => { if (initialSection) scroller.current?.scrollTo({ y: anchors.current[initialSection] ?? 0, animated: false }); }, [initialSection]);
   useEffect(() => { let live = true; if (doc) void c.api.history({ workspaceId: c.workspaceId, documentId: doc.id }).then(r => { if (live) setHistory(r.transactions); }).catch(() => {}); return () => { live = false; }; }, [doc?.id, doc?.revision]);
   if (!doc) return <View style={{ padding: 16 }}><Txt muted>{c.loading ? 'Cargando…' : 'Abre un documento para editarlo.'}</Txt></View>;
   const selected = [...doc.groups, ...doc.blocks].filter(e => c.selection.includes(e.id)), e = selected.length === 1 ? selected[0] : undefined;
+  const gateIds = e ? presentation?.hiddenBy.get(e.id) : undefined;
+  if (gateIds?.length) return <View style={{ flex: 1, padding: 16, backgroundColor: u.c.surface1, gap: 12 }}>
+    {onClose && <IconButton label="Cerrar detalles" icon="X" onPress={onClose} />}
+    <HiddenResult gateIds={gateIds} open={id => { void c.select([id]); }} />
+  </View>;
   const group = e && 'groupIds' in e ? e : undefined, block = e && 'typeId' in e ? e : undefined, type = c.catalog?.blockTypes.find(t => t.id === block?.typeId), disabled = c.busy || c.offline;
+  if (block && type?.renderer && presentation?.activeGates.has(block.id)) return <View style={{ flex: 1, padding: 16, gap: 12, backgroundColor: u.c.surface1 }}>
+    {onClose && <IconButton label="Cerrar detalles" icon="X" onPress={onClose} />}
+    <ScrollView contentContainerStyle={{ gap: 12 }}><RegisteredRenderer block={block} id={type.renderer} controller={c} readOnly={disabled} send={async (kind, payload, label, delivery = 'batched') => { await c.send({ kind, payload, label, delivery, targetIds: [block.id] }, newId('evt')); }} /></ScrollView>
+  </View>;
   const link = linkId ? doc.links.find(l => l.id === linkId) : undefined, title = (id: string) => [...doc.blocks, ...doc.groups].find(item => item.id === id)?.title || id;
   const mode = containerMode(doc, group?.id ?? null, c.catalog), layout = group ? group.layout : doc.layout, modes = ['graph', 'stack', 'grid', 'flow', 'free'] as const;
   const pinned = block ? [] : pinnedChildren(doc, group?.id ?? null);

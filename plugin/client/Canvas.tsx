@@ -7,6 +7,7 @@ import { alignmentGuides, boundsOf, connectOperations, descriptionKey, dropTarge
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows } from './Blocks';
+import { usePresentation } from './usePresentation';
 import { LinkLayer, type LinkLayerHandle, type LinkDraft } from './Links';
 import { MagnetCue } from './MagnetCue';
 import { Chip, IconButton, Txt, useUI } from './ui';
@@ -74,7 +75,7 @@ function ZoomControl({ camera, subscribe, onStep, onReset, onFit }: { camera: Re
   </View>;
 }
 export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease }: { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void }) {
-  const u = useUI(), doc = c.view!.document, web = u.layout.platform === 'web', [size, setSize] = useState({ width: 0, height: 0 }), [heights, setHeights] = useState<Record<string, number>>({}), [multi, setMulti] = useState(false), [hover, setHover] = useState<string | null>(null), [linkHover, setLinkHover] = useState<string | null>(null), [linkDraft, setLinkDraft] = useState<{ from: string; to: Point; target: string | null } | null>(null);
+  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document, web = u.layout.platform === 'web', [size, setSize] = useState({ width: 0, height: 0 }), [heights, setHeights] = useState<Record<string, number>>({}), [multi, setMulti] = useState(false), [hover, setHover] = useState<string | null>(null), [linkHover, setLinkHover] = useState<string | null>(null), [linkDraft, setLinkDraft] = useState<{ from: string; to: Point; target: string | null } | null>(null);
   // `ids` stay raised and styled as lifted until they have settled; `live` is true only while the hand is down.
   const [drag, setDrag] = useState<{ ids: Set<string>; into: string | null; live: boolean } | null>(null);
   const [resizeId, setResizeId] = useState<string | null>(null);

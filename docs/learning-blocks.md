@@ -56,6 +56,12 @@ existing target block IDs while their result must stay hidden; validate raw runt
 against the current data before accepting a revealed state. The coordinator connects
 the hook to canvas, list and details. It does not change the stored document, export,
 MCP access or permissions. Several gates on one target require all gates to open.
+While a gate is closed, its target card is replaced before renderer dispatch, including
+compact graph nodes and native/list views. The presentation masks target titles, data,
+instructions and adjacent link labels. Details shows the gate controls instead of raw
+outcome fields, and replaces a hidden target's editor with a link back to its gate.
+The authored document remains available to MCP and exports; this is a learning sequence,
+not a security boundary.
 
 ## Client props
 

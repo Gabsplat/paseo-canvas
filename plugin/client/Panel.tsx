@@ -17,6 +17,7 @@ import { claimFirstGuide, type GuideAction } from './guide';
 import { canvasPreferences } from '../shared/preferences';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
+import { usePresentation } from './usePresentation';
 
 type CatalogTab = 'types' | 'templates' | 'packs';
 type InspectorSection = 'document' | 'communication' | 'history' | 'activity';
@@ -96,7 +97,7 @@ function ExampleRow({ title, disabled, create }: { title: string; disabled: bool
 }
 
 function ContextTray({ controller: c, note, setNote, sending, error, lastId, send, retry, inspect, connect, wide }: { controller: CanvasController; note: string; setNote: (value: string) => void; sending: boolean; error: string; lastId?: string; send: () => void; retry: () => void; inspect: (section?: InspectorSection) => void; connect: () => void; wide: boolean }) {
-  const u = useUI(), doc = c.view!.document, queued = c.events.filter(e => e.status === 'pending' || e.status === 'failed').length;
+  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document, queued = c.events.filter(e => e.status === 'pending' || e.status === 'failed').length;
   const lastEvent = lastId ? c.events.find(e => e.id === lastId) : [...c.events].reverse().find(e => e.action.kind === 'selection.send');
   const disabled = sending || c.busy || c.offline;
   return <View style={{ minHeight: tokens.size.tray, maxHeight: tokens.size.trayExpandedMax, borderTopWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>

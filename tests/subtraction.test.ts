@@ -36,6 +36,9 @@ function runtime(controller: any) {
     './Links': { linkTone: () => 'neutro' }, './color': { withAlpha: (color: string) => color },
     './AgentModal': { AgentModal: control('AgentModal') }, './Onboarding': { Onboarding: control('Onboarding') },
     './guide': { claimFirstGuide: async () => false },
+    './usePresentation': { usePresentation: () => ({ document: controller.view?.document, hiddenBy: new Map(), activeGates: new Set() }) },
+    './HiddenResult': { HiddenResult: control('HiddenResult') },
+    './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') },
   };
   const load = (name: string) => {
     const source = readFileSync(new URL(`../plugin/client/${name}.tsx`, import.meta.url), 'utf8');

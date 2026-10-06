@@ -15,6 +15,8 @@ import { mediaSource } from './media';
 import { ImageViewer } from './ImageViewer';
 import { getClientRenderer } from './renderers';
 import { RegisteredRenderer } from './renderers/RegisteredRenderer';
+import { usePresentation } from './usePresentation';
+import { HiddenResult } from './HiddenResult';
 export const visual = (type?: BlockType) => getClientRenderer(type?.renderer)?.visual ?? tokens.renderers[type ? type.renderer ?? 'generic' : 'unknown'];
 const str = (value: unknown) => typeof value === 'string' ? value : value === undefined ? '' : JSON.stringify(value);
 const G = tokens.graph;
@@ -76,6 +78,12 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   const u = useUI(), toast = useToast(), type = c.catalog?.blockTypes.find(t => t.id === block.typeId), v = visual(type), [menu, setMenu] = useState(false), [focus, setFocus] = useState(false), [hovered, setHovered] = useState(false), [answer, setAnswer] = useState(str(block.data.answer)), [hint, setHint] = useState(false), [sending, setSending] = useState(false), [sendError, setSendError] = useState('');
   const retry = useRef<null | { action: RpcInput<typeof agentAction>['action']; id: string }>(null);
   React.useEffect(() => setAnswer(str(block.data.answer)), [block.data.answer]);
+  const presentation = usePresentation(c), gateIds = presentation?.hiddenBy.get(block.id);
+  if (gateIds?.length) return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ height: height && !outline ? height : undefined }}>
+    <Pressable nativeID={`lienzo-grab-${block.id}`} {...headerHandlers} accessibilityRole="button" accessibilityLabel="Resultado oculto" accessibilityState={{ selected }} onPress={e => onSelect(block.id, e)} onLongPress={e => onSelect(block.id, e, true)} style={{ minHeight: tokens.size.blockMinHeight, padding: 14, backgroundColor: u.c.surface1, borderWidth: selected ? 2 : 1, borderColor: selected ? u.c.accent : u.c.border, borderStyle: 'dashed', borderRadius: 10 }}>
+      <HiddenResult gateIds={gateIds} open={id => onSelect(id)} />
+    </Pressable>
+  </Animated.View>;
   const sized = !!height && !outline;
   const pending = c.pendingIds.includes(block.id), writeFailure = c.failure?.affectedIds?.includes(block.id) ? c.failure : null;
   const disabled = pending || c.offline;
@@ -111,7 +119,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   else if (renderer === 'image-ref') body = <Media block={block} fill={sized} />;
   else if (renderer === 'metric') body = <View><Txt kind="display">{str(block.data.value)} {str(block.data.unit)}</Txt><Txt kind="small" muted>{str(block.data.label)}</Txt></View>;
   else if (renderer === 'form') body = <FormBody block={block} type={type} controller={c} submit={values => send('block.submit', { values }, `Enviar «${block.title}»`)} />;
-  const doc = c.view?.document, connections = outline && doc ? <ConnectionRows doc={doc} id={block.id} onOpen={id => onSelect(id)} /> : null;
+  const doc = presentation?.document ?? c.view?.document, connections = outline && doc ? <ConnectionRows doc={doc} id={block.id} onOpen={id => onSelect(id)} /> : null;
   const state = (hasCommunication(block.communication) && renderer !== 'node' || pending || writeFailure || sending || sendError || event) ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderColor: u.c.border }}>{hasCommunication(block.communication) && renderer !== 'node' && <Chip label="Con instrucción" tone="acento" icon="Compass" center />}{pending ? <Txt kind="small" muted>Guardando…</Txt> : writeFailure ? <View><Txt kind="small" style={{ color: u.c.statusDanger }}>No se guardó</Txt>{writeFailure.retry && <Button label="Reintentar" small variant="ghost" onPress={() => { void writeFailure.retry?.().catch(e => c.fail(e)); }} />}</View> : sending ? <Txt kind="small" muted>Enviando…</Txt> : sendError ? <View><Txt kind="small" style={{ color: u.c.statusDanger }}>{sendError}</Txt><Button label="Reintentar" small variant="ghost" onPress={retrySend} /></View> : <Delivery event={event} retry={retrySend} />}</View> : null;
   // A lifted card stays solid: the lift is told by scale and shadow (Canvas), not by fading it.
   const opacity = dragging ? 1 : pending ? tokens.alpha.pending : dim ? G.dim.node : 1, grab = cursor ? { cursor } as object : null;
