@@ -1,0 +1,36 @@
+{
+  "name": "lienzo-cierre-panel-sol-8e2b2030",
+  "mode": "headless",
+  "size": "1920x1080@60",
+  "created": "2026-10-06T18:50:20-03:00",
+  "plugins": [],
+  "net": "isolated",
+  "allow": "",
+  "idle": 7200,
+  "plugin_status": {},
+  "bar": "user",
+  "systemd": false,
+  "hyprland": null,
+  "omarchy": null,
+  "hyprland_version": null,
+  "aquamarine": {
+    "kind": "private",
+    "version": "0.15.1@7bb8bdf4+keys",
+    "fixed": true
+  },
+  "omarchy_version": "4.0.3-1",
+  "theme": "blueridge-dark",
+  "state": "up",
+  "peeking": false,
+  "keys_to_box": false,
+  "browser_viewports": [
+    "1440x1000",
+    "390x844"
+  ],
+  "panel_themes": [
+    "lienzo-papel",
+    "lienzo-tinta"
+  ],
+  "bundle_sha256": "cbb922c1e551f58d2f50d66f16ba2248fcb6c25790b17eb9314e83418b779584",
+  "closed_after_qa": true
+}

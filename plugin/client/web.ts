@@ -14,6 +14,7 @@ interface BrowserEventTarget {
 }
 interface BrowserElement extends BrowserEventTarget {
   id?: string;
+  isConnected?: boolean;
   contains?(node: unknown): boolean;
   focus?(): void;
   querySelectorAll?(selector: string): ArrayLike<BrowserElement>;
@@ -36,6 +37,16 @@ interface BrowserHost {
   URL: { createObjectURL(blob: unknown): string; revokeObjectURL(url: string): void };
 }
 const browser = () => (Platform.OS === 'web' ? globalThis : {}) as unknown as BrowserHost;
+/** Toolbar reset reaches the renderer's single handler, including pending edits and audio cleanup. */
+export function activateRendererReset(root: unknown, id: string, isCurrent: () => boolean): boolean {
+  const panel = root as BrowserElement | null;
+  if (!browser().document || !panel || panel.isConnected === false || !isCurrent()) return false;
+  const renderer = Array.from(panel.querySelectorAll?.('[id^="lienzo-interactive-renderer-"]') ?? []).find(node => node.getAttribute?.('id') === 'lienzo-interactive-renderer-' + id);
+  const action = renderer?.querySelector('[aria-label="Reiniciar"]');
+  if (!action || action.getAttribute?.('aria-disabled') === 'true' || action.getAttribute?.('disabled') != null || !isCurrent()) return false;
+  action.click();
+  return true;
+}
 // RN supplies nativeEvent.source; RN-web 0.21 supplies a browser load event.
 // Keep browser image properties in this adapter and use confirmed intrinsic sizes.
 export function imageLoadDimensions(event: unknown): { width: number; height: number } | null {
@@ -685,7 +696,7 @@ export function attachLibraryDrag(element: unknown, handlers: { enabled(): boole
 }
 
 /** Browser dismissal and keyboard focus for the canvas zoom menu. Native uses its controls directly. */
-export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () => void): () => void {
+export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () => void, preserveInputs = false): () => void {
   const node = element as BrowserElement | null, button = trigger as BrowserElement | null, doc = browser().document;
   if (!doc || !node?.addEventListener) return () => {};
   let prefix = '', typedAt = 0;
@@ -695,6 +706,7 @@ export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () =
   const key = (event: BrowserKeyEvent) => {
     if (event.key === 'Escape') { dismiss(); button?.focus?.(); event.preventDefault(); event.stopPropagation(); return; }
     if (!node.contains?.(event.target) || event.ctrlKey || event.metaKey) return;
+    if (preserveInputs && pointerElement(event.target)?.closest('input,textarea,select,[contenteditable="true"]')) return;
     const rows = items(), current = rows.indexOf(pointerElement(event.target)!); let next: BrowserElement | undefined;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') next = rows[(current + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length];
     else if (event.key === 'Home' || event.key === 'End') next = rows[event.key === 'Home' ? 0 : rows.length - 1];
