@@ -1,0 +1,4 @@
+PASS The guide opens from the real Panel menu and offers tour and searchable options
+PASS Searching finds the sequencer interaction and stops playback instructions
+PASS Searching finds learner-only stroke reset and anchoring
+PASS Compact dark guide keeps its search usable and the modal within the viewport

@@ -8,8 +8,8 @@ actualiza el texto de la guía y la preparación reproducible de navegador.
 
 ## Resultado
 
-- `pnpm test`: 302/302, sin fallos, cancelaciones ni pruebas omitidas.
-- `pnpm typecheck`: correcto para plugin, cliente y pruebas.
+- `pnpm test`: 302/302, sin fallos, cancelaciones ni pruebas omitidas. [Log](tests.log).
+- `pnpm typecheck`: correcto para plugin, cliente y pruebas. [Log](typecheck.log).
 - 35/35 casos RN-web, divididos en acciones contextuales, convivencia y guía.
 - `git diff --check` y sintaxis de los scripts: correctos.
 

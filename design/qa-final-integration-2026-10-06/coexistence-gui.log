@@ -1,0 +1,12 @@
+PASS pencil strokes are signed as the learner; one that starts on a card is anchored to it
+PASS an assistant drawing cannot be signed as the learner and is shown dashed and labelled
+PASS leaving the pencil settles exactly one bounded summary without points
+PASS dragging the card carries its annotation live and commits a single card move
+PASS "Borrar mis trazos" removes only the learner layers in one undoable transaction
+PASS deleting a card removes its annotations with it, and undo restores both
+PASS a short click on a cell toggles it without Interactuar and without moving the card
+PASS tool shortcuts and Space typed on a focused cell stay in the sequencer
+PASS a drag that starts on a cell moves the card and does not toggle the cell
+PASS with the pencil active the grid is drawing surface: no toggle, and the stroke is anchored to the sequencer card
+PASS listening is credited to the music that sounded: edit then immediate pause is unheard; a full cycle of the final pattern is heard
+12/12 checks passed

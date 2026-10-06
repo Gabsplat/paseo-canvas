@@ -1,0 +1,7 @@
+
+> paseo-canvas-workspace@ typecheck /home/gabsplat/Labs/paseo-canvas-aprendizaje
+> pnpm --dir plugin typecheck && tsc --noEmit -p tests/tsconfig.json
+
+
+> paseo-canvas@0.1.0 typecheck /home/gabsplat/Labs/paseo-canvas-aprendizaje/plugin
+> tsc --noEmit -p tsconfig.json && node -e "if(require('node:fs').existsSync('client/tsconfig.json'))require('node:child_process').execFileSync('pnpm',['exec','tsc','--noEmit','-p','client/tsconfig.json'],{stdio:'inherit'})"
