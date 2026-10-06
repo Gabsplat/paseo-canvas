@@ -25,6 +25,15 @@ interface BrowserHost {
   URL: { createObjectURL(blob: unknown): string; revokeObjectURL(url: string): void };
 }
 const browser = () => (Platform.OS === 'web' ? globalThis : {}) as unknown as BrowserHost;
+// RN supplies nativeEvent.source; RN-web 0.21 supplies a browser load event.
+// Keep browser image properties in this adapter and use confirmed intrinsic sizes.
+export function imageLoadDimensions(event: unknown): { width: number; height: number } | null {
+  const nativeEvent = (event as { nativeEvent?: { source?: { width?: number; height?: number }; target?: { naturalWidth?: number; naturalHeight?: number } } } | null)?.nativeEvent;
+  const source = nativeEvent?.source;
+  const target = browser().document ? nativeEvent?.target : undefined;
+  const width = source?.width ?? target?.naturalWidth, height = source?.height ?? target?.naturalHeight;
+  return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? { width, height } : null;
+}
 let lastInputWasKeyboard = false, stopFocusTracking: (() => void) | undefined;
 const focusSubscribers = new Set<() => void>();
 function setKeyboardInput(value: boolean) {

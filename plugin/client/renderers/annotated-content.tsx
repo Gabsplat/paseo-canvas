@@ -8,6 +8,7 @@ import {
 import { safeUrl, newId } from '../logic';
 import { Button, Chip, Txt } from '../ui';
 import { NativeLearningFallback } from '../Surfaces';
+import { imageLoadDimensions } from '../web';
 import type { ClientRenderer, RendererProps } from './types';
 
 /** A contain image in a frame with its confirmed intrinsic ratio has no letterboxing. */
@@ -122,8 +123,8 @@ export function AnnotatedContent(props: RendererProps<AnnotatedContentData>) {
             onLoad={event => {
               const base = latest.current.data.base;
               if (base.kind !== 'image' || JSON.stringify([base.key, base.revision, base.url]) !== source) return;
-              const { width: w, height: h } = event.nativeEvent.source;
-              setImage(annotatedImageFrame(1, w, h) ? { source, status: 'loaded', width: w, height: h } : { source, status: 'error', width: 0, height: 0 });
+              const dimensions = imageLoadDimensions(event);
+              setImage(dimensions ? { source, status: 'loaded', ...dimensions } : { source, status: 'error', width: 0, height: 0 });
             }} onError={() => { const base = latest.current.data.base; if (base.kind === 'image' && JSON.stringify([base.key, base.revision, base.url]) === source) setImage({ source, status: 'error', width: 0, height: 0 }); }} />}
           {frame && visible.map(a => { const index = data.annotations.indexOf(a), geometry = annotatedImageGeometry(a, frame); if (!resolved(a).resolved || !geometry) return null;
             return <React.Fragment key={a.id}>{geometry.rect && <View pointerEvents="none" style={{ position: 'absolute', ...geometry.rect, borderWidth: 2, borderColor: ui.c.foreground }} />}{mark(a, index, geometry)}</React.Fragment>;
