@@ -13,6 +13,12 @@ Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
 El coordinador integra la visibilidad del resultado de Apuesta en el núcleo y registra
 los renderers; los ingenieros conservan la propiedad exclusiva de su módulo y pruebas.
 
+Integración preparatoria confirmada: `f279278` añade el hook de visibilidad y el ID opcional
+de eventos settled; `adeee27` conecta Canvas, Lista, Detalles y chips de selección.
+Typecheck y 122/122 pruebas verdes tras esta preparación. Los renderers del piloto aún
+esperan revisión y registro. Al integrarlos, comprobar también que duplicar un grupo e
+insertar una plantilla remapean sus referencias internas a bloques y conexiones.
+
 ## Forma de trabajo
 
 Un ingeniero GPT 6.1 Sol con pensamiento High por renderer, en un worktree propio creado desde
