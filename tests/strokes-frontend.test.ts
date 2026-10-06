@@ -116,7 +116,7 @@ test('keys typed with nothing focused reach the panel that was pressed last, acr
     const seen: string[] = [], fire = (name: string, event: any) => { for (const fn of [...(listeners.get(name) ?? [])]) fn(event); };
     const type = (key: string) => { const event = { key, target: body, shiftKey: false, ctrlKey: false, metaKey: false, preventDefault() {}, stopPropagation() {} }; fire('keydown', event); };
     let detach = keyboard(panel, (e: { key: string }) => { seen.push('first:' + e.key); return true; }); const detachOther = keyboard(other, (e: { key: string }) => { seen.push('other:' + e.key); return true; });
-    type('Escape'); assert.deepEqual(seen, [], 'Nothing was pressed yet: unfocused keys belong to no panel.');
+    type('Escape'); assert.equal(seen.length, 0, 'Nothing was pressed yet: unfocused keys belong to no panel.');
     fire('pointerdown', { target: button }); detach(); detach = keyboard(panel, (e: { key: string }) => { seen.push('second:' + e.key); return true; });
     button.parentElement = null; // the pressed control has since left the page
     type('Escape'); assert.deepEqual(seen, ['second:Escape'], 'The current listener of the pressed panel gets the key; the other panel does not.');
