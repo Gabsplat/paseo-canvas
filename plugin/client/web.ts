@@ -305,7 +305,7 @@ export function compileGLProgram(gl: GLContext, vertexSource: string, fragmentSo
 }
 export type SurfaceFrame = { width: number; height: number; pixelRatio: number; time: number };
 export type SurfacePointer = { kind: 'down' | 'move' | 'up' | 'cancel'; x: number; y: number; pointerId: number; buttons: number; pressure: number };
-type SurfaceBase = { id: string; label: string; height: number; animated?: boolean; onPointer?(event: SurfacePointer): void; onError?(message: string): void };
+type SurfaceBase = { id: string; label: string; height: number; animated?: boolean; maxPixelSize?: number; onVisibilityChange?(visible: boolean): void; onPointer?(event: SurfacePointer): void; onError?(message: string): void };
 export type CanvasSurfaceProps = SurfaceBase & { draw(context: Canvas2DContext, frame: SurfaceFrame): void };
 export type GLSurfaceProps = SurfaceBase & {
   initialize?(context: GLContext): { error?: string; dispose?(): void } | void;
@@ -350,13 +350,17 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
       } catch (error) { report('No se pudo iniciar el gráfico. Revisa su configuración y vuelve a abrir el bloque.'); context = null; }
     };
     const active = () => !stopped && visible && !doc.hidden && !lost && !!context;
+    let notified: boolean | undefined;
+    const notifyVisibility = () => { const value = active(); if (value !== notified) { notified = value; latest.current.onVisibilityChange?.(value); } };
     const schedule = () => { if (active() && !frameId) frameId = host.requestAnimationFrame(draw); };
     const draw = (time: number) => {
-      frameId = 0; if (!active()) return;
+      frameId = 0; notifyVisibility(); if (!active()) return;
       const width = canvas.clientWidth, height = canvas.clientHeight; if (!width || !height) return;
       // CSS camera transforms do not change clientWidth. Sample their physical scale at redraw time.
-      const rect = canvas.getBoundingClientRect(), pixelRatio = Math.max(1, Math.min(4, (host.devicePixelRatio ?? 1) * rect.width / width));
-      const w = Math.round(width * pixelRatio), h = Math.round(height * pixelRatio);
+      const rect = canvas.getBoundingClientRect(), physicalRatio = Math.max(1, Math.min(4, (host.devicePixelRatio ?? 1) * rect.width / width));
+      const cap = Number.isFinite(latest.current.maxPixelSize) ? Math.max(16, Math.min(2048, latest.current.maxPixelSize!)) : Infinity;
+      const pixelRatio = Math.min(physicalRatio, cap / Math.max(width, height));
+      const w = Math.max(1, Math.round(width * pixelRatio)), h = Math.max(1, Math.round(height * pixelRatio));
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       try {
         const frame = { width, height, pixelRatio, time };
@@ -368,17 +372,17 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
       if (latest.current.animated) schedule();
     };
     const stop = () => { if (frameId) host.cancelAnimationFrame(frameId); frameId = 0; };
-    const visibility = () => { if (doc.hidden) stop(); else schedule(); };
-    const onLost = (event: { preventDefault(): void }) => { event.preventDefault(); lost = true; stop(); dispose = undefined; report('El contexto WebGL se perdió. Esperando restauración.'); };
-    const onRestored = () => { lost = false; initialize(); schedule(); };
+    const visibility = () => { notifyVisibility(); if (doc.hidden) stop(); else schedule(); };
+    const onLost = (event: { preventDefault(): void }) => { event.preventDefault(); lost = true; stop(); notifyVisibility(); dispose = undefined; report('El contexto WebGL se perdió. Esperando restauración.'); };
+    const onRestored = () => { lost = false; initialize(); notifyVisibility(); schedule(); };
     initialize(); invalidate.current = schedule;
-    const intersection = host.IntersectionObserver ? new host.IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); if (visible) schedule(); else stop(); }) : null;
+    const intersection = host.IntersectionObserver ? new host.IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); notifyVisibility(); if (visible) schedule(); else stop(); }) : null;
     const resize = host.ResizeObserver ? new host.ResizeObserver(schedule) : null;
     intersection?.observe(canvas); resize?.observe(canvas); doc.addEventListener('visibilitychange', visibility);
     if (kind === 'webgl') { canvas.addEventListener('webglcontextlost', onLost); canvas.addEventListener('webglcontextrestored', onRestored); }
-    schedule();
+    notifyVisibility(); schedule();
     return () => {
-      stopped = true; invalidate.current = () => {}; stop(); intersection?.disconnect(); resize?.disconnect(); doc.removeEventListener('visibilitychange', visibility);
+      stopped = true; notifyVisibility(); invalidate.current = () => {}; stop(); intersection?.disconnect(); resize?.disconnect(); doc.removeEventListener('visibilitychange', visibility);
       canvas.removeEventListener('webglcontextlost', onLost); canvas.removeEventListener('webglcontextrestored', onRestored);
       try { dispose?.(); } finally { if (allocated) { liveGLContexts--; allocatedContext?.getExtension('WEBGL_lose_context')?.loseContext?.(); } }
     };

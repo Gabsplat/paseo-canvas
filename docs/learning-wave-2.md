@@ -1,13 +1,13 @@
 # Ola 2 de aprendizaje
 
-Estado: autorizado por el dueño; piloto Apuesta + Gráfica en curso.
+Estado: autorizado por el dueño; piloto Apuesta + Gráfica integrado y revisado.
 Prerequisito cumplido: cimientos integrado en `aprendizaje`; baseline `17203e5`,
-typecheck y 116/116 pruebas verdes. Los demás renderers esperan la revisión del piloto.
+typecheck y 116/116 pruebas verdes. La siguiente tanda es Figura por pasos, Flujo y Shader.
 
 | Renderer | Rama / worktree | Agente Sol High |
 | --- | --- | --- |
-| Apuesta | `lienzo/apuesta` · `lienzo-apuesta` | `e22e6698-4a82-4ca6-94e3-084bfc12a498` |
-| Gráfica | `lienzo/grafica-funciones` · `lienzo-grafica-funciones` | `12de1ffe-f370-456d-9d91-064cbc1b7816` |
+| Apuesta, integrada `b883b9d` | `lienzo/apuesta` · `lienzo-apuesta` | `e22e6698-4a82-4ca6-94e3-084bfc12a498`, finalizado |
+| Gráfica, integrada `51e8021` | `lienzo/grafica-funciones` · `lienzo-grafica-funciones` | `12de1ffe-f370-456d-9d91-064cbc1b7816`, finalizado |
 
 Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
 El coordinador integra la visibilidad del resultado de Apuesta en el núcleo y registra
@@ -15,9 +15,12 @@ los renderers; los ingenieros conservan la propiedad exclusiva de su módulo y p
 
 Integración preparatoria confirmada: `f279278` añade el hook de visibilidad y el ID opcional
 de eventos settled; `adeee27` conecta Canvas, Lista, Detalles y chips de selección.
-Typecheck y 122/122 pruebas verdes tras esta preparación. Los renderers del piloto aún
-esperan revisión y registro. Al integrarlos, comprobar también que duplicar un grupo e
-insertar una plantilla remapean sus referencias internas a bloques y conexiones.
+Typecheck y 122/122 pruebas verdes tras esta preparación. El piloto integrado pasa
+typecheck y 152/152 pruebas. La integración de Apuesta detectó y corrigió defaults de
+elección que contaminaban la variante numérica; datos completos válidos ahora reemplazan
+una variante incompatible, y las actualizaciones parciales conservan JSON merge patch.
+Duplicación, inserción de plantillas y packs verifican referencias internas remapeadas,
+referencias externas conservadas y runtime excluido. Revisión GUI/native real pendiente.
 
 ## Forma de trabajo
 

@@ -199,13 +199,19 @@ at 64. No property access, assignment, eval, Function or executable code is supp
 
 Import `CanvasSurface`, `GLSurface`, `NativeLearningFallback` and drawing types from
 `client/Surfaces`. Only `client/web.ts` accesses DOM; do not enable the DOM TypeScript lib.
-Both wrappers take `{id,label,height,summary,animated?,onPointer?,onError?,draw}`.
+Both wrappers take `{id,label,height,summary,animated?,maxPixelSize?,onVisibilityChange?,onPointer?,onError?,draw}`.
 2D draw receives `(Canvas2DContext, SurfaceFrame)`; GL draw receives `(GLContext, frame)`.
 Frame is `{width,height,pixelRatio,time}`, with logical dimensions and RAF time in ms.
 2D coordinates are already scaled for DPR; GL gets a physical viewport. Pointers report
 `{kind,x,y,pointerId,buttons,pressure}` in logical coordinates with pointer capture.
 Surfaces resize and stop drawing offscreen or when the tab is hidden. Static surfaces
 redraw on props/size changes; animated ones use RAF.
+
+`onVisibilityChange` receives changes to the stage's drawable visibility, including
+offscreen, hidden tab, context loss and unmount. Pause local playback when it becomes
+false; do not emit per-frame events. `maxPixelSize` optionally caps the larger physical
+canvas dimension, clamped to 16–2048 pixels. Logical drawing coordinates stay unchanged.
+Shaders should declare a conservative resolution cap rather than use unlimited DPR.
 
 `GLSurface` also accepts `initialize(gl)` returning `{dispose?,error?}` or void. Memoize
 initialize to avoid context churn. It runs again after context restoration. Context loss

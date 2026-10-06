@@ -34,7 +34,7 @@ function harness(kind: '2d' | 'webgl', props: Record<string, unknown>, gl?: Reco
   const root = (element.type as Function)(element.props) as Element, node = find(root, 'canvas')!;
   node.props.ref.current = canvas;
   const cleanups = effects.map(effect => effect()).filter((value): value is () => void => typeof value === 'function');
-  return { canvas, node, doc, frames, observers, canvasEvents, transforms, balances: () => [saved, restored],
+  return { canvas, node, doc, docEvents, frames, observers, canvasEvents, transforms, balances: () => [saved, restored],
     frame(time = 0) { const pending = [...frames.values()]; frames.clear(); pending.forEach(cb => cb(time)); },
     close() { cleanups.reverse().forEach(fn => fn()); for (const [key, value] of old) { if (value === undefined) delete globals[key]; else globals[key] = value; } },
   };
@@ -68,6 +68,22 @@ test('WebGL adapter pauses on context loss, reinitializes on restore, and releas
     h.canvasEvents.get('webglcontextrestored')!({}); h.frame(); assert.equal(initializations, 2); assert.equal(draws, 2);
   } finally { h.close(); }
   assert.equal(gl.disposed(), 1);
+});
+test('surface visibility pauses playback on hidden stages and pixel caps bound physical drawing size', () => {
+  const visibility: boolean[] = [];
+  const h = harness('2d', { animated: true, maxPixelSize: 192, draw() {}, onVisibilityChange: (value: boolean) => visibility.push(value) });
+  try {
+    assert.deepEqual(visibility, [false]);
+    h.observers.intersection([{ isIntersecting: true }]); h.frame();
+    assert.deepEqual(visibility, [false, true]);
+    assert.equal(h.canvas.width, 192); assert.equal(h.canvas.height, 96);
+    h.doc.hidden = true; h.docEvents.get('visibilitychange')!();
+    assert.deepEqual(visibility, [false, true, false]); assert.equal(h.frames.size, 0);
+    h.doc.hidden = false; h.docEvents.get('visibilitychange')!();
+    assert.deepEqual(visibility, [false, true, false, true]);
+    h.observers.intersection([{ isIntersecting: false }]);
+    assert.deepEqual(visibility, [false, true, false, true, false]); assert.equal(h.frames.size, 0);
+  } finally { h.close(); }
 });
 test('WebGL context cap degrades in Spanish and freeing a context permits another one', () => {
   const held: ReturnType<typeof harness>[] = [];
