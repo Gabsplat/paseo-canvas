@@ -1,0 +1,9 @@
+{
+  "checks": [
+    {
+      "name": "library drag chooses the release destination instead of an unrelated selected group",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

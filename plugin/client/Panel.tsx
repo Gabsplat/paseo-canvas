@@ -10,7 +10,7 @@ import { Catalog, PackExport, PackImport } from './Catalog';
 import { Inspector } from './Inspector';
 import { AgentModal } from './AgentModal';
 import { Delivery } from './Blocks';
-import { connectOperations, documentContent, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, selectionPack, topSelection, type Point, type Rect } from './logic';
+import { connectOperations, documentContent, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, selectionPack, topSelection, safeUrl, type Point, type Rect } from './logic';
 import { focusInput, keyboard } from './web';
 import { Onboarding } from './Onboarding';
 import { claimFirstGuide, type GuideAction } from './guide';
@@ -18,6 +18,12 @@ import { canvasPreferences } from '../shared/preferences';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
 import { usePresentation } from './usePresentation';
+import { ToolIsland, StyleIsland, ShapePopover, LibraryPopover, SvgImportDialog } from './FloatingTools';
+import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
+import { islandStyle } from './whiteboard-visuals';
+import { mediaSource } from './media';
+import { needsContentInteraction } from './interaction';
+import { isWhiteboardRenderer, type WbRenderer, type WbDrawData } from '../shared/whiteboard';
 
 type CatalogTab = 'types' | 'templates' | 'packs';
 type InspectorSection = 'document' | 'communication' | 'history' | 'activity';
@@ -96,34 +102,30 @@ function ExampleRow({ title, disabled, create }: { title: string; disabled: bool
   </View>;
 }
 
-function ContextTray({ controller: c, note, setNote, sending, error, lastId, send, retry, inspect, connect, wide }: { controller: CanvasController; note: string; setNote: (value: string) => void; sending: boolean; error: string; lastId?: string; send: () => void; retry: () => void; inspect: (section?: InspectorSection) => void; connect: () => void; wide: boolean }) {
-  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document, queued = c.events.filter(e => e.status === 'pending' || e.status === 'failed').length;
+function ContextTray({ controller: c, note, setNote, sending, error, lastId, send, retry, inspect, connect }: { controller: CanvasController; note: string; setNote: (value: string) => void; sending: boolean; error: string; lastId?: string; send: () => void; retry: () => void; inspect: (section?: InspectorSection) => void; connect: () => void }) {
+  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document;
+  const queued = c.events.filter(e => e.status === 'pending' || e.status === 'failed').length;
   const lastEvent = lastId ? c.events.find(e => e.id === lastId) : [...c.events].reverse().find(e => e.action.kind === 'selection.send');
   const disabled = sending || c.busy || c.offline;
-  return <View style={{ minHeight: tokens.size.tray, maxHeight: tokens.size.trayExpandedMax, borderTopWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
-    <ScrollView contentContainerStyle={{ padding: 12, gap: 8 }} keyboardShouldPersistTaps="handled">
-      {error && <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><Txt kind="small" style={{ flex: 1, color: u.c.statusDanger }} numberOfLines={2}>{error}</Txt><Button label="Reintentar" variant="ghost" small disabled={disabled} onPress={retry} /></View>}
-      {!c.selection.length ? <View style={{ gap: 8 }}><Button label={queued + ' acciones pendientes'} small variant="ghost" onPress={() => inspect('activity')} />{!c.view?.connection && <Button label="Conectar asistente" small variant="ghost" onPress={connect} />}</View> : <>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}><Txt kind="label" muted>Contexto</Txt>
-          {c.selection.slice(0, 3).map(id => {
-            const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id);
-            const type = entity && 'typeId' in entity ? c.catalog?.blockTypes.find(t => t.id === entity.typeId) : undefined;
-            return <Pressable key={id} accessibilityRole="button" accessibilityLabel={'Quitar del contexto: ' + (entity?.title || id)} disabled={c.offline || sending} onPress={() => { void c.select(c.selection.filter(x => x !== id)); }} hitSlop={u.compact ? 12 : 6} style={{ maxWidth: 160, minHeight: 20, paddingHorizontal: 6, borderRadius: 4, backgroundColor: u.wash('neutro'), flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Icon name={entity && 'groupIds' in entity ? 'Group' : type ? tokens.renderers[type.renderer ?? 'generic'].icon : 'PackageOpen'} size={12} color={u.c.foregroundMuted} /><Txt kind="small" numberOfLines={1} muted style={{ flexShrink: 1 }}>{entity?.title || id}</Txt><Icon name="X" size={12} color={u.c.foregroundMuted} />
-            </Pressable>;
-          })}
-          {c.selection.length > 3 && <Txt kind="small" muted>{'+' + (c.selection.length - 3)}</Txt>}
-          {!wide && <Button label="Ver detalles" small variant="ghost" onPress={() => inspect()} />}
-        </View>
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: u.compact ? 'wrap' : 'nowrap' }}>
-          <View style={{ flex: 1, minWidth: u.compact ? '100%' : 80 }}><Input value={note} onChange={setNote} readOnly={sending || c.offline} multiline placeholder="Añade una nota para el asistente (opcional)" style={{ minHeight: u.compact ? 44 : 32, maxHeight: 84, paddingVertical: 4 }} /></View>
-          {queued > 0 && <Pressable accessibilityRole="button" accessibilityLabel="Ver acciones en cola" onPress={() => inspect('activity')} hitSlop={12}><Chip label={queued + ' en cola'} icon="Clock" center style={{ flexShrink: 0 }} /></Pressable>}
-          {c.view?.connection ? <Button label={sending ? 'Enviando…' : 'Enviar al asistente'} variant="primary" icon="SendHorizontal" disabled={disabled} onPress={send} /> : <><Chip label="Sin asistente" icon="Unplug" center style={{ flexShrink: 0 }} /><Button label="Conectar" small variant="ghost" onPress={connect} /></>}
-        </View>
-        {!c.view?.connection && <Txt kind="small" muted>Se guardará en cola hasta que conectes un asistente.</Txt>}
-      </>}
-      {lastEvent && <Delivery event={lastEvent} retry={lastEvent.status === 'failed' && !disabled ? retry : undefined} />}
-    </ScrollView>
+  return <View nativeID="lienzo-composer" style={[islandStyle(u), { borderRadius: tokens.composer.radius, paddingHorizontal: tokens.composer.paddingH }]}>
+    {!!c.selection.length && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tokens.composer.chipsRow.gap, paddingTop: tokens.composer.chipsRow.paddingTop }}>
+      {c.selection.slice(0, 3).map(id => {
+        const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id);
+        return <Pressable key={id} accessibilityRole="button" accessibilityLabel={'Quitar del contexto: ' + (entity?.title || 'Elemento')} disabled={disabled} onPress={() => { void c.select(c.selection.filter(x => x !== id)); }} hitSlop={6} style={{ maxWidth: 160, minHeight: 20, paddingHorizontal: 6, borderRadius: tokens.radius.control, backgroundColor: u.wash('neutro'), flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{entity?.title || 'Elemento'}</Txt><Icon name="X" size={12} color={u.c.foregroundMuted} />
+        </Pressable>;
+      })}
+      {c.selection.length > 3 && <Button label={'+' + (c.selection.length - 3)} small variant="ghost" onPress={() => inspect()} />}
+    </View>}
+    <View style={{ minHeight: tokens.composer.height, flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+      <IconButton icon={c.view?.connection ? 'Bot' : 'Unplug'} label={c.view?.connection ? 'Asistente conectado' : 'Conectar asistente'} onPress={connect} />
+      <View style={{ flex: 1, minWidth: 0 }}><Input value={note} label="Escribir al asistente" onChange={setNote} readOnly={sending || c.offline} multiline placeholder={c.selection.length ? 'Preguntar sobre la selección…' : 'Escribir al asistente…'} style={{ minHeight: 32, maxHeight: 84, paddingVertical: 4, borderWidth: 0, backgroundColor: 'transparent' }} /></View>
+      <IconButton label={sending ? 'Enviando' : 'Enviar al asistente'} icon="ArrowUp" disabled={disabled || !c.selection.length && !note.trim()} onPress={send} />
+    </View>
+    {!c.view?.connection && <Txt kind="small" muted>Sin asistente. Se guarda en cola.</Txt>}
+    {queued > 0 && <Button label={queued + ' acciones en cola'} small variant="ghost" onPress={() => inspect('activity')} />}
+    {!!error && <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><Txt kind="small" style={{ flex: 1, color: u.c.statusDanger }} numberOfLines={2}>{error}</Txt><Button label="Reintentar" variant="ghost" small disabled={disabled} onPress={retry} /></View>}
+    {lastEvent && <Delivery event={lastEvent} retry={lastEvent.status === 'failed' && !disabled ? retry : undefined} />}
   </View>;
 }
 function Presence({ id, open }: { id: string | null; open: () => void }) {
@@ -141,15 +143,20 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     send: async (...args) => { const event = await raw.send(...args); return event?.error ? { ...event, error: friendlyError(event.error) } : event; },
   }), [raw]);
   const doc = c.view?.document;
-  const [width, setWidth] = useState(0), [barHeight, setBarHeight] = useState<number>(tokens.size.topBar), wide = !u.compact && width >= 980;
-  const [mode, setMode] = useState<'canvas' | 'outline'>(u.compact ? 'outline' : 'canvas'), [catalogOpen, setCatalogOpen] = useState(false), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null);
+  const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [islandWidth, setIslandWidth] = useState(0), [composerHeight, setComposerHeight] = useState(44), [styleHeight, setStyleHeight] = useState(0);
+  const [mode, setMode] = useState<'canvas' | 'outline'>(u.compact ? 'outline' : 'canvas'), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('types'), [catalogKey, setCatalogKey] = useState(0);
   const [inspectorSection, setInspectorSection] = useState<InspectorSection>('document'), [inspectorKey, setInspectorKey] = useState(0);
   const [docsError, setDocsError] = useState(''), [docsLoading, setDocsLoading] = useState(false);
   const [showAllWarnings, setShowAllWarnings] = useState(false), [templateError, setTemplateError] = useState('');
   const [documentSettingsOpen, setDocumentSettingsOpen] = useState(false), [docsOpen, setDocsOpen] = useState(false), [agentsOpen, setAgentsOpen] = useState(false), [overflow, setOverflow] = useState(false), [importOpen, setImportOpen] = useState(false), [exported, setExported] = useState<CanvasPack | null>(null), [template, setTemplate] = useState<CanvasGroup | null>(null), [templateName, setTemplateName] = useState(''), [reload, setReload] = useState(false);
   const [note, setNote] = useState(''), [sending, setSending] = useState(false), [sendError, setSendError] = useState('');
-  // Solo lienzo: hides the bar, catalog, inspector and tray. Failure banners stay visible.
+  const [tool, setTool] = useState<CanvasTool>('select'), [toolStyle, setToolStyle] = useState<ToolStyle>(DEFAULT_TOOL_STYLE), [toolLocked, setToolLocked] = useState(false);
+  const [toolPopover, setToolPopover] = useState<'shapes' | 'library' | null>(null), [toolsOpen, setToolsOpen] = useState(false), [svgOpen, setSvgOpen] = useState(false), [libraryError, setLibraryError] = useState(''), [svgBusy, setSvgBusy] = useState(false);
+  const [interactionId, setInteractionId] = useState<string | null>(null), [rename, setRename] = useState(false);
+  const [saveSlow, setSaveSlow] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false), [mediaUrl, setMediaUrl] = useState(''), [mediaCaption, setMediaCaption] = useState(''), [mediaError, setMediaError] = useState('');
+  // Solo lienzo hides the floating controls. Failures and the Canvas zoom remain visible.
   const [immersive, setImmersive] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false), guideClaim = useRef(false), guideMounted = useRef(true);
   useEffect(() => { guideMounted.current = true; return () => { guideMounted.current = false; }; }, []);
@@ -173,9 +180,9 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   const disabled = c.busy || c.offline || sending || c.loading;
   useEffect(() => { if (c.arrival) toast.show(`Documento nuevo: «${c.arrival.title}»`, { variant: 'info' }); }, [c.arrival?.id]);
   useEffect(() => { setNote(''); setSendError(''); setSending(false); retrySend.current = null; setReload(false); setDocumentSettingsOpen(false); setTemplate(null); setTemplateError(''); setLinkId(null); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
-  useEffect(() => { if (u.compact) setMode('outline'); setOverlay(null); }, [u.compact, wide]);
+  useEffect(() => { if (u.compact) setMode('outline'); setOverlay(null); }, [u.compact]);
   useEffect(() => { if (linkId && (c.selection.length || !doc?.links.some(l => l.id === linkId))) setLinkId(null); }, [linkId, c.selection, doc?.links]);
-  const selectLink = (id: string | null) => { setLinkId(id); if (id && !wide && !u.compact) setOverlay('inspector'); };
+  const selectLink = (id: string | null) => { setLinkId(id); };
   function connectSelection() {
     if (!doc || disabled || c.selection.length !== 2) return false; const [from, to] = c.selection, name = (id: string) => [...doc.blocks, ...doc.groups].find(e => e.id === id)?.title || id;
     const { existing, operations, id } = connectOperations(doc, from, to);
@@ -187,10 +194,9 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     setImmersive(false); // asking for the inspector or catalog leaves Solo lienzo so the request is visible
     setInspectorSection(section); setInspectorKey(key => key + 1);
     if (section !== 'document' || (!c.selection.length && !linkId)) { void c.select([]); setLinkId(null); setOverlay(null); setDocumentSettingsOpen(true); }
-    else if (!wide) setOverlay('inspector');
+    else setOverlay('inspector');
   };
-  const openCatalog = (tab: CatalogTab = 'types') => { setImmersive(false); setCatalogTab(tab); setCatalogKey(key => key + 1); if (wide) setCatalogOpen(true); else setOverlay('catalog'); };
-  const toggleCatalog = () => { if (wide) setCatalogOpen(!catalogOpen); else setOverlay(overlay === 'catalog' ? null : 'catalog'); };
+  const openCatalog = (tab: CatalogTab = 'types') => { setImmersive(false); setCatalogTab(tab); setCatalogKey(key => key + 1); setToolPopover(null); setOverlay('catalog'); };
   async function refreshDocuments() {
     setDocsLoading(true); setDocsError('');
     try { await c.refreshList(); } catch (e) { setDocsError(friendlyError(e)); }
@@ -256,12 +262,12 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   }
   function exportDocument() { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, [...doc.groups, ...doc.blocks].map(e => e.id))); }
   async function send(again = false) {
-    if (!doc || disabled || !c.selection.length && !again) return;
+    if (!doc || disabled || !c.selection.length && !note.trim() && !again) return;
     if (!again && c.selection.length > 100) { setSendError('Selecciona como máximo 100 objetivos por acción.'); return; }
     if (!again) retrySend.current = { id: newId('evt'), documentId: doc.id, ids: [...c.selection], note };
     const request = retrySend.current; if (!request || request.documentId !== doc.id) return;
     setSending(true); setSendError('');
-    try { await c.settle(); const event = await c.send({ kind: 'selection.send', label: 'Enviar contexto seleccionado', payload: { note: request.note }, targetIds: request.ids, delivery: 'immediate' }, request.id);
+    try { await c.settle(); if (c.current.current?.document.id !== request.documentId) return; const event = await c.send({ kind: 'selection.send', label: request.ids.length ? 'Preguntar sobre la selección' : 'Preguntar sobre el lienzo', payload: { note: request.note }, targetIds: request.ids, delivery: 'immediate' }, request.id);
       if (c.current.current?.document.id !== request.documentId) return;
       if (!event) setSendError('No se envió. Revisa el aviso del lienzo.');
       else if (event.status === 'failed') setSendError(event.error ?? 'No se envió. Revisa el aviso del lienzo.');
@@ -307,23 +313,127 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     const next = await retry();
     if (!next && c.current.current?.document.id === documentId) setTemplateError('No se guardó. Revisa el aviso del lienzo o vuelve a intentarlo.');
   }
-  function insert(type: BlockType) {
-    if (!doc) { openDocuments(); return; } if (disabled) return; const parent = c.selection.length === 1 ? doc.groups.find(g => g.id === c.selection[0]) : undefined, id = newId('block');
-    void (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title: type.name, typeId: type.id, data: type.defaults, parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], `Añadir ${type.name}`); if (next) await c.select([id]); })();
+  function insert(type: BlockType, data = type.defaults) {
+    if (!doc) { openDocuments(); return; } if (disabled) return;
+    if (isWhiteboardRenderer(type.renderer)) { setOverlay(null); if (type.renderer === 'wb-svg') { setSvgOpen(true); setMode('canvas'); } else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return; }
+    const parent = c.selection.length === 1 ? doc.groups.find(g => g.id === c.selection[0]) : undefined;
+    const activeBlock = c.selection.length === 1 ? doc.blocks.find(block => block.id === c.selection[0]) : undefined, rect = activeBlock ? rectsNow().get(activeBlock.id) : undefined;
+    const parentGroupId = parent?.id ?? activeBlock?.parentGroupId ?? null, parentRect = parentGroupId ? rectsNow().get(parentGroupId) : undefined;
+    const position = rect ? { x: rect.x + rect.width + tokens.graph.gap.node - (parentRect?.x ?? 0), y: rect.y - (parentRect?.y ?? 0) } : parent ? undefined : geometry.current.center;
+    const id = newId('block'); setOverlay(null);
+    void (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title: type.name, typeId: type.id, data, parentGroupId, ...(position ? { position } : {}) } }], `Añadir ${type.name}`); if (next) await c.select([id]); })();
   }
   function insertTemplate(id: string) {
     if (!doc) { openDocuments(); return; } if (disabled) return; const prefix = newId('t'), item = c.catalog?.templates.find(t => t.id === id); if (!item) return; const roots = [...item.groups, ...item.blocks].filter(e => !e.parentGroupId);
     void (async () => { const operations: CanvasOperation[] = [{ type: 'template.insert', templateId: id, idPrefix: prefix }]; if (roots.length < 200) roots.forEach((g, i) => operations.push({ type: 'entity.move', id: `${prefix}.${g.id}`, parentGroupId: null, position: { x: geometry.current.center.x + i * 32, y: geometry.current.center.y + i * 32 } })); const next = await c.edit(operations, 'Añadir plantilla'); if (next) await c.select(roots.map(g => `${prefix}.${g.id}`)); })();
+  }
+  function createGroup() {
+    if (!doc || disabled) return;
+    const parent = c.selection.length === 1 ? doc.groups.find(group => group.id === c.selection[0]) : undefined, id = newId('group');
+    setOverlay(null);
+    void c.edit([{ type: 'group.create', group: { id, title: 'Grupo sin título', description: '', blockIds: [], groupIds: [], parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], 'Añadir grupo').then(next => { if (next) void c.select([id]); });
+  }
+  function insertMedia() {
+    if (!doc || disabled) return;
+    const url = safeUrl(mediaUrl), type = c.catalog?.blockTypes.find(type => type.id === 'media' && type.renderer === 'image-ref');
+    if (!url) { setMediaError('Usa una URL HTTP o HTTPS válida.'); return; }
+    if (!type) { setMediaError('El tipo multimedia no está disponible en la colección local.'); return; }
+    const source = mediaSource(url);
+    insert(type, { ...type.defaults, url, caption: mediaCaption, mediaKind: source?.kind ?? 'reference' });
+    setMediaOpen(false); setMediaUrl(''); setMediaCaption(''); setMediaError('');
+  }
+  const rendererOf = (typeId: string) => c.catalog?.blockTypes.find(type => type.id === typeId)?.renderer;
+  const selectedWhiteboard = doc?.blocks.filter(block => c.selection.includes(block.id) && isWhiteboardRenderer(rendererOf(block.typeId))) ?? [];
+  const selectionKinds = new Set<WbRenderer | 'line'>(selectedWhiteboard.map(block => rendererOf(block.typeId) === 'wb-shape' && block.data.shape === 'line' ? 'line' : rendererOf(block.typeId) as WbRenderer));
+  const selectedStyle = selectedWhiteboard[0];
+  const displayedStyle: ToolStyle = selectedStyle ? (() => {
+    const data = selectedStyle.data, renderer = rendererOf(selectedStyle.typeId);
+    if (renderer === 'wb-draw') { const stroke = (data as WbDrawData).strokes[0]; return { ...toolStyle, color: stroke.color, scale: stroke.weight }; }
+    return { ...toolStyle, ...Object.fromEntries(Object.keys(DEFAULT_TOOL_STYLE).filter(key => data[key] !== undefined).map(key => [key, data[key]])), ...(data.weight ? { scale: data.weight as ToolStyle['scale'] } : {}) };
+  })() : toolStyle;
+  const showStyle = selectionKinds.size > 0 || ['text', 'shape', 'draw'].includes(tool);
+  const toolWidth = width < 560 ? 218 : 362;
+  const toolsLeft = Math.min(Math.max((width - toolWidth) / 2, tokens.island.inset + islandWidth + 8), Math.max(tokens.island.inset, width - toolWidth - tokens.island.inset));
+  const toolsTop = tokens.island.inset + islandWidth + 8 + toolWidth > width - tokens.island.inset ? tokens.island.bannerTop : tokens.island.inset;
+  const composerWidth = width < 560 ? Math.max(0, width - 24 - 88) : Math.min(tokens.composer.width.max, Math.max(0, width - 2 * (width < 880 ? 100 : 180)));
+  function chooseTool(next: CanvasTool) {
+    if (!doc) { openDocuments(); return; }
+    if (disabled && !['select', 'hand'].includes(next)) return;
+    if (next === 'svg') { setToolPopover('library'); setMode('canvas'); return; }
+    canvas.current?.cancelGesture(); setTool(next); setToolLocked(false); setMode('canvas'); setToolPopover(null);
+    if (u.compact && !['select', 'hand'].includes(next)) setToolsOpen(false);
+  }
+  useEffect(() => { if (c.offline) { canvas.current?.cancelGesture(); setTool('select'); setToolLocked(false); } }, [c.offline]);
+  useEffect(() => {
+    if (!c.busy) { setSaveSlow(false); return; }
+    const timer = setTimeout(() => setSaveSlow(true), 400); return () => clearTimeout(timer);
+  }, [c.busy]);
+  useEffect(() => { setTool('select'); setToolLocked(false); setToolPopover(null); setToolsOpen(false); setSvgOpen(false); setLibraryError(''); setInteractionId(null); setRename(false); setMediaOpen(false); setMediaUrl(''); setMediaCaption(''); setMediaError(''); }, [doc?.id]);
+  function changeStyle(patch: Partial<ToolStyle>) {
+    if (disabled) return;
+    setToolStyle(previous => ({ ...previous, ...patch }));
+    const documentId = doc?.id, ids = selectedWhiteboard.map(block => block.id);
+    if (!documentId || !ids.length) return;
+    if (ids.length > 200) { toast.error('Cambia el estilo de hasta 200 elementos por vez.'); return; }
+    void (async () => {
+      await c.settle();
+      const latest = c.current.current?.document; if (!latest || latest.id !== documentId) return;
+      const operations: CanvasOperation[] = [];
+      for (const block of latest.blocks.filter(block => ids.includes(block.id))) {
+        const renderer = rendererOf(block.typeId), data = { ...block.data };
+        if (!isWhiteboardRenderer(renderer)) continue;
+        if (renderer === 'wb-draw') {
+          if (patch.color === undefined && patch.scale === undefined) continue;
+          data.strokes = (block.data as WbDrawData).strokes.map(stroke => ({ ...stroke, ...(patch.color !== undefined ? { color: patch.color } : {}), ...(patch.scale !== undefined ? { weight: patch.scale } : {}) }));
+        } else {
+          const allowed = renderer === 'wb-text' ? ['color', 'scale', 'font', 'align'] : renderer === 'wb-svg' ? ['color'] : ['color', 'shape', 'fill', 'stroke'];
+          let changed = false;
+          for (const key of allowed) { const value = patch[key as keyof ToolStyle]; if (value !== undefined) { data[key] = value; changed = true; } }
+          if (renderer === 'wb-shape') {
+            if (patch.scale !== undefined) { data.weight = patch.scale; changed = true; }
+            if (data.shape === 'line' && patch.heads !== undefined) { data.heads = patch.heads; changed = true; }
+            if (data.shape !== 'line') { delete data.from; delete data.heads; }
+          }
+          if (!changed) continue;
+        }
+        operations.push({ type: 'block.update', id: block.id, patch: { data } });
+      }
+      const label = patch.color !== undefined ? 'Cambiar color' : patch.scale !== undefined ? 'Cambiar tamaño' : patch.fill !== undefined ? 'Cambiar relleno' : patch.stroke !== undefined ? 'Cambiar trazo' : patch.font !== undefined ? 'Cambiar fuente' : patch.align !== undefined ? 'Cambiar alineación' : patch.shape !== undefined ? 'Cambiar forma' : 'Cambiar puntas';
+      if (operations.length) await c.edit(operations, label);
+    })().catch(c.fail);
+  }
+  async function insertSvg(svg: string, meta: SvgInsertOptions = {}): Promise<boolean> {
+    if (!doc || disabled || svgBusy) return false;
+    const documentId = doc.id;
+    setSvgBusy(true); setLibraryError(''); setMode('canvas');
+    try {
+      const parent = c.selection.length === 1 ? doc.groups.find(group => group.id === c.selection[0]) : undefined;
+      const result = await canvas.current?.insertSvg(svg, { ...meta, ...(parent && meta.parentGroupId === undefined ? { parentGroupId: parent.id } : {}) });
+      if (c.current.current?.document.id !== documentId) return false;
+      if (result) { setToolPopover(null); setTool('select'); setToolsOpen(false); }
+      else setLibraryError('No se guardó el SVG. Revisa el aviso del lienzo.');
+      return result ?? false;
+    } catch { setLibraryError('Este SVG contiene contenido activo o enlaces externos y no se puede importar.'); return false; }
+    finally { setSvgBusy(false); }
   }
   useEffect(() => {
     if (u.layout.platform !== 'web') return;
     return keyboard(root.current, e => {
       if (guideOpen) return false;
       if (e.key === 'Escape' && immersive) { setImmersive(false); return true; }
+      if (e.key === 'Escape' && (toolPopover || toolsOpen)) { setToolPopover(null); setToolsOpen(false); return true; }
+      if (e.key === 'Escape' && interactionId) { canvas.current?.endInteraction(); return true; }
+      if (e.key === 'Escape' && tool !== 'select') { canvas.current?.cancelGesture(); chooseTool('select'); return true; }
       if (e.key === 'Escape') { setOverlay(null); setOverflow(false); setLinkId(null); void c.select([]); return true; }
       if (!e.command && e.key.toLowerCase() === 'f' && doc) { setOverlay(null); setImmersive(v => !v); return true; }
       if (e.command && e.key.toLowerCase() === 'k') { openCatalog(); setTimeout(() => focusInput(searchRef.current), 50); return true; }
-      if (!doc || disabled) return false;
+      if (!doc) return false;
+      if (!e.command && e.shift && e.key.toLowerCase() === 'l') { setMode(value => value === 'canvas' ? 'outline' : 'canvas'); return true; }
+      const shortcuts: Record<string, CanvasTool> = { v: 'select', h: 'hand', t: 'text', r: 'shape', d: 'draw', e: 'eraser' };
+      if (!e.command && !e.shift && shortcuts[e.key.toLowerCase()]) { chooseTool(shortcuts[e.key.toLowerCase()]); return true; }
+      if ((e.key === 'Enter' || e.key === 'F2') && !e.command && c.selection.length === 1) { canvas.current?.editSelection(); return true; }
+      if (e.key === 'F2' && !c.selection.length && !disabled) { setRename(true); return true; }
+      if (disabled) return false;
       if (e.command && e.key.toLowerCase() === 'z') { void changeRevision(e.shift ? 'redo' : 'undo'); return true; }
       if (e.command && e.key.toLowerCase() === 'g') { groupSelection(); return true; }
       if (e.command && e.key === 'Enter') { void send(); return true; }
@@ -348,50 +458,86 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       }
       return false;
     });
-  }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, wide, note, overlay, sending, immersive, linkId, mode, guideOpen]);
+  }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, note, overlay, sending, immersive, linkId, mode, guideOpen, tool, toolPopover, toolsOpen, interactionId]);
   const catalog = <Catalog key={catalogKey} initialTab={catalogTab} controller={c} insert={insert} insertTemplate={insertTemplate} onImport={() => setImportOpen(true)} onExport={setExported} searchRef={searchRef} />;
-  const inspector = <Inspector key={inspectorKey} linkId={linkId} onLink={selectLink} initialSection={inspectorSection} controller={c} onClose={wide || u.compact ? undefined : () => setOverlay(null)} groupSelection={groupSelection} release={release} rects={rectsNow} onTemplate={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} onExportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} reorder={reorder} />;
-  return <View ref={root} onLayout={e => setWidth(e.nativeEvent.layout.width)} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
-    {!immersive && <View onLayout={e => setBarHeight(e.nativeEvent.layout.height)} style={{ height: u.compact ? tokens.size.topBarCompact : tokens.size.topBar, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
-      {!u.compact && <IconButton label="Catálogo" icon="LibraryBig" active={wide ? catalogOpen : overlay === 'catalog'} onPress={toggleCatalog} />}
-      <IconButton label="Documentos" icon="FolderOpen" onPress={openDocuments} />
-      <View style={{ flex: u.compact ? 1 : undefined, flexShrink: 1, minWidth: 80, maxWidth: 300 }}>{doc ? <Field key={doc.id} hideLabel label="Título del lienzo" value={doc.title} disabled={disabled} inputStyle={u.font('title')} onSave={async title => {
-        if (!title.trim() || title.trim().length > 300) throw new Error('Escribe un título de hasta 300 caracteres.');
-        await c.settle(); if (c.current.current?.document.id !== doc.id) return undefined;
-        return c.edit([{ type: 'document.update', title: title.trim() }], 'Editar título');
-      }} /> : <Txt kind="title">Lienzo</Txt>}</View>
-      {doc?.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" center />}
-      {!u.compact && <><View style={{ flex: 1 }} /><IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} /></>}
-      <View style={{ width: u.compact ? 168 : 156 }}><Segments value={mode} options={[{ value: 'canvas', label: 'Lienzo' }, { value: 'outline', label: 'Lista' }]} onChange={setMode} /></View>
-      {!u.compact && <><Presence id={c.view?.connection?.agentId ?? null} open={() => setAgentsOpen(true)} />{!wide && !!(c.selection.length || linkId) && <IconButton label="Detalles" icon="PanelRight" active={overlay === 'inspector'} onPress={() => setOverlay(overlay === 'inspector' ? null : 'inspector')} />}</>}{!u.compact && <IconButton icon="BookOpen" label="Guía de Lienzo" onPress={() => setGuideOpen(true)} />}{doc && <IconButton icon="Maximize2" label="Solo lienzo" onPress={() => { setOverlay(null); setImmersive(true); }} />}<IconButton icon="Ellipsis" label="Más acciones" onPress={() => setOverflow(true)} />
+  const inspector = <Inspector key={inspectorKey} linkId={linkId} onLink={selectLink} initialSection={inspectorSection} controller={c} onClose={undefined} groupSelection={groupSelection} release={release} rects={rectsNow} onTemplate={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} onExportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} reorder={reorder} />;
+  const selectionToolbar = !immersive && mode === 'canvas' && c.selection.length ? <View style={[islandStyle(u, true), { flexDirection: 'row', alignItems: 'center', minHeight: tokens.toolbar.height }]}>
+        {!selectedWhiteboard.length && <Button label="Preguntar" icon="Bot" small variant="ghost" disabled={disabled} onPress={() => { void send(); }} />}
+        {c.selection.length === 1 && needsContentInteraction(rendererOf(doc?.blocks.find(block => block.id === c.selection[0])?.typeId ?? '')) && <Button label={interactionId ? 'Salir de interacción' : 'Interactuar'} icon="MousePointerClick" small variant="ghost" onPress={() => { if (interactionId) canvas.current?.endInteraction(); else canvas.current?.beginInteraction(); }} />}
+        <IconButton label="Duplicar" icon="CopyPlus" disabled={disabled} onPress={duplicateSelection} /><IconButton label="Eliminar" icon="Trash2" disabled={disabled} onPress={removeSelection} /><IconButton label="Más" icon="Ellipsis" onPress={() => inspectorOpen()} />
+      </View> : undefined;
+  const toolIsland = <ToolIsland tool={tool} onToolChange={chooseTool} locked={toolLocked} onLockChange={setToolLocked} shape={toolStyle.shape} onOpenShapes={() => { setOverlay(null); setToolPopover('shapes'); }} onOpenLibrary={() => { setOverlay(null); setLibraryError(''); setToolPopover('library'); setMode('canvas'); }} onOpenPicker={() => openCatalog()} width={width} touch={u.compact} disabled={!doc || disabled} />;
+  const styleIsland = <StyleIsland tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation={u.compact || width < 880 ? 'horizontal' : 'vertical'} touch={u.compact} disabled={disabled} />;
+  const title = doc ? rename ? <Field key={doc.id} hideLabel label="Título del lienzo" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
+    if (!value.trim() || value.trim().length > 300) throw new Error('Escribe un título de hasta 300 caracteres.');
+    await c.settle(); if (c.current.current?.document.id !== doc.id) return;
+    const next = await c.edit([{ type: 'document.update', title: value.trim() }], 'Renombrar lienzo'); if (next) setRename(false); return next;
+  }} /> : <Pressable accessibilityRole="button" accessibilityLabel={'Abrir lienzos: ' + doc.title} onPress={openDocuments} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: tokens.island.title.paddingH, minHeight: tokens.island.button.size, gap: 4 }}><Txt kind="groupTitle" numberOfLines={1} style={{ flexShrink: 1 }}>{doc.title}</Txt><Icon name="ChevronDown" size={12} color={u.c.foregroundMuted} /></Pressable> : <Txt kind="groupTitle">Lienzo</Txt>;
+  return <View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
+    {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
+      <IconButton icon="Menu" label="Más acciones" onPress={() => setOverflow(true)} /><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" center />}<IconButton icon="PenTool" label="Herramientas" disabled={!doc} onPress={() => { setMode('canvas'); setToolsOpen(true); }} />
+      <IconButton icon={mode === 'canvas' ? 'ListTree' : 'Frame'} label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} onPress={() => setMode(mode === 'canvas' ? 'outline' : 'canvas')} />
     </View>}
-    <View style={{ flex: 1, flexDirection: 'row', minHeight: 0 }}>
-      {wide && !immersive && catalogOpen && <View style={{ width: 288, borderRightWidth: 1, borderColor: u.c.border }}>{catalog}</View>}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        {doc && (c.failure || c.offline || reload) && <View style={{ padding: 12, gap: 8 }}>
+    <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
+      {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="No se pudo abrir el lienzo" error={c.failure.message}><Button label="Reintentar" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo">
+        <Button label="Nuevo lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Ejemplos</Txt>
+        {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={selectionToolbar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={selectLink} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
+    </View>
+    <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
+      {!u.compact && !immersive && <View pointerEvents="box-none" onLayout={e => setIslandWidth(e.nativeEvent.layout.width)} style={{ position: 'absolute', top: tokens.island.inset, left: tokens.island.inset, maxWidth: Math.max(0, width - 24) }}><View nativeID="lienzo-document-island" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center' }]}>
+        <IconButton icon="Menu" label="Más acciones" onPress={() => { setToolPopover(null); setOverflow(true); }} />
+        <View style={{ flexShrink: 1, minWidth: 0, maxWidth: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth, ...(rename ? { width: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth } : {}) }}>{title}</View>
+        {doc?.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" center />}
+        {(saveSlow || c.failure) && <View accessibilityLabel={c.failure ? 'No se guardó' : 'Guardando'} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.failure ? u.c.statusDanger : u.c.statusWarning }} />}
+        <View style={{ width: tokens.island.divider.width, height: tokens.island.divider.height, marginHorizontal: tokens.island.divider.marginH, backgroundColor: u.c.border }} />
+        <IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />{width >= 560 && <IconButton icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />}
+      </View></View>}
+      {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: toolsTop, left: toolsTop === tokens.island.inset ? toolsLeft : Math.max(tokens.island.inset, (width - toolWidth) / 2) }}>{toolIsland}</View>}
+      {doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select' && <View pointerEvents="box-none" style={{ position: 'absolute', top: toolsTop + 80, left: 24, right: 24, alignItems: 'center', gap: 8 }}><View pointerEvents="none"><Txt kind="display" style={{ textAlign: 'center' }}>Un lienzo en blanco</Txt><Txt muted style={{ textAlign: 'center' }}>Escribe, dibuja o añade un bloque.</Txt></View><View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Button label="Añadir un bloque" disabled={disabled} onPress={() => openCatalog()} /><Button label="Usar una plantilla" disabled={disabled} onPress={() => openCatalog('templates')} /></View></View>}
+      {doc && !immersive && !u.compact && <View pointerEvents="box-none" onLayout={e => setComposerHeight(e.nativeEvent.layout.height)} style={{ position: 'absolute', bottom: tokens.island.inset, left: width < 560 ? tokens.island.inset : (width - composerWidth) / 2, width: composerWidth }}><ContextTray controller={c} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} /></View>}
+      {showStyle && !immersive && !u.compact && mode === 'canvas' && <View pointerEvents="box-none" style={width >= 880 ? { position: 'absolute', right: tokens.island.inset, top: Math.max(toolsTop + 56, (panelHeight - styleHeight) / 2), maxHeight: Math.max(80, panelHeight - 160) } : { position: 'absolute', bottom: tokens.island.inset + composerHeight + 8, left: tokens.island.inset, right: tokens.island.inset }}><ScrollView pointerEvents="box-none" style={{ maxHeight: Math.max(80, panelHeight - 160) }} contentContainerStyle={{ alignItems: width >= 880 ? 'flex-end' : 'center' }}><View pointerEvents="box-none" onLayout={e => setStyleHeight(e.nativeEvent.layout.height)}>{styleIsland}</View></ScrollView></View>}
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: u.compact ? tokens.size.topBarCompact + 8 : toolsTop + tokens.island.bannerTop, left: 12, right: 12 }}>{doc && (c.failure || c.offline || reload) && <View pointerEvents="box-none" style={{ padding: 12, gap: 8 }}>
           {c.failure && <Banner title={c.failure.conflict ? 'El lienzo cambió mientras editabas' : 'No se guardó el cambio'} icon={c.failure.conflict ? 'GitCompareArrows' : 'CircleAlert'} color={c.failure.conflict ? u.c.statusWarning : u.c.statusDanger} message={c.failure.conflict ? 'Otra edición cambió el lienzo y tu cambio no se guardó. Puedes reaplicarlo sobre el contenido actual o descartarlo.' : c.failure.message}>
             {c.failure.retry && <Button label={c.failure.conflict ? 'Reaplicar mi cambio' : 'Reintentar'} variant="primary" small disabled={disabled} onPress={() => { void c.failure?.retry?.().catch(e => c.fail(e)); }} />}<Button label="Descartar" variant="ghost" small onPress={c.clearFailure} />
           </Banner>}
           {c.offline && <Banner title="Sin conexión con Paseo" icon="Unplug" color={u.c.border} message="Puedes seguir leyendo; los cambios se desactivan."><Button label="Reintentar" small onPress={() => { void c.refresh(); }} /></Banner>}
           {reload && !(c.failure && c.offline) && <Banner title="Este asistente no tiene las herramientas de Lienzo" icon="Info" color={u.c.statusWarning} message="Quedó conectado y recibirá tus acciones como mensajes, pero se creó sin las herramientas, así que no puede leer ni editar el lienzo. Activa las herramientas en el diálogo de asistente y crea un asistente nuevo, o usa «Configurar un asistente existente»."><Button label="Entendido" small variant="ghost" onPress={() => setReload(false)} /></Banner>}
           {c.failure && c.offline && reload && <Button label="+1 aviso" small variant="ghost" onPress={() => setShowAllWarnings(true)} />}
-        </View>}
-        {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="No se pudo abrir el documento" error={c.failure.message}>
-          <Button label="Reintentar" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(e => c.fail(e)); }} />
-
-        </EmptyState> : !doc ? <EmptyState title="Lienzo">
-          <Button label="Nuevo lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />
-          <Txt kind="label" muted>Ejemplos</Txt>
-          {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-        </EmptyState> : !doc.blocks.length && !doc.groups.length ? <EmptyState title="Un lienzo en blanco" description="Añade un bloque desde el catálogo o pide al asistente que empiece. Los grupos enmarcan bloques que van juntos.">
-          <Button label="Añadir primer bloque" variant="primary" disabled={c.offline} onPress={() => openCatalog('types')} /><Button label="Usar una plantilla" disabled={c.offline} onPress={() => openCatalog('templates')} />
-        </EmptyState> : <Canvas key={doc.id} api={canvas} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={selectLink} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
-        {doc && !immersive && (c.selection.length > 0 || c.events.some(event => event.status === 'pending' || event.status === 'failed')) && <ContextTray controller={c} wide={wide} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} />}
-      </View>{wide && !immersive && !!(c.selection.length || linkId) && <View style={{ width: 328, borderLeftWidth: 1, borderColor: u.c.border }}>{inspector}</View>}
+        </View>}</View>
+      {toolPopover && !toolsOpen && !u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: toolsTop + tokens.toolbar.height + 8, left: Math.max(12, Math.min(toolsLeft, width - (toolPopover === 'library' ? 316 : 196))) }}>
+        {toolPopover === 'shapes' ? <ShapePopover value={toolStyle.shape} heads={toolStyle.heads} onPick={(shape, heads) => { setToolStyle(previous => ({ ...previous, shape, heads })); chooseTool('shape'); }} onClose={() => setToolPopover(null)} /> : <LibraryPopover onInsert={insertSvg} onImport={() => { setToolPopover(null); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setToolPopover(null)} />}
+      </View>}
+      {immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: 12, right: 12 }}><View style={islandStyle(u)}><IconButton icon="Minimize2" label="Mostrar controles" onPress={() => setImmersive(false)} /></View></View>}
+      {u.compact && !immersive && mode === 'canvas' && !['select', 'hand'].includes(tool) && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.size.topBarCompact + 8, left: 0, right: 0, alignItems: 'center' }}><Button label="Listo" variant="primary" onPress={() => chooseTool('select')} /></View>}
     </View>
-    {immersive && <View style={{ position: 'absolute', top: 12, right: 12, padding: 2, backgroundColor: u.c.surface1, borderWidth: 1, borderColor: u.c.border, borderRadius: 8 }}><IconButton icon="Minimize2" label="Salir de solo lienzo" onPress={() => setImmersive(false)} /></View>}
-    {!wide && !u.compact && !immersive && overlay && (overlay === 'catalog' || !!(c.selection.length || linkId)) && <View style={{ position: 'absolute', top: barHeight, left: 0, right: 0, bottom: 0 }}><Pressable accessibilityLabel="Cerrar panel" onPress={() => setOverlay(null)} style={{ position: 'absolute', inset: 0, backgroundColor: withAlpha('#000', .45) }} /><View style={{ position: 'absolute', top: 0, bottom: 0, ...(overlay === 'catalog' ? { left: 0, width: 288, borderRightWidth: 1 } : { right: 0, width: 328, borderLeftWidth: 1 }), borderColor: u.c.border }}>{overlay === 'catalog' ? <>{catalog}<View style={{ position: 'absolute', top: 4, right: 4 }}><IconButton label="Cerrar catálogo" icon="X" onPress={() => setOverlay(null)} /></View></> : inspector}</View></View>}
-    {u.compact && <Modal title={overlay === 'catalog' ? 'Catálogo local' : 'Detalles'} open={!!overlay && !immersive && (overlay === 'catalog' || !!(c.selection.length || linkId))} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>{overlay === 'catalog' ? catalog : inspector}</Modal.Content></Modal>}
+    {u.compact && doc && !immersive && <ContextTray controller={c} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} />}
+    <Modal title={overlay === 'catalog' ? 'Añadir un bloque' : 'Detalles'} open={!!overlay && !immersive} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>
+      {overlay === 'catalog' && <View style={{ padding: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <Button label="Nota" icon="StickyNote" small disabled={disabled || !c.catalog?.blockTypes.some(type => type.id === 'note')} onPress={() => { const type = c.catalog?.blockTypes.find(type => type.id === 'note'); if (type) insert(type); }} />
+        <Button label="Nodo" icon="Box" small disabled={disabled || !c.catalog?.blockTypes.some(type => type.id === 'node')} onPress={() => { const type = c.catalog?.blockTypes.find(type => type.id === 'node'); if (type) insert(type); }} />
+        <Button label="Grupo" icon="Group" small disabled={disabled} onPress={createGroup} />
+        <Button label="Multimedia por URL…" icon="Image" small disabled={disabled} onPress={() => { setOverlay(null); setMediaError(''); setMediaOpen(true); }} />
+        <Button label="Importar SVG…" icon="Upload" small disabled={disabled} onPress={() => { setOverlay(null); setMode('canvas'); setSvgOpen(true); }} />
+      </View>}
+      {overlay === 'catalog' && width < 560 && <View style={{ padding: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Button label="Forma" icon="Shapes" disabled={disabled} onPress={() => { setOverlay(null); setToolsOpen(true); setToolPopover('shapes'); setMode('canvas'); }} /><Button label="Goma" icon="Eraser" disabled={disabled} onPress={() => { setOverlay(null); chooseTool('eraser'); }} /><Button label="Biblioteca" icon="Library" disabled={disabled} onPress={() => { setOverlay(null); setToolsOpen(true); setToolPopover('library'); setMode('canvas'); }} /></View>}
+      <View style={{ minHeight: 320, maxHeight: Math.max(320, panelHeight - 120), flex: 1 }}>{overlay === 'catalog' ? catalog : inspector}</View>
+    </Modal.Content></Modal>
+    <Modal title="Herramientas" open={toolsOpen} onOpenChange={open => { setToolsOpen(open); if (!open) setToolPopover(null); }}><Modal.Content><View style={{ gap: 12 }}>
+      <View style={{ alignItems: 'center' }}><ToolIsland tool={tool} onToolChange={chooseTool} locked={toolLocked} onLockChange={setToolLocked} shape={toolStyle.shape} onOpenShapes={() => setToolPopover('shapes')} onOpenLibrary={() => setToolPopover('library')} onOpenPicker={() => { setToolsOpen(false); openCatalog(); }} width={880} grid={u.compact} touch={u.compact} disabled={!doc || disabled} /></View>
+      {styleIsland}
+      <Button label="Biblioteca" icon="Library" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc || disabled} onPress={() => { setLibraryError(''); setToolPopover('library'); }} />
+      {toolPopover === 'shapes' && <ShapePopover value={toolStyle.shape} heads={toolStyle.heads} onPick={(shape, heads) => { setToolStyle(previous => ({ ...previous, shape, heads })); chooseTool('shape'); }} onClose={() => setToolPopover(null)} />}
+      {toolPopover === 'library' && <LibraryPopover onInsert={insertSvg} onImport={() => { setToolsOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setToolPopover(null)} />}
+      <Button label="Listo" variant="primary" onPress={() => { setToolsOpen(false); setToolPopover(null); }} />
+    </View></Modal.Content></Modal>
+    <Modal title="Añadir multimedia" open={mediaOpen} onOpenChange={setMediaOpen}><Modal.Content>
+      <Input label="URL de imagen, video o audio" value={mediaUrl} onChange={setMediaUrl} readOnly={disabled} />
+      <Input label="Pie de la referencia" value={mediaCaption} onChange={setMediaCaption} readOnly={disabled} />
+      {!!mediaError && <Txt kind="small" style={{ color: u.c.statusDanger }}>{mediaError}</Txt>}
+      <Button label="Añadir multimedia" variant="primary" disabled={disabled || !mediaUrl.trim()} onPress={insertMedia} />
+    </Modal.Content></Modal>
+    <SvgImportDialog open={svgOpen} onClose={() => setSvgOpen(false)} onInsert={insertSvg} />
     <Modal title="Avisos" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="Este asistente no tiene las herramientas de Lienzo" icon="Info" color={u.c.statusWarning} message="Quedó conectado y recibirá tus acciones como mensajes, pero se creó sin las herramientas, así que no puede leer ni editar el lienzo. Activa las herramientas en el diálogo de asistente y crea un asistente nuevo, o usa «Configurar un asistente existente»."><Button label="Entendido" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
     <Modal title="Documentos" open={docsOpen} onOpenChange={setDocsOpen}><Modal.Content>
       {docsLoading && <Txt kind="small" muted>Cargando documentos…</Txt>}
@@ -405,6 +551,12 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       {c.catalog?.packs.filter(p => ['frontend', 'learn'].includes(p.id)).flatMap(p => p.documents.map((d, i) => <View key={p.id + ':' + i} style={{ gap: 4 }}><Chip label="Ejemplo" tone="aviso" icon="FlaskConical" /><Button label={'Crear ' + d.title} variant="ghost" disabled={disabled} onPress={() => { void c.example(p.id, i).then(next => { if (next) setDocsOpen(false); }); }} /></View>))}
     </Modal.Content></Modal>
     <Modal title="Más acciones" open={overflow} onOpenChange={setOverflow}><Modal.Content>
+      <Button label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} icon={mode === 'canvas' ? 'ListTree' : 'Frame'} variant="ghost" onPress={() => { setOverflow(false); setMode(mode === 'canvas' ? 'outline' : 'canvas'); }} />
+      <Button label="Renombrar lienzo" icon="Pencil" variant="ghost" disabled={!doc || disabled} onPress={() => { setOverflow(false); setRename(true); }} />
+      <Button label="Nuevo lienzo" icon="Plus" variant="ghost" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
+      <Button label="Herramientas" icon="PenTool" variant="ghost" disabled={!doc} onPress={() => { setOverflow(false); setMode('canvas'); setToolsOpen(true); }} />
+      <Button label="Importar SVG…" icon="Upload" variant="ghost" disabled={!doc || disabled} onPress={() => { setOverflow(false); setMode('canvas'); setSvgOpen(true); }} />
+      <Button label="Solo lienzo" icon="Maximize2" variant="ghost" disabled={!doc} onPress={() => { setOverflow(false); setOverlay(null); setImmersive(true); }} />
       <Button label="Guía de Lienzo" icon="BookOpen" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); setGuideOpen(true); }} />
       <Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />
       {doc && <Button label="Historial" icon="History" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); inspectorOpen('history'); }} />}
@@ -422,7 +574,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     </Modal.Content></Modal>
 
     <Modal title="Ajustes del lienzo" open={documentSettingsOpen && !!doc} onOpenChange={setDocumentSettingsOpen}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>{documentSettingsOpen && doc && inspector}</Modal.Content></Modal>
-    {settings.saveError && <View style={{ padding: 8 }}><Txt kind="small" muted>No se pudo recordar que ya viste la guía.</Txt><Button label="Reintentar" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}
+    {settings.saveError && <View style={{ position: 'absolute', top: toolsTop + 64, left: 12, right: 12, padding: 8, backgroundColor: u.c.surface1 }}><Txt kind="small" muted>No se pudo recordar que ya viste la guía.</Txt><Button label="Reintentar" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}
     <Onboarding open={guideOpen} close={closeGuide} catalog={c.catalog} onAction={guideAction} />
     <Modal title="Guardar como plantilla" open={!!template} onOpenChange={v => { if (!v) setTemplate(null); }}><Modal.Content>
       <Txt kind="small" style={{ fontWeight: '600' }}>Nombre</Txt><Input label="Nombre de la plantilla" value={templateName} onChange={setTemplateName} readOnly={disabled} />

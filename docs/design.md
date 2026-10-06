@@ -1,8 +1,9 @@
-# Lienzo ; visual design specification (v6, floating interface)
+# Lienzo ; visual design specification (v7, floating interface and whiteboard)
 
 Autoría: tokens y capítulos iniciales recuperados de Claude Opus 5.5 Medium.
 Especificación completada y revisada por GPT 6.1 Sol High por autorización del dueño.
 Una revisión posterior de Opus queda pendiente si el dueño la solicita.
+v7 (§20, pizarra libre, y las enmiendas marcadas "v7"): Claude Opus 5.5 Medium.
 Estado: objetivo de implementación, todavía no implementado en el plugin.
 Audience: the engineers of `plugin/client/`. Normative. Field,
 operation and RPC names are the ones in `plugin/shared/model.ts`, `rpc.ts` and `builtins.ts`; if
@@ -10,7 +11,8 @@ those files change, **they win on names and shapes, this file wins on how things
 
 | Artifact | Role |
 | --- | --- |
-| `design/tokens.json` (v6) | Numbers, colours, font styles and icon names. Transcribed into `plugin/client/tokens.ts`. |
+| `design/whiteboard-spec.md` | **Contract** for free text, shapes, SVG, freehand, tools and gestures: type IDs, data fields, limits. Wins over this file on those. |
+| `design/tokens.json` (v7) | Numbers, colours, font styles and icon names. Transcribed into `plugin/client/tokens.ts`. |
 | `design/floating/opus-draft.md` | Borrador parcial recuperado. Archivo histórico, sin autoridad sobre esta especificación. |
 | `design/floating/contrast.py` | Contrast check of every new colour pair; must exit 0. |
 | `design/demo.html` | Example content for the `preview` block, not a mock of the plugin. |
@@ -22,7 +24,8 @@ those files change, **they win on names and shapes, this file wins on how things
 manipulation (in-place editing, `+` handles, quick-create) · §9 adding blocks, collections, Lista ·
 §10 assistant composer · §11 states and first run · §12 keyboard · §13 accessibility · §15 graph ·
 §16 dragging and motion · §17 media, sizes, link magnetism · §18 interactive learning blocks ·
-§19 copy.
+§19 copy · §20 whiteboard (free text, shapes, SVG, freehand, tool and style islands, drag and
+interaction rules).
 
 Not in the contract, therefore **not designed and must not be rendered**: per-block author glyphs,
 per-block tone overrides, group resize handles. §18 describes block kinds whose data shapes are
@@ -42,11 +45,13 @@ still to be published by the backend; it fixes their look and behaviour, not the
      toolbar, popovers, menus, tooltips): `elevation.*` shadows. **A shadow at rest always means
      "this is a control, not part of your canvas".**
 - **Simplicity rules** (each one is checkable in review):
-  - At rest the canvas shows four small islands and nothing else (§3). Nothing is docked.
+  - At rest the canvas shows four small islands and nothing else (§3). Nothing is docked. A fifth
+    (style, §20.5) exists only while a creation tool or a whiteboard selection gives it a subject.
   - A control appears next to the thing it changes, and only while that thing is selected.
   - Canvas content changes use undoable transactions with Spanish labels. Pack replacement keeps its explicit review and replacement checkbox. Runtime gestures use the separate runtime channel and reset, not content undo.
-  - No modes that outlive their visible control: the only tool states are *editing text* (a visible
-    caret) and a learning block's *pencil* (a visibly pressed button). `Esc` leaves both.
+  - No modes that outlive their visible control: *editing text* (a visible caret), a learning
+    block's *pencil* (a pressed button), the active **canvas tool** (the pressed button of island
+    B, §20.4) and a card's *interaction mode* (ring and chip, §20.2). `Esc` leaves each.
   - Never show identifiers, revision numbers, coordinates or pixel sizes.
   - Editable fields retain accessible names. Visible labels appear in forms and learning controls; a single-purpose inline editor uses its contextual title.
 - **Language:** Spanish, sentence case, no exclamation marks, no emoji. Interface text is
@@ -63,7 +68,7 @@ still to be published by the backend; it fixes their look and behaviour, not the
     case), which names types and sections.
   - **Mono** ; only what is literally code or keys: `code` (code, URLs, JSON, shader source) and
     `keys` (shortcuts in tooltips and menus).
-- **Hand-drawn accent:** exactly one, las flechas de orientación del lienzo vacío (§11.1). Se dibujan con el adaptador web existente o se sustituyen por texto en native; no requieren un archivo SVG. No aparecen junto al contenido de aprendizaje.
+- **Hand-drawn accent:** exactly one in the interface itself (what a person draws with the pencil is their content, §20), las flechas de orientación del lienzo vacío (§11.1). Se dibujan con el adaptador web existente o se sustituyen por texto en native; no requieren un archivo SVG. No aparecen junto al contenido de aprendizaje.
 - **Honesty rules:**
   - `document.example === true` → chip "Ejemplo" (`FlaskConical` 12, tone `aviso`) after the title in
     the document island, the Lienzos list and the Lista header. Not dismissible.
@@ -140,10 +145,15 @@ non-compact layouts: there is no top bar, no side rail, no inspector and no tray
 Four persistent islands, each inset `island.inset` 12 from the panel edges. All four use the
 `Island` primitive (§4.1). Nothing else is visible at rest.
 
+**v7 · true overlay.** `Canvas` is `position: absolute; inset: 0` in the panel root. Every island,
+the contextual toolbar and banners are later absolute siblings inside a layer with
+`pointerEvents: "box-none"`. No flex row or column reserves space for them outside compact; the
+canvas is visible and pannable under and between all of them.
+
 | | Island | Position | Content, left → right |
 | --- | --- | --- | --- |
 | **A** | Lienzo | top-left | `Menu` button → main menu (§3.2) · **title** (serif `groupTitle`, one line, max 280, min 96, pad H 8; `ChevronDown` 12 muted after it) · chip "Ejemplo" if example · save dot (below) · divider · `Undo2` · `Redo2` (disabled by `view.canUndo` / `view.canRedo`) |
-| **B** | Añadir | top-centre | three `tool` buttons (40) for the types `note`, `node` and a new group, then `Plus` → block picker (§9.1). Icon and tooltip name come from the catalog type (`tokens.renderers[*].icon`, `BlockType.name`); the group button is `Group` "Grupo". |
+| **B** | Herramientas (v7) | top-centre | Seleccionar · Mano · divider · Texto · Forma · Lápiz · Goma · divider · Biblioteca · `Plus` → block picker (§9.1). Exact icons, keys and behaviour in §20.4. Nota, nodo and grupo are the first three rows of the picker. |
 | **C** | Asistente | bottom-centre | the composer (§10) |
 | **D** | Vista | bottom-right | `Minus` · percent (`value` style, min width 48, centred) · `Plus` |
 
@@ -152,7 +162,7 @@ Four persistent islands, each inset `island.inset` 12 from the panel edges. All 
 - **A · save dot.** 6 px, shown only when it has something to say: `statusWarning` while a mutation
   is in flight for more than 400 ms; `statusDanger` after a failed one (press → the banner, §11).
   In sync shows nothing. It has an `accessibilityLabel` ("Guardando" / "No se guardó").
-- **B · press** creates the block and starts editing its first text (§8.1). Where: inside the group
+- **B · `Plus` picker row press** creates the block and starts editing its first text (§8.1). Where: inside the group
   when exactly one group is selected; next to the block when exactly one block is selected (same
   parent, at `graph.gap.node` to its right, **not** connected); otherwise at the centre of the
   visible canvas. The camera pans the minimum needed to show it. **B · drag** (pointer devices): a
@@ -201,7 +211,7 @@ Nothing docks or undocks; thresholds only resolve collisions. Measure the panel 
 | --- | --- |
 | ≥ 880 | As above. Composer rest width 360, max 560. |
 | 560 - 879 | Title max 160. Island D shows only the percent button (its menu gains "Acercar" and "Alejar"). Composer max = `w − 2 · (88 + 12)`. |
-| < 560 | Island B shows only `Plus` (the picker lists the three quick types first). Island A drops Redo (it moves into the main menu). Composer width = `w − 24 − 88`, left-aligned at 12; D keeps the percent button. |
+| < 560 | Island B shows Seleccionar · Mano · Lápiz · Texto · `Plus` (the picker lists Forma, Goma, Biblioteca and the three quick types first). Island A drops Redo (it moves into the main menu). Composer width = `w − 24 − 88`, left-aligned at 12; D keeps the percent button. |
 
 The title is the element that shrinks first inside A; B is centred on the panel but never closer
 than 8 to A (it then sits to the right of A).
@@ -485,12 +495,15 @@ them), the list of groups to move into (drag into a group, §6.2; "Sacar del gru
 
 The panel is the viewport; a single transformed world contains the document. Persisted positions
 are parent-relative. Camera state is local, never a document edit. Pan adds pointer deltas;
-zoom preserves its screen anchor. Middle mouse and wheel pan, command-wheel zooms at the pointer.
+zoom preserves its screen anchor. Wheel pans, command-wheel zooms at the pointer. **Middle mouse
+(and held Space) always pans, wherever the press starts**, including over cards, controls and
+interactive stages (§20.2 states the one iframe boundary).
 A background tap clears selection; panning preserves it. Inputs and drawing controls consume their
 own gestures. Canvas keyboard commands never run while an input owns the focus.
 
 Camera fitting uses the safe area in §3.1. First open keeps readable 80-100% scale, places the
-first content near the top and avoids fitting a tall document into illegible text. Full fit is an
+first content `canvas.initialZoom.topInset` 76 below the panel top (48 in compact, measured below
+the docked bar) so it clears islands A and B, and avoids fitting a tall document into illegible text. Full fit is an
 explicit action. There is no decorative grid; placement snaps to 8 world units.
 
 ### 6.2 Geometry and movement
@@ -924,7 +937,8 @@ either endpoint or the connection. It never displays identifiers as labels.
 
 Retain existing camera, overlap, group-target and magnetic port logic. No animated reflow during
 a drag. Live positions and connectors follow every pointer frame; the persisted edit occurs at
-release. Header dragging never captures inputs or a learning stage. Resize keeps stored content
+release. **v7:** a drag may start anywhere on a card, not only its header; §20.2 lists which
+controls keep their own drag. Dragging never captures an active input or a learning stage. Resize keeps stored content
 and size separate. Hover/selection toolbars hide during dragging, resizing, panning and editing.
 Animations use existing motion tokens and become immediate under reduced motion.
 
@@ -1146,3 +1160,165 @@ Collection replacement uses "Reemplazar la colección existente" and explains wh
 Examples always retain the "Ejemplo" chip and explain that the data is illustrative. A result,
 assistant status, successful save or feedback receipt is shown only after a confirmed tool/RPC
 response or live host signal. No renderer fabricates an assistant hint, answer or completed job.
+
+
+## 20. Whiteboard: free text, shapes, SVG and freehand (v7)
+
+Contract (type IDs, fields, limits, sanitising boundary, props): `design/whiteboard-spec.md`.
+Numbers: `tokens.whiteboard`. This section fixes look and behaviour. Reference was a tldraw
+screenshot; Lienzo keeps its own identity: paper and ink, system and serif type instead of a
+hand-written face, eight theme-derived colour roles instead of a fixed palette, flat fills, no
+sticky notes, no sketchy jitter.
+
+### 20.1 The four elements
+
+They are ordinary blocks (`wb-text`, `wb-shape`, `wb-svg`, `wb-draw`): they move, group, link,
+duplicate, undo, export in packs and are reachable by the assistant exactly like cards. They are
+**not cards**: no fill, border, spine, header, type label, footer or shadow, at any depth, inside
+or outside a group.
+
+| Element | At rest | Notes |
+| --- | --- | --- |
+| Texto libre | Just the text in its colour role. `scale` s/m/l/xl = 14/20, 18/26, 28/36, 44/52; `sans`, `serif` or `mono`, weight 400. | Auto-width up to 480 then wraps; a stored `width` wraps there. Height always measured. Empty text is never stored. |
+| Forma | Outline in `weight` 1.5/2.5/4/7, fill none / colour@0.14 / colour@1 (then its text is `surface0`). Centred label 15/21 weight 500. | Rectángulo, Redondeado (radius 16), Elipse, Rombo, Triángulo, Hexágono, Cilindro, Línea; Flecha is a line with an open V head. Round joins and caps. |
+| Imagen SVG | The sanitised image, aspect preserved, `currentColor` painted in the colour role. Optional caption `small` muted 4 below. | Painted as an image, never as inline DOM. Native without SVG support shows a dashed frame with the caption and "Imagen SVG; se ve en la versión web". |
+| Dibujo | Strokes in their own colour and weight, round caps. Stroke width does not scale when resized. | One block per pencil session, at most 32 strokes. |
+
+- **Paint order:** group frames · shapes and SVG · connections · cards · free text · drawings ·
+  guides and handles. A shape can sit behind cards as a backdrop; a drawing annotates on top.
+- **Layout:** always positioned, never auto-arranged, never pushed by or pushing a neighbour, in
+  every group layout. No "Soltar posición" pin.
+- **Hover** 1 px `foregroundMuted`@0.35 box 4 outside. **Selected** 1.5 px `accent` box 4 outside,
+  no halo, plus square 8 px handles (`surface1`, 1.5 `accent` border; hit 20, touch 44): eight on
+  shapes, SVG and drawings, east/west only on text, two round end handles on a line. Shift keeps
+  proportion; SVG is always proportional. While moving: opacity 0.85, no lift shadow.
+- **Hit area:** the box for text, SVG and filled shapes. For unfilled shapes, lines and drawings
+  only an 8-screen-px band around the ink (plus a shape's label): the empty inside lets the
+  pointer through to whatever is beneath.
+- **Lista view and compact:** one row, type icon + text, caption, "Forma: rombo" or "Dibujo
+  (3 trazos)". No miniature.
+- **Assistant:** nothing is sent by drawing or placing. A drawing in selection context is
+  summarised by stroke count, never by points.
+
+### 20.2 Dragging, clicking and interaction mode
+
+One rule with the Seleccionar tool: **a short press activates; moving more than 4 px before
+release moves the element.** It holds over the whole card.
+
+| Press starts on | Short click | Drag |
+| --- | --- | --- |
+| Card body, title, plain text, image | select | move |
+| Button, checkbox, option, chip, connection row | the control | move; the control does not fire |
+| Slider, scrub, drawing/plot/shader stage with its own pointer, resize and connection handles | the control | the control |
+| Text being edited | caret | text selection |
+| Read-only selectable text (code, annotatable passages) | select card | move, unless in interaction mode |
+| Embedded page or player (`iframe`, video, audio) | select card | move, unless in interaction mode |
+| Region with its own scroll | select card | move; wheel scrolls it only in interaction mode |
+
+**Interaction mode** exists for the three things that cannot share a drag: selecting a text
+range, using an embedded page, scrolling inside a card. Enter by double-click on that content,
+`Enter` on the selected card, or "Interactuar" (`MousePointerClick`) in the contextual toolbar,
+which appears only on cards that need it. While on: 2 px `accent` ring inside the card border and
+a chip "Interactuando · Esc" (height 24, `label`, `surface1`, island elevation) 6 above the card's
+top-right corner; the chip is a button that leaves. **The contextual toolbar is hidden while a
+card is in interaction mode** (same rule as text editing), so the two never share that strip. The
+card then moves only by its title row.
+Leave with `Esc`, the chip, a click outside, or selecting anything else. It is view state, never
+saved.
+
+**Honest iframe boundary.** A browser does not deliver pointer events from inside an embedded
+page to its host. Outside interaction mode the frame is therefore covered by a transparent shield
+and behaves like an image: drag, middle-button pan and wheel all work over it. In interaction mode
+the shield is gone and those gestures belong to the page; a middle-button press or `Esc` inside it
+cannot reach Lienzo, which is why the chip stays outside the frame. Lienzo does not pretend
+otherwise.
+
+Learning controls that are a single click (bet, option, transport, layer chip) never need
+interaction mode.
+
+### 20.3 Tools
+
+Seleccionar `V` · Mano `H` · Texto `T` · Forma `R` · Lápiz `D` · Goma `E`; `Esc` returns to
+Seleccionar; held Space is a temporary Mano.
+
+- **Mano** pans from anywhere and never selects.
+- **Texto**: click places a caret there; dragging a box sets a wrap width. Confirm with
+  `⌘/Ctrl Enter` or a click elsewhere; `Esc` cancels; an empty text leaves nothing behind.
+- **Forma**: click drops the default 160 × 104; drag draws corner to corner (Shift 1:1; lines snap
+  to 15°). Double-click a shape to write its label.
+- **Lápiz**: every stroke is saved when the pointer lifts and is one undo step ("Dibujar trazo").
+- **Goma** removes whole strokes it touches, one undo step per gesture ("Borrar trazos"); a
+  drawing left without strokes disappears.
+- After placing a text, shape or SVG the tool returns to Seleccionar with the new element
+  selected. Double-clicking a tool button locks it (4 px `accent` dot under the icon) until `Esc`.
+  Lápiz and Goma always stay until left.
+- While a creation tool is active the whole canvas is its surface: cards neither press nor move.
+  Cursors: `text`, `crosshair`, `crosshair`, `cell`; Mano `grab`/`grabbing`.
+- New elements go into the innermost open group under the pointer, otherwise the canvas root.
+- Offline or read-only: creation tools are disabled (opacity 0.45); Seleccionar and Mano remain.
+
+### 20.4 Island B, Herramientas
+
+Top-centre `Island`, `tool` buttons 40 (touch 44), icon 20, gap 2, dividers as `island.divider`:
+
+`MousePointer2` Seleccionar · `Hand` Mano ┃ `Type` Texto · `Shapes` Forma (10 px `ChevronDown` in
+its bottom-right corner; a second press on the active button opens the shapes popover) · `Pencil`
+Lápiz · `Eraser` Goma ┃ `Library` Biblioteca · `Plus` Añadir bloque.
+
+Tooltips carry the name and key. Active tool: `accent`@0.14 fill, `accent` icon. Width at 40 px
+buttons is 8 × 40 + 7 × 2 + 2 dividers (9 each) + 8 padding = 360; it is centred and yields to
+island A as in §3.3.
+
+- **Formas popover** (width 184): 4 × 2 grid of 40 px buttons with a 20 px drawn preview, then a
+  full-width row "Flecha". Picking sets the shape, activates Forma and closes.
+- **Biblioteca popover** (width 304): label "Arquitectura"; 4-column grid of 68 × 64 cells (28 px
+  icon in `foreground`, `small` muted name): Servidor · Base de datos · Nube · Red · API ·
+  Navegador · Portátil · Móvil · Capas · Paquete · Archivo · Personas. Press inserts at the
+  visible centre (or in the selected group) and selects it; a cell can also be dragged out.
+  Footer: "Importar SVG…" (`Upload`) and `small` muted "Iconos Tabler · licencia MIT". A refused
+  import shows, inside the popover, "Este SVG contiene contenido activo o enlaces externos y no se
+  puede importar." and inserts nothing. No network at run time.
+
+### 20.5 Island E, Estilo
+
+Shown only while the tool is Texto, Forma or Lápiz, or the selection contains whiteboard
+elements; otherwise absent (not disabled). Right edge, inset 12, vertically centred, width 168,
+padding 8, sections 8 apart separated by a 1 px `border` rule. Only the sections that apply:
+
+| Section | Control | Applies to |
+| --- | --- | --- |
+| Color | 4 × 2 swatches, button 32 (touch 40), disc 18; chosen = 2 px `accent` ring with a 2 px gap. Order: Tinta, Gris, Azul, Turquesa, Verde, Naranja, Rojo, Violeta | all |
+| Tamaño | segmented `S M L XL`, 36 × 32 each, `label` 600 | text size, stroke weight |
+| Relleno | three 32 px buttons with a 16 px preview: sin relleno, suave, sólido | shapes except line |
+| Trazo | continuo `Minus`, discontinuo `MoreHorizontal`, punteado `Ellipsis` | shapes, line |
+| Fuente / Alineación | `Sans` `Serif` `Mono` each set in its own family; `AlignLeft` `AlignCenter` `AlignRight` | text |
+| Puntas | sin punta `Minus`, flecha `ArrowRight`, doble `ArrowLeftRight` | line |
+
+A change sets the default for the next element and, when whiteboard elements are selected, edits
+them in one undoable transaction ("Cambiar color", "Cambiar tamaño", "Cambiar relleno", "Cambiar
+trazo", "Cambiar fuente", "Cambiar puntas"). Colour meaning never rests on hue alone: every swatch
+has its name as accessible label and tooltip.
+
+The contextual toolbar for a whiteboard selection keeps only Duplicar · Eliminar · Más (style
+lives in island E, so it is not duplicated there).
+
+### 20.6 Narrow and compact
+
+- 560 to 879: island E turns horizontal, centred, 8 above the composer: Color and Tamaño in one
+  scrollable row plus `SlidersHorizontal` "Más estilo" opening the remaining sections in a host `Modal` titled
+  "Estilo" (same sections and order as the vertical island).
+- Below 560: island B is Seleccionar · Mano · Lápiz · Texto · `Plus`; the rest moves into the
+  picker. Island E as above.
+- Compact: the top bar gains `PenTool` "Herramientas", a host sheet with tools, style and library
+  that switches to "Ver como lienzo". With a creation tool active, one finger creates or draws and
+  two fingers pan. In the sheet the eight tool buttons wrap in a 4 × 2 grid (44, gap 8, no dividers,
+  no horizontal scroll). An `accent` pill "Listo" (height 36) top-centre returns to Seleccionar. Moving
+  and resizing stay off in compact, as for cards.
+- Touch on non-compact: handles use the 44 hit; long-press 500 ms on a whiteboard element adds it
+  to the selection, same as cards.
+
+### 20.7 Keyboard additions (extends §12)
+
+`V` `H` `T` `R` `D` `E` tools · `Space` held = Mano · `Enter`/`F2` edits a selected text or shape
+label, or enters interaction mode on a card that has one · `Esc` leaves, in order: text editing,
+interaction mode, active tool, selection. None fire while an input has focus.

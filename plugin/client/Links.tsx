@@ -74,7 +74,7 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
   useEffect(() => { draw(moved); }, [styled, draft, origin.x, origin.y, u, motion]);
   // Native fallback (also covers a web host without SVG): elbow segments made of Views, like the diagram block.
   const fallback = !web;
-  return <View ref={host} pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width, height }}>
+  return <View ref={host} pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width, height, zIndex: 1 }}>
     {fallback && styled.map(({ route: rest, active, color, opacity, width, text }) => {
       const route = live(rest), dashed = route.kind !== 'flow', rotate = route.endSide === 'top' ? '45deg' : route.endSide === 'left' ? '-45deg' : route.endSide === 'right' ? '135deg' : '225deg';
       return <React.Fragment key={route.key}>

@@ -1,3 +1,5 @@
+import * as whiteboard from '../plugin/shared/whiteboard';
+import { DEFAULT_TOOL_STYLE } from '../plugin/client/whiteboard-tools';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
@@ -33,11 +35,12 @@ function runtime(controller: any) {
     './useCanvas': { useCanvas: () => controller }, './tokens': { tokens }, './logic': logic,
     '../shared/preferences': { canvasPreferences }, './web': {}, './motion': {},
     './Canvas': { Canvas: control('Canvas') }, '../shared/model': { blockTypeSchema }, './Blocks': { visual: () => ({ icon: 'StickyNote', tone: 'neutro' }), Delivery: control('Delivery'), ConnectionRows: control('ConnectionRows') },
-    './Links': { linkTone: () => 'neutro' }, './color': { withAlpha: (color: string) => color },
+    './Links': { linkTone: () => 'neutro' }, './color': { withAlpha: (color: string) => color, isDark: () => false },
     './AgentModal': { AgentModal: control('AgentModal') }, './Onboarding': { Onboarding: control('Onboarding') },
     './guide': { claimFirstGuide: async () => false },
     './usePresentation': { usePresentation: () => ({ document: controller.view?.document, hiddenBy: new Map(), activeGates: new Set() }) },
     './HiddenResult': { HiddenResult: control('HiddenResult') },
+    './FloatingTools': Object.fromEntries(['ToolIsland','StyleIsland','ShapePopover','LibraryPopover','SvgImportDialog'].map(name=>[name,control(name)])), './whiteboard-tools': { DEFAULT_TOOL_STYLE }, './interaction': { needsContentInteraction:()=>true }, '../shared/whiteboard': whiteboard, './whiteboard-visuals': { islandStyle: () => ({}) }, './media': { mediaSource: () => null },
     './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') },
   };
   const load = (name: string) => {
@@ -87,21 +90,28 @@ test('new canvas is one click with no fields; title saves in place and document 
   assert.equal(createInputSchema.safeParse({ workspaceId: 'workspace', content: f.creates[0] }).success, true);
   const documents = nodes(tree).find(node => node.type?.name === 'Modal' && node.props.title === 'Documentos')!;
   assert.equal(nodes(documents).some(node => ['Input', 'Field'].includes(node.type?.name)), false);
+  find(tree, 'Button', 'Renombrar lienzo').props.onPress(); tree = r.render();
   await find(tree, 'Field', 'Título del lienzo').props.onSave('Título nuevo');
   assert.equal(f.edits[0][0][0].title, 'Título nuevo');
   find(tree, 'Button', 'Ajustes del lienzo').props.onPress();
   tree = r.render();
   assert.ok(nodes(tree, true).some(node => node.type?.name === 'Modal' && node.props.title === 'Ajustes del lienzo'));
 });
-test('default canvas hides catalog, details and context; selection and queued actions reveal the relevant panels', () => {
+test('floating panel keeps composer visible, opens details explicitly and passes contextual selection toolbar to Canvas', () => {
   const f = fixture(), r = runtime(f.controller);
-  let tree = r.render(); tree.props.onLayout({ nativeEvent: { layout: { width: 1280 } } }); tree = r.render();
+  let tree = r.render(); tree.props.onLayout({ nativeEvent: { layout: { width: 1280, height: 800 } } }); tree = r.render();
   const types = () => nodes(tree, true).map(node => node.type?.name);
-  assert.ok(!types().includes('Catalog') && !types().includes('Inspector') && !types().includes('ContextTray'));
+  assert.ok(!types().includes('Catalog') && !types().includes('Inspector'));
+  assert.ok(types().includes('ContextTray'));
+  assert.equal(find(tree, 'Canvas').props.selectionToolbar, undefined);
   f.controller.selection = ['note']; tree = r.render();
-  assert.ok(types().includes('Inspector') && types().includes('ContextTray'));
+  assert.ok(!types().includes('Inspector'));
+  const toolbar = find(tree, 'Canvas').props.selectionToolbar;
+  assert.ok(find(toolbar, 'Button', 'Preguntar'));
+  find(toolbar, 'IconButton', 'Más').props.onPress(); tree = r.render();
+  assert.ok(types().includes('Inspector'));
   f.controller.selection = []; f.controller.events = [{ id: 'pending', status: 'pending' }]; tree = r.render();
-  assert.ok(!types().includes('Inspector') && types().includes('ContextTray'));
+  assert.ok(types().includes('ContextTray'));
 });
 test('details omit technical fields and editing instructions preserves hidden intent and audience', async () => {
   const f = fixture(), r = runtime(f.controller); f.controller.selection = ['note'];

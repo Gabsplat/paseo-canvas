@@ -2,7 +2,7 @@ import { z } from "zod";
 import { packSchema, blockTypeSchema, templateSchema, type CanvasPack, type CanvasCatalog, type BlockType, type GroupTemplate } from "../shared/model";
 import { builtinPacks, builtinTemplates, builtinTypes } from "../shared/builtins";
 import { CanvasError } from "../shared/errors";
-import { safeJson, validateTree, validateLinks, validateBlockData, validateDocument } from "./reducer";
+import { safeJson, validateTree, validateLinks, validateBlockData, validateDocument, normalizeBlock, validateBlockPresentation } from "./reducer";
 
 export const catalogStorageSchema = z.object({
   revision: z.number().int().nonnegative(),
@@ -25,7 +25,10 @@ export function validateType(type: BlockType): void {
   if (new Set(type.properties.map(property => property.key)).size !== type.properties.length)
     throw new CanvasError("VALIDATION", `Type ${type.id} has duplicate property keys.`);
   // Defaults may omit required fields supplied during block creation.
-  validateBlockData({ id: "validation", title: "", typeId: type.id, data: type.defaults }, { ...type, properties: type.properties.map(property => ({ ...property, required: false })) });
+  const defaults = { id: "validation", title: "", typeId: type.id, data: type.defaults };
+  normalizeBlock(defaults, type);
+  validateBlockData(defaults, { ...type, properties: type.properties.map(property => ({ ...property, required: false })) });
+  type.defaults = defaults.data;
 }
 export function validateTemplate(template: GroupTemplate, catalog: CanvasCatalog): void {
   safeJson(template);
@@ -34,6 +37,8 @@ export function validateTemplate(template: GroupTemplate, catalog: CanvasCatalog
   for (const block of template.blocks) {
     const type = catalog.blockTypes.find(type => type.id === block.typeId);
     if (!type) throw new CanvasError("UNKNOWN_TYPE", `Template ${template.id} needs missing type ${block.typeId}.`);
+    normalizeBlock(block, type);
+    validateBlockPresentation(block, type);
     validateBlockData(block, type);
   }
 }
@@ -63,6 +68,7 @@ export function parsePack(input: unknown, catalog: CanvasCatalog): CanvasPack {
   for (const template of pack.templates) validateTemplate(template, prospective);
   for (const content of pack.documents) {
     for (const block of content.blocks) if (!prospective.blockTypes.some(type => type.id === block.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Pack document needs missing type ${block.typeId}.`);
+    for (const block of content.blocks) normalizeBlock(block, prospective.blockTypes.find(type => type.id === block.typeId)!);
     validateDocument({ ...content, id: "validation", workspaceId: "validation", revision: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }, prospective);
   }
   return pack;

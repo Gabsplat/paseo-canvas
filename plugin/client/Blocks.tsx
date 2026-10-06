@@ -1,3 +1,5 @@
+import { WhiteboardContent } from './WhiteboardContent';
+import { isWhiteboardRenderer } from '../shared/whiteboard';
 import React, { useRef, useState } from 'react';
 import { Animated, Image, Pressable, View, type GestureResponderEvent } from 'react-native';
 import { openExternalUrl } from '@getpaseo/plugin/client';
@@ -100,6 +102,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   const generic = () => <View style={{ gap: 8 }}>{(type?.properties ?? Object.keys(block.data).map(key => ({ key, label: key, kind: 'json' }))).map(p => <View key={p.key} style={{ gap: 4 }}><Txt kind="label" muted>{p.label}</Txt><Txt kind={p.kind === 'json' || p.kind === 'number' ? 'code' : 'body'} selectable numberOfLines={outline ? undefined : p.kind === 'json' ? 4 : 8}>{typeof block.data[p.key] === 'boolean' ? block.data[p.key] ? 'Sí' : 'No' : str(block.data[p.key])}</Txt></View>)}</View>;
   let body: React.ReactNode = generic(), qualifier = '';
   const renderer = type?.renderer;
+  if (isWhiteboardRenderer(renderer)) return <WhiteboardContent block={block} kind={renderer} width={block.size?.width ?? 160} height={block.size?.height ?? 104} outline={outline} onSelect={event => onSelect(block.id,event)} onMeasure={onMeasure} />;
   if (!type) body = <View style={{ gap: 8 }}><Txt>Este tipo no está en tu catálogo. Importa el pack que lo define.</Txt><Button label="Abrir packs" small variant="ghost" onPress={onPacks} /></View>;
   else if (getClientRenderer(renderer)) body = <RegisteredRenderer block={block} id={renderer!} controller={c} readOnly={disabled} send={send} />;
   else if (['note', 'text', 'callout', 'step'].includes(renderer ?? '') && typeof block.data.text === 'string') body = <Txt selectable numberOfLines={outline || sized ? undefined : 8}>{block.data.text}</Txt>;

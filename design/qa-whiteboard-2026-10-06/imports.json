@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "name": "pasted SVG saves sanitized markup and authoritative viewBox",
+      "result": "pass"
+    },
+    {
+      "name": "active SVG is rejected without persisting or inserting inline markup",
+      "result": "pass"
+    },
+    {
+      "name": "SVG URL fetch is bounded and persists a validated static resource",
+      "result": "pass"
+    },
+    {
+      "name": "SVG file picker loads a static file and saves through the ordinary reducer",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

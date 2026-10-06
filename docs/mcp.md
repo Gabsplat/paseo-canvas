@@ -328,6 +328,86 @@ limits 413. RPC errors include the code in `Error.message` because the installed
 the message rather than arbitrary Error properties. Credentials, private configuration and stack
 traces are not returned by bridge failures.
 
+## Whiteboard blocks
+
+Four built-in types use the existing CRUD, group, selection, template, pack, history and
+MCP operations. Their renderer names equal their IDs: `wb-text`, `wb-shape`, `wb-svg`,
+and `wb-draw`. Each shared renderer spec has `interactive:false`; there are no new host
+APIs, tools, dependencies, or document overlays. Catalog reads include renderer guidance.
+Use text for loose labels, shapes for boxes and simple arrows, SVG library icons for
+architecture, and normal links for relationships. Create drawings only on explicit request.
+
+`plugin/shared/whiteboard.ts` exports `wbTextDataSchema`, `wbShapeDataSchema`,
+`wbSvgDataSchema`, `wbDrawDataSchema`, their `Wb*Data` types, `WbColor`, `WbScale`,
+`WbShape`, `WbStroke`, `WB_COLORS`, `WB_SCALE`, `WB_SHAPES`, `WB_LIMITS`,
+`isWhiteboardRenderer`, `whiteboardMinSize`, `simplifyStroke` and `appendStroke`.
+The schemas are strict. Colors are the roles `tinta`, `gris`, `azul`, `turquesa`,
+`verde`, `naranja`, `rojo`, `violeta`; scales are `s`, `m`, `l`, `xl`.
+
+| Type | Data | Size semantics |
+| --- | --- | --- |
+| `wb-text` | `text` up to 4000 characters, `color`, `scale`, `font:sans\|serif\|mono`, `align:left\|center\|right`, optional `width:24..4096` | No block size object; absent/null is accepted. Text may be empty in the schema. |
+| `wb-shape` | `shape:rect\|rounded\|ellipse\|diamond\|triangle\|hexagon\|cylinder\|line`, `color`, `fill:none\|wash\|solid`, `stroke:solid\|dashed\|dotted`, `weight`, `text` up to 1000 characters | Minimum 24×24, or 8×8 for lines. `from:nw\|ne\|sw\|se` and `heads:none\|end\|start\|both` are allowed only on lines. |
+| `wb-svg` | `svg`, authoritative `viewBox:[x,y,width,height]`, `color`, `caption`, optional `source`, `license`. Metadata strings up to 200 characters. | Minimum 24×24. SVG and viewBox are rewritten by the server. A valid client viewBox is ignored; it can be omitted on creation. |
+| `wb-draw` | `extent:{width,height}` in 1..4096; `strokes:[{points:[x0,y0,x1,y1,…],color,weight}]` | Requires block size, minimum 8×8. Points lie inside extent. Render size scales coordinates, not line weight. |
+
+Every whiteboard object requires finite `position` coordinates in ±100,000, relative to
+its parent group. The wire size envelope is 8..4096 in each axis; ordinary and custom
+cards retain a 160×104 floor and registered renderer minima. Old documents need no
+migration. Frontend auto-layout leaves positioned whiteboard blocks in place.
+
+Drawings persist 1..32 strokes, 2..512 points per stroke, and at most 4000 points overall.
+The creation boundary accepts at most 8192 raw points per drawing before simplification.
+`simplifyStroke(flatPoints,tolerance=0.75)` rounds to half units, applies iterative
+Ramer-Douglas-Peucker with at most 65,536 comparisons per pass, and uniformly resamples
+to 512 points when needed. One final pass on the sampled points makes the result stable
+on revalidation. There are at most two passes and no recursive RDP traversal. Extent is
+rounded outward to half units. `appendStroke({position,size,data},worldPoints,{color,weight})`
+returns a new structure with the united box and rebased prior points, including when the
+old drawing was resized. Its world coordinates use the same space as position, so callers
+inside a group pass group-local coordinates. Limits throw before altering inputs.
+
+Normalization runs at document creation, block creation/update, local type defaults,
+template writes, and pack validation/import. Validation follows renderer identity, including
+custom types that reuse a whiteboard renderer. Rejected data rolls back the transaction,
+revision, history and disk write. Unrelated blocks are not normalized during validation.
+Packs keep the SVG bytes and attribution locally and carry drawing geometry as block data.
+Undo/redo and revision conflicts use the existing block IDs and snapshots.
+Explicit feedback target summaries include drawing stroke counts and extent, or SVG
+caption/source; they omit SVG markup and drawing points. Selection creates no agent action.
+
+## Safe static SVG
+
+The shared `sanitizeSvg(raw)` helper in `plugin/shared/svg.ts` returns
+`{svg:string, viewBox:[x,y,width,height]}` or throws a validation error. It rebuilds
+static inline SVG without DOM APIs, network requests, dependencies, or script execution.
+Raw and canonical output are each limited to 64 KiB UTF-8. Limits also include
+2000 elements, 16 nested levels, 24 attributes per element, 8,192 characters per path,
+and 8,192 numeric values per geometry attribute. Coordinates are finite and bounded
+to ±100,000. Paths need valid command arity and arc flags.
+
+Accepted elements are `svg`, `g`, `path`, `rect`, `circle`, `ellipse`, `line`,
+`polyline`, `polygon`, `text`, `tspan`, `defs`, `linearGradient`, `radialGradient`,
+`stop`, `clipPath`, `mask`, `title`, and `desc`. The root needs a positive `viewBox` or
+positive numeric width and height. Paint accepts `none`, `currentColor`, `transparent`,
+hex colors, `black`, and `white`. Local `url(#id)` paint/clip/mask references and gradient
+fragment references require declared IDs and an acyclic reference graph no deeper than 16.
+IDs are preserved, decorative classes and valid comments are removed. The standard XLink
+namespace is accepted only on the root, and local gradient `xlink:href` is converted to
+`href`; the alias declaration is then removed. Safe styles use a
+fixed presentation-property list and are converted to attributes. CSS resource URLs,
+escapes, imports, custom properties and other declarations fail. Only the five predefined
+XML escapes are accepted; DTDs, custom/numeric
+entities, processing instructions other than an initial XML 1.0 UTF-8 declaration,
+and malformed markup fail validation.
+
+Scripts, event attributes, `foreignObject`, images, animation, `use`, links,
+external resource attributes/paint URLs, and alternate namespaces are rejected.
+The input must be SVG markup; HTTP, data, file, and JavaScript URLs are never fetched
+or treated as imports. The deliberately narrow subset accepts local Tabler outline
+icons and plain static geometry. Unsupported SVG must be converted to this subset
+before import. Canonical output is stable when validated again.
+
 ## Validation
 
 Run `pnpm test` for headless backend and protocol tests, and `pnpm typecheck` for server/shared,

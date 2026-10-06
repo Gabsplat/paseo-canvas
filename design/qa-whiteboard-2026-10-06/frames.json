@@ -1,0 +1,17 @@
+{
+  "checks": [
+    {
+      "name": "inactive iframe shield permits body drag and preserves its content",
+      "result": "pass"
+    },
+    {
+      "name": "middle button and wheel pan over an inactive iframe without changing document",
+      "result": "pass"
+    },
+    {
+      "name": "interaction mode opens the live iframe for form entry and scroll; its exit restores the shield",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

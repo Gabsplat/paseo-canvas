@@ -6,6 +6,7 @@ import { toneColor, withAlpha, type Tone } from './color';
 import { tokens } from './tokens';
 import { downloadJson, useKeyboardFocus } from './web';
 import { usePressScale, useReducedMotion } from './motion';
+import { useContentSelectionAllowed } from './interaction';
 const errorMessages = {
   REVISION_CONFLICT: 'El lienzo cambió. Vuelve a intentar el cambio sobre la versión actual.',
   NOT_FOUND: 'Ese contenido ya no está disponible. Vuelve a abrir el lienzo.',
@@ -58,8 +59,9 @@ export const Modal: typeof HostModal = Object.assign(function ContextModal({ chi
   });
   return <HostModal {...props} icon={props.icon === undefined ? undefined : provide(props.icon)}>{content}</HostModal>;
 }, { Content: HostModal.Content });
-export function Txt({ children, kind = 'body', muted = false, style, ...props }: React.ComponentProps<typeof Text> & { kind?: Font; muted?: boolean }) {
-  const u = useUI(); return <Text {...props} style={[u.font(kind, muted), style]}>{children}</Text>;
+export function Txt({ children, kind = 'body', muted = false, style, selectable, ...props }: React.ComponentProps<typeof Text> & { kind?: Font; muted?: boolean }) {
+  const u = useUI(), selectionAllowed = useContentSelectionAllowed();
+  return <Text {...props} selectable={selectionAllowed ? selectable : false} style={[u.font(kind, muted), style, !selectionAllowed && { userSelect: 'none' }]}>{children}</Text>;
 }
 export function Button({ label, icon, onPress, disabled = false, variant = 'secondary', small = false, active = false, style }: { label: string; icon?: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; small?: boolean; active?: boolean; style?: StyleProp<ViewStyle> }) {
   const u = useUI(), [focused, setFocus] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus; const color = variant === 'primary' ? disabled ? u.c.foregroundMuted : u.c.accentForeground : variant === 'danger' ? u.c.statusDanger : u.c.foreground;

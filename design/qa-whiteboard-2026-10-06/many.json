@@ -1,0 +1,9 @@
+{
+  "checks": [
+    {
+      "name": "150-block scene supports passive body drag with one persistence transaction",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

@@ -23,6 +23,8 @@ export function useEffect(effect: () => void | (() => void), deps?: unknown[]) {
 export function useSyncExternalStore(_subscribe: unknown, get: () => unknown) { return get(); }
 export const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props });
 export const jsxs = jsx;
+export function createContext<T>(value:T){return{value,Provider:'context-provider'};}
+export function useContext<T>(context:{value:T}){return context.value;}
 export default { createElement };
 registerHooks({ resolve(specifier, context, nextResolve) {
   if (specifier === 'react' || specifier === 'react/jsx-runtime') return { url: new URL('./glsl-shader.test.ts', `file://${__filename}`).href, shortCircuit: true };

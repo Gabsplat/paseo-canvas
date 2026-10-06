@@ -1,0 +1,11 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { LienzoPanel } from '../../plugin/client/Panel';
+import { tokens } from '../../plugin/client/tokens';
+import { setMockModalColors } from '../graph-harness/real/host-rn';
+const params = new URLSearchParams(location.search), dark=params.get('theme')!=='papel';
+const palette=tokens.contributedThemes[dark?'lienzo-tinta':'lienzo-papel'].colors,status=tokens.mockOnly[dark?'dark':'light'];
+const theme={colors:{surface0:palette.background,surface1:palette.raised,surface2:palette.control,border:palette.border,foreground:palette.foreground,foregroundMuted:palette.mutedForeground,accent:palette.accent,accentForeground:status.onAccent,statusSuccess:status.success,statusWarning:status.warning,statusDanger:status.danger}};
+setMockModalColors(theme.colors);
+document.body.style.cssText='margin:0;overflow:hidden';const host=document.createElement('div');host.style.cssText='position:fixed;inset:0;display:flex';document.body.appendChild(host);
+createRoot(host).render(<LienzoPanel workspaceId="qa-workspace" host={{id:'qa-host'} as any} theme={theme as any} layout={{compact:params.has('compact'),platform:'web'} as any}/>);

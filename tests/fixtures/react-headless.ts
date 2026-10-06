@@ -14,3 +14,5 @@ export const Fragment = 'fragment';
 export const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props });
 export const jsxs = jsx;
 export default { createElement };
+export function createContext<T>(value: T) { return { value, Provider: 'context-provider' }; }
+export function useContext<T>(context: { value: T }) { return context.value; }

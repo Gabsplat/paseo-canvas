@@ -30,6 +30,8 @@ export function useEffect(effect: () => void, deps: unknown[]) {
 export function useMemo<T>(get: () => T) { return get(); }
 export function useSyncExternalStore(_subscribe: unknown, get: () => unknown) { return get(); }
 export const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props }), jsxs = jsx;
+export function createContext<T>(value:T){return{value,Provider:'context-provider'};}
+export function useContext<T>(context:{value:T}){return context.value;}
 export default { createElement, Fragment };
 registerHooks({ resolve(specifier, context, nextResolve) {
   if (specifier === 'react' || specifier === 'react/jsx-runtime' || specifier === 'react-native'

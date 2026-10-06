@@ -11,7 +11,10 @@ export function feedbackPrompt(events: AgentEvent[]): string {
     const targets = event.action.targetIds ?? event.context.selectedIds;
     return { id: event.id, documentId: event.documentId, revision: event.revision, action: event.action, selection: event.context.selectedIds, targets: targets.map(id => {
       const entity = [...document.blocks, ...document.groups].find(entity => entity.id === id);
-      return { id, title: entity?.title, typeId: entity && "typeId" in entity ? entity.typeId : "group", effectiveInstructions: entity ? effectiveInstructions(document, id) : [document.communication] };
+      const block = entity && 'typeId' in entity ? entity : undefined;
+      const summary = block?.typeId === 'wb-draw' ? { strokes: Array.isArray(block.data.strokes) ? block.data.strokes.length : 0, extent: block.data.extent }
+        : block?.typeId === 'wb-svg' ? { caption: block.data.caption, source: block.data.source } : undefined;
+      return { id, title: entity?.title, typeId: block?.typeId ?? "group", ...(summary ? { summary } : {}), effectiveInstructions: entity ? effectiveInstructions(document, id) : [document.communication] };
     }), communication: event.context.communication };
   });
   let data: unknown = { type: "canvas.feedback", events: summaries };

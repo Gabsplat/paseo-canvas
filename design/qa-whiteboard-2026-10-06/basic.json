@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "name": "real Panel starts with example data and no transport schema errors",
+      "result": "pass"
+    },
+    {
+      "name": "click selects without moving; dragging passive note body commits once",
+      "result": "pass"
+    },
+    {
+      "name": "middle mouse over note body pans camera without editing document",
+      "result": "pass"
+    },
+    {
+      "name": "rejected drag returns to persisted location",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

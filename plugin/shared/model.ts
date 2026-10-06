@@ -7,7 +7,8 @@ export const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE
 export const jsonObjectSchema = z.record(z.string().max(100), z.json());
 export const positionSchema = z.object({ x: z.number().finite(), y: z.number().finite() }).strict();
 // Optional presentation size. Old documents stay automatic; null explicitly returns a resized block to automatic.
-export const blockSizeSchema = z.object({ width: z.number().finite().min(160).max(4096), height: z.number().finite().min(104).max(4096) }).strict();
+// The wire envelope admits small whiteboard objects. Server validation enforces renderer-specific minima.
+export const blockSizeSchema = z.object({ width: z.number().finite().min(8).max(4096), height: z.number().finite().min(8).max(4096) }).strict();
 export const communicationSchema = z.object({
   instructions: z.string().max(8000),
   intent: z.string().max(1000).default(""),

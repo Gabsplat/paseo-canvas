@@ -36,4 +36,14 @@ for mode, c in themes.items():
     check("hint arrow stroke (muted@0.8 on surface0)", over(muted, s0, T["hint"]["strokeAlpha"]), s0, 3)
     check("slider track (ink@0.28 on surface1)", over(ink, s1, T["learn"]["slider"]["trackAlpha"]), s1, 1.5)
     check("slider thumb ring = series colour (covered above)", rgb(T["viz"]["series"][0][mode]), s1, 3)
+    # v7 whiteboard: every colour role as a stroke/text on the canvas, and paper text on its solid fill.
+    viz = {v["id"]: rgb(v[mode]) for v in T["viz"]["series"]}
+    host = {"foreground": ink, "foregroundMuted": muted}
+    for w in T["whiteboard"]["colors"]:
+        kind, key = w["value"].split(":")
+        if kind == "host" and key not in host: print(f"  skip        whiteboard {w['id']}: {key} is supplied by the host theme, not checked here"); continue
+        col = host[key] if kind == "host" else viz[key]
+        check(f"whiteboard {w['id']} stroke/text on surface0", col, s0, 4.5)
+        check(f"whiteboard surface0 text on solid {w['id']}", s0, col, 4.5)
+        check(f"whiteboard ink on {w['id']} wash", ink, over(col, s0, T["whiteboard"]["fill"]["wash"]), 4.5)
 sys.exit(1 if bad else 0)

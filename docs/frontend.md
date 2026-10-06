@@ -13,7 +13,7 @@ portals. The controller is passed through; opening a sheet creates no extra
 `useCanvas` instance or RPC subscription. Shared RPC identifiers are imported
 from `shared/rpc.ts`, including the corrected `agentAction`, `readAgentEvents`, and
 `flushAgentEvents` contracts. No endpoint strings are duplicated in client code.
-The token transcription in `client/tokens.ts` comes from the Opus v2 design. No client
+The token transcription in `client/tokens.ts` comes from the Opus v7 design and whiteboard contract. No client
 runtime import crosses into `design/`, `architecture/`, or `server/`.
 
 ## Working with a document
@@ -21,7 +21,7 @@ runtime import crosses into `design/`, `architecture/`, or `server/`.
 Documentos opens a list of your documents and labelled examples. Nuevo lienzo creates
 and opens an empty document titled "Lienzo sin título" with empty communication;
 there is no creation form. The workspace empty state uses that same action.
-The top-bar title edits in place, saving after idle or blur. Document rows show their
+The title opens Documentos. Renombrar lienzo in Más acciones edits it in place, saving after idle or blur. Document rows show their
 last update time without revision numbers. Duplication and document export live in
 Más acciones. Duplicating as your own document clears the example flag.
 An empty canvas offers the local block and template catalog.
@@ -41,15 +41,14 @@ unavailable IDs are forgotten. A full client reload can reset this session memor
 
 The free canvas supports background drag to pan, zoom controls, fit, and browser
 wheel pan or Ctrl/Command wheel zoom. First open centres content horizontally at
-80–100% scale with its top at 48 px; Ajustar al lienzo still fits all content.
+80–100% scale with its top at 76 px on desktop and 48 px in compact mode; Ajustar al lienzo still fits all content.
 Cards use their measured content heights.
-Root items and children of free groups drag by their headers. Children in stack,
-grid, or flow groups use Subir/Bajar. Dragging moves elements between groups. Compact
+In the browser, left dragging beyond 4 px moves a block or group from any passive content or control. Short clicks still activate controls. Range sliders, learning surfaces, editing inputs, resize and connection handles retain their own drag. Children in stack, grid, or flow groups also offer Subir/Bajar. Dragging moves elements between groups. Compact
 clients default to Lista and support pan/zoom but do not drag cards. Group movement
 uses parent-relative persisted positions; collapse hides descendants and preserves
-their membership. Frame resizing is not part of the shared model.
+their membership. Card and whiteboard resize gestures persist block size through transactions. Group frames expand around their children.
 
-Click or tap a header to select. Shift/Command clicking, or long pressing followed
+Click or tap passive block content or a title to select. Shift/Command clicking, or long pressing followed
 by tapping, selects several entities. Selection calls `setSelection`, with its
 separate selection version, and never sends an agent message. Grouping and deletion
 operate on the highest selected ancestors so selecting a group and its child does
@@ -57,8 +56,7 @@ not delete the same subtree twice.
 
 Detalles appears only with selected blocks, groups or a link. Multiple selection
 shows shared actions without an item list. Document settings, history and activity
-open in a modal from Más acciones. The catalog starts closed; the context tray
-appears only with a selection or pending/failed deliveries.
+open in a modal from Más acciones. The catalog and details start closed. The assistant composer remains visible and receives the current selection; a contextual toolbar floats above selected bounds. Details opens explicitly from Más.
 
 Detalles edits typed properties and one "Indicaciones para el asistente" field.
 Editing that field preserves existing `intent` and `audience`; those keys remain
@@ -66,7 +64,7 @@ available to MCP and JSON but have no UI editor. Fields commit after 600 ms idle
 on blur, preserve rejected drafts, and offer retry. IDs, type IDs, numeric dimensions,
 pin coordinates, parent-group radios and link endpoint controls are absent.
 Manual block sizes retain Tamaño automático; resize handles remain on the canvas.
-Soltar posición remains available for pinned entities. In compact/list mode, where
+Soltar posición remains available for pinned ordinary entities. Whiteboard entities always retain a position and are excluded from automatic release. In compact/list mode, where
 there are no resize or drag handles, numeric resizing and moving into an existing
 group no longer have a direct UI path. MCP can still perform those operations.
 
@@ -156,15 +154,13 @@ Asking about a step is an explicit real action. Invalid data remains readable an
 cannot crash the canvas.
 
 `preview` blocks with a valid URL embed that actual URL on the web with the
-Opus-specified `allow-scripts allow-forms` sandbox. A selection overlay covers the
-frame until the card is selected; then the page can receive interaction. The
+Opus-specified `allow-scripts allow-forms` sandbox. A transparent shield covers the frame until explicit interaction mode starts. Selection alone keeps the shield. Double click, Enter/F2 or Interactuar removes it; a visible Interactuando · Esc chip exits the mode. The
 external-open action always remains available. Slow or blocked embeds get the
 eight-second explanatory hint. A browser can reject framing or mixed HTTP content;
 use the actual external link in that case. Native clients show a labeled browser
 fallback. No-URL blocks are dashed conceptual references, not live-app mockups.
 
-`media` images use React Native Image with an error fallback. Audio, video, and other
-references are links and never autoplay. `safeUrl` accepts only HTTP/HTTPS without
+`media` images use React Native Image with an error fallback. Direct video/audio URLs use real web controls after explicit interaction; supported YouTube/Vimeo links load an actual player on request. Native clients offer external links. Players never autoplay. `safeUrl` accepts only HTTP/HTTPS without
 embedded credentials. Executable URLs, inline HTML, and data URLs are rejected.
 Radio and checkbox rings use the approved foreground-muted alpha for visibility
 under foreign themes. Browser focus rings follow Tab/arrow keyboard input and clear
@@ -194,10 +190,139 @@ plugin run through omabox. These headless checks do not claim that screenshots o
 live agent delivery have already been exercised. Headless component tests exercise
 creation, title editing, visibility, instruction preservation and friendly errors.
 Guide tests cover loading/error states, failed saves and concurrent client claims.
-Labels use the UI sans face in sentence case; monospace remains for code.
+Labels use the UI sans face in sentence case. Free text supports sans, serif and mono from the whiteboard specification.
 
 The panel integrator owns `client/Panel.tsx` and `docs/frontend-integration.md`.
 `Catalog.initialTab` accepts `types`, `templates`, or `packs`.
 `Inspector.initialSection` accepts `document`, `communication`, `history`, or
 `activity`; a remount key can repeat a same-section navigation request. The parent-group chooser and its `reparent` prop were removed. `useCanvas.settle()` waits for edits and selection
 to finish and rejects if the document scope changes.
+
+
+## Whiteboard objects and tools
+
+`design/whiteboard-spec.md` defines the persistence contract. The client uses the
+registered `wb-text`, `wb-shape`, `wb-svg` and `wb-draw` types and their shared schemas.
+They are normal CanvasBlocks, so selection, grouping, duplication, deletion, undo,
+revision conflicts and pack export use the existing controller and reducer.
+
+Free text has no card chrome. Click selects; double click, Enter/F2 or typing edits
+in place. New text stays an unsaved draft until blur or Ctrl/Command + Enter. Enter
+adds a line; Escape cancels. Confirming blank new text writes nothing; blank existing
+text deletes its block. Shape labels use the same editor. Failed text saves retain
+the draft and offer retry or cancellation.
+
+Shapes include rectangle, rounded rectangle, ellipse, diamond, triangle, hexagon,
+cylinder and line, with labels and arrowheads. Click creates a centered 160 × 104
+shape; drag defines its bounds. Shift constrains a shape to 1:1 or a line to 15°.
+Shape/SVG/draw selections expose eight resize handles, text exposes width handles,
+and lines expose endpoint handles. SVG resize always preserves its aspect ratio.
+Filled shapes use their box for hits; empty shapes and drawings only intercept their
+contour or stroke with an eight-screen-pixel hit band, so their interior lets users
+reach cards beneath them.
+
+The layer order is group frames, shapes/SVG, links, cards, text, drawings, guides and
+handles. Positioned whiteboard objects sit outside automatic placement and overlap
+resolution in every layout. Inferred layouts ignore these annotations and their
+links. Group frames still include their bounds; creating or moving inside a group
+stores parent-relative coordinates.
+
+The pencil samples at most 8192 points per gesture. Shared bounded simplification
+and schemas enforce 512 points per stroke, 4000 per drawing and 32 strokes. Consecutive
+strokes append to the same drawing while tool, document, parent and limits permit.
+A separate preview store redraws only the preview on pointer movement. The whole
+canvas layout runs after a committed document change. Each completed stroke creates
+one transaction; the eraser removes whole crossed strokes in one transaction at
+release, including crossings between sparse pointer events. Escape, document changes,
+offline state and busy persistence abort pending creation gestures without a save.
+
+The library contains twelve canonical Tabler SVGs, bundled locally with their pinned
+source metadata and MIT license in `client/assets/`. Clicking inserts at the viewport
+center or selected group center. Browser dragging shows an image ghost and inserts
+at the released page point, converted by Canvas to world and group-relative
+coordinates. Releasing outside Canvas or pressing Escape creates nothing. Imports
+accept pasted code on every platform, plus browser files and HTTP/HTTPS URLs. Browser
+fetches omit credentials, stop after ten seconds, bound streamed bytes to 64 KiB,
+and require CORS access. Shared sanitization runs before insertion and on server
+writes. Imported SVG paints as an image data URI, never as inline DOM.
+
+The renderer and style code use the whiteboard role colors, font sizes and geometry
+from Opus tokens. No dependency was added. On native, text and basic RN shape
+geometry render directly; complex shapes, drawings and imported SVG show the
+specified readable web fallback. Compact mode allows creation and drawing with
+one finger and pans with two. Existing compact move/resize restrictions remain.
+
+## Canvas and floating tools API
+
+The additional Canvas props are optional, preserving existing callers:
+
+```ts
+tool?: CanvasTool;
+onToolChange?: (tool: CanvasTool) => void;
+toolStyle?: ToolStyle;
+toolLocked?: boolean;
+onInteractionChange?: (id: string | null) => void;
+selectionToolbar?: React.ReactNode;
+```
+
+`CanvasTool` is select, hand, text, shape, draw, eraser or svg. `ToolStyle` contains
+color, scale, fill, stroke, shape, heads, font and align. Both types and
+`DEFAULT_TOOL_STYLE` are exported from `whiteboard-tools.ts`.
+
+`CanvasApi` retains fit, zoomToSelection, zoomStep, zoomTo and instant, and adds:
+
+```ts
+setTool(tool: CanvasTool): void;
+getTool(): CanvasTool;
+cancelGesture(): void;
+viewportCenter(): Point;
+insertSvg(svg: string, options?: SvgInsertOptions): Promise<boolean>;
+beginInteraction(id?: string): void;
+endInteraction(): void;
+editSelection(): void;
+interactionId(): string | null;
+```
+
+`SvgInsertOptions` accepts caption, source, license, world position `at`, browser
+page position `atPage`, and parentGroupId. Pointer insertion determines the group
+under the released point. `editSelection` follows `beginInteraction`, opening the
+whiteboard editor or an appropriate card's interaction mode. The selection toolbar
+is supplied by Panel and anchored by Canvas with animated camera values, without
+camera state updates in Panel. Interaction mode hides the contextual toolbar while its exit chip is visible. Below 880 px on desktop, zoom shows only the percent button; its anchored menu contains zoom, fit and reset actions.
+
+`FloatingTools.tsx` exports the controlled components `ToolIsland`, `StyleIsland`,
+`ShapePopover`, `LibraryPopover` and `SvgImportDialog` and their props types.
+ToolIsland takes tool/onToolChange, locked/onLockChange, shape, onOpenShapes,
+onOpenLibrary, onOpenPicker, width, touch, disabled and optional grid. In grid mode it renders all eight actions in four columns with 44 px buttons, 8 px gaps and 200 px width. Select and Hand stay available
+when mutations are disabled. Only a double click on an already active tool toggles
+its lock; a rapid click on an inactive tool always activates it.
+
+StyleIsland takes tool, selectionKinds, value, onChange, orientation, touch and
+disabled. On narrow layouts Más estilo opens the remaining controls in the host dialog Estilo, keeping the horizontal island limited to Color and Tamaño. ShapePopover takes value, heads, onPick and onClose. LibraryPopover takes
+onInsert, onImport, error, busy and onClose. SvgImportDialog takes open, onClose and
+an asynchronous onInsert returning a boolean. These components hold no document
+controller; Panel commits selected-object style patches through `c.edit`.
+
+## Content interaction boundaries
+
+Ordinary deep content starts in move mode. Explicit interaction enables selectable
+text, annotations, internal scrolling, media and frames; its ring and exit chip are
+transient client state. The title remains draggable during interaction. Browser
+middle-button pan captures events over cards, controls, learning ranges and SVG;
+passive media/iframe shields allow pan, wheel and zoom over their content. Focused
+learning controls and interaction surfaces retain their own keyboard commands.
+Space temporarily selects Hand when focus is outside those controls.
+
+Events originating inside an active iframe belong to its separate document and
+cannot be intercepted by the parent canvas. Escape there cannot exit interaction;
+the visible exit chip provides that action. Middle mouse inside that active frame
+also requires leaving interaction first. No cross-origin event interception is
+claimed. All browser pointer, keyboard, SVG, import and media adapters remain in
+`web.ts`; native loading touches no DOM.
+
+Headless whiteboard tests exercise the actual creation hook with the real reducer,
+bounded gestures, group-relative creation and movement, eraser sweeps, layout
+isolation, resizing, export, unsafe imports, pointer adapters and the fast inactive
+tool regression. They also verify delegation of learning keyboard commands and
+wheel behavior over passive versus active content. The coordinator owns actual
+Panel QA in omabox.

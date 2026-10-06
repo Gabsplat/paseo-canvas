@@ -1,4 +1,5 @@
 import { getRendererSpec } from "../shared/renderers";
+import { isWhiteboardRenderer, whiteboardMinSize } from '../shared/whiteboard';
 import { randomUUID } from "node:crypto";
 import {
   documentSchema, checklistDataSchema, type CanvasDocument, type CanvasOperation, type CanvasCatalog,
@@ -21,7 +22,11 @@ export function safeJson(value: unknown, depth = 0): void {
 
 export function validateBlockData(block: CanvasBlock, type: BlockType): void {
   safeJson(block.data);
-  getRendererSpec(type.renderer)?.dataSchema.parse(block.data);
+  const schema = getRendererSpec(type.renderer)?.dataSchema;
+  if (isWhiteboardRenderer(type.renderer)) {
+    const parsed = schema!.safeParse(block.data);
+    if (!parsed.success) throw new CanvasError('VALIDATION', parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '));
+  } else schema?.parse(block.data);
   if (type.renderer === "checklist") checklistDataSchema.parse(block.data);
   if (["preview-frame", "image-ref"].includes(type.renderer ?? "") && block.data.url !== undefined && block.data.url !== "") {
     try {
@@ -41,6 +46,28 @@ export function validateBlockData(block: CanvasBlock, type: BlockType): void {
     if (!type.properties.some(property => property.key === key))
       throw new CanvasError("VALIDATION", `Undeclared property data.${key} on type ${type.id}.`);
   }
+}
+
+/** Only normalize newly supplied block data, never rewrite unrelated blocks during validation. */
+export function normalizeBlock(block: CanvasBlock, type: BlockType): void {
+  if (!isWhiteboardRenderer(type.renderer)) return;
+  const parsed = getRendererSpec(type.renderer)!.dataSchema.safeParse(block.data);
+  if (!parsed.success) throw new CanvasError('VALIDATION', parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '));
+  block.data = parsed.data as CanvasBlock['data'];
+}
+export function validateBlockPresentation(block: CanvasBlock, type?: BlockType): void {
+  // Removed pack types retain raw blocks. The wire envelope still applies, but their renderer/minima are unknown.
+  if (!type) return;
+  const renderer = type?.renderer;
+  if (isWhiteboardRenderer(renderer)) {
+    if (!block.position || !Number.isFinite(block.position.x) || !Number.isFinite(block.position.y) || Math.abs(block.position.x) > 100000 || Math.abs(block.position.y) > 100000) throw new CanvasError('VALIDATION', 'Los objetos de pizarra necesitan position finita entre -100000 y 100000.');
+    if (renderer === 'wb-text' && block.size) throw new CanvasError('VALIDATION', 'El texto libre usa data.width; no admite block.size.');
+    if (renderer === 'wb-draw' && !block.size) throw new CanvasError('VALIDATION', 'El dibujo necesita block.size.');
+  }
+  if (!block.size) return;
+  const spec = getRendererSpec(renderer);
+  const min = isWhiteboardRenderer(renderer) ? whiteboardMinSize(renderer, block.data) : { width: Math.max(160, spec?.minSize?.width ?? 160), height: Math.max(104, spec?.minSize?.height ?? 104) };
+  if (block.size.width < min.width || block.size.height < min.height) throw new CanvasError('VALIDATION', `El bloque ${block.id} necesita un tamaño mínimo de ${min.width} × ${min.height}.`);
 }
 
 export function validateTree(blocks: CanvasBlock[], groups: CanvasGroup[]): void {
@@ -87,6 +114,7 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
     throw new CanvasError("INVARIANT", "Selection must contain unique existing entity IDs.");
   if (catalog) for (const block of document.blocks) {
     const type = catalog.blockTypes.find(type => type.id === block.typeId);
+    validateBlockPresentation(block, type);
     if (type) validateBlockData(block, type);
   }
 }
@@ -211,6 +239,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const type = catalog.blockTypes.find(type => type.id === block.typeId);
         if (!type) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}. Read canvas_catalog first.`, { available: catalog.blockTypes.map(type => type.id) });
         block.data = rendererData(type, { ...clone(type.defaults), ...block.data }, block.data);
+        normalizeBlock(block, type);
         next.blocks.push(block);
         attach(next, block.id, block.parentGroupId ?? null);
         break;
@@ -222,6 +251,8 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         if (patch.typeId && !catalog.blockTypes.some(type => type.id === patch.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${patch.typeId}.`);
         Object.assign(block, patch);
         if (data) block.data = rendererData(catalog.blockTypes.find(type => type.id === block.typeId), mergePatch(block.data, data) as CanvasBlock['data'], data);
+        const type = catalog.blockTypes.find(type => type.id === block.typeId);
+        if (type) normalizeBlock(block, type);
         if (parentGroupId !== undefined) attach(next, block.id, parentGroupId);
         break;
       }

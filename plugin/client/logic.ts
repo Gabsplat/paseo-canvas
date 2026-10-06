@@ -1,3 +1,4 @@
+import { isWhiteboardRenderer, whiteboardMinSize } from '../shared/whiteboard';
 import { getRendererVisual } from "./renderer-visuals";
 import { getRendererSpec } from "../shared/renderers";
 import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasOperation, DiagramData, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
@@ -21,10 +22,10 @@ export function reuseDocumentEntities(previous: CanvasDocument | undefined, next
   };
   return { ...next, blocks: reuse(previous.blocks, next.blocks), groups: reuse(previous.groups, next.groups), links: reuse(previous.links, next.links) };
 }
-export function initialCamera(viewportWidth: number, content: Pick<Rect, 'x' | 'y' | 'width'>) {
+export function initialCamera(viewportWidth: number, content: Pick<Rect, 'x' | 'y' | 'width'>, compact = false) {
   const t = tokens.canvas.initialZoom, scale = Math.max(t.min, Math.min(t.max, (viewportWidth - 96) / Math.max(1, content.width)));
   const left = content.width * scale > viewportWidth - 96 ? 48 : (viewportWidth - content.width * scale) / 2;
-  return { scale, offset: { x: left - content.x * scale, y: t.topInset - content.y * scale } };
+  return { scale, offset: { x: left - content.x * scale, y: (compact ? t.topInsetCompact : t.topInset) - content.y * scale } };
 }
 export const snap = (v: number) => Math.round(v / tokens.canvas.snap) * tokens.canvas.snap;
 let counter = 0;
@@ -187,6 +188,7 @@ export function graphIndex(doc: CanvasDocument, catalog?: CanvasCatalog | null) 
   const chain = (id: string): string[] => { const out = [id], seen = new Set(out); let p = parent.get(id); while (p && !seen.has(p)) { out.push(p); seen.add(p); p = parent.get(p); } out.push(ROOT); return out; };
   const edges = new Map<string, Edge[]>();
   for (const link of doc.links ?? []) {
+    if ([link.from, link.to].some(id => { const e = entities.get(id); return e && 'typeId' in e && isWhiteboardRenderer(catalog?.blockTypes.find(t => t.id === e.typeId)?.renderer ?? e.typeId); })) continue;
     if (link.from === link.to || !entities.has(link.from) || !entities.has(link.to)) continue;
     const a = chain(link.from), b = chain(link.to), inA = new Map(a.map((id, i) => [id, i]));
     const j = b.findIndex(id => inA.has(id)), i = inA.get(b[j])!;
@@ -196,7 +198,7 @@ export function graphIndex(doc: CanvasDocument, catalog?: CanvasCatalog | null) 
   const mode = (id: string | null): LayoutMode => {
     if (!id) return doc.layout?.mode ?? (edges.has(ROOT) ? 'graph' : 'free');
     const g = groups.get(id); if (!g) return 'stack';
-    const children = [...g.blockIds, ...g.groupIds];
+    const children = [...g.blockIds, ...g.groupIds].filter(id => { const e = entities.get(id); return !e || !('typeId' in e) || !isWhiteboardRenderer(catalog?.blockTypes.find(t => t.id === e.typeId)?.renderer ?? e.typeId); });
     // Prose reads best as a column. Sections and compact node cards read best side by side.
     const spread = children.length > 1 && (g.groupIds.length > 0 || children.every(child => { const e = entities.get(child); return !!e && 'typeId' in e && isNodeBlock(e, catalog); }));
     // A stored position pins one child; it does not turn its container into a free one. Only a container whose every child
@@ -334,6 +336,7 @@ export type CanvasLayout = { rects: Map<string, Rect>; lanes: Map<string, Point[
 export type BlockSize = NonNullable<CanvasBlock['size']>;
 export function minimumBlockSize(block: CanvasBlock, catalog?: CanvasCatalog | null): BlockSize {
   const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer;
+  if (isWhiteboardRenderer(renderer)) return whiteboardMinSize(renderer, block.data);
   const registered = getRendererSpec(renderer)?.minSize; if (registered) return registered;
   const min = tokens.canvas.resize.minimum;
   return renderer === 'node' ? min.node : renderer === 'preview-frame' ? min.web : renderer === 'image-ref' ? min.media : min.standard;
@@ -357,8 +360,15 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
   const pad = tokens.size.groupPadding, header = tokens.size.groupHeader, G = tokens.graph;
   const rootWrap = viewportWidth ? Math.max(G.wrap.min, (viewportWidth - G.wrap.viewportInset) / tokens.canvas.initialZoom.min) : G.wrap.fallback;
   // Places the children of one container in its own coordinates. `clamp` keeps stored positions inside a group frame.
-  const arrange = (container: string | null, children: string[], childRects: Rect[], origin: Point, wrap: number, clamp: boolean) => {
+  const arrange = (container: string | null, children: string[], childRects: Rect[], origin: Point, wrap: number, clamp: boolean): void => {
     const mode = index.mode(container), layout = container ? groups.get(container)!.layout : doc.layout, entity = (id: string) => index.entities.get(id)!;
+    const overlays = children.filter(id => { const b = blocks.get(id); return b && isWhiteboardRenderer(catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer); });
+    if (overlays.length) {
+      const ordinary = children.filter(id => !overlays.includes(id));
+      arrange(container, ordinary, ordinary.map(id => childRects[children.indexOf(id)]), origin, wrap, clamp);
+      for (const id of overlays) { const r = childRects[children.indexOf(id)], p = entity(id).position ?? origin; r.x = p.x; r.y = p.y; }
+      return;
+    }
     const hasGroups = children.some(id => groups.has(id)), packGap = layout?.gap ?? (container ? tokens.layout.rows.gap : tokens.layout.rows.gapRoot);
     const spacing = layout?.gap ?? (mode === 'flow' ? tokens.layout.flow.gap : hasGroups && !container ? tokens.canvas.groupGap : tokens.layout.stack.gap);
     const place = (r: Rect, p: Point) => { r.x = clamp ? Math.max(origin.x, p.x) : p.x; r.y = clamp ? Math.max(origin.y, p.y) : p.y; };
@@ -388,7 +398,7 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
       });
       pin();
     } else if (mode === 'graph') {
-      const edges = index.edges(container), linked = new Set(edges.flatMap(e => [e.from, e.to]));
+      const edges = index.edges(container).filter(e => children.includes(e.from) && children.includes(e.to)), linked = new Set(edges.flatMap(e => [e.from, e.to]));
       const nodes = children.map((id, i) => ({ id, width: childRects[i].width, height: childRects[i].height })).filter(n => linked.has(n.id));
       const graph = layeredLayout(nodes, edges, { direction: index.direction(container), nodeGap: layout?.gap ?? (hasGroups ? G.gap.nodeGroups : G.gap.node), layerGap: hasGroups ? G.gap.layerGroups : G.gap.layer, laneWidth: G.gap.lane });
       const moved = new Set<string>();
@@ -415,6 +425,20 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
     const block = blocks.get(id);
     if (block) {
       const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = getRendererVisual(renderer)?.width === 'wide' || renderer === 'diagram' || renderer === 'preview-frame';
+      if (isWhiteboardRenderer(renderer)) {
+        const scale = typeof block.data.scale === 'string' && block.data.scale in tokens.whiteboard.text ? block.data.scale as 's'|'m'|'l'|'xl' : 'm';
+        const textStyle = tokens.whiteboard.text[scale];
+        const text = typeof block.data.text === 'string' ? block.data.text : '';
+        const longest = Math.max(1, ...text.split('\n').map(line => line.length));
+        const autoWidth = Math.max(24, Math.min(480, Math.ceil(longest * textStyle.fontSize * .56 + 2)));
+        const textWidth = typeof block.data.width === 'number' ? block.data.width : autoWidth;
+        const textHeight = Math.max(textStyle.lineHeight, text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length * textStyle.fontSize * .56 / textWidth)), 0) * textStyle.lineHeight);
+        const vb = Array.isArray(block.data.viewBox) ? block.data.viewBox as number[] : [0,0,1,1];
+        const ratio = Number(vb[2]) / Number(vb[3]) || 1;
+        const width = renderer === 'wb-text' ? textWidth : block.size?.width ?? (renderer === 'wb-svg' ? Math.max(24, ratio >= 1 ? 96 : 96 * ratio) : 160);
+        const height = renderer === 'wb-text' ? heights[id] ?? textHeight : block.size?.height ?? (renderer === 'wb-svg' ? Math.max(24, ratio >= 1 ? 96 / ratio : 96) : 104);
+        const r = { x: 0, y: 0, width, height, depth, hidden }; rects.set(id, r); return r;
+      }
       const preferred = getRendererSpec(renderer)?.defaultSize;
       const r = { x: 0, y: 0, width: block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? G.node.width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size?.height ?? heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
       rects.set(id, r); return r;
@@ -629,7 +653,7 @@ const childrenOf = (doc: CanvasDocument, parent: string | null): Entity[] => {
   return g ? [...g.blockIds, ...g.groupIds].map(id => all.get(id)).filter((e): e is Entity => !!e) : [];
 };
 /** Direct children of a container (null = the canvas) that hold a stored position. */
-export const pinnedChildren = (doc: CanvasDocument, parent: string | null) => childrenOf(doc, parent).filter(isPinned).map(e => e.id);
+export const pinnedChildren = (doc: CanvasDocument, parent: string | null) => childrenOf(doc, parent).filter(e => isPinned(e) && !('typeId' in e && isWhiteboardRenderer(e.typeId))).map(e => e.id);
 // `entity.move` re-attaches at the end of its parent. This puts a group's members back in reading order, newcomers last.
 const keepOrder = (group: CanvasGroup, arrived: Entity[], departed = new Set<string>()): CanvasOperation => ({ type: 'group.update', id: group.id, patch: {
   blockIds: [...group.blockIds.filter(id => !departed.has(id)), ...arrived.filter(e => 'typeId' in e && !group.blockIds.includes(e.id)).map(e => e.id)],
@@ -685,6 +709,7 @@ export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, id
 export function releaseOperations(doc: CanvasDocument, ids: string[], catalog?: CanvasCatalog | null, parent?: string | null): CanvasOperation[] {
   const index = graphIndex(doc, catalog), result: CanvasOperation[] = [];
   for (const e of topSelection(doc, ids)) {
+    if ('typeId' in e && isWhiteboardRenderer(catalog?.blockTypes.find(t => t.id === e.typeId)?.renderer ?? e.typeId)) continue;
     const from = e.parentGroupId ?? null, to = parent === undefined ? from : parent;
     if (to && (!index.groups.has(to) || index.chain(to).includes(e.id))) continue;
     if (!e.position) { if (to !== from) result.push({ type: 'entity.move', id: e.id, parentGroupId: to }); continue; }

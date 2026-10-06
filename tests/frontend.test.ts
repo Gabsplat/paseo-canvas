@@ -43,7 +43,8 @@ test('resize bounds, grid and proportions produce valid size updates without tou
   const rect = layoutDocument(next, { list: 999 }, catalog).get('list')!; assert.equal(rect.width, 384); assert.equal(rect.height, 144);
   const ratio = resizeBlockSize({ width: 320, height: 160 }, { x: 100, y: 4 }, { width: 160, height: 104 }, true); assert.equal(ratio.width, 420); assert.equal(ratio.height, 210);
   const huge = resizeBlockSize({ width: 160, height: 4096 }, { x: 4096, y: 0 }, min, true); assert.ok(huge.width <= 4096 && huge.height <= 4096);
-  for (const invalid of [{ width: 159, height: 104 }, { width: 160, height: 103 }, { width: 5000, height: 200 }, { width: Infinity, height: 200 }, { width: 200, height: 200, html: 'ignored?' }]) assert.equal(mutateInputSchema.safeParse({ workspaceId: doc.workspaceId, documentId: doc.id, expectedRevision: 0, operations: [{ type: 'block.update', id: 'list', patch: { size: invalid } }] }).success, false);
+  for (const invalid of [{ width: 5000, height: 200 }, { width: Infinity, height: 200 }, { width: 200, height: 200, html: 'ignored?' }]) assert.equal(mutateInputSchema.safeParse({ workspaceId: doc.workspaceId, documentId: doc.id, expectedRevision: 0, operations: [{ type: 'block.update', id: 'list', patch: { size: invalid } }] }).success, false);
+  for (const size of [{ width: 159, height: 104 }, { width: 160, height: 103 }]) { const parsed = mutateInputSchema.parse({ workspaceId: doc.workspaceId, documentId: doc.id, expectedRevision: 0, operations: [{ type: 'block.update', id: 'list', patch: { size } }] }); assert.throws(() => reduce(doc, parsed.operations, catalog), /mínim|minimum|size|tamaño|VALIDATION/i); }
   const automatic = reduce(next, [{ type: 'block.update', id: 'list', patch: { size: null } }], catalog); assert.equal(layoutDocument(automatic, { list: 176 }, catalog).get('list')!.height, 176); assert.deepEqual(automatic.blocks[0].position, doc.blocks[0].position);
 });
 test('automatic layouts preserve chosen frame size; groups and connector ports include it', () => {
@@ -143,12 +144,20 @@ test('first-open camera preserves readable scale and top alignment independently
   for (const viewportWidth of [320, 720, 1600]) {
     const content = { x: -120, y: 400, width: 900 }, camera = initialCamera(viewportWidth, content);
     assert.ok(camera.scale >= .8 && camera.scale <= 1);
-    assert.equal(content.y * camera.scale + camera.offset.y, 48);
+    assert.equal(content.y * camera.scale + camera.offset.y, 76);
     if (content.width * camera.scale > viewportWidth - 96) assert.equal(content.x * camera.scale + camera.offset.x, 48);
     else assert.equal((content.x + content.width / 2) * camera.scale + camera.offset.x, viewportWidth / 2);
   }
   assert.equal(initialCamera(320, { x: 0, y: 0, width: 900 }).scale, .8);
   assert.equal(initialCamera(1600, { x: 0, y: 0, width: 900 }).scale, 1);
+});
+test('first-open compact camera uses 48px top inset while desktop leaves 76px below floating tools', () => {
+  const content={x:-120,y:400,width:900};
+  for(const width of [320,760,1600]) {
+    const desktop=initialCamera(width,content),compact=initialCamera(width,content,true);
+    assert.equal(content.y*desktop.scale+desktop.offset.y,76);assert.equal(content.y*compact.scale+compact.offset.y,48);
+    assert.equal(desktop.scale,compact.scale);assert.equal(desktop.offset.x,compact.offset.x);
+  }
 });
 test('first-open wide document keeps the first root group visible at 80% without panning', () => {
   const doc = document();
@@ -159,13 +168,13 @@ test('first-open wide document keeps the first root group visible at 80% without
   const camera = initialCamera(640, { x, y, width }), first = rects.get('first')!;
   assert.equal(camera.scale, .8); assert.ok(width * camera.scale > 640 - 96);
   assert.equal(first.x * camera.scale + camera.offset.x, 48);
-  assert.equal(first.y * camera.scale + camera.offset.y, 48);
+  assert.equal(first.y * camera.scale + camera.offset.y, 76);
   assert.ok((first.x + first.width) * camera.scale + camera.offset.x <= 640);
   // Exact-fit and roomy documents keep centring; the overflow branch is strict.
   for (const viewportWidth of [816, 1200]) {
     const content = { x: -120, y: 30, width: 900 }, fitted = initialCamera(viewportWidth, content);
     assert.equal((content.x + content.width / 2) * fitted.scale + fitted.offset.x, viewportWidth / 2);
-    assert.equal(content.y * fitted.scale + fitted.offset.y, 48);
+    assert.equal(content.y * fitted.scale + fitted.offset.y, 76);
   }
 });
 test('diagram cycles and left rails stay inside the drawing, self loops are described only', () => {

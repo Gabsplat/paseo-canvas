@@ -1,113 +1,140 @@
-# Native panel integration
+# Panel integration
 
-`plugin/client/Panel.tsx` exports `LienzoPanel` with the installed Paseo 0.10.3
-`PluginWorkspacePanelProps` contract. The existing client entry registers it as
-workspace panel `canvas`, titled Lienzo. The panel borrows the host's theme,
-layout and connection through `UIProvider`, `useAgent` and `useCanvas`. It imports
-only host-provided React Native UI and local modules. Browser operations remain
-in the frontend owner's guarded `web.ts` helpers.
+`plugin/client/Panel.tsx` exports `LienzoPanel` for Paseo 0.10.3
+`PluginWorkspacePanelProps`. The existing client entry mounts it as workspace
+panel `canvas`. It uses the host theme, layout and connection through
+`UIProvider`, `useAgent` and `useCanvas`. Browser helpers and drawing remain
+owned by the frontend engineer. This delivery changes only `Panel.tsx` and this
+file.
 
 ## Layout and navigation
 
-The root measures its width with `onLayout`. At 980 or more, when the host is not
-compact, the catalog is a toggled 288 px rail and the inspector is a permanent
-328 px rail. Below that width the rails become mutually exclusive overlays,
-positioned below the measured top bar. Compact hosts start in Esquema and use
-SDK modal sheets for the catalog and inspector. Selecting a block or group never
-opens an inspector automatically or starts an agent turn.
-The compact view toggle is 168 px wide so Esquema fits. The compact inspector
-uses the SDK sheet's header and close control; only the medium overlay supplies
-an Inspector `onClose` callback.
+The implementation follows `design/whiteboard-spec.md` sections 5 and 6 and
+`docs/design.md` sections 20.4 through 20.6. On noncompact hosts, the Canvas
+container is absolute with `inset: 0`. Its sibling overlay layer uses
+`pointerEvents="box-none"`. Every empty positioning wrapper for the document island, tools, composer,
+style, notices and compact Listo uses `box-none`; the island bodies retain
+automatic hit testing. The former full-width contextual-toolbar wrapper has
+been removed from Panel. Canvas receives the island body through
+`selectionToolbar` and must use `box-none` on its positioning wrapper. This
+addresses the coordinator's browser QA finding that the former full-width row
+intercepted clicks beside the toolbar. The former docked top bar, catalog rail, inspector
+rail and context tray no longer reserve canvas space.
 
-Installed-plugin QA found that the compact inspector modal could lose Lienzo's
-local UI context and throw `Lienzo UI context unavailable`. Panel modals now
-import `Modal` from `./ui` instead of importing the SDK modal directly. The
-frontend-owned wrapper captures theme, layout and host before the portal, then
-places an explicit `UIProvider` inside each direct SDK `Modal.Content` child's
-body. It preserves the real SDK Content component, its props and layout. The
-panel's modal content and behavior otherwise stay unchanged. Root owns reload
-and GUI verification of this correction.
+The document island is top-left and contains the main menu, title, persisted
+example marker, save warning indicator, undo and redo. The title opens the real
+document picker. Renaming is available through the main menu and F2 with no
+selection. The save indicator appears after 400 ms of a pending edit or after a
+reported failure. Tools sit at the top centre and yield to the measured document
+island. When both cannot fit on the same row, tools use the next floating row.
+Below 560 px they use the frontend's reduced tool set; redo remains in the menu.
 
-The document picker opens existing documents, creates documents with title and
-communication instructions, instantiates the labelled frontend and learning
-examples, and duplicates a document as a personal copy. Example markers follow
-the persisted `example` flag. Pack documents remain labelled as examples when
-instantiated. Document rows show their actual revision and relative update time.
-No-document example entries pair the example chip and the stored title in one
-left-aligned row. The title is a ghost press target and receives no added prefix.
+The assistant composer floats at the bottom centre. Below 560 px it aligns left
+and leaves space for Canvas's zoom control. Its selection chips, queue actions,
+errors and delivery receipt use the actual controller data. The style island is
+168 px wide and vertically centred on wide panels. Below 880 px it becomes
+horizontal, eight pixels above the measured composer. It appears for text,
+shape or draw tools or a whiteboard selection. Shapes and library use the
+frontend's real popover components. Canvas alone owns zoom.
 
-Revision presses open document Historial. Queue-chip presses open Actividad.
-Communication opens its own inspector section. Repeated requests remount the
-inspector with `initialSection`, so its native scroll anchors run again. Empty
-document actions use Catalog `initialTab` to open Bloques or Plantillas;
-unknown-type actions open Packs. Compact Más acciones contains undo, redo,
-document navigation, catalog, communication, agent connection, activity and
-selection operations.
+Compact hosts retain a docked compact header, default to outline, and expose
+Herramientas in a host Modal. Opening it switches to Canvas. Choosing a creation
+tool closes the sheet; Listo returns to selection. The compact tool set uses
+`ToolIsland grid`: four columns and two rows of
+44 px buttons, with 8 px gaps, no dividers and no horizontal tool scroller. Its
+200 px grid is centred in the sheet. Applicable style controls follow the tools,
+then an explicit Biblioteca row opens the existing library picker. Noncompact
+tool dialogs retain the normal horizontal island. The catalog and inspector
+are real host modals
+on every width. The local Modal wrapper carries the UI context through host
+portals. Solo lienzo hides the Panel controls while retaining Canvas zoom and
+save, conflict and connection notices.
 
-## Persistence and callbacks
+The main menu and dialogs preserve document creation and copies, labelled
+examples, history, communication instructions, agent connection, activity,
+settings, guide, undo/redo, grouping, duplication, deletion and collections.
+Catalog tabs retain every learning block, template and pack. Its quick actions
+add notes, nodes and empty groups, accept media URLs, or import SVG. Existing
+group template save and collection import/export use the actual RPCs. No UI
+claims that an assistant answered or a write succeeded before a response.
 
-Panel edits use `controller.edit` and the shared operation contracts. Grouping
-uses one `group.create` transaction; the reducer attaches the selected blocks
-and groups and synchronizes their parent links. The panel filters selected
-descendants with `topSelection` before grouping, duplicating or deleting.
-Reordering updates the parent's ordered `blockIds` or `groupIds`. Reparenting and
-keyboard nudges use the frontend owner's `moveOperations`, preserving the
-resolved stack intent of a group whose layout was absent.
+## Tools, style and creation
 
-Catalog insertion creates a block from the type's actual defaults. A single
-selected group receives the block; otherwise insertion uses the reported canvas
-center. Template insertion and placement use one edit transaction. Templates
-with 200 or more root entities use their stored positions or the unplaced shelf
-to stay within the backend's 200-operation transaction limit. Group duplication,
-ungrouping, collapse, delete, property editing and communication editing also
-remain available through the integrated Canvas and Inspector helpers.
+Panel controls `CanvasTool`, `ToolStyle` and `toolLocked` as view state. Defaults
+come from `DEFAULT_TOOL_STYLE`. The tool island forwards selection, hand, text,
+shape, drawing and eraser choices. Double-click locking is forwarded through
+`onLockChange`. Offline transitions cancel the current gesture and return to
+selection. Selecting a whiteboard catalog type opens its placement tool instead
+of persisting empty text or invalid drawing data.
 
-Guardar como plantilla exports the real group subtree with `exportGroup`, then
-saves it with `catalogMutate` and `template.put`. The catalog revision is read at
-execution. Retry retains the template ID; successful persistence opens
-Plantillas. Pack import and export use the frontend owner's PackImport and
-PackExport modals and their shared RPCs. Document export builds a portable data
-pack from the loaded document and catalog, then uses the same export modal.
+Style changes update the preference for subsequent elements and capture the
+selected whiteboard IDs. After `controller.settle()`, the panel reads current
+blocks for the same document and sends one `block.update` per applicable entity
+in one `controller.edit` transaction. Ordinary blocks are excluded. Text accepts
+color, scale, font and alignment; shapes accept color, shape, fill, stroke and
+`weight` from the scale control. Heads are written only for lines. Changing a
+line to another shape removes `from` and `heads`. SVG accepts only color. Drawing
+updates color/weight on its strokes without adding those keys at the root.
+Unrelated data is preserved. More than 200 targets produces an error instead of
+truncating the transaction.
 
-## Feedback and connection
+Ordinary catalog insertion retains the selected group destination. With one
+selected block it uses that block's parent and places the new block to its right.
+Otherwise it uses the reported visible canvas centre. Template insertion retains
+its existing transactional placement logic and operation limit. SVG insertion
+uses `CanvasApi.insertSvg` and explicitly forwards a selected group destination.
+The frontend `SvgImportDialog` handles pasted SVG, SVG files and URL fetching
+with its guarded browser helpers. Successful insertion returns to selection;
+errors remain in the library or import dialog. Media URLs create the actual
+`media` catalog type with its defaults, caption and inferred media kind. Raster,
+video and audio file upload is not implemented by Panel; no upload helper was
+published for those formats.
 
-Presence reads the saved document connection and a real `useAgent` snapshot.
-Missing snapshots show an unavailable agent with a neutral status dot. The
-AgentModal owns connection changes, opt-in injection and the private setup helper.
-Connecting never activates a theme. A reload notice appears only when the helper
-reports `requiresReload`.
+## Context and interaction
 
-An explicit tray send captures the selected target IDs, note and one event ID.
-It waits for `controller.settle()` before calling `agentAction`. A transport or
-revision retry reuses that ID and payload. A persisted failed event uses
-`flushAgentEvents`, which retries the backend's stored batches without creating
-another event. That RPC can also deliver other queued events for this document.
-The tray renders pending, sent, failed and acknowledged statuses from returned
-or polled events. It clears the note only after a returned pending or sent
-status. The no-agent tray offers Conectar; explicit block actions can persist in
-the queue through the block helpers.
+The composer can send selected targets, or a nonempty note without selection. A
+send captures one event ID, document ID, target IDs and note, waits for pending
+writes, and verifies the document is still current before calling `send`.
+Retries retain the same ID and payload. Persisted event retries use the existing
+flush RPC. Queue, sent, failed and acknowledged labels come from returned or
+polled events. Selection remains shared through the controller selection RPC.
+Drawing and style edits do not independently send an assistant prompt.
 
-Selection is shared through the controller's selection RPC. Moving, editing,
-collapsing, opening documents and checklist toggles do not send feedback prompts.
-The event target limit is 100; the tray reports that limit before sending a
-larger selection. Panel bulk duplicate and delete report the 200-operation
-limit. Scope checks discard late UI effects after document changes.
+Panel composes `selectionToolbar` and passes it to Canvas for placement above
+the selection and camera tracking. A whiteboard selection has Duplicar,
+Eliminar and Más. Ordinary selection also has Preguntar and, only when
+`needsContentInteraction` applies, Interactuar. Enter/F2 delegates text editing
+or content interaction to `CanvasApi.editSelection`. Interaction entry and exit
+use `beginInteraction` and `endInteraction`, with state reported through
+`onInteractionChange`. Canvas owns drag, middle-button pan, text editing,
+interaction shields, creation, resizing and contextual toolbar positioning.
 
-## States and verification
+Existing undo/redo, group, delete, connect, send, selection traversal, arrow
+nudges, zoom, catalog and immersive shortcuts remain reachable. Panel also
+routes V/H/T/R/D/E and Shift+L. Escape closes tool popovers, leaves interaction,
+cancels a creation tool, or clears selection as appropriate. Focused inputs
+remain protected by the frontend keyboard helper. The guide still claims and
+persists `guideSeen` once and can be reopened from the main menu.
 
-The panel uses the Opus v2 tokens and design, including pass 3 corrections for
-LoadingDocument, DocumentRow, EmptyState and Banner. Loading uses a skeleton
-frame and three cards, honours reduced motion, and shows Sigue cargando after
-four seconds. Failed document opens show the actual selectable error, retry and
-copy-detail actions. Save failures and revision conflicts retain retry/discard
-controls; the controller reloads the current view before displaying a conflict.
-Offline reading remains available and mutating controls are disabled. At most
-two banners appear in the canvas column; an additional notice opens Avisos.
+## Validation and handoff
 
-Run `PATH=/home/gabsplat/.local/share/pnpm/bin:$PATH pnpm typecheck` at the workspace
-root. It checks backend, native frontend under the ES2023-only client tsconfig,
-and tests. Final panel integration passed that command. The coordinator owns
-plugin installation, native/browser QA and the final Opus visual audit. No GUI
-was launched, no plugin was installed or reloaded, and no daemon or host setting
-was changed by the panel integrator. Rendered light/dark, compact, overlay,
-delivery and conflict behavior still require that coordinator QA.
+Run at the workspace root:
+
+```sh
+PATH=/home/gabsplat/.local/share/pnpm/bin:$PATH pnpm typecheck
+```
+
+Panel and Canvas compile together with the implemented tool, SVG, interaction
+and contextual toolbar contracts. The final integrated suite passes 257 tests;
+`pnpm typecheck` and `git diff --check` pass. The coordinator exercised the real
+Panel and useCanvas under RN-web in an isolated omabox, with a simulated host
+transport applying production RPC schemas and the production reducer. The 24
+browser cases cover creation, persistence transactions, rejection, media
+interaction, compact layouts, the compact grid and the narrow zoom menu.
+
+Evidence and precise limitations are in
+`design/qa-whiteboard-2026-10-06/report.md`; the reproducible harness is
+`design/whiteboard-harness/`. Icons, host Modal and transport are stand-ins,
+so this is not an installed Paseo or native-device verification. All four approved
+Opus adjustments are implemented, including the narrow zoom owned by Canvas.
+No plugin installation or reload was performed.

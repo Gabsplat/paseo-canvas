@@ -9,7 +9,7 @@ import {
 import { CanvasError } from "../shared/errors";
 import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
 import { catalogView, packDiff, packIssues, parsePack, validateTemplate, validateType } from "./catalog";
-import { clone, newId, reduce, validateDocument, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
+import { clone, newId, reduce, validateDocument, normalizeBlock, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
 
 const timestamp = () => new Date().toISOString();
 type State = Parameters<Parameters<CanvasStore["transaction"]>[0]>[0];
@@ -61,6 +61,7 @@ export class CanvasService {
       const document = documentSchema.parse({ ...input.content, id, workspaceId: input.workspaceId, revision: 0, createdAt: now, updatedAt: now });
       const catalog = catalogView(state.catalog);
       for (const block of document.blocks) if (!catalog.blockTypes.some(type => type.id === block.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}.`);
+      for (const block of document.blocks) normalizeBlock(block, catalog.blockTypes.find(type => type.id === block.typeId)!);
       validateDocument(document, catalog);
       if (Buffer.byteLength(JSON.stringify(document)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
       state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, runtime: { blocks: {}, scopes: {} }, events: [], outboundBatches: [], ...(actor === "agent" && connection ? { ownerAgentId: connection.agentId } : {}) };

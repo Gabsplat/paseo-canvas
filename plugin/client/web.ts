@@ -5,21 +5,31 @@ import { safeUrl } from './logic';
 import { tokens } from './tokens';
 import { frameSandbox } from './media';
 import type { LinkMotionSample } from './renderers/types';
+import { sanitizeSvg, SVG_LIMITS } from '../shared/svg';
+import { useContentInteraction } from './interaction';
 interface BrowserEventTarget {
   addEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
   removeEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
 }
 interface BrowserElement extends BrowserEventTarget {
+  id?: string;
+  contains?(node: unknown): boolean;
+  focus?(): void;
+  querySelectorAll?(selector: string): ArrayLike<BrowserElement>;
+  getAttribute?(name: string): string | null;
+  setPointerCapture?(id: number): void;
+  releasePointerCapture?(id: number): void;
   href: string; download: string;
   type: string; accept: string; files?: { length: number; [index: number]: { size: number; text(): Promise<string> } };
   appendChild(child: BrowserElement): void; click(): void; remove(): void;
   closest(selector: string): BrowserElement | null;
   querySelector(selector: string): (BrowserElement & { focus(): void }) | null;
-  getBoundingClientRect(): { left: number; top: number };
+  getBoundingClientRect(): { left: number; top: number; width?: number; height?: number };
+  setAttribute(name: string, value: string): void;
 }
 interface BrowserKeyEvent { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; target: BrowserElement | null; preventDefault(): void; stopPropagation(): void; deltaX: number; deltaY: number; clientX: number; clientY: number }
 interface BrowserHost {
-  document?: BrowserEventTarget & { hidden?: boolean; body: BrowserElement; createElement(tag: string): BrowserElement };
+  document?: BrowserEventTarget & { hidden?: boolean; body: BrowserElement; createElement(tag: string): BrowserElement; getElementById?(id: string): BrowserElement | null };
   location?: { origin: string };
   Blob: new (parts: string[], options: { type: string }) => unknown;
   URL: { createObjectURL(blob: unknown): string; revokeObjectURL(url: string): void };
@@ -58,15 +68,15 @@ export function useKeyboardFocus(web: boolean) {
   return useSyncExternalStore(web ? subscribeKeyboardInput : noFocusSubscription, web ? () => lastInputWasKeyboard : noKeyboardInput, noKeyboardInput);
 }
 export function WebFrame({ url, title, border, height, surface, player = false, onLoaded, onTimeout }: { url: string; title: string; border: string; height: number | '100%'; surface: string; player?: boolean; onLoaded?: () => void; onTimeout?: () => void }) {
-  const safe = safeUrl(url), [loaded, setLoaded] = useState(false);
+  const interacting = useContentInteraction(), safe = safeUrl(url), [loaded, setLoaded] = useState(false);
   useEffect(() => { if (Platform.OS !== 'web') return; setLoaded(false); const timer = setTimeout(() => onTimeout?.(), 8000); return () => clearTimeout(timer); }, [safe]);
   if (Platform.OS !== 'web' || !safe) return null;
-  return React.createElement('div', { id: `lienzo-interactive-frame-${title}`, style: { position: 'relative', height, width: '100%', border: `1px solid ${border}`, borderRadius: 6, overflow: 'hidden', backgroundColor: surface } },
-    React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0 }, 'aria-label': loaded ? title : `Cargando ${title}` }));
+  return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-frame-${title}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height, width: '100%', border: `1px solid ${border}`, borderRadius: 6, overflow: 'hidden', backgroundColor: surface } },
+    React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0, pointerEvents: interacting ? 'auto' : 'none' }, 'aria-label': loaded ? title : `Cargando ${title}` }), !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 /** Uses browser controls, with no playback loop in React. No media implementation is loaded on native. */
 export function WebMedia({ url, title, kind, height, surface, onError }: { url: string; title: string; kind: 'video' | 'audio'; height: number | '100%'; surface: string; onError: () => void }) {
-  const element = useRef<{ pause(): void } | null>(null), safe = safeUrl(url);
+  const interacting = useContentInteraction(), element = useRef<{ pause(): void } | null>(null), safe = safeUrl(url);
   useEffect(() => {
     const doc = browser().document; if (!doc || !element.current) return;
     const media = element.current;
@@ -77,7 +87,7 @@ export function WebMedia({ url, title, kind, height, surface, onError }: { url: 
     return () => { observer?.disconnect(); doc.removeEventListener('visibilitychange', visibility); media.pause(); };
   }, [safe, kind]);
   if (Platform.OS !== 'web' || !safe) return null;
-  return React.createElement(kind, { key: safe, ref: element, src: safe, controls: true, preload: tokens.media[kind].preload, playsInline: true, 'aria-label': title, onError, style: { display: 'block', width: '100%', height: kind === 'audio' ? tokens.media.audio.height : height, borderRadius: 6, backgroundColor: surface, objectFit: 'contain' } });
+  return React.createElement('div', { style: { position: 'relative', height: kind === 'audio' ? tokens.media.audio.height : height, width: '100%' } }, React.createElement(kind, { key: safe, ref: element, src: safe, controls: true, preload: tokens.media[kind].preload, playsInline: true, 'aria-label': title, onError, style: { display: 'block', width: '100%', height: kind === 'audio' ? tokens.media.audio.height : height, borderRadius: 6, backgroundColor: surface, objectFit: 'contain', pointerEvents: interacting ? 'auto' : 'none' } }), !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 // Legacy exports for the isolated design harness only. The plugin uses host settings.
 const harnessGuideDismissals = new Set<string>();
@@ -99,12 +109,52 @@ export function pickJsonFile(maxBytes = 1048576): Promise<string | null> {
     input.click();
   });
 }
+export function pickSvgFile(): Promise<string | null> {
+  const host = browser(); if (!host.document) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const input = host.document!.createElement('input'); input.type = 'file'; input.accept = '.svg,image/svg+xml';
+    input.addEventListener('cancel', () => { input.remove(); resolve(null); });
+    input.addEventListener('change', () => {
+      const file = input.files?.[0]; input.remove();
+      if (!file) { resolve(null); return; }
+      if (file.size > SVG_LIMITS.bytes) { reject(new Error('El SVG supera 64 KB.')); return; }
+      void file.text().then(text => resolve(sanitizeSvg(text).svg)).catch(reject);
+    });
+    input.click();
+  });
+}
+/** Browser fetch only. Read a bounded body, then validate with the same static dialect as the server. */
+export async function fetchSvgUrl(value: string): Promise<string> {
+  const url = safeUrl(value); if (!browser().document || !url) throw new Error('Usá una URL HTTP o HTTPS válida en el navegador.');
+  type Response = { ok: boolean; url?: string; headers: { get(name: string): string | null }; body?: { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel(): Promise<void> } } | null };
+  const host = globalThis as unknown as { fetch(url: string, options: { credentials: string; signal: unknown }): Promise<Response>; AbortController: new () => { signal: unknown; abort(): void }; TextDecoder: new () => { decode(value: Uint8Array): string } };
+  const abort = new host.AbortController(), timeout = setTimeout(() => abort.abort(), 10000);
+  try {
+    const response = await host.fetch(url, { credentials: 'omit', signal: abort.signal });
+    if (!response.ok || response.url && !safeUrl(response.url)) throw new Error('No se pudo cargar el SVG.');
+    if (Number(response.headers.get('content-length')) > SVG_LIMITS.bytes) throw new Error('El SVG supera 64 KB.');
+    const reader = response.body?.getReader(); if (!reader) throw new Error('No se pudo leer el SVG.');
+    const chunks: Uint8Array[] = []; let bytes = 0;
+    for (;;) { const part = await reader.read(); if (part.done) break; if (!part.value) continue; bytes += part.value.byteLength; if (bytes > SVG_LIMITS.bytes) { await reader.cancel(); throw new Error('El SVG supera 64 KB.'); } chunks.push(part.value); }
+    const content = new Uint8Array(bytes); let offset = 0; for (const chunk of chunks) { content.set(chunk, offset); offset += chunk.byteLength; }
+    return sanitizeSvg(new host.TextDecoder().decode(content)).svg;
+  } finally { clearTimeout(timeout); }
+}
+/** Safe markup is validated again at the rendering boundary, including custom-pack data. */
+export function WebSvg({ svg, color, label }: { svg: string; color: string; label: string }) {
+  if (Platform.OS !== 'web') return null;
+  let safe: string; try { safe = sanitizeSvg(svg).svg.replaceAll('currentColor', color); } catch { return null; }
+  return React.createElement('img', { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(safe)}`, alt: label, draggable: false, style: { display: 'block', width: '100%', height: '100%', objectFit: 'contain', userSelect: 'none' } });
+}
 export function attachWheel(element: unknown, handler: (e: { x: number; y: number; dx: number; dy: number; command: boolean }) => void) {
   const node = element as BrowserElement | null; if (!browser().document || !node?.addEventListener) return () => {};
   const listener = (e: BrowserKeyEvent) => {
     // An active player, page or resized card scrolls independently; command-wheel still zooms the canvas.
     if (e.target?.closest('[id^="lienzo-interactive-surface-"],[id^="lienzo-interactive-range-"]')) return;
-    if (!e.ctrlKey && !e.metaKey && e.target?.closest('video,audio,iframe,[id^="lienzo-interactive-"],[id^="lienzo-scroll-"]')) return;
+    const target = pointerElement(e.target);
+    const legacy = target?.closest?.('[id^="lienzo-interactive-"]');
+    const active = target?.closest?.('[data-lienzo-interacting="true"],[id^="lienzo-using-"]');
+    if (!e.ctrlKey && !e.metaKey && (active || legacy && !/^lienzo-interactive-(frame|media|video)-/.test(legacy.id ?? ''))) return;
     const origin = node.getBoundingClientRect(); handler({ x: e.clientX - origin.left, y: e.clientY - origin.top, dx: e.deltaX, dy: e.deltaY, command: e.ctrlKey || e.metaKey }); e.preventDefault();
   };
   node.addEventListener('wheel', listener); return () => node.removeEventListener('wheel', listener);
@@ -113,9 +163,9 @@ export function attachWheel(element: unknown, handler: (e: { x: number; y: numbe
 // `onEnd` receives the release velocity in px/ms (zero when the pointer had stopped), so the canvas can keep gliding.
 export function attachMiddlePan(element: unknown, handler: (delta: { dx: number; dy: number }) => void, onEnd?: (velocity: { vx: number; vy: number }) => void) {
   const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
-  type PointerLike = BrowserKeyEvent & { button?: number };
+  type PointerLike = BrowserKeyEvent & { button?: number; pointerId?: number };
   let last: { x: number; y: number; t: number } | null = null, velocity = { vx: 0, vy: 0 };
-  const down = (e: PointerLike) => { if (e.button !== 1 || e.target?.closest('[id^="lienzo-interactive-renderer-"],[id^="lienzo-interactive-surface-"]')) return; last = { x: e.clientX, y: e.clientY, t: Date.now() }; velocity = { vx: 0, vy: 0 }; handler({ dx: 0, dy: 0 }); e.preventDefault(); e.stopPropagation(); };
+  const down = (e: PointerLike) => { if (e.button !== 1) return; last = { x: e.clientX, y: e.clientY, t: Date.now() }; velocity = { vx: 0, vy: 0 }; if (e.pointerId !== undefined) { try { node.setPointerCapture?.(e.pointerId); } catch {} } handler({ dx: 0, dy: 0 }); e.preventDefault(); e.stopPropagation(); };
   const move = (e: PointerLike) => {
     if (!last) return; const now = Date.now(), dx = e.clientX - last.x, dy = e.clientY - last.y, dt = Math.max(1, now - last.t);
     velocity = { vx: .6 * dx / dt + .4 * velocity.vx, vy: .6 * dy / dt + .4 * velocity.vy }; handler({ dx, dy }); last = { x: e.clientX, y: e.clientY, t: now }; e.preventDefault();
@@ -173,6 +223,81 @@ export function isDragHandle(target: unknown): boolean {
   const element = node?.nodeType === 3 ? node.parentElement : node;
   const handle = element?.closest?.('[id^="lienzo-grab-"]');
   return !!handle && (!element?.closest('button') || element.closest('button') === handle);
+}
+export type CanvasPointer = { x: number; y: number; shift: boolean; command: boolean; pointerId: number };
+export type ToolPointerHandlers = {
+  begin(point: CanvasPointer, entityId: string | null): boolean;
+  move(point: CanvasPointer): void;
+  end(point: CanvasPointer, cancelled: boolean): void;
+};
+/** Tools opt into each press. A rejected press remains available to cards, links and controls. */
+export function attachToolPointer(element: unknown, handlers: ToolPointerHandlers): () => void {
+  const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
+  type Event = BrowserKeyEvent & { button?: number; pointerId?: number };
+  let current: CanvasPointer | null = null;
+  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, pointerId: e.pointerId ?? 0 });
+  const down = (e: Event) => {
+    if (e.button !== 0 || pointerElement(e.target)?.closest?.('[id^="lienzo-tools"],[id^="lienzo-interaction-exit-"]')) return;
+    const id = pointerElement(e.target)?.closest?.('[id^="lienzo-entity-"]')?.id?.slice('lienzo-entity-'.length) ?? null, p = point(e);
+    if (!handlers.begin(p, id)) return;
+    current = p; try { node.setPointerCapture?.(p.pointerId); } catch {} e.preventDefault(); e.stopPropagation();
+  };
+  const move = (e: Event) => { if (!current || current.pointerId !== (e.pointerId ?? 0)) return; current = point(e); handlers.move(current); e.preventDefault(); e.stopPropagation(); };
+  const finish = (cancelled: boolean) => { const p = current; current = null; if (!p) return; try { node.releasePointerCapture?.(p.pointerId); } catch {} handlers.end(p, cancelled); if (!cancelled) swallowClick(); };
+  const up = (e: Event) => { if (!current || current.pointerId !== (e.pointerId ?? 0)) return; current = point(e); finish(false); e.preventDefault(); e.stopPropagation(); };
+  const cancel = () => finish(true);
+  const key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && current) { cancel(); e.preventDefault(); e.stopPropagation(); } };
+  node.addEventListener('pointerdown', down, true); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true);
+  return () => { cancel(); node.removeEventListener('pointerdown', down, true); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
+}
+function pointerElement(target: unknown): BrowserElement | null {
+  const node = target as (BrowserElement & { nodeType?: number; parentElement?: BrowserElement }) | null;
+  return node?.nodeType === 3 ? node.parentElement ?? null : node;
+}
+/** Editing inputs keep their drag; passive text, buttons and SVG geometry allow threshold-based entity drag. */
+export function isEditingTarget(target: unknown): boolean {
+  if (pointerElement(target)?.closest?.('[id^="lienzo-grab-"]') && !pointerElement(target)?.closest?.('input,textarea,[contenteditable="true"]')) return false;
+  return Platform.OS === 'web' && !!pointerElement(target)?.closest?.('input,textarea,select,[contenteditable="true"],[data-lienzo-interacting="true"],[id^="lienzo-using-"],iframe,video,audio,[id^="lienzo-interactive-range-"],[id^="lienzo-interactive-surface-"]');
+}
+export type EntityPointerHandlers = {
+  enabled(): boolean;
+  start(id: string, point: CanvasPointer): void;
+  move(point: CanvasPointer): void;
+  end(cancelled: boolean, velocity: { vx: number; vy: number }): void;
+  edit?(id: string): void;
+};
+/** Capture only after movement, so ordinary clicks still reach all nested controls. */
+export function attachEntityDrag(element: unknown, handlers: EntityPointerHandlers, threshold = 4): () => void {
+  const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
+  type Event = BrowserKeyEvent & { button?: number; pointerId?: number; buttons?: number };
+  let pending: { id: string; start: CanvasPointer; last: CanvasPointer; time: number; active: boolean } | null = null;
+  let velocity = { vx: 0, vy: 0 };
+  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, pointerId: e.pointerId ?? 0 });
+  const entity = (e: Event) => pointerElement(e.target)?.closest?.('[id^="lienzo-entity-"]')?.id?.slice('lienzo-entity-'.length);
+  const down = (e: Event) => {
+    if (e.button !== 0 || !handlers.enabled() || isEditingTarget(e.target) || pointerElement(e.target)?.closest?.('[id^="lienzo-interactive-resize-"],[id^="lienzo-link-handle-"]')) return;
+    const id = entity(e); if (!id) return;
+    const p = point(e); pending = { id, start: p, last: p, time: Date.now(), active: false }; velocity = { vx: 0, vy: 0 };
+  };
+  const move = (e: Event) => {
+    const state = pending; if (!state || (e.pointerId ?? 0) !== state.start.pointerId) return;
+    const p = point(e), now = Date.now(), dt = Math.max(1, now - state.time);
+    if (!state.active && Math.hypot(p.x - state.start.x, p.y - state.start.y) < threshold) return;
+    if (!state.active) { state.active = true; try { node.setPointerCapture?.(p.pointerId); } catch {} handlers.start(state.id, state.start); }
+    velocity = { vx: .6 * (p.x - state.last.x) / dt + .4 * velocity.vx, vy: .6 * (p.y - state.last.y) / dt + .4 * velocity.vy };
+    state.last = p; state.time = now; handlers.move(p); e.preventDefault(); e.stopPropagation();
+  };
+  const finish = (cancelled: boolean) => {
+    const state = pending; pending = null; if (!state?.active) return;
+    try { node.releasePointerCapture?.(state.start.pointerId); } catch {}
+    handlers.end(cancelled, Date.now() - state.time > 80 ? { vx: 0, vy: 0 } : velocity); if (!cancelled) swallowClick();
+  };
+  const up = (e: Event) => { if (pending && (e.pointerId ?? 0) === pending.start.pointerId) { const active = pending.active; finish(false); if (active) { e.preventDefault(); e.stopPropagation(); } } };
+  const cancel = () => finish(true);
+  const key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && pending) { cancel(); e.preventDefault(); e.stopPropagation(); } };
+  const edit = (e: Event) => { if (isEditingTarget(e.target)) return; const id = entity(e); if (id && handlers.edit) { handlers.edit(id); } };
+  node.addEventListener('pointerdown', down, true); node.addEventListener('dblclick', edit); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true);
+  return () => { cancel(); node.removeEventListener('pointerdown', down, true); node.removeEventListener('dblclick', edit); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
 }
 export function focusInput(element: unknown) {
   const node = element as BrowserElement | null;
@@ -480,4 +605,84 @@ export function WebRange({ id, label, min, max, step, value, disabled, color, on
     onPointerUp: (e: { currentTarget: { value: string } }) => onSettle(read(e)), onPointerCancel: (e: { currentTarget: { value: string } }) => onSettle(read(e)),
     onKeyUp: (e: { key: string; currentTarget: { value: string } }) => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) onSettle(read(e)); },
   });
+}
+
+export type VectorPath = { d: string; color: string; weight: number; fill?: string; dash?: string; hit?: boolean };
+/** Shape geometry uses browser SVG only here; native components render their own geometric fallback. */
+export function WebVectors({ width, height, paths, label, scale = 1, onPress, onHover }: { width: number; height: number; paths: readonly VectorPath[]; label: string; scale?: number; onPress?: (point?: CanvasPointer) => void; onHover?: (inside: boolean) => void }) {
+  if (Platform.OS !== 'web') return null;
+  return React.createElement('svg', { width:'100%',height:'100%',viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':label,style:{overflow:'visible',pointerEvents:'none'} }, ...paths.flatMap((path,i) => [
+    React.createElement('path',{key:`paint-${i}`,d:path.d,fill:path.fill??'none',stroke:path.color,strokeWidth:path.weight,strokeDasharray:path.dash,strokeLinecap:'round',strokeLinejoin:'round',vectorEffect:'non-scaling-stroke',style:{pointerEvents:'none'}}),
+    ...(path.hit===false?[]:[React.createElement('path',{key:`hit-${i}`,d:path.d,fill:path.fill&&path.fill!=='none'?'transparent':'none',stroke:'transparent',strokeWidth:16/Math.max(.01,scale),style:{pointerEvents:path.fill&&path.fill!=='none'?'all':'stroke',cursor:'grab'},onClick:(e:{stopPropagation():void;clientX:number;clientY:number;shiftKey:boolean;ctrlKey:boolean;metaKey:boolean})=>{e.stopPropagation();onPress?.({x:e.clientX,y:e.clientY,shift:e.shiftKey,command:e.ctrlKey||e.metaKey,pointerId:0});},onPointerEnter:()=>onHover?.(true),onPointerLeave:()=>onHover?.(false)})]),
+  ]));
+}
+
+export function attachEditorKeys(element: unknown, confirm:()=>void, cancel:()=>void):()=>void {
+  const node=element as BrowserElement|null;if(!browser().document||!node?.addEventListener)return()=>{};
+  const key=(e:BrowserKeyEvent)=>{if(e.key==='Escape'||e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();e.stopPropagation();if(e.key==='Escape')cancel();else confirm();}};
+  node.addEventListener('keydown',key,true);return()=>node.removeEventListener('keydown',key,true);
+}
+export function attachCanvasKeys(element:unknown,handler:(key:string,typing:boolean)=>boolean,temporaryHand:(active:boolean)=>void):()=>void {
+  const node=element as BrowserElement|null,doc=browser().document;if(!doc||!node?.addEventListener)return()=>{};let space=false;
+  const down=(e:BrowserKeyEvent)=>{if(pointerElement(e.target)?.closest?.('input,textarea,select,[contenteditable="true"],iframe,video,audio,[id^="lienzo-interactive-"],[id^="lienzo-using-"],[data-lienzo-interacting="true"]'))return;if(e.key===' '){if(!space){space=true;temporaryHand(true);}e.preventDefault();e.stopPropagation();return;}if(!e.ctrlKey&&!e.metaKey&&handler(e.key,e.key.length===1)){e.preventDefault();e.stopPropagation();}};
+  const up=(e:BrowserKeyEvent)=>{if(e.key===' '&&space){space=false;temporaryHand(false);e.preventDefault();}};
+  const cancel=()=>{if(space){space=false;temporaryHand(false);}};
+  node.addEventListener('keydown',down,true);doc.addEventListener('keyup',up,true);doc.addEventListener('visibilitychange',cancel);return()=>{cancel();node.removeEventListener('keydown',down,true);doc.removeEventListener('keyup',up,true);doc.removeEventListener('visibilitychange',cancel);};
+}
+
+/** Library clicks use normal controls. Only an actual drag creates a ghost and consumes the release. */
+export function attachLibraryDrag(element: unknown, handlers: { enabled(): boolean; preview(id: string): { svg: string; color: string } | undefined; drop(id: string, page: { x: number; y: number }): void }): () => void {
+  const node = element as BrowserElement | null, doc = browser().document;
+  if (!doc || !node?.addEventListener) return () => {};
+  type Event = BrowserKeyEvent & { button?: number; pointerId?: number };
+  let state: { id: string; x: number; y: number; pointer: number; active: boolean } | null = null, ghost: BrowserElement | null = null;
+  const cancel = () => { if (state?.active) { try { node.releasePointerCapture?.(state.pointer); } catch {} } state = null; ghost?.remove(); ghost = null; };
+  const down = (e: Event) => {
+    if (e.button !== 0 || !handlers.enabled()) return;
+    const id = pointerElement(e.target)?.closest?.('[id^="lienzo-library-icon-"]')?.id?.slice('lienzo-library-icon-'.length);
+    if (id) state = { id, x: e.clientX, y: e.clientY, pointer: e.pointerId ?? 0, active: false };
+  };
+  const move = (e: Event) => {
+    if (!state || state.pointer !== (e.pointerId ?? 0)) return;
+    if (!handlers.enabled()) { cancel(); return; }
+    if (!state.active && Math.hypot(e.clientX - state.x, e.clientY - state.y) < 4) return;
+    if (!state.active) {
+      state.active = true; try { node.setPointerCapture?.(state.pointer); } catch {}
+      const image = handlers.preview(state.id);
+      if (image) { try { ghost = doc.createElement('img'); ghost.setAttribute('src', `data:image/svg+xml;charset=utf-8,${encodeURIComponent(sanitizeSvg(image.svg).svg.replace(/currentColor/g, image.color))}`); ghost.setAttribute('aria-hidden', 'true'); doc.body.appendChild(ghost); } catch { ghost?.remove(); ghost = null; } }
+    }
+    ghost?.setAttribute('style', `position:fixed;left:${e.clientX - 48}px;top:${e.clientY - 48}px;width:96px;height:96px;opacity:.55;pointer-events:none;z-index:2147483647`);
+    e.preventDefault(); e.stopPropagation();
+  };
+  const up = (e: Event) => {
+    if (!state || state.pointer !== (e.pointerId ?? 0)) return;
+    const held = state; cancel(); if (!held.active) return;
+    e.preventDefault(); e.stopPropagation(); swallowClick();
+    const rect = doc.getElementById?.('lienzo-canvas-viewport')?.getBoundingClientRect();
+    if (handlers.enabled() && rect?.width && rect.height && e.clientX >= rect.left && e.clientY >= rect.top && e.clientX <= rect.left + rect.width && e.clientY <= rect.top + rect.height) handlers.drop(held.id, { x: e.clientX, y: e.clientY });
+  };
+  const key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && state) { cancel(); e.preventDefault(); e.stopPropagation(); } };
+  node.addEventListener('pointerdown', down, true); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true);
+  return () => { cancel(); node.removeEventListener('pointerdown', down, true); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
+}
+
+/** Browser dismissal and keyboard focus for the canvas zoom menu. Native uses its controls directly. */
+export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () => void): () => void {
+  const node = element as BrowserElement | null, button = trigger as BrowserElement | null, doc = browser().document;
+  if (!doc || !node?.addEventListener) return () => {};
+  let prefix = '', typedAt = 0;
+  const items = () => Array.from(node.querySelectorAll?.('[role="menuitem"]') ?? []).filter(item => item.getAttribute?.('aria-disabled') !== 'true');
+  items()[0]?.focus?.();
+  const outside = (event: BrowserKeyEvent) => { if (!node.contains?.(event.target) && !button?.contains?.(event.target)) dismiss(); };
+  const key = (event: BrowserKeyEvent) => {
+    if (event.key === 'Escape') { dismiss(); button?.focus?.(); event.preventDefault(); event.stopPropagation(); return; }
+    if (!node.contains?.(event.target) || event.ctrlKey || event.metaKey) return;
+    const rows = items(), current = rows.indexOf(pointerElement(event.target)!); let next: BrowserElement | undefined;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') next = rows[(current + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length];
+    else if (event.key === 'Home' || event.key === 'End') next = rows[event.key === 'Home' ? 0 : rows.length - 1];
+    else if (event.key.length === 1) { const now = Date.now(); prefix = now - typedAt > tokens.menu.typeaheadMs ? event.key : prefix + event.key; typedAt = now; next = rows.find(row => row.getAttribute?.('aria-label')?.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())); }
+    if (next) { next.focus?.(); event.preventDefault(); event.stopPropagation(); }
+  };
+  doc.addEventListener('pointerdown', outside, true); doc.addEventListener('keydown', key, true);
+  return () => { doc.removeEventListener('pointerdown', outside, true); doc.removeEventListener('keydown', key, true); };
 }

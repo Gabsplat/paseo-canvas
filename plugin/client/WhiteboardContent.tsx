@@ -1,0 +1,50 @@
+import React from 'react';
+import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Pressable, View, type GestureResponderEvent } from 'react-native';
+import type { CanvasBlock } from '../shared/model';
+import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema, type WbRenderer } from '../shared/whiteboard';
+import { Txt, useUI } from './ui';
+import { WebSvg, WebVectors, type CanvasPointer, type VectorPath } from './web';
+import { shapePath, strokePath, arrowPath, lineEnds } from './whiteboard-geometry';
+import { wbColor, wbWeight, wbFont } from './whiteboard-visuals';
+import { withAlpha } from './color';
+import { tokens } from './tokens';
+export function whiteboardLabel(block: CanvasBlock, kind: WbRenderer): string {
+  if (block.title) return block.title;
+  if (kind === 'wb-text') return String(block.data.text || 'Texto libre');
+  if (kind === 'wb-svg') return String(block.data.caption || 'Imagen SVG');
+  if (kind === 'wb-draw') return `Dibujo (${Array.isArray(block.data.strokes) ? block.data.strokes.length : 0} trazos)`;
+  return String(block.data.text || tokens.whiteboard.shapes.items.find(s => s.id === block.data.shape)?.label || 'Forma');
+}
+export type WhiteboardContentProps = { block: CanvasBlock; kind: WbRenderer; width: number; height: number; scale?: number; outline?: boolean; onSelect(event?: GestureResponderEvent): void; onHover?(inside: boolean): void; onMeasure?(height: number): void };
+export function WhiteboardContent({ block, kind, width, height, scale = 1, outline, onSelect, onHover, onMeasure }: WhiteboardContentProps) {
+  const u = useUI(), label = whiteboardLabel(block,kind);
+  const press = (p?: CanvasPointer) => onSelect(p ? { nativeEvent: {shiftKey:p.shift,metaKey:p.command},stopPropagation(){} } as unknown as GestureResponderEvent : undefined);
+  if (outline) return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onSelect} style={{minHeight:36,flexDirection:'row',alignItems:'center',gap:8}}><Icon name={tokens.whiteboard.types[kind].icon} size={16} color={u.c.foregroundMuted}/><Txt numberOfLines={1}>{label}</Txt></Pressable>;
+  if (kind === 'wb-text') {
+    const parsed = wbTextDataSchema.safeParse(block.data); if (!parsed.success) return <Txt kind="small">Texto no válido</Txt>;
+    const data=parsed.data, t=tokens.whiteboard.text[data.scale];
+    return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onSelect} onHoverIn={()=>onHover?.(true)} onHoverOut={()=>onHover?.(false)} style={{width:'100%'}}><Txt onLayout={e=>onMeasure?.(e.nativeEvent.layout.height)} style={{fontFamily:wbFont(data.font),fontSize:t.fontSize+(data.font==='mono'?-1:0),lineHeight:t.lineHeight,fontWeight:'400',color:wbColor(data.color,u),textAlign:data.align}}>{data.text}</Txt></Pressable>;
+  }
+  if (kind === 'wb-svg') {
+    const parsed=wbSvgDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">SVG no válido</Txt>;const data=parsed.data;
+    return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onSelect} onHoverIn={()=>onHover?.(true)} onHoverOut={()=>onHover?.(false)} style={{width:'100%',height:'100%'}}>{u.layout.platform==='web'?<WebSvg svg={data.svg} color={wbColor(data.color,u)} label={label}/>:<View style={{flex:1,borderStyle:'dashed',borderWidth:1,borderColor:u.c.foregroundMuted,justifyContent:'center'}}><Txt kind="small">{label}. Imagen SVG; se ve en la versión web</Txt></View>}{!!data.caption&&<View pointerEvents="none" style={{position:'absolute',top:'100%',left:0,right:0,paddingTop:4}}><Txt kind="small" muted numberOfLines={1} style={{textAlign:'center'}}>{data.caption}</Txt></View>}</Pressable>;
+  }
+  let paths: VectorPath[]=[];
+  if (kind === 'wb-draw') {
+    const parsed=wbDrawDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">Dibujo no válido</Txt>;const data=parsed.data;
+    paths=data.strokes.map(s=>({d:strokePath(s.points.map((v,i)=>v*(i%2?height/data.extent.height:width/data.extent.width))),color:wbColor(s.color,u),weight:wbWeight(s.weight)}));
+    if(u.layout.platform!=='web')return <Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:u.c.foregroundMuted}}><Txt kind="small">Dibujo; se ve en la versión web</Txt></Pressable>;
+    return <WebVectors width={width} height={height} paths={paths} label={label} scale={scale} onPress={press} onHover={onHover}/>;
+  }
+  const parsed=wbShapeDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">Forma no válida</Txt>;const data=parsed.data,color=wbColor(data.color,u),weight=wbWeight(data.weight);
+  const fill=data.shape==='line'||data.fill==='none'?'none':data.fill==='wash'?withAlpha(color,.14):color;
+  const dash=data.stroke==='solid'?undefined:tokens.whiteboard.dash[data.stroke].map(n=>n*weight/2.5).join(' ');
+  paths=[{d:shapePath(data,width,height),color,weight,fill,dash},{d:arrowPath(data,width,height,weight),color,weight,hit:false}];
+  let visual:React.ReactNode;
+  if(u.layout.platform==='web')visual=<WebVectors width={width} height={height} paths={paths} label={label} scale={scale} onPress={press} onHover={onHover}/>;
+  else if(['rect','rounded','ellipse','diamond'].includes(data.shape))visual=<Pressable onPress={onSelect} style={{width:'100%',height:'100%',borderWidth:weight,borderColor:color,borderStyle:data.stroke==='solid'?'solid':'dashed',borderRadius:data.shape==='ellipse'?Math.max(width,height):data.shape==='rounded'?16:0,backgroundColor:fill==='none'?'transparent':fill,transform:data.shape==='diamond'?[{rotate:'45deg'},{scale:.707}]:undefined}}/>;
+  else if(data.shape==='line'){const [a,b]=lineEnds(data,width,height);visual=<Pressable onPress={onSelect} style={{width:'100%',height:'100%',justifyContent:'center'}}><View style={{position:'absolute',left:a.x,top:a.y,width:Math.hypot(b.x-a.x,b.y-a.y),height:weight,backgroundColor:color,transformOrigin:'top left',transform:[{rotate:`${Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI}deg`}]}}/></Pressable>;}
+  else visual=<Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:color}}><Txt kind="small">{label}; se ve en la versión web</Txt></Pressable>;
+  return <View pointerEvents="box-none" style={{width:'100%',height:'100%'}}>{visual}{!!data.text&&data.shape!=='line'&&<Pressable onPress={onSelect} style={{position:'absolute',left:12,right:12,top:Math.max(0,height/2-10.5),alignItems:'center'}}><Txt style={{fontSize:15,lineHeight:21,fontWeight:'500',textAlign:'center',color:data.fill==='solid'?u.c.surface0:color}}>{data.text}</Txt></Pressable>}</View>;
+}
