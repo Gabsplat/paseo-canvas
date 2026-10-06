@@ -1,0 +1,63 @@
+# Ola 2 de aprendizaje
+
+Estado: pendiente de autorización del dueño. No se han lanzado agentes de esta ola.
+Prerequisito: cimientos integrado en `aprendizaje`, con typecheck y pruebas completos.
+
+## Forma de trabajo
+
+Un ingeniero GPT 6.1 Sol con pensamiento High por renderer, en un worktree propio creado desde
+`aprendizaje`. Ramas bajo `lienzo/`; nunca `aprendizaje/`. Máximo tres ingenieros activos además
+del coordinador. No agentes Claude, push, instalación del plugin, reinicio del daemon o cambios
+de exposición. El checkout principal queda fuera del trabajo.
+
+Cada ingeniero lee `AGENTS.md`, `docs/design.md` y `docs/learning-blocks.md`. Posee exclusivamente
+su archivo compartido de renderer, su archivo cliente y sus pruebas. El coordinador añade las
+líneas de registro, resuelve integraciones y conserva verde la rama después de cada fusión.
+Si un renderer necesita un cambio de contrato, presenta una necesidad concreta antes de editar
+el núcleo. No modifica archivos de otro renderer.
+
+La especificación visual la terminó Sol con autorización del dueño, sobre material parcial de
+Opus. No equivale a una implementación ni a una revisión final de Opus.
+
+## Entregas en orden de prioridad
+
+| Prioridad | Entrega | Comportamiento que debe probarse |
+| --- | --- | --- |
+| 1 | Apuesta | Compromiso previo de elección, estimación o curva; resultado oculto antes del compromiso; comparación y un evento settled por intento. Referencias ausentes y reinicio coherentes. |
+| 2 | Gráfica de funciones | expr.ts, variables compartidas en vivo, huecos de dominio, familia opcional y lectura de traza. El slider vecino actualiza la figura sin esperar a la red. |
+| 3 | Figura por pasos | Una figura con parches declarativos validados, avance/retroceso, descripción y cambios destacados; reproducción opcional. |
+| 4 | Flujo animado | Eventos sobre nodos y conexiones reales, timeline y referencias ausentes. Signo/demora mediante un esquema explícito, sin claves ajenas al modelo de enlaces. |
+| 5 | Shader GLSL | Uniforms declarados, binding de variables, errores de compilación visibles, recursos liberados y fallback sin WebGL. |
+| 6 | Imagen/texto anotado | Un esquema de anclaje, hotspots accesibles, capas y anclas invalidadas por cambios del contenido. |
+| 7 | Trazos | Puntos acotados, autor distinguible, dibujo aislado de gestos de cámara y límites de tamaño efectivos. |
+| 8 | Secuenciador | Escala fija, patrón y tempo, audio tras gesto real y silencio al salir; ningún tick enviado al asistente. |
+
+Después de los renderers: implementar las islas, toolbar de selección, edición en lugar y
+popovers conforme a `docs/design.md`, reemplazando el inspector acoplado. Esta refactorización
+es una novena entrega; no debe confundirse con la documentación de diseño ya terminada.
+
+## Alcance y control de coste
+
+Estimación de tamaño, antes de implementar: ocho módulos con sus pruebas y una refactorización
+principal de UI; aproximadamente 4.000–7.000 líneas entre código y pruebas. La cifra no es un
+presupuesto monetario ni una promesa de duración. Gate, flujo y trazos tienen la mayor incertidumbre
+por visibilidad de resultados, integración con el grafo y límites de almacenamiento.
+
+Propuesta económica: validar primero Apuesta y Gráfica, revisar el contrato con ese piloto y
+continuar con los otros seis en tandas de hasta tres. Evitar ocho agentes simultáneos y reabrir
+un renderer solo por un fallo concreto. Cada fusión pasa typecheck y la suite completa una vez;
+se repiten pruebas solo si aparece un cambio o un fallo nuevo.
+
+## Reglas de aceptación
+
+- JSON declarativo; ningún JS ni HTML provisto por el asistente. La única excepción es el fragment
+  shader GLSL, con errores de compilación capturados.
+- Una pregunta u objetivo visible, pocos controles y Reiniciar visible por bloque manipulable.
+- Respuesta gráfica en cada frame de interacción. El asistente recibe solo valores settled,
+  intervalos explorados y apuesta frente a resultado; pistas antes que soluciones.
+- Web/escritorio interactivo y alternativa native estática, identificada como tal.
+- Respetar 1 MiB por documento y los límites explícitos del canal runtime. Los trazos no pueden
+  usar ese canal para eludir los límites.
+- Validación real de persistencia, conflictos, grupos, packs y comportamiento MCP conservada.
+- Las pruebas de lógica son headless. GUI y capturas solo dentro de omabox. La inspección visual
+  final es una comprobación separada y se reporta como omitida si no se realiza.
