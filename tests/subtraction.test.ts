@@ -7,6 +7,8 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as logic from '../plugin/client/logic';
+import * as panelActions from '../plugin/client/panel-actions';
+import * as learning from '../plugin/shared/learning';
 import { tokens } from '../plugin/client/tokens';
 import { canvasPreferences } from '../plugin/shared/preferences';
 import { builtinTypes, builtinTemplates, builtinPacks } from '../plugin/shared/builtins';
@@ -23,7 +25,7 @@ function runtime(controller: any) {
     createContext: () => ({ Provider: 'Provider' }),
     useState: (initial: any) => { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], (value: any) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }]; },
     useRef: (initial: any) => { const index = cursor++; return slots[index] ??= { current: initial }; },
-    useMemo: (create: any) => create(), useEffect: () => {},
+    useMemo: (create: any) => create(), useEffect: () => {}, useContext: () => null,
   };
   const control = (name: string) => Object.defineProperty(() => null, 'name', { value: name });
   const modal = Object.assign(control('Modal'), { Content: control('Content') });
@@ -34,6 +36,9 @@ function runtime(controller: any) {
     '@getpaseo/plugin/client': { useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }) },
     './useCanvas': { useCanvas: () => controller }, './tokens': { tokens }, './logic': logic,
     '../shared/preferences': { canvasPreferences }, './web': {}, './motion': {},
+    './panel-actions': panelActions, '../shared/learning': learning,
+    './DocumentActions': { DocumentActions: control('DocumentActions') },
+    './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') },
     './Canvas': { Canvas: control('Canvas') }, '../shared/model': { blockTypeSchema }, './Blocks': { visual: () => ({ icon: 'StickyNote', tone: 'neutro' }), Delivery: control('Delivery'), ConnectionRows: control('ConnectionRows') },
     './Links': { linkTone: () => 'neutro' }, './color': { withAlpha: (color: string) => color, isDark: () => false },
     './AgentModal': { AgentModal: control('AgentModal') }, './Onboarding': { Onboarding: control('Onboarding') },
@@ -55,6 +60,7 @@ function runtime(controller: any) {
   Object.assign(modules['./ui'], { Modal: modal, friendlyError: realUI.friendlyError, useUI: () => ({ compact: false, host: { id: 'host' }, layout: { platform: 'web' }, font: () => ({}), c: {}, wash: () => '', tone: () => '' }) });
   modules['./Catalog'] = { Catalog: control('Catalog'), PackImport: control('PackImport'), PackExport: control('PackExport') };
   modules['./Inspector'] = { Inspector: control('Inspector') };
+  modules['./SelectionActions'] = load('SelectionActions');
   const panel = load('Panel').LienzoPanel({ theme: {}, layout: {}, host: { id: 'host' }, workspaceId: 'workspace' }).props.children[0];
   return { render: () => { cursor = 0; return panel.type(panel.props); }, load, friendlyError: realUI.friendlyError };
 }
@@ -97,7 +103,7 @@ test('new canvas is one click with no fields; title saves in place and document 
   tree = r.render();
   assert.ok(nodes(tree, true).some(node => node.type?.name === 'Modal' && node.props.title === 'Ajustes del lienzo'));
 });
-test('floating panel keeps composer visible, opens details explicitly and passes contextual selection toolbar to Canvas', () => {
+test('floating panel keeps composer visible and opens contextual actions explicitly through the toolbar passed to Canvas', () => {
   const f = fixture(), r = runtime(f.controller);
   let tree = r.render(); tree.props.onLayout({ nativeEvent: { layout: { width: 1280, height: 800 } } }); tree = r.render();
   const types = () => nodes(tree, true).map(node => node.type?.name);
@@ -107,9 +113,13 @@ test('floating panel keeps composer visible, opens details explicitly and passes
   f.controller.selection = ['note']; tree = r.render();
   assert.ok(!types().includes('Inspector'));
   const toolbar = find(tree, 'Canvas').props.selectionToolbar;
-  assert.ok(find(toolbar, 'Button', 'Preguntar'));
-  find(toolbar, 'IconButton', 'Más').props.onPress(); tree = r.render();
-  assert.ok(types().includes('Inspector'));
+  const actions = toolbar.type(toolbar.props);
+  assert.ok(nodes(actions).some(node => node.props.accessibilityLabel === 'Preguntar'));
+  nodes(actions).find(node => node.props.accessibilityLabel === 'Más')!.props.onPress({ stopPropagation() {} }); tree = r.render();
+  const contextual = find(tree, 'Canvas').props.selectionToolbar;
+  assert.equal(contextual.props.popup.kind, 'more');
+  assert.ok(nodes(contextual.type(contextual.props)).some(node => node.props.accessibilityLabel === 'Datos…'));
+  assert.ok(!types().includes('Inspector'));
   f.controller.selection = []; f.controller.events = [{ id: 'pending', status: 'pending' }]; tree = r.render();
   assert.ok(types().includes('ContextTray'));
 });
