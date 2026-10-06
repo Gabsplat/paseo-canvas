@@ -8,6 +8,8 @@ import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows } from './Blocks';
 import { usePresentation } from './usePresentation';
+import { prepareLinkMotion } from './link-motion';
+import { getClientRenderer } from './renderers';
 import { LinkLayer, type LinkLayerHandle, type LinkDraft } from './Links';
 import { MagnetCue } from './MagnetCue';
 import { Chip, IconButton, Txt, useUI } from './ui';
@@ -81,6 +83,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const [resizeId, setResizeId] = useState<string | null>(null);
   const resize = useRef<{ id: string; documentId: string; start: Box; pointer: Point; next: { width: number; height: number }; proportional: boolean; held: boolean; parents: string[] } | null>(null);
   useReducedMotion();
+  const motionSources = useMemo(() => c.catalog ? prepareLinkMotion(c.view!.document, c.catalog, getClientRenderer) : undefined, [c.view!.document, c.catalog]);
+  const linkMotion = useCallback((epochMs: number) => motionSources?.(c.learning.getSnapshot(), epochMs, presentation?.hiddenBy ?? new Map()) ?? { tokens: [], playing: false }, [motionSources, c.learning, presentation?.hiddenBy]);
   const viewport = useRef<View>(null), marks = useRef<View>(null), links = useRef<LinkLayerHandle>(null), vp = useRef<Point | null>(null);
   const layout = useMemo(() => layoutCanvas(doc, heights, c.catalog, size.width || undefined), [doc, heights, c.catalog, size.width]), rects = layout.rects, index = layout.index;
   const roots = [...doc.groups, ...doc.blocks].filter(e => !e.parentGroupId).map(e => rects.get(e.id)!);
@@ -502,7 +506,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
         {selected && <View pointerEvents="none" style={{ position: 'absolute', inset: -3, borderRadius: radius + 3, borderWidth: 3, borderColor: u.halo }} />}
       </Animated.View>; })}
       {!drag && doc.groups.filter(g => g.layout?.mode === 'flow' && !g.collapsed && !rects.get(g.id)?.hidden).flatMap(g => [...g.blockIds, ...g.groupIds].filter(id => !index.entities.get(id)?.position).slice(0, -1).map(id => { const r = rects.get(id)!; return <View key={`${g.id}:${id}`} pointerEvents="none" style={{ position: 'absolute', left: r.x + r.width + 7 - bound.x, top: r.y + 20 - bound.y }}><Icon name="ChevronRight" size={14} color={u.c.foregroundMuted} /></View>; }))}
-      <LinkLayer handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
+      <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
       {doc.blocks.filter(b => !rects.get(b.id)!.hidden).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
         return <BlockItem key={b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) ? resizeHandlers(b.id) : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!lit(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
       <View ref={marks} pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: bound.width, height: bound.height, zIndex: 4 }} />

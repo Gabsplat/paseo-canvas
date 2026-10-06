@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { safeUrl } from './logic';
 import { tokens } from './tokens';
 import { frameSandbox } from './media';
+import type { LinkMotionSample } from './renderers/types';
 interface BrowserEventTarget {
   addEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
   removeEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
@@ -173,15 +174,17 @@ export function focusInput(element: unknown) {
 // owned by this module. Components hand over resolved geometry and colours; nothing here reads the theme or the DOM
 // outside the element it was given. On native `mountLinkLayer` returns null and the caller draws elbow Views.
 export type LinkDraw = {
+  linkIds?: readonly string[];
   key: string; d: string; color: string; width: number; dash: string; opacity: number; interactive: boolean; title: string; shift?: { x: number; y: number };
   arrow: { x: number; y: number; side: 'top' | 'bottom' | 'left' | 'right'; length: number; width: number } | null;
   label: { x: number; y: number; text: string; color: string } | null;
   badge: { x: number; y: number; text: string; fill: string; color: string; radius: number } | null;
 };
-export type LinkScene = { draws: LinkDraw[]; origin: { x: number; y: number }; halo: string; font: string; labelSize: number; badgeSize: number; hitWidth: number };
+export type LinkScene = { draws: LinkDraw[]; origin: { x: number; y: number }; halo: string; font: string; labelSize: number; badgeSize: number; hitWidth: number; motion?: (epochMs: number) => LinkMotionSample };
 interface SvgNode {
   setAttribute(name: string, value: string): void; removeAttribute(name: string): void; appendChild(child: SvgNode): void; remove(): void;
   addEventListener(name: string, listener: (event: { stopPropagation(): void; preventDefault(): void }) => void): void; textContent: string | null;
+  getTotalLength?(): number; getPointAtLength?(distance: number): { x: number; y: number };
 }
 type SvgHost = { document?: { createElementNS(namespace: string, tag: string): SvgNode } };
 /** `element` holds the lines (under the cards); `marksElement`, when given, holds labels and counts (over the cards). */
@@ -211,6 +214,51 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
     e = { group, line, hit, head, mark, label, badge, badgeDisc, badgeText, tip, seen: true, drawn: '' }; entries.set(key, e); return e;
   };
   const n = (value: number) => String(Math.round(value * 10) / 10);
+  const motionRoot = make('g', { 'pointer-events': 'none', 'data-lienzo-motion': 'true' }); marks.appendChild(motionRoot);
+  type MotionEntry = { group: SvgNode; symbol: SvgNode; label: SvgNode };
+  const motionEntries: MotionEntry[] = [], paths = new Map<string, { entry: Entry; draw: LinkDraw; length?: number }>();
+  const frameHost = globalThis as unknown as DrawingHost, page = browser().document;
+  let current: LinkScene | undefined, frame: number | undefined, destroyed = false, visible = !frameHost.IntersectionObserver;
+  const stop = () => { if (frame !== undefined) frameHost.cancelAnimationFrame(frame); frame = undefined; };
+  const clearMotion = (keep = 0) => { while (motionEntries.length > keep) motionEntries.pop()!.group.remove(); };
+  const renderMotion = () => {
+    stop();
+    if (destroyed || !visible || page?.hidden || !current?.motion) { clearMotion(); return; }
+    // RAF's argument is relative to navigation; the runtime anchor uses epoch time.
+    const sample = current.motion(Date.now()); let count = 0;
+    for (const token of sample.tokens.slice(0, 256)) {
+      const path = paths.get(token.linkId);
+      if (!path?.entry.line.getPointAtLength || !path.entry.line.getTotalLength || !Number.isFinite(token.progress) || token.progress < 0 || token.progress > 1) continue;
+      let point: { x: number; y: number };
+      try {
+        path.length ??= path.entry.line.getTotalLength();
+        if (!Number.isFinite(path.length) || path.length <= 0) continue;
+        point = path.entry.line.getPointAtLength(path.length * token.progress);
+      } catch { continue; }
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+      let node = motionEntries[count];
+      if (!node) {
+        const group = make('g'), symbol = make('path'), label = make('text', { x: '0', y: '-13', 'text-anchor': 'middle', 'paint-order': 'stroke', 'stroke-linejoin': 'round' });
+        group.appendChild(symbol); group.appendChild(label); motionRoot.appendChild(group); motionEntries.push(node = { group, symbol, label });
+      }
+      node.group.setAttribute('transform', `translate(${n(point.x + (path.draw.shift?.x ?? 0))} ${n(point.y + (path.draw.shift?.y ?? 0))})`);
+      node.group.setAttribute('data-kind', token.kind); node.group.setAttribute('data-link-id', token.linkId);
+      node.symbol.setAttribute('d', token.kind === 'message' ? 'M-6 -4 H6 V4 H-6 Z M-6 -4 L0 0 L6 -4' : token.kind === 'signal' ? 'M0 -6 L6 5 H-6 Z' : 'M-5 0 A5 5 0 1 0 5 0 A5 5 0 1 0 -5 0');
+      node.symbol.setAttribute('fill', current.halo); node.symbol.setAttribute('stroke', path.draw.color); node.symbol.setAttribute('stroke-width', '2');
+      const kind = token.kind === 'message' ? 'Mensaje' : token.kind === 'signal' ? 'Señal' : 'Valor';
+      node.label.textContent = `${kind}: ${Array.from(token.label).slice(0, 40).join('')}${token.sign === undefined ? '' : ` · ${token.sign === 1 ? '+' : '−'}`}${token.delay === undefined ? '' : ` · ${n(token.delay)} ms`}`;
+      node.label.setAttribute('fill', path.draw.color); node.label.setAttribute('stroke', current.halo); node.label.setAttribute('stroke-width', '4');
+      node.label.setAttribute('font-family', current.font); node.label.setAttribute('font-size', n(current.labelSize)); count++;
+    }
+    clearMotion(count);
+    if (sample.playing && frameHost.requestAnimationFrame) frame = frameHost.requestAnimationFrame(renderMotion);
+  };
+  const visibility = () => renderMotion();
+  page?.addEventListener('visibilitychange', visibility);
+  const observer = frameHost.IntersectionObserver ? new frameHost.IntersectionObserver(entries => {
+    visible = entries.some(entry => entry.isIntersecting); renderMotion();
+  }) : null;
+  observer?.observe(element);
   return {
     // One path per gesture. Updating it never walks the 150-card document or rewrites its existing connectors.
     preview(draw) {
@@ -219,11 +267,13 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
       if (draw.dash) draft.setAttribute('stroke-dasharray', draw.dash); else draft.removeAttribute('stroke-dasharray');
     },
     update(scene) {
+      current = scene; paths.clear();
       root.setAttribute('transform', `translate(${n(-scene.origin.x)} ${n(-scene.origin.y)})`);
       if (above) marks.setAttribute('transform', `translate(${n(-scene.origin.x)} ${n(-scene.origin.y)})`);
       entries.forEach(e => { e.seen = false; });
       for (const draw of scene.draws) {
         const e = entry(draw.key); e.seen = true;
+        for (const id of draw.linkIds ?? []) paths.set(id, { entry: e, draw });
         // While something is dragged this runs every frame: connectors that did not change are left alone.
         const drawn = JSON.stringify(draw) + scene.halo + scene.labelSize + scene.badgeSize + scene.hitWidth; if (drawn === e.drawn) continue; e.drawn = drawn;
         e.group.setAttribute('transform', draw.shift ? `translate(${n(draw.shift.x)} ${n(draw.shift.y)})` : '');
@@ -247,8 +297,9 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
         } else { e.badge.setAttribute('opacity', '0'); e.badgeText.textContent = ''; }
       }
       for (const [key, e] of entries) if (!e.seen) { e.group.remove(); e.mark.remove(); entries.delete(key); }
+      renderMotion();
     },
-    destroy() { svg.remove(); above?.remove(); entries.clear(); },
+    destroy() { destroyed = true; stop(); observer?.disconnect(); page?.removeEventListener('visibilitychange', visibility); clearMotion(); svg.remove(); above?.remove(); entries.clear(); paths.clear(); },
   };
 }
 

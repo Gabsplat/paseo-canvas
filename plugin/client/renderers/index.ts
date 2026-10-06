@@ -11,5 +11,12 @@ import { diagramRenderer } from './diagram'; registerClientRenderer(diagramRende
 import { controlsRenderer } from './controls'; registerClientRenderer(controlsRenderer);
 import { predictionGateRenderer } from './prediction-gate'; registerClientRenderer(predictionGateRenderer);
 import { functionPlotRenderer } from './function-plot'; registerClientRenderer(functionPlotRenderer);
+import { animatedFlowRenderer } from './animated-flow';
+import { simulateAnimatedFlow, tokensAt, flowTimeAt } from '../../shared/renderers/animated-flow';
+registerClientRenderer({ ...animatedFlowRenderer, prepareLinkMotion(data, document) {
+  const simulation = simulateAnimatedFlow(data, document);
+  return (runtime, epochMs) => Object.hasOwn(runtime, 'playhead') && typeof runtime.playhead === 'number' && Number.isFinite(runtime.playhead)
+    ? tokensAt(simulation, flowTimeAt(data, runtime, epochMs)) : [];
+} });
 export const getClientRenderer = (id?: string) => entries.find(entry => entry.id === id);
 export type { RendererProps, ClientRenderer, RendererVisual } from './types';

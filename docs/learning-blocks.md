@@ -228,6 +228,26 @@ CSS transforms do not notify ResizeObserver. Animated surfaces resample each fra
 Actual GPU/browser/native integration remains for coordinator verification; headless
 adapter tests use simulated host/context objects and do not open a GUI.
 
+### Motion over existing canvas links
+
+A client renderer may expose `prepareLinkMotion(data, readonlyDocument)` returning
+`(rawBlockRuntime, epochMs) => readonly LinkMotionToken[]`. Preparation runs once per
+authored document/catalog, so graph simulation does not run on each frame. A token is
+`{linkId, progress:0..1, kind:'message'|'signal'|'value', label, sign?:1|-1, delay?:ms}`.
+The coordinator registers this adapter; renderer modules do not edit Canvas or Links.
+The flow adapter samples the raw per-block runtime, not the RendererRuntime wrapper.
+Use epoch milliseconds (`Date.now()`), never the relative RAF callback time.
+
+Canvas samples optimistic runtime locally. Tokens follow the actual SVG path, including
+live drag geometry and expanded parallel-link strands. Message/envelope, signal/triangle
+and value/circle have distinct symbols and Spanish labels; declared sign/delay appear
+beside the payload. Hidden gate targets, adjacent paths and hidden flow blocks emit no
+visible tokens. Missing or collapsed internal paths are omitted; no replacement graph
+is invented. Paused scrubs draw once, playback draws via RAF, and hidden/offscreen canvas
+or unmount cancels that loop. Sampling never writes runtime or sends assistant events.
+At most 256 tokens are drawn across the canvas per frame; excess tokens are omitted in
+stable document/event order. Native retains static links and the honest block summary.
+
 ## Skeleton and verification
 
 ```ts

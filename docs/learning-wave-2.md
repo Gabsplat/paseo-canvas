@@ -9,7 +9,7 @@ typecheck y 116/116 pruebas verdes. La siguiente tanda es Figura por pasos, Fluj
 | Apuesta, integrada `b883b9d` | `lienzo/apuesta` · `lienzo-apuesta` | `e22e6698-4a82-4ca6-94e3-084bfc12a498`, finalizado |
 | Gráfica, integrada `51e8021` | `lienzo/grafica-funciones` · `lienzo-grafica-funciones` | `12de1ffe-f370-456d-9d91-064cbc1b7816`, finalizado |
 | Figura por pasos, en curso | `lienzo/figura-pasos` · `lienzo-figura-pasos` | `ed71567b-4481-4fcb-9fca-5307193521f1` |
-| Flujo animado, en curso | `lienzo/flujo-animado` · `lienzo-flujo-animado` | `20b41949-b66f-4a7f-a5bd-1681b68e3fd4` |
+| Flujo animado, integrado con puente Canvas/Links | `lienzo/flujo-animado` · `lienzo-flujo-animado`, entrega `781173b` | `20b41949-b66f-4a7f-a5bd-1681b68e3fd4`, finalizado |
 | Shader GLSL, en curso | `lienzo/shader-glsl` · `lienzo-shader-glsl` | `796bd056-4cca-4bcc-a0c4-dbce9ff2763e` |
 
 Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
@@ -26,7 +26,14 @@ Duplicación, inserción de plantillas y packs verifican referencias internas re
 referencias externas conservadas y runtime excluido. Revisión GUI/native real pendiente.
 La tanda actual parte de `25092f0`, con typecheck y 153/153 pruebas verdes. El adaptador
 expone `onVisibilityChange` para detener reproducción oculta y `maxPixelSize` para limitar
-resolución física. El coordinador desarrolla el puente de Flujo sobre conexiones reales.
+resolución física. Flujo está registrado y su puente dibuja tokens sobre paths reales,
+incluyendo enlaces paralelos y geometría durante arrastre. Filtra resultados ocultos de
+Apuesta y limita el dibujo a 256 tokens por frame; no guarda ni envía frames. Las pruebas
+de integración verifican runtime optimista, ocultamiento, duplicación de referencias,
+pausa/visibilidad y limpieza; la inspección browser/native real continúa pendiente.
+La integración de Flujo pasa typecheck y 169/169 pruebas, sin omitidas. Los primeros
+fallos del coordinador fueron de fixtures headless y del esquema del test de duplicación;
+se corrigieron antes de la validación completa.
 
 ## Forma de trabajo
 

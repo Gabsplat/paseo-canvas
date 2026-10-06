@@ -7,6 +7,7 @@ import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
 import { Txt, useUI } from './ui';
 import { mountLinkLayer, type LinkDraw } from './web';
+import type { LinkMotionSample } from './renderers/types';
 const L = tokens.graph.link;
 /** The link schema says `peligro`; Lienzo's tone system calls the same colour `riesgo`. */
 export const linkTone = (link: Pick<CanvasLink, 'kind' | 'tone'>): Tone => link.tone ? (link.tone === 'peligro' ? 'riesgo' : link.tone) : L.defaultTone[link.kind];
@@ -23,7 +24,7 @@ export type LinkLayerHandle = { follow(): void; preview(draft: LinkDraft | null)
  * `routes` is the geometry at rest. While frames are away from their place (`shift` returns their offset: a drag, a
  * glide to a new layout) the same links are re-routed from `doc` and `layout` without going through a React render on web.
  */
-export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, height, focus, selected, draft, draftRef, marks, onPress, onHover }: { routes: LinkRoute[]; doc?: CanvasDocument; layout?: CanvasLayout; shift?: (id: string) => FrameShift | undefined; handle?: React.Ref<LinkLayerHandle>; marks?: React.RefObject<View | null>; origin: Point; width: number; height: number; focus: LinkFocus; selected: string | null; draft: LinkDraft | null; draftRef?: React.RefObject<LinkDraft | null>; onPress: (key: string) => void; onHover: (key: string | null) => void }) {
+export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, height, focus, selected, draft, draftRef, marks, motion, onPress, onHover }: { routes: LinkRoute[]; doc?: CanvasDocument; layout?: CanvasLayout; shift?: (id: string) => FrameShift | undefined; handle?: React.Ref<LinkLayerHandle>; marks?: React.RefObject<View | null>; motion?: (epochMs: number) => LinkMotionSample; origin: Point; width: number; height: number; focus: LinkFocus; selected: string | null; draft: LinkDraft | null; draftRef?: React.RefObject<LinkDraft | null>; onPress: (key: string) => void; onHover: (key: string | null) => void }) {
   const u = useUI(), host = useRef<View>(null), layer = useRef<ReturnType<typeof mountLinkLayer>>(null), handlers = useRef({ onPress, onHover }); handlers.current = { onPress, onHover };
   const web = u.layout.platform === 'web', [, setTick] = useState(0);
   // Same links, same keys; only the geometry differs while something is off its place.
@@ -47,15 +48,15 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
       // underneath, invisible, so the pointer target never changes while hovering.
       const strands = active && route.count > 1 && route.count <= L.strands.max, across = route.endSide === 'top' || route.endSide === 'bottom';
       return [{
-      key: route.key, d: route.d, color, width, opacity: strands ? 0 : opacity, dash: L.dash[route.kind], interactive: true, title: linkTitle(route),
+      key: route.key, linkIds: strands ? [] : route.links.map(link => link.id), d: route.d, color, width, opacity: strands ? 0 : opacity, dash: L.dash[route.kind], interactive: true, title: linkTitle(route),
       arrow: { ...route.end, side: route.endSide, length: L.arrow.length, width: L.arrow.width },
       label: text ? { ...route.labelPoint, text, color: active ? u.c.foreground : u.c.foregroundMuted } : null,
       badge: route.count > 1 ? { ...route.badgePoint, text: String(route.count), fill: active ? u.c.foreground : u.c.surface2, color: active ? u.c.surface0 : u.c.foreground, radius: L.badge.radius } : null,
-      }, ...(strands ? route.links.map((link, i): LinkDraw => { const offset = (i - (route.count - 1) / 2) * L.strands.gap; return { key: `${route.key}#${i}`, d: route.d, color: u.tone(linkTone(link)), width, opacity: 1, dash: L.dash[link.kind], interactive: false, title: '', shift: across ? { x: offset, y: 0 } : { x: 0, y: offset }, arrow: { ...route.end, side: route.endSide, length: L.arrow.length, width: L.arrow.width }, label: null, badge: null }; }) : [])];
+      }, ...(strands ? route.links.map((link, i): LinkDraw => { const offset = (i - (route.count - 1) / 2) * L.strands.gap; return { key: `${route.key}#${i}`, linkIds: [link.id], d: route.d, color: u.tone(linkTone(link)), width, opacity: 1, dash: L.dash[link.kind], interactive: false, title: '', shift: across ? { x: offset, y: 0 } : { x: 0, y: offset }, arrow: { ...route.end, side: route.endSide, length: L.arrow.length, width: L.arrow.width }, label: null, badge: null }; }) : [])];
     });
     const currentDraft = draftRef ? draftRef.current : draft;
     layer.current.preview(draftDraw(currentDraft));
-    layer.current.update({ draws, origin, halo: u.c.surface0, font: 'system-ui, -apple-system, "Segoe UI", sans-serif', labelSize: L.label.size, badgeSize: L.badge.size, hitWidth: L.hitWidth });
+    layer.current.update({ draws, origin, halo: u.c.surface0, font: 'system-ui, -apple-system, "Segoe UI", sans-serif', labelSize: L.label.size, badgeSize: L.badge.size, hitWidth: L.hitWidth, motion });
   };
   function draftDraw(value: LinkDraft | null) {
     if (!value) return null;
@@ -70,7 +71,7 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
     if (!layer.current) { setTick(n => n + 1); return; } // native: the elbow Views are React, so following is a render of this layer only
     draw(doc && layout && shift && [...layout.rects.keys()].some(id => shift(id)) ? new Map(linkRoutes(doc, layout, shift).map(route => [route.key, route])) : null);
   }, preview(value) { if (layer.current) layer.current.preview(latest.current.draftDraw(value)); else setTick(n => n + 1); } }), []);
-  useEffect(() => { draw(moved); }, [styled, draft, origin.x, origin.y, u]);
+  useEffect(() => { draw(moved); }, [styled, draft, origin.x, origin.y, u, motion]);
   // Native fallback (also covers a web host without SVG): elbow segments made of Views, like the diagram block.
   const fallback = !web;
   return <View ref={host} pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width, height }}>
