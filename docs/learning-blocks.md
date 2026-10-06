@@ -5,7 +5,8 @@ agent-supplied JavaScript or HTML. Rich interactions run on web/desktop. Native 
 static summary and `La versión interactiva está disponible en escritorio/web.`
 Every manipulable block needs a visible guiding question or goal and a visible Reiniciar
 control. Use the existing `useUI`, typography and controls. Show useful Spanish error text;
-keep compiler/transport diagnostics out of the learner's UI.
+keep transport internals out of the learner's UI. GLSL compile/link errors are the exception:
+show a bounded compiler message below a Spanish error label, rather than throwing or hiding it.
 
 ## Ownership and registration
 
@@ -176,7 +177,8 @@ initialize to avoid context churn. It runs again after context restoration. Cont
 pauses rendering; at most eight mounted GL contexts are live. Overflow shows a Spanish
 message; close another graph and remount the block. `compileGLProgram(gl,vertex,fragment)`
 returns `{program?,error?}` with compile/link diagnostics and frees temporary shaders.
-Delete a successful program in dispose. Do not display raw diagnostics to the learner.
+Delete a successful program in dispose. Display a bounded compile/link error beneath
+"No se pudo compilar el shader"; do not include transport errors, stack traces or private paths.
 Native wrappers show the static fallback and never create contexts.
 
 Raster resolution samples DPR times CSS camera scale on each redraw, capped at 4x.
