@@ -20,7 +20,6 @@ interface BrowserKeyEvent { key: string; shiftKey: boolean; ctrlKey: boolean; me
 interface BrowserHost {
   document?: BrowserEventTarget & { hidden?: boolean; body: BrowserElement; createElement(tag: string): BrowserElement };
   location?: { origin: string };
-  localStorage?: { getItem(key: string): string | null; setItem(key: string, value: string): void };
   Blob: new (parts: string[], options: { type: string }) => unknown;
   URL: { createObjectURL(blob: unknown): string; revokeObjectURL(url: string): void };
 }
@@ -70,14 +69,10 @@ export function WebMedia({ url, title, kind, height, surface, onError }: { url: 
   if (Platform.OS !== 'web' || !safe) return null;
   return React.createElement(kind, { key: safe, ref: element, src: safe, controls: true, preload: tokens.media[kind].preload, playsInline: true, 'aria-label': title, onError, style: { display: 'block', width: '100%', height: kind === 'audio' ? tokens.media.audio.height : height, borderRadius: 6, backgroundColor: surface, objectFit: 'contain' } });
 }
-// Personal guide dismissal, independent of shared canvas data. Native retains it for the process session.
-const guideDismissals = new Set<string>();
-export function guideWasDismissed(scope: string): boolean {
-  try { return guideDismissals.has(scope) || browser().localStorage?.getItem(`lienzo-guide-v1:${scope}`) === 'done'; } catch { return guideDismissals.has(scope); }
-}
-export function dismissGuide(scope: string) {
-  guideDismissals.add(scope); try { browser().localStorage?.setItem(`lienzo-guide-v1:${scope}`, 'done'); } catch { /* Browsers without storage keep the session preference. */ }
-}
+// Legacy exports for the isolated design harness only. The plugin uses host settings.
+const harnessGuideDismissals = new Set<string>();
+export function guideWasDismissed(scope: string): boolean { return harnessGuideDismissals.has(scope); }
+export function dismissGuide(scope: string) { harnessGuideDismissals.add(scope); }
 export function downloadJson(value: unknown, filename: string): boolean {
   try { const host = browser(); if (!host.document) return false;
   const blob = new host.Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
