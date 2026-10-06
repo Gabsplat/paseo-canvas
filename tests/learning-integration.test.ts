@@ -4,10 +4,37 @@ import { setup, mutation, workspaceId } from './helpers';
 import { predictionGateDataSchema, createPredictionAttempt, editPrediction, commitPrediction, revealPrediction } from '../plugin/shared/renderers/prediction-gate';
 import { canvasPresentation } from '../plugin/client/presentation';
 import { documentContent, selectionPack, forkPack } from '../plugin/client/logic';
+import { annotatedContentDataSchema, initialAnnotatedState, readAnnotatedState, resolveAnnotatedAnchor } from '../plugin/shared/renderers/annotated-content';
 
 const reference = { documentId: 'd', workspaceId };
 const data = predictionGateDataSchema.parse({ question: '¿Qué cambia?', targetBlockId: 'c', mode: 'numeric', min: 0, max: 10, outcome: { value: 7 } });
 const prepared = () => commitPrediction(data, editPrediction(data, createPredictionAttempt(data, 'evt_pg_integration'), { mode: 'numeric', value: 3 }));
+
+test('registered annotations validate authored data, preserve obsolete anchors after edits, and export without learner runtime', async t => {
+  const { service } = await setup(t);
+  const textData = annotatedContentDataSchema.parse({ question: '¿Qué viaja?', base: { kind: 'text', key: 'base', revision: '1', passages: [{ id: 'p', text: 'Una señal viaja.' }] },
+    layers: [{ id: 'layer', name: 'Señal', visible: true }], annotations: [{ id: 'a', title: 'Señal', text: 'Observa la señal.',
+      anchor: { kind: 'text-range', baseKey: 'base', baseRevision: '1', layerId: 'layer', passageId: 'p', passageText: 'Una señal viaja.', start: 4, end: 9 } }] });
+  let view = await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'annotation', typeId: 'annotated-content', title: 'Lectura', data: textData } }]));
+  assert.deepEqual(view.document.blocks.find(b => b.id === 'annotation')!.data, textData);
+  await service.runtimeSet({ ...reference, blocks: [{ id: 'annotation', state: { ...initialAnnotatedState(textData), selected: 'a', explored: ['a'] } }], scopes: [] });
+  view = await service.mutate(mutation(1, [{ type: 'block.update', id: 'annotation', patch: { data: { base: { passages: [{ id: 'p', text: 'Una cosa viaja.' }] } } } }]));
+  const changed = annotatedContentDataSchema.parse(view.document.blocks.find(b => b.id === 'annotation')!.data);
+  assert.match(resolveAnnotatedAnchor(changed, changed.annotations[0].anchor).message, /texto del pasaje cambió/);
+  assert.equal(readAnnotatedState(changed, view.runtime.blocks.annotation).selected, null);
+  assert.deepEqual(changed.annotations, textData.annotations);
+  await assert.rejects(service.mutate(mutation(2, [{ type: 'block.update', id: 'annotation', patch: { data: { annotations: [{ ...changed.annotations[0], anchor: { ...changed.annotations[0].anchor, start: 100 } }] } } }])));
+  assert.deepEqual((await service.read(reference)).document, view.document);
+  const catalog = await service.catalog(), pack = forkPack(selectionPack(view.document, catalog, ['annotation']), 'annotation-pack');
+  await service.importPack({ expectedRevision: 0, pack, replace: false, dryRun: false });
+  assert.deepEqual(await service.exportPack({ id: 'annotation-pack' }), pack);
+  const copy = await service.instantiatePack({ workspaceId, packId: 'annotation-pack', documentIndex: 0, id: 'annotation-copy' });
+  assert.deepEqual(copy.document.blocks[0].data, changed); assert.deepEqual(copy.runtime, { blocks: {}, scopes: {} });
+  assert.equal(resolveAnnotatedAnchor(changed, changed.annotations[0].anchor).resolved, false);
+  const imageData = annotatedContentDataSchema.parse({ ...textData, base: { kind: 'image', key: 'image', revision: '2', url: 'https://example.org/figure.png', alt: 'Referencia declarada', aspectRatio: 2 }, annotations: [] });
+  view = await service.mutate(mutation(2, [{ type: 'block.update', id: 'annotation', patch: { data: imageData } }]));
+  assert.deepEqual(view.document.blocks.find(b => b.id === 'annotation')!.data, imageData);
+});
 
 test('registered variants create and switch without stale defaults; partial updates and invalid-write rollback remain intact', async t => {
   const { service } = await setup(t);

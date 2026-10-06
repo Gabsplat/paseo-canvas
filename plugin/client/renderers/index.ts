@@ -12,6 +12,7 @@ import { controlsRenderer } from './controls'; registerClientRenderer(controlsRe
 import { predictionGateRenderer } from './prediction-gate'; registerClientRenderer(predictionGateRenderer);
 import { functionPlotRenderer } from './function-plot'; registerClientRenderer(functionPlotRenderer);
 import { animatedFlowRenderer } from './animated-flow';
+import { annotatedContentRenderer } from './annotated-content'; registerClientRenderer(annotatedContentRenderer);
 import { simulateAnimatedFlow, tokensAt, flowTimeAt } from '../../shared/renderers/animated-flow';
 registerClientRenderer({ ...animatedFlowRenderer, prepareLinkMotion(data, document) {
   const simulation = simulateAnimatedFlow(data, document);

@@ -12,7 +12,7 @@ Imagen/texto anotado. Trazos, Secuenciador y la implementación de UI flotante s
 | Figura por pasos, en curso | `lienzo/figura-pasos` · `lienzo-figura-pasos` | `ed71567b-4481-4fcb-9fca-5307193521f1` |
 | Flujo animado, integrado con puente Canvas/Links | `lienzo/flujo-animado` · `lienzo-flujo-animado`, entrega `781173b` | `20b41949-b66f-4a7f-a5bd-1681b68e3fd4`, finalizado |
 | Shader GLSL, en curso | `lienzo/shader-glsl` · `lienzo-shader-glsl` | `796bd056-4cca-4bcc-a0c4-dbce9ff2763e` |
-| Imagen/texto anotado, en curso desde `b60ff74` | `lienzo/anotaciones` · `lienzo-anotaciones` | `9ea8513e-bc77-4784-a062-2983b03aa109` |
+| Imagen/texto anotado, integrado | `lienzo/anotaciones` · `lienzo-anotaciones`, entrega `81cff72` | `9ea8513e-bc77-4784-a062-2983b03aa109`, finalizado |
 
 Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
 El coordinador integra la visibilidad del resultado de Apuesta en el núcleo y registra
@@ -39,6 +39,11 @@ se corrigieron antes de la validación completa.
 Puente y registro committed en `b60ff74`. Imagen/texto anotado ocupa la plaza libre
 de Flujo; workspace `wks_f429ebc02f3b0382`, dependencias offline y configuración
 explícita codex/gpt-6.1-sol, High, auto-review. Mantiene propiedad de sus tres archivos.
+Anotaciones registrado pasa typecheck y 180/180 pruebas. La integración valida el esquema
+real mediante CanvasService, edición de texto con el mismo ID/revisión sin reubicar anclas,
+rollback ante offsets inválidos, packs sin runtime y cambio completo de texto a imagen.
+Hotspots requieren carga y medida de la imagen. URLs mutables requieren actualizar la
+revisión authored; no se descargan imágenes para comparar bytes. GUI/native real omitidas.
 
 ## Forma de trabajo
 
