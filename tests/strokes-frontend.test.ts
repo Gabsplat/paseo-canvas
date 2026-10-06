@@ -124,6 +124,22 @@ test('a stroke that cannot fit is refused with the size message and the earlier 
   assert.equal(h.transactions.length, 1, 'The oversized stroke was never sent.'); assert.equal(h.wb.store.current, null, 'Its preview is gone.');
   assert.equal(layerFits('ñ'.repeat(10), '', 80), false, 'Size is counted in UTF-8 bytes, as the server does.'); assert.equal(layerFits('n'.repeat(10), '', 80), true);
 });
+test('appending to an existing layer near the document cap counts its replacement, not a second copy of its strokes', async () => {
+  const h = harness(), limit = 1024 * 1024;
+  await h.stroke(Array.from({ length: 200 }, (_, i) => [40 + i * 2, 40 + (i % 2) * 40] as [number, number]));
+  h.apply([{ type: 'block.create', block: { id: 'filler', typeId: 'note', title: 'Relleno de ejemplo', position: { x: 2000, y: 2000 }, data: { text: '' } } }]);
+  const room = limit - Buffer.byteLength(JSON.stringify(h.doc())) - 256;
+  h.apply([{ type: 'block.update', id: 'filler', patch: { data: { text: 'x'.repeat(room) } } }]);
+  const earlier = draws(h.doc())[0], original = JSON.stringify(earlier.data.strokes[0]);
+  await h.stroke([[40, 100], [50, 100]]);
+  assert.deepEqual(h.failures, [], 'The small append fits even though another copy of the old layer would not.');
+  assert.equal(draws(h.doc()).length, 1);
+  assert.equal(draws(h.doc())[0].id, earlier.id);
+  assert.equal(draws(h.doc())[0].data.strokes.length, 2);
+  assert.equal(JSON.stringify(draws(h.doc())[0].data.strokes[0]), original, 'The old points are retained.');
+  assert.equal(h.transactions.length, 2);
+  assert.ok(Buffer.byteLength(JSON.stringify(h.doc())) < limit);
+});
 test('keys typed with nothing focused reach the panel that was pressed last, across listener replacement', () => {
   // Reproduces the browser sequence: press inside the panel, the pressed control disables itself so focus falls
   // to <body>, React replaces the key listener, then Escape is typed. It used to be lost, leaving the pencil on.

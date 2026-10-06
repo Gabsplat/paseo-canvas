@@ -144,9 +144,15 @@ export function strokeSummary(blocks: readonly StrokeBlock[], isDraw: (block: St
 export const WB_LAYER_LIMIT_MESSAGE = 'La capa alcanzó su límite de tamaño. Se conserva el dibujo anterior.';
 const utf8Length = (text: string) => { let bytes = 0; for (const char of text) { const code = char.codePointAt(0)!; bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4; } return bytes; };
 /**
- * Client-side estimate of the 1 MiB document cap, so a stroke that cannot be stored is refused with a clear
- * message before it is sent. The server remains the authority.
+ * Client-side estimate of the 1 MiB document cap. An append replaces its old layer, so the old points
+ * are counted once. Keep a small allowance for transaction metadata; the server remains the authority.
  */
-export function layerFits(document: unknown, addition: unknown, limit = 1024 * 1024): boolean {
-  return utf8Length(JSON.stringify(document)) + utf8Length(JSON.stringify(addition)) + 64 <= limit;
+export function layerFits(document: unknown, addition: unknown, limit = 1024 * 1024, replacingId?: string): boolean {
+  const current = utf8Length(JSON.stringify(document));
+  const blocks = document && typeof document === 'object' && 'blocks' in document && Array.isArray(document.blocks) ? document.blocks : [];
+  const previous = replacingId ? blocks.find(block => block && typeof block === 'object' && block.id === replacingId) : undefined;
+  if (previous && addition && typeof addition === 'object' && !Array.isArray(addition)) {
+    return current - utf8Length(JSON.stringify(previous)) + utf8Length(JSON.stringify({ ...previous, ...addition })) + 64 <= limit;
+  }
+  return current + utf8Length(JSON.stringify(addition)) + 64 <= limit;
 }

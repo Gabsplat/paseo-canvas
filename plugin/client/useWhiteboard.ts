@@ -91,7 +91,7 @@ export function useWhiteboard(environment:Environment) {
         const session=drawing.current,old=session?.parent===g.parent&&session.anchor===g.anchor&&session.documentId===doc.id?doc.blocks.find(b=>b.id===session.id):undefined;let next:WbDrawing;
         if(old&&old.size&&old.position){try{next=appendStroke({position:old.position,size:old.size,data:wbDrawDataSchema.parse(old.data)},points,{color:g.style.color,weight:g.style.scale});id=old.id;}catch{next=newDrawing(points,g.style,g.anchor);}}
         else next=newDrawing(points,g.style,g.anchor);
-        if(!layerFits(doc,next))throw new Error(WB_LAYER_LIMIT_MESSAGE);
+        if(!layerFits(doc,next,1024*1024,id||undefined))throw new Error(WB_LAYER_LIMIT_MESSAGE);
         if(!id)id=newId('draw');operations=old?.id===id?[{type:'block.update',id,patch:next}]:[{type:'block.create',block:{id,typeId:'wb-draw',title:'',parentGroupId:g.parent,...next}}];
       }else if(g.tool==='eraser'){erase(g,at);for(const [blockId,removed]of g.erased){const b=doc.blocks.find(b=>b.id===blockId);if(!b)continue;const data=wbDrawDataSchema.parse(b.data),strokes=data.strokes.filter((_,i)=>!removed.has(i));operations.push(strokes.length?{type:'block.update',id:blockId,patch:{data:{strokes}}}:{type:'block.delete',id:blockId});}}
       if(!operations.length)return;const result=await c.edit(operations,g.tool==='draw'?'Dibujar trazo':g.tool==='eraser'?'Borrar trazos':'Crear forma');if(!result)return;
