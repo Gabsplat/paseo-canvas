@@ -27,6 +27,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const soft=async(name,run)=>{try{await run();checks.push({name,result:'pass'});console.log('PASS '+name);}catch(error){const state=await ev('JSON.stringify({tool:[...document.querySelectorAll("#lienzo-tools [aria-pressed=true]")].map(e=>e.getAttribute("aria-label")),focus:document.activeElement.getAttribute("aria-label")||document.activeElement.id||document.activeElement.tagName,selected:__panelQA.doc().selectedIds,errors:__panelQA.errors,banner:[...document.querySelectorAll("[role=alert]")].map(e=>e.innerText).join("|").slice(0,200)})').catch(()=>'');await mouse('mouseReleased',5,5).catch(()=>{});checks.push({name,result:'fail',error:error.message,state});console.log('FAIL '+name+': '+error.message+' '+state);}};
  try{
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
+ await call('Emulation.setDeviceMetricsOverride',{width:1920,height:1080,deviceScaleFactor:1,mobile:false});
  await call('Page.addScriptToEvaluateOnNewDocument',{source:probe});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');await pause(400);
  // ---- Trazos (§18.12) ---------------------------------------------------------------------------------------------
