@@ -27,6 +27,8 @@ export function useEffect(run: () => void | (() => void), deps?: readonly unknow
 }
 export function useMemo<T>(run: () => T) { return run(); }
 export function useSyncExternalStore<T>(_subscribe: unknown, get: () => T) { return get(); }
+export function createContext<T>(value: T) { return { value, Provider: 'context-provider' }; }
+export function useContext<T>(context: { value: T }) { return context.value; }
 export const Fragment = 'fragment';
 export const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props });
 export const jsxs = jsx;

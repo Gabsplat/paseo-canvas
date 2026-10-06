@@ -686,6 +686,7 @@ export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () =
   };
   doc.addEventListener('pointerdown', outside, true); doc.addEventListener('keydown', key, true);
   return () => { doc.removeEventListener('pointerdown', outside, true); doc.removeEventListener('keydown', key, true); };
+}
 // ---- Step sequencer audio ----------------------------------------------------------------------------------------
 // The only Web Audio entry. A context exists only between a learner's press and the next stop: closing is the one
 // way to stop, so nothing keeps sounding or holding an audio thread after pause, hide, replace or unmount.
