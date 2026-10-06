@@ -11,7 +11,7 @@ Imagen/texto anotado. Trazos, Secuenciador y la implementación de UI flotante s
 | Gráfica, integrada `51e8021` | `lienzo/grafica-funciones` · `lienzo-grafica-funciones` | `12de1ffe-f370-456d-9d91-064cbc1b7816`, finalizado |
 | Figura por pasos, integrada | `lienzo/figura-pasos` · `lienzo-figura-pasos`, entrega `73bf296` | `ed71567b-4481-4fcb-9fca-5307193521f1`, finalizado |
 | Flujo animado, integrado con puente Canvas/Links | `lienzo/flujo-animado` · `lienzo-flujo-animado`, entrega `781173b` | `20b41949-b66f-4a7f-a5bd-1681b68e3fd4`, finalizado |
-| Shader GLSL, en curso | `lienzo/shader-glsl` · `lienzo-shader-glsl` | `796bd056-4cca-4bcc-a0c4-dbce9ff2763e` |
+| Shader GLSL, integrado | `lienzo/shader-glsl` · `lienzo-shader-glsl`, entrega `6c5a262` | `796bd056-4cca-4bcc-a0c4-dbce9ff2763e`, finalizado |
 | Imagen/texto anotado, integrado | `lienzo/anotaciones` · `lienzo-anotaciones`, entrega `81cff72` | `9ea8513e-bc77-4784-a062-2983b03aa109`, finalizado |
 
 Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
@@ -49,6 +49,10 @@ secuencias incoherentes sin aplicar un prefijo de sus parches, y el runtime de p
 cambia el documento. Se corrigió una comparación de defaults en el test de integración.
 El helper/componente conserva la última figura válida si recibe datos corruptos directamente;
 el dispatcher genérico rechaza esa definición y muestra un error, sin ejecutar el renderer.
+Shader registrado pasa typecheck y 206/206 pruebas. Source/uniforms excedidos rechazan
+transacciones sin tocar el documento; errores de sintaxis GLSL se conservan para que el
+compilador cliente muestre diagnósticos. fakeGL verifica uniforms compartidos por frame,
+recompilación, contexto perdido y limpieza idempotente. GPU/GUI/native reales omitidos.
 
 ## Forma de trabajo
 

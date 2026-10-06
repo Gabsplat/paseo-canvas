@@ -6,10 +6,25 @@ import { canvasPresentation } from '../plugin/client/presentation';
 import { documentContent, selectionPack, forkPack } from '../plugin/client/logic';
 import { annotatedContentDataSchema, initialAnnotatedState, readAnnotatedState, resolveAnnotatedAnchor } from '../plugin/shared/renderers/annotated-content';
 import { stepFigureDataSchema } from '../plugin/shared/renderers/step-figure';
+import { glslShaderDataSchema } from '../plugin/shared/renderers/glsl-shader';
 
 const reference = { documentId: 'd', workspaceId };
 const data = predictionGateDataSchema.parse({ question: '¿Qué cambia?', targetBlockId: 'c', mode: 'numeric', min: 0, max: 10, outcome: { value: 7 } });
 const prepared = () => commitPrediction(data, editPrediction(data, createPredictionAttempt(data, 'evt_pg_integration'), { mode: 'numeric', value: 3 }));
+
+test('registered shaders preserve GLSL for compiler diagnostics and reject undeclared uniforms or oversized source atomically', async t => {
+  const { service } = await setup(t);
+  let view = await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'shader', typeId: 'glsl-shader', title: 'Shader', data: {} } }]));
+  const initial = glslShaderDataSchema.parse(view.document.blocks.find(b => b.id === 'shader')!.data);
+  assert.equal(initial.maxPixelSize, 512); assert.equal(initial.uniforms.length, 1);
+  const invalidSyntax = 'precision mediump float;\nuniform vec2 u_resolution;\nuniform float frequency;\nvoid main() { compiler_error }';
+  view = await service.mutate(mutation(1, [{ type: 'block.update', id: 'shader', patch: { data: { fragmentSource: invalidSyntax } } }]));
+  assert.equal(view.document.blocks.find(b => b.id === 'shader')!.data.fragmentSource, invalidSyntax);
+  for (const source of [invalidSyntax + '\nuniform sampler2D undeclared;', invalidSyntax + '\n//' + '😀'.repeat(1100)]) {
+    await assert.rejects(service.mutate(mutation(2, [{ type: 'block.update', id: 'shader', patch: { data: { fragmentSource: source } } }])));
+    assert.deepEqual((await service.read(reference)).document, view.document);
+  }
+});
 
 test('registered step figures enforce atomic replay before committing authored patches', async t => {
   const { service } = await setup(t);
