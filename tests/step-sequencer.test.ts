@@ -308,7 +308,7 @@ test('leaving the block, the document or edit rights silences audio immediately'
 test('blocked or missing audio is stated plainly, keeps the grid editable and can be retried', async t => {
   const blocked = browser({ resume: 'reject' }); clock(t);
   const h = harness(four()); button(h.render(), 'Reproducir')!.props.onPress(); await settleMicrotasks(); let view = h.render();
-  assert.match(text(view), /No se pudo activar el sonido/); assert.ok(button(view, 'Activar sonido')); assert.ok(button(view, 'Reproducir')); assert.equal(blocked.contexts[0].closed, true);
+  assert.match(text(view), /No se pudo activar el sonido/); assert.ok(button(view, 'Activar sonido')); assert.equal(button(view, 'Reproducir'), undefined, 'One primary action: retry.'); assert.equal(blocked.contexts[0].closed, true);
   cell(view, 1, 1).props.onPress(press); assert.deepEqual(h.writes.at(-1), { pattern: ['x...', '.xx.'], bpm: 120 }, 'The grid still works without sound.');
   blocked.restore(); const working = browser();
   button(h.render(), 'Activar sonido')!.props.onPress(); await settleMicrotasks(); view = h.render();

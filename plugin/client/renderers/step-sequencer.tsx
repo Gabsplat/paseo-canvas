@@ -152,8 +152,7 @@ function StepSequencer(props: RendererProps<StepSequencerData>) {
       onChange={value => { if (!enabled()) return; current.dragging = true; current.state = { ...current.state, bpm: clampTempo(data.tempo, value) }; refresh(); }}
       onSettle={value => { current.dragging = false; edit({ ...current.state, bpm: clampTempo(data.tempo, value) }, true); }} />}
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-      <Button label={playing ? 'Pausar' : 'Reproducir'} variant="primary" disabled={disabled || status === 'unsupported'} style={{ minHeight: 44 }} onPress={playing ? pause : play} />
-      {(status === 'blocked' || status === 'interrupted') && <Button label="Activar sonido" disabled={disabled} style={{ minHeight: 44 }} onPress={play} />}
+      <Button label={playing ? 'Pausar' : status === 'blocked' || status === 'interrupted' ? 'Activar sonido' : 'Reproducir'} variant="primary" disabled={disabled || status === 'unsupported'} style={{ minHeight: 44 }} onPress={playing ? pause : play} />
       <Button label="Reiniciar" variant="ghost" disabled={disabled} style={{ minHeight: 44 }} onPress={() => {
         if (!enabled()) return;
         silence(false); current.status = 'idle'; current.dragging = false; current.heard = false;
