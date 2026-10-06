@@ -1,3 +1,5 @@
+import { getRendererVisual } from "./renderer-visuals";
+import { getRendererSpec } from "../shared/renderers";
 import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasOperation, DiagramData, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
 import { tokens } from './tokens';
 export type Entity = CanvasBlock | CanvasGroup;
@@ -75,8 +77,8 @@ export function instructionLevels(doc: CanvasDocument, entity?: Entity) {
     .filter(e => hasCommunication(e.communication)).map(e => ({ id: e.id, title: e.title, communication: e.communication! }));
 }
 export function documentContent(doc: CanvasDocument, own = false): DocumentContent {
-  const { title, description, blocks, groups, links, layout, selectedIds, communication, example } = doc;
-  return { title: own ? `${title} · copia` : title, description, blocks, groups, links: links ?? [], ...(layout ? { layout } : {}), selectedIds, communication, example: own ? false : example };
+  const { title, description, blocks, groups, links, layout, variables, selectedIds, communication, example } = doc;
+  return { title: own ? `${title} · copia` : title, description, blocks, groups, links: links ?? [], ...(layout ? { layout } : {}), ...(variables ? { variables } : {}), selectedIds, communication, example: own ? false : example };
 }
 export type Segment = { from: Point; to: Point };
 export function diagramLayout(data: DiagramData, innerWidth = 565) {
@@ -332,6 +334,7 @@ export type CanvasLayout = { rects: Map<string, Rect>; lanes: Map<string, Point[
 export type BlockSize = NonNullable<CanvasBlock['size']>;
 export function minimumBlockSize(block: CanvasBlock, catalog?: CanvasCatalog | null): BlockSize {
   const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer;
+  const registered = getRendererSpec(renderer)?.minSize; if (registered) return registered;
   const min = tokens.canvas.resize.minimum;
   return renderer === 'node' ? min.node : renderer === 'preview-frame' ? min.web : renderer === 'image-ref' ? min.media : min.standard;
 }
@@ -411,8 +414,9 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
   const dimensions = (id: string, depth: number, hidden: boolean, wrap: number): Rect => {
     const block = blocks.get(id);
     if (block) {
-      const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = renderer === 'diagram' || renderer === 'preview-frame';
-      const r = { x: 0, y: 0, width: block.size?.width ?? (node ? G.node.width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size?.height ?? heights[id] ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
+      const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = getRendererVisual(renderer)?.width === 'wide' || renderer === 'diagram' || renderer === 'preview-frame';
+      const preferred = getRendererSpec(renderer)?.defaultSize;
+      const r = { x: 0, y: 0, width: block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? G.node.width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size?.height ?? heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
       rects.set(id, r); return r;
     }
     const g = groups.get(id)!, children = [...g.blockIds, ...g.groupIds].filter(child => index.entities.has(child));

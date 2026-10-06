@@ -1,6 +1,7 @@
+import { getRendererSpec } from "../shared/renderers";
 import { randomUUID } from "node:crypto";
 import {
-  documentSchema, diagramDataSchema, checklistDataSchema, type CanvasDocument, type CanvasOperation, type CanvasCatalog,
+  documentSchema, checklistDataSchema, type CanvasDocument, type CanvasOperation, type CanvasCatalog,
   type CanvasBlock, type CanvasGroup, type CanvasLink, type GroupTemplate, type BlockType,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
@@ -20,7 +21,7 @@ export function safeJson(value: unknown, depth = 0): void {
 
 export function validateBlockData(block: CanvasBlock, type: BlockType): void {
   safeJson(block.data);
-  if (type.renderer === "diagram") diagramDataSchema.parse(block.data);
+  getRendererSpec(type.renderer)?.dataSchema.parse(block.data);
   if (type.renderer === "checklist") checklistDataSchema.parse(block.data);
   if (["preview-frame", "image-ref"].includes(type.renderer ?? "") && block.data.url !== undefined && block.data.url !== "") {
     try {

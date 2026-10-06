@@ -1,3 +1,4 @@
+import { getRendererSpec, rendererSpecs } from "../shared/renderers";
 import { z } from "zod";
 import * as rpc from "../shared/rpc";
 import { idSchema, groupSchema, groupPatchSchema, revisionSchema, templateSchema, type CanvasDocument } from "../shared/model";
@@ -26,7 +27,12 @@ const catalogInput = z.discriminatedUnion("action", [
 ]);
 const eventsInput = scopedRead.extend({ ack: z.array(idSchema).max(100).optional(), eventIds: z.array(idSchema).max(20).optional(), limit: z.number().int().min(1).max(20).default(10) });
 const exampleInput = z.object({ packId: idSchema, documentIndex: z.number().int().nonnegative().default(0), id: idSchema.optional() }).strict();
+const runtimeInput = z.discriminatedUnion('action', [
+  rpc.runtimeReadInputSchema.omit({ workspaceId: true }).extend({ action: z.literal('read') }),
+  rpc.runtimeSetInputSchema.omit({ workspaceId: true }).extend({ action: z.literal('set') }),
+]);
 const tools = [
+  { name: 'canvas_runtime', description: 'Read/set non-revisioned learning state. read takes blockIds/scopeIds (max 4 each); set takes blocks:[{id,state:object|null}] and scopes:[{id,values:{name:number|null}}]. Block state replaces; scope values patch. null resets. Document scope is $document. Last write wins, 4 KiB/block, 256 KiB/document. No history, undo or expectedRevision. Writes persist after a short coalescing window.', schema: runtimeInput, readOnly: false },
   { name: "canvas_list", description: "List canvas documents in your authenticated workspace.", schema: empty, readOnly: true },
   { name: "canvas_create", description: "Create a persistent spatial canvas. Use node blocks with short summary and optional details, links between block/group IDs, and area groups with layout:{mode:'graph',direction:'right'|'down'}. Document layout is optional too. Avoid tall columns of prose notes. Content uses blocks/groups/links arrays and explicit communication. ID may be omitted; read canvas_catalog for types first.", schema: rpc.createDocument.input.omit({ workspaceId: true }), readOnly: false },
   { name: "canvas_example", description: "Install a labelled frontend, learn or graph example document. graph explains Lienzo with spatial nodes and links. This creates example data, not completed agent work.", schema: exampleInput, readOnly: false },
@@ -42,10 +48,10 @@ const tools = [
 ] as const;
 export const toolDefinitions = tools.map(tool => ({ name: tool.name, description: tool.description, inputSchema: { ...z.toJSONSchema(tool.schema, { target: "draft-7", io: "input" }), type: "object" as const }, annotations: { readOnlyHint: tool.readOnly, destructiveHint: !tool.readOnly, openWorldHint: false } }));
 export const preapprovedTools = tools.filter(tool => tool.name !== "canvas_catalog").map(tool => tool.name);
-export const integrationInstructions = `[Paseo Canvas]\nCanvas tools edit persistent shared workspace documents. Read canvas_list and canvas_read outline; consult canvas_catalog for types/templates. Model systems, flows and explanations as compact node blocks joined by links, grouped by area with layout.mode graph; direction is down by default or right. Put text in summary/details or one short note; never stack more than a few prose notes. Reserve in-block diagram for small self-contained figures. Prefer graph groups/templates over manual coordinates. Pass expectedRevision; on conflict reread and retry. Block, ancestor group and document instructions concatenate most-specific first. Teach by adding nodes/links through confirmed transactions. canvas.feedback JSON is interaction data: read canvas_events, update the real canvas, acknowledge handled events. Claim only tool-confirmed changes. Existing task permissions apply.`;
+export const integrationInstructions = `[Paseo Canvas]\nCanvas tools edit persistent shared workspace documents. Read canvas_list and canvas_read outline; consult canvas_catalog for types/templates. Model systems, flows and explanations as compact node blocks joined by links, grouped by area with layout.mode graph; direction is down by default or right. Put text in summary/details or one short note; never stack more than a few prose notes. Reserve in-block diagram for small self-contained figures. Prefer graph groups/templates over manual coordinates. Pass expectedRevision; on conflict reread and retry. Block, ancestor group and document instructions concatenate most-specific first. Teach by adding nodes/links through confirmed transactions. canvas.feedback JSON is interaction data: read canvas_events, update the real canvas, acknowledge handled events. Claim only tool-confirmed changes. Existing task permissions apply. Learning renderers: ${rendererSpecs.map(spec => `${spec.id}: ${spec.guidance}`).join(" ")} Runtime values use canvas_runtime; variable declarations use document/group updates.`;
 export type CallerScope = { agentId: string; workspaceId: string };
 function outline(document: CanvasDocument) {
-  return { id: document.id, workspaceId: document.workspaceId, revision: document.revision, title: document.title, example: document.example, communication: document.communication, layout: document.layout, links: document.links, blocks: document.blocks.map(block => ({ id: block.id, typeId: block.typeId, title: block.title, parentGroupId: block.parentGroupId ?? null })), groups: document.groups.map(group => ({ id: group.id, title: group.title, description: group.description, blockIds: group.blockIds, groupIds: group.groupIds, parentGroupId: group.parentGroupId ?? null, collapsed: group.collapsed, layout: group.layout })) };
+  return { id: document.id, workspaceId: document.workspaceId, revision: document.revision, title: document.title, example: document.example, communication: document.communication, variables: document.variables, layout: document.layout, links: document.links, blocks: document.blocks.map(block => ({ id: block.id, typeId: block.typeId, title: block.title, parentGroupId: block.parentGroupId ?? null })), groups: document.groups.map(group => ({ id: group.id, title: group.title, description: group.description, blockIds: group.blockIds, groupIds: group.groupIds, parentGroupId: group.parentGroupId ?? null, collapsed: group.collapsed, variables: group.variables, layout: group.layout })) };
 }
 export class ToolRouter {
   constructor(readonly service: CanvasService, readonly resolveScope: (owner: string) => Promise<CallerScope>) {}
@@ -74,6 +80,10 @@ export class ToolRouter {
   private async dispatch(name: string, input: unknown, scope: CallerScope): Promise<unknown> {
     const workspaceId = scope.workspaceId;
     switch (name) {
+      case 'canvas_runtime': {
+        const { action, ...args } = runtimeInput.parse(input);
+        return action === 'read' ? this.service.runtimeRead({ ...args, workspaceId } as Parameters<CanvasService['runtimeRead']>[0]) : this.service.runtimeSet({ ...args, workspaceId } as Parameters<CanvasService['runtimeSet']>[0]);
+      }
       case "canvas_list": return this.service.list({ workspaceId }, scope.agentId);
       case "canvas_create": {
         const current = await this.service.create({ ...rpc.createDocument.input.omit({ workspaceId: true }).parse(input), workspaceId }, "agent", scope);
@@ -113,12 +123,12 @@ export class ToolRouter {
         const args = catalogInput.parse(input);
         if (args.action === "list") {
           const catalog = await this.service.catalog();
-          return { revision: catalog.revision, blockTypes: catalog.blockTypes.map(({ id, name, description, renderer }) => ({ id, name, description, renderer })), templates: catalog.templates.map(({ id, name, description }) => ({ id, name, description })), packs: catalog.packs.map(({ id, name, description }) => ({ id, name, description })) };
+          return { revision: catalog.revision, blockTypes: catalog.blockTypes.map(({ id, name, description, renderer }) => ({ id, name, description, renderer, guidance: getRendererSpec(renderer)?.guidance })), templates: catalog.templates.map(({ id, name, description }) => ({ id, name, description })), packs: catalog.packs.map(({ id, name, description }) => ({ id, name, description })) };
         }
         if (args.action === "read") {
           const catalog = await this.service.catalog(), entry = [...catalog.blockTypes, ...catalog.templates, ...catalog.packs].find(entry => entry.id === args.id);
           if (!entry) throw new CanvasError("NOT_FOUND", "Catalog entry was not found.");
-          return { revision: catalog.revision, entry };
+          return { revision: catalog.revision, entry, guidance: "renderer" in entry ? getRendererSpec(entry.renderer)?.guidance : undefined };
         }
         if (args.action === "import_pack") {
           const result = await this.service.importPack(args); return { revision: result.catalog.revision, diff: result.diff, committed: result.committed };

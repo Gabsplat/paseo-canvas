@@ -93,6 +93,7 @@ export function attachWheel(element: unknown, handler: (e: { x: number; y: numbe
   const node = element as BrowserElement | null; if (!browser().document || !node?.addEventListener) return () => {};
   const listener = (e: BrowserKeyEvent) => {
     // An active player, page or resized card scrolls independently; command-wheel still zooms the canvas.
+    if (e.target?.closest('[id^="lienzo-interactive-surface-"],[id^="lienzo-interactive-range-"]')) return;
     if (!e.ctrlKey && !e.metaKey && e.target?.closest('video,audio,iframe,[id^="lienzo-interactive-"],[id^="lienzo-scroll-"]')) return;
     const origin = node.getBoundingClientRect(); handler({ x: e.clientX - origin.left, y: e.clientY - origin.top, dx: e.deltaX, dy: e.deltaY, command: e.ctrlKey || e.metaKey }); e.preventDefault();
   };
@@ -104,7 +105,7 @@ export function attachMiddlePan(element: unknown, handler: (delta: { dx: number;
   const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
   type PointerLike = BrowserKeyEvent & { button?: number };
   let last: { x: number; y: number; t: number } | null = null, velocity = { vx: 0, vy: 0 };
-  const down = (e: PointerLike) => { if (e.button !== 1) return; last = { x: e.clientX, y: e.clientY, t: Date.now() }; velocity = { vx: 0, vy: 0 }; handler({ dx: 0, dy: 0 }); e.preventDefault(); e.stopPropagation(); };
+  const down = (e: PointerLike) => { if (e.button !== 1 || e.target?.closest('[id^="lienzo-interactive-renderer-"],[id^="lienzo-interactive-surface-"]')) return; last = { x: e.clientX, y: e.clientY, t: Date.now() }; velocity = { vx: 0, vy: 0 }; handler({ dx: 0, dy: 0 }); e.preventDefault(); e.stopPropagation(); };
   const move = (e: PointerLike) => {
     if (!last) return; const now = Date.now(), dx = e.clientX - last.x, dy = e.clientY - last.y, dt = Math.max(1, now - last.t);
     velocity = { vx: .6 * dx / dt + .4 * velocity.vx, vy: .6 * dy / dt + .4 * velocity.vy }; handler({ dx, dy }); last = { x: e.clientX, y: e.clientY, t: now }; e.preventDefault();
@@ -249,4 +250,166 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
     },
     destroy() { svg.remove(); above?.remove(); entries.clear(); },
   };
+}
+
+/** Small browser drawing contracts. Extend these here rather than enabling DOM types in the client. */
+export interface Canvas2DContext {
+  fillStyle: string; strokeStyle: string; lineWidth: number; globalAlpha: number; font: string;
+  textAlign: string; textBaseline: string; lineCap: string; lineJoin: string;
+  clearRect(x: number, y: number, w: number, h: number): void;
+  fillRect(x: number, y: number, w: number, h: number): void; strokeRect(x: number, y: number, w: number, h: number): void;
+  beginPath(): void; closePath(): void; moveTo(x: number, y: number): void; lineTo(x: number, y: number): void;
+  arc(x: number, y: number, r: number, start: number, end: number, anticlockwise?: boolean): void;
+  quadraticCurveTo(cx: number, cy: number, x: number, y: number): void;
+  bezierCurveTo(a: number, b: number, c: number, d: number, x: number, y: number): void;
+  fill(): void; stroke(): void; clip(): void; save(): void; restore(): void;
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
+  translate(x: number, y: number): void; rotate(angle: number): void; scale(x: number, y: number): void;
+  setLineDash(values: number[]): void; fillText(text: string, x: number, y: number): void;
+  measureText(text: string): { width: number };
+  drawImage(image: unknown, ...coordinates: number[]): void;
+}
+export interface GLContext {
+  readonly VERTEX_SHADER: number; readonly FRAGMENT_SHADER: number; readonly COMPILE_STATUS: number; readonly LINK_STATUS: number;
+  readonly ARRAY_BUFFER: number; readonly STATIC_DRAW: number; readonly DYNAMIC_DRAW: number; readonly FLOAT: number;
+  readonly TRIANGLES: number; readonly TRIANGLE_STRIP: number; readonly LINES: number; readonly POINTS: number; readonly COLOR_BUFFER_BIT: number;
+  createShader(type: number): object | null; shaderSource(shader: object, source: string): void; compileShader(shader: object): void;
+  getShaderParameter(shader: object, parameter: number): unknown; getShaderInfoLog(shader: object): string | null; deleteShader(shader: object): void;
+  createProgram(): object | null; attachShader(program: object, shader: object): void; linkProgram(program: object): void;
+  getProgramParameter(program: object, parameter: number): unknown; getProgramInfoLog(program: object): string | null; deleteProgram(program: object): void;
+  useProgram(program: object | null): void; getUniformLocation(program: object, name: string): object | null;
+  uniform1f(location: object | null, a: number): void; uniform2f(location: object | null, a: number, b: number): void;
+  uniform3f(location: object | null, a: number, b: number, c: number): void; uniform4f(location: object | null, a: number, b: number, c: number, d: number): void;
+  uniform1i(location: object | null, a: number): void;
+  createBuffer(): object | null; bindBuffer(type: number, buffer: object | null): void; bufferData(type: number, data: Float32Array, usage: number): void; deleteBuffer(buffer: object): void;
+  getAttribLocation(program: object, name: string): number; enableVertexAttribArray(index: number): void;
+  vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void;
+  viewport(x: number, y: number, w: number, h: number): void; clearColor(r: number, g: number, b: number, a: number): void;
+  clear(mask: number): void; drawArrays(mode: number, first: number, count: number): void;
+  getExtension(name: string): { loseContext?(): void } | null;
+}
+export function compileGLProgram(gl: GLContext, vertexSource: string, fragmentSource: string): { program?: object; error?: string } {
+  const shaders: object[] = []; let program: object | null = null;
+  try {
+    for (const [type, source] of [[gl.VERTEX_SHADER, vertexSource], [gl.FRAGMENT_SHADER, fragmentSource]] as const) {
+      const shader = gl.createShader(type); if (!shader) throw new Error('No se pudo crear el shader.'); shaders.push(shader);
+      gl.shaderSource(shader, source); gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'Error al compilar el shader.');
+    }
+    program = gl.createProgram(); if (!program) throw new Error('No se pudo crear el programa.');
+    shaders.forEach(shader => gl.attachShader(program!, shader)); gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Error al enlazar el programa.');
+    return { program };
+  } catch (error) { if (program) gl.deleteProgram(program); return { error: error instanceof Error ? error.message : String(error) }; }
+  finally { shaders.forEach(shader => gl.deleteShader(shader)); }
+}
+export type SurfaceFrame = { width: number; height: number; pixelRatio: number; time: number };
+export type SurfacePointer = { kind: 'down' | 'move' | 'up' | 'cancel'; x: number; y: number; pointerId: number; buttons: number; pressure: number };
+type SurfaceBase = { id: string; label: string; height: number; animated?: boolean; onPointer?(event: SurfacePointer): void; onError?(message: string): void };
+export type CanvasSurfaceProps = SurfaceBase & { draw(context: Canvas2DContext, frame: SurfaceFrame): void };
+export type GLSurfaceProps = SurfaceBase & {
+  initialize?(context: GLContext): { error?: string; dispose?(): void } | void;
+  draw(context: GLContext, frame: SurfaceFrame): void;
+};
+interface DrawingCanvas {
+  clientWidth: number; clientHeight: number; width: number; height: number;
+  getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+  getContext(kind: string): unknown;
+  addEventListener(name: string, listener: (event: { preventDefault(): void }) => void): void;
+  removeEventListener(name: string, listener: (event: { preventDefault(): void }) => void): void;
+  setPointerCapture?(id: number): void; releasePointerCapture?(id: number): void;
+}
+interface DrawingHost {
+  devicePixelRatio?: number;
+  requestAnimationFrame(cb: (time: number) => void): number; cancelAnimationFrame(id: number): void;
+  ResizeObserver?: new (cb: () => void) => { observe(node: unknown): void; disconnect(): void };
+  IntersectionObserver?: new (cb: (entries: { isIntersecting: boolean }[]) => void) => { observe(node: unknown): void; disconnect(): void };
+}
+export const MAX_LIVE_GL_CONTEXTS = 8;
+let liveGLContexts = 0;
+function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps) & { kind: '2d' | 'webgl' }) {
+  const ref = useRef<DrawingCanvas | null>(null), latest = useRef(props), invalidate = useRef<() => void>(() => {});
+  latest.current = props; const [error, setError] = useState('');
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !ref.current || !browser().document) return;
+    const canvas = ref.current, doc = browser().document!, host = globalThis as unknown as DrawingHost;
+    let context: Canvas2DContext | GLContext | null = null, frameId = 0, visible = !host.IntersectionObserver, lost = false, stopped = false, allocated = false, allocatedContext: GLContext | null = null, dispose: (() => void) | undefined;
+    const report = (message: string) => { setError(message); latest.current.onError?.(message); };
+    const initialize = () => {
+      try {
+        if (kind === 'webgl' && !allocated && liveGLContexts >= MAX_LIVE_GL_CONTEXTS) { report('Hay demasiados gráficos WebGL abiertos. Cierra otro gráfico y vuelve a abrir este bloque.'); return; }
+        context = canvas.getContext(kind) as typeof context;
+        if (!context) { report('El navegador no ofrece este contexto de dibujo.'); return; }
+        if (kind === 'webgl') {
+          if (!allocated) { allocated = true; liveGLContexts++; }
+          allocatedContext = context as GLContext;
+          const result = (latest.current as GLSurfaceProps).initialize?.(context as GLContext);
+          dispose = result?.dispose; if (result?.error) { report('No se pudo preparar el gráfico. Revisa el shader o su configuración.'); latest.current.onError?.(result.error); context = null; return; }
+        }
+        setError('');
+      } catch (error) { report('No se pudo iniciar el gráfico. Revisa su configuración y vuelve a abrir el bloque.'); context = null; }
+    };
+    const active = () => !stopped && visible && !doc.hidden && !lost && !!context;
+    const schedule = () => { if (active() && !frameId) frameId = host.requestAnimationFrame(draw); };
+    const draw = (time: number) => {
+      frameId = 0; if (!active()) return;
+      const width = canvas.clientWidth, height = canvas.clientHeight; if (!width || !height) return;
+      // CSS camera transforms do not change clientWidth. Sample their physical scale at redraw time.
+      const rect = canvas.getBoundingClientRect(), pixelRatio = Math.max(1, Math.min(4, (host.devicePixelRatio ?? 1) * rect.width / width));
+      const w = Math.round(width * pixelRatio), h = Math.round(height * pixelRatio);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      try {
+        const frame = { width, height, pixelRatio, time };
+        if (kind === '2d') {
+          const ctx = context as Canvas2DContext; ctx.save();
+          try { ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0); (latest.current as CanvasSurfaceProps).draw(ctx, frame); } finally { ctx.restore(); }
+        } else { const gl = context as GLContext; gl.viewport(0, 0, w, h); (latest.current as GLSurfaceProps).draw(gl, frame); }
+      } catch (error) { report('No se pudo dibujar el gráfico. Revisa los parámetros y vuelve a intentarlo.'); return; }
+      if (latest.current.animated) schedule();
+    };
+    const stop = () => { if (frameId) host.cancelAnimationFrame(frameId); frameId = 0; };
+    const visibility = () => { if (doc.hidden) stop(); else schedule(); };
+    const onLost = (event: { preventDefault(): void }) => { event.preventDefault(); lost = true; stop(); dispose = undefined; report('El contexto WebGL se perdió. Esperando restauración.'); };
+    const onRestored = () => { lost = false; initialize(); schedule(); };
+    initialize(); invalidate.current = schedule;
+    const intersection = host.IntersectionObserver ? new host.IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); if (visible) schedule(); else stop(); }) : null;
+    const resize = host.ResizeObserver ? new host.ResizeObserver(schedule) : null;
+    intersection?.observe(canvas); resize?.observe(canvas); doc.addEventListener('visibilitychange', visibility);
+    if (kind === 'webgl') { canvas.addEventListener('webglcontextlost', onLost); canvas.addEventListener('webglcontextrestored', onRestored); }
+    schedule();
+    return () => {
+      stopped = true; invalidate.current = () => {}; stop(); intersection?.disconnect(); resize?.disconnect(); doc.removeEventListener('visibilitychange', visibility);
+      canvas.removeEventListener('webglcontextlost', onLost); canvas.removeEventListener('webglcontextrestored', onRestored);
+      try { dispose?.(); } finally { if (allocated) { liveGLContexts--; allocatedContext?.getExtension('WEBGL_lose_context')?.loseContext?.(); } }
+    };
+  }, [kind, props.id, kind === 'webgl' ? (props as GLSurfaceProps).initialize : undefined]);
+  useEffect(() => { invalidate.current(); });
+  if (Platform.OS !== 'web') return null;
+  type PointerLike = { clientX: number; clientY: number; pointerId: number; buttons: number; pressure: number; stopPropagation(): void; preventDefault(): void };
+  const pointer = (kind: SurfacePointer['kind']) => (event: PointerLike) => {
+    const canvas = ref.current; if (!canvas) return; event.stopPropagation();
+    const rect = canvas.getBoundingClientRect();
+    if (kind === 'down') canvas.setPointerCapture?.(event.pointerId);
+    if (kind === 'up' || kind === 'cancel') canvas.releasePointerCapture?.(event.pointerId);
+    latest.current.onPointer?.({ kind, x: (event.clientX - rect.left) * canvas.clientWidth / Math.max(1, rect.width), y: (event.clientY - rect.top) * canvas.clientHeight / Math.max(1, rect.height), pointerId: event.pointerId, buttons: event.buttons, pressure: event.pressure });
+  };
+  const isolate = (event: { stopPropagation(): void }) => event.stopPropagation();
+  return React.createElement('div', { id: `lienzo-interactive-surface-${props.id}`, style: { position: 'relative', width: '100%', height: props.height }, onWheel: isolate, onKeyDown: isolate, onKeyUp: isolate },
+    React.createElement('canvas', { ref, 'aria-label': props.label, role: 'img', tabIndex: 0, style: { width: '100%', height: '100%', display: 'block', touchAction: 'none' }, onPointerDown: pointer('down'), onPointerMove: pointer('move'), onPointerUp: pointer('up'), onPointerCancel: pointer('cancel') }),
+    error ? React.createElement('div', { role: 'status', style: { position: 'absolute', inset: 0, padding: 8, color: 'inherit', background: 'inherit' } }, error) : null);
+}
+export function WebCanvasSurface(props: CanvasSurfaceProps) { return React.createElement(DrawingSurface, { ...props, kind: '2d' }); }
+
+export function WebGLSurface(props: GLSurfaceProps) { return React.createElement(DrawingSurface, { ...props, kind: 'webgl' }); }
+export function WebRange({ id, label, min, max, step, value, disabled, color, onChange, onSettle }: {
+  id: string; label: string; min: number; max: number; step: number | 'any'; value: number; disabled: boolean; color: string;
+  onChange(value: number): void; onSettle(value: number): void;
+}) {
+  if (Platform.OS !== 'web') return null;
+  const read = (e: { currentTarget: { value: string } }) => Number(e.currentTarget.value);
+  return React.createElement('input', { id: `lienzo-interactive-range-${id}`, type: 'range', 'aria-label': label, min, max, step, value, disabled,
+    style: { width: '100%', accentColor: color }, onInput: (e: { currentTarget: { value: string } }) => onChange(read(e)),
+    onPointerUp: (e: { currentTarget: { value: string } }) => onSettle(read(e)), onPointerCancel: (e: { currentTarget: { value: string } }) => onSettle(read(e)),
+    onKeyUp: (e: { key: string; currentTarget: { value: string } }) => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) onSettle(read(e)); },
+  });
 }
