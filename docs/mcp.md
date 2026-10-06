@@ -17,6 +17,43 @@ Positions are relative to the parent group. Moving a group changes its own posit
 keep their local coordinates. The frontend must sum ancestor positions when drawing.
 Create and update group membership through a transaction; the server maintains parent pointers.
 
+## Learning runtime
+
+`readRuntime` (`canvas.runtime.read`) takes `{workspaceId,documentId,blockIds?,scopeIds?}`.
+`setRuntime` (`canvas.runtime.set`) takes `{workspaceId,documentId,blocks?,scopes?}`.
+Each returns `{runtimeVersion,runtime:{blocks,scopes}}` for requested IDs only.
+Each ID array has at most four entries. Block writes are `{id,state:object|null}` and
+replace state; scope writes are `{id,values:{name:number|null}}` and patch current values.
+Null removes an override. Document scope ID is `$document`.
+
+MCP uses one `canvas_runtime` tool with `action:"read"|"set"` and the same inputs,
+omitting authenticated workspaceId. There is no expectedRevision, history entry or undo.
+Writes become visible immediately and persist with a 250 ms coalescing window; close or
+normal content transactions flush pending writes. Abrupt exit can lose the recent window.
+Limits are 4 KiB/block, 256 KiB/document, finite numeric values within declared ranges,
+32 JSON nesting levels and reserved-key rejection. Responses retain the 24 KiB tool cap.
+Blocks/groups/declarations deleted by content operations lose their runtime entries.
+Old state/1 records default to empty runtime. `DocumentView.runtime` contains the complete
+channel, and `runtimeVersion` also tracks existing selection/connection/feedback changes.
+
+Documents/groups optionally declare `variables:[{name,value,min,max,label?,step?,unit?}]`
+through normal revisioned document/group updates. Each scope has at most 24 unique names,
+matching `[a-zA-Z_][a-zA-Z0-9_]{0,31}` and excluding prototype keys. Resolution uses the
+nearest ancestor declaring a name, then the document; absent overrides use declared value.
+Packs carry declarations, never runtime overrides. `controls` lists variable names in
+`data.variables` with at most four names per block, has a declarative guiding `data.question` and a visible reset.
+Renderer schemas validate JSON properties too. Registered renderer guidance appears in
+catalog list/read results and integration instructions. See [learning-blocks.md](learning-blocks.md).
+
+`agentAction.action.settled:true` requires batched delivery, a single block target and at
+most 4 KiB payload. A newer pending settled event replaces an older one with the same
+block/kind, except events already in an immutable outbound batch. Its context keeps only
+the target block and ancestor groups; ordinary feedback still stores the full snapshot.
+Settled actions capture current server revision without rejecting a stale supplied revision.
+They do not change content revision. Runtime settled helpers flush writes before reporting
+final value, visited range or prediction/outcome. The existing explicit feedback flush
+mechanism delivers batched-only events.
+
 ## Graph canvas
 
 `linkSchema` and its inferred type `CanvasLink` are exported from `plugin/shared/model.ts`.
@@ -102,7 +139,7 @@ verification are coordinator-owned and were not performed by this engineering ta
 
 MCP server name is `paseo-canvas`; plugin ID is `canvas`. The final MCP names are
 `canvas_list`, `canvas_create`, `canvas_example`, `canvas_read`, `canvas_apply`, `canvas_group`,
-`canvas_catalog`, `canvas_selection`, `canvas_events`, `canvas_history`, `canvas_undo`, `canvas_redo`.
+`canvas_catalog`, `canvas_selection`, `canvas_events`, `canvas_history`, `canvas_undo`, `canvas_redo`, `canvas_runtime`.
 
 Storage is `$PASEO_HOME/canvas/`, falling back to `~/.paseo/canvas/`. `state.json` is the single
 atomic aggregate containing documents, up to 50 retained history entries per document, selection,
@@ -158,6 +195,7 @@ ID and namespace every exported type/template ID as `newPackId.entry`, updating 
 | `mutateDocument` | `canvas.mutate` | `{workspaceId,documentId,expectedRevision,operations,label?}` returns a view |
 | `undoDocument`, `redoDocument` | `canvas.undo`, `canvas.redo` | Scoped document and expected revision return a view |
 | `watchDocument` | `canvas.watch` | Scoped document, known revision/runtime version return versions and an optional changed view |
+| `readRuntime`, `setRuntime` | `canvas.runtime.read`, `canvas.runtime.set` | Scoped bounded reads and non-revisioned block/scope overrides |
 | `setSelection` | `canvas.selection.set` | Scoped document, expected selection version and IDs return a view |
 | `readHistory` | `canvas.history` | Scoped document returns retained real transactions, including agent ID |
 | `readCatalog`, `mutateCatalog` | `canvas.catalog.read`, `canvas.catalog.mutate` | Read is `{}`; mutation requires catalog revision and a typed action |

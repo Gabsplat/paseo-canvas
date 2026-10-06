@@ -1,0 +1,235 @@
+# Learning renderer contract
+
+Renderers are trusted plugin code. Packs contain declarative JSON only; never execute
+agent-supplied JavaScript or HTML. Rich interactions run on web/desktop. Native shows a
+static summary and `La versión interactiva está disponible en escritorio/web.`
+Every manipulable block needs a visible guiding question or goal and a visible Reiniciar
+control. Use the existing `useUI`, typography and controls. Show useful Spanish error text;
+keep compiler/transport diagnostics out of the learner's UI.
+
+## Ownership and registration
+
+Each wave 2 engineer owns exactly these files and their renderer tests:
+
+- `plugin/shared/renderers/<id>.ts`
+- `plugin/client/renderers/<id>.tsx`
+- `tests/<id>.test.ts`
+
+Send the two exported registration names to the coordinator. The coordinator adds one
+import/register line to each `renderers/index.ts`, before the shared `rendererNames`
+constant. Implementers do not edit core files, indices, tokens, Panel or other renderers.
+For example, the controls registration lines are:
+
+```ts
+// shared/renderers/index.ts
+import { controlsSpec } from './controls'; registerRenderer(controlsSpec);
+// client/renderers/index.ts
+import { controlsRenderer } from './controls'; registerClientRenderer(controlsRenderer);
+```
+
+`RendererSpec` is exported from `shared/renderers`:
+
+```ts
+type RendererSpec = {
+  id: string;
+  dataSchema: z.ZodType;
+  blockType: BlockType;
+  guidance: string;
+  interactive: boolean;
+  minSize?: { width: number; height: number };
+  defaultSize?: { width: number; height: number };
+};
+```
+
+Use the same `id` as `blockType.renderer`; built-in type IDs normally match too. The
+schema validates all data, including JSON properties, on server writes and pack validation.
+Client dispatch parses data before calling the renderer. Defaults must pass the schema.
+List every top-level data key in `blockType.properties`. One-line guidance appears in MCP
+catalog results and agent integration instructions. The 15 legacy renderer names remain
+valid. Diagram uses the registry; the remaining legacy renderers still work.
+
+## Client props
+
+`RendererProps<Data>` and `ClientRenderer<Data>` are exported from `client/renderers`.
+The authoritative definitions are in `client/renderers/types.ts`:
+
+```ts
+type RendererProps<Data = unknown> = {
+  document: DeepReadonly<CanvasDocument>;
+  data: Data;
+  block: CanvasBlock;
+  availableWidth: number; // logical content width, initially 0 until measured
+  compact: boolean;
+  readOnly: boolean;
+  ui: ReturnType<typeof useUI>;
+  runtime: RendererRuntime;
+  scope: RendererScope;
+  send(kind: string, payload: CanvasBlock['data'], label: string,
+       delivery?: 'immediate' | 'batched'): Promise<void>;
+};
+type ClientRenderer<Data = unknown> = {
+  id: string;
+  Component: ComponentType<RendererProps<Data>>;
+  visual: { icon: string; tone: string; width: 'standard' | 'wide' | 'node' };
+};
+```
+
+Use `ui.c`/`ui.tone` or call existing `useUI()` for theme access. Use shared spec `defaultSize` for an explicit initial frame; otherwise `visual.width`
+selects the existing standard/wide/node width. Legacy token callers use registered visual
+metadata with a generic fallback. `interactive:true` wraps the renderer
+in `lienzo-interactive-renderer-<blockId>` to isolate gestures. Honor `readOnly` in every
+control and give nested interactive elements the same `lienzo-interactive-` ID prefix.
+Do not mutate any prop or cached snapshot.
+
+Flow/gate renderers can read `document.blocks`, `document.groups` and `document.links`.
+Store node/link/result references as IDs in parsed declarative data; handle missing IDs
+with useful Spanish text. A flow can resolve endpoints from this readonly document.
+A gate can resolve a result block by ID and render a local reveal, or set a declared
+numeric scope flag so a cooperating result renderer also updates. There is no prop for
+arbitrary block mutation or changing the outer link layer. Persist an explicit step in
+own runtime; report a prediction/outcome with `runtime.settle`. Use `send` to ask the
+connected agent for a revisioned document change. Referencing a result is not proof that
+it has been generated or that an agent finished work.
+
+## Runtime and scope
+
+```ts
+type RendererRuntime = {
+  state: Record<string, JSONValue>;
+  set(state: Record<string, JSONValue> | null, settled?: boolean): void;
+  flush(): Promise<void>;
+  settle(kind: string, payload: CanvasBlock['data'], label?: string): Promise<void>;
+};
+type RendererScope = {
+  variables: Record<string, ScopeVariable & { scopeId: string; current: number }>;
+  values: Record<string, number>;
+  get(name: string): number; // NaN if undeclared
+  set(name: string, value: number | null, settled?: boolean): void;
+};
+```
+
+`runtime.set` replaces the block's JSON object; null resets it. Changes publish locally
+immediately, debounce network writes for 80 ms, and send immediately with `settled:true`.
+`flush()` waits for network acknowledgement, not disk durability. `runtime.settle` first
+flushes runtime writes, then sends one batched settled event for this block. Include final
+value, visited range, or prediction/outcome in the payload, up to 4 KiB. Use a stable kind
+per interaction, such as `controls.amplitude`, so a newer pending event replaces the older
+one for the same block/kind. Events already prepared for delivery remain immutable.
+Settled context retains the target and ancestor groups, rather than the entire document.
+Normal feedback still retains its full snapshot. Batched-only feedback waits for the
+existing explicit flush mechanism.
+
+Declare `variables` on the document or a group through revisioned `document.update` or
+`group.update`. Each declaration is `{name, value, min, max, label?, step?, unit?}`. Names
+match `[a-zA-Z_][a-zA-Z0-9_]{0,31}`, excluding prototype keys. Each scope has at most 24
+unique names; all numbers are finite, `min <= value <= max`, and supplied step is positive.
+Resolution uses the nearest declaring ancestor, then document scope `$document`. Current
+values come from runtime or fall back to declared value; reads clamp old overrides to the
+current range. `scope.set(name,null)` removes the override. Every sibling resolves against
+one optimistic store, so sliders and figures update together before the server responds.
+`controls.data.variables` lists at most four names per block, while each scope permits 24.
+Reset each listed variable with null, then settle a reset event with the declared defaults.
+
+Runtime has no document revision, history or undo. Updates copy only runtime in memory,
+use last-write-wins and persist the aggregate with a 250 ms coalescing window. A normal
+transaction or store close also flushes it. Process/power loss within that window can lose
+recent runtime changes; content transactions retain their existing durability. Background
+write failures retry on the next runtime write or explicit store flush/close. Limits are
+4 KiB of serialized UTF-8 JSON per block and 256 KiB per document. JSON nesting is limited
+to 32 and reserved keys are rejected. Deleted entities/declarations lose their runtime
+entries; undo restores content, not those entries. Document copy/export and selection packs retain document/group declarations, not overrides.
+Group templates retain the exported groups' declarations; declarations on excluded ancestors
+or the source document are outside that template and must be supplied by its destination.
+`runtimeVersion` also covers existing selection/connection/feedback changes; watch/poll
+therefore observes both kinds of runtime changes. Runtime updates never lock the card.
+
+## Math and drawing
+
+`shared/expr.ts` exports `compileExpression(source): CompiledExpression`,
+`validateExpression(source, allowedIdentifiers = [])`, and `ExpressionParseError`.
+Compilation throws a readable error with zero-based `position` on invalid syntax.
+A compiled object has `identifiers` and `evaluate(variables = {}): number`. Compile once
+with `useMemo`, then evaluate with scope values. Evaluation catches failures and returns
+NaN for missing variables and nonfinite/domain results. Validator returns
+`{valid, unknownIdentifiers, error?}` for a Zod refinement.
+
+Operators are `+ - * / ^ %`, unary `- + !`, `< <= > >= == !=`, `&& ||`, and ternary `?:`.
+Powers associate right, `-2^2` is -4, logic/comparisons return 0/1, and logic/ternary
+short-circuit. Constants are `pi e tau`. Functions are `sin cos tan asin acos atan atan2
+sinh cosh tanh exp ln log log10 log2 sqrt cbrt abs floor ceil round sign min max clamp mix
+step smoothstep mod hypot`. `log` means natural log; `%` is remainder and `mod` wraps.
+Source length is capped at 4096 characters, nesting/tree depth at 64 and variadic arity
+at 64. No property access, assignment, eval, Function or executable code is supported.
+
+Import `CanvasSurface`, `GLSurface`, `NativeLearningFallback` and drawing types from
+`client/Surfaces`. Only `client/web.ts` accesses DOM; do not enable the DOM TypeScript lib.
+Both wrappers take `{id,label,height,summary,animated?,onPointer?,onError?,draw}`.
+2D draw receives `(Canvas2DContext, SurfaceFrame)`; GL draw receives `(GLContext, frame)`.
+Frame is `{width,height,pixelRatio,time}`, with logical dimensions and RAF time in ms.
+2D coordinates are already scaled for DPR; GL gets a physical viewport. Pointers report
+`{kind,x,y,pointerId,buttons,pressure}` in logical coordinates with pointer capture.
+Surfaces resize and stop drawing offscreen or when the tab is hidden. Static surfaces
+redraw on props/size changes; animated ones use RAF.
+
+`GLSurface` also accepts `initialize(gl)` returning `{dispose?,error?}` or void. Memoize
+initialize to avoid context churn. It runs again after context restoration. Context loss
+pauses rendering; at most eight mounted GL contexts are live. Overflow shows a Spanish
+message; close another graph and remount the block. `compileGLProgram(gl,vertex,fragment)`
+returns `{program?,error?}` with compile/link diagnostics and frees temporary shaders.
+Delete a successful program in dispose. Do not display raw diagnostics to the learner.
+Native wrappers show the static fallback and never create contexts.
+
+Raster resolution samples DPR times CSS camera scale on each redraw, capped at 4x.
+A static bitmap can briefly soften after a camera-only zoom until its next redraw, since
+CSS transforms do not notify ResizeObserver. Animated surfaces resample each frame.
+Actual GPU/browser/native integration remains for coordinator verification; headless
+adapter tests use simulated host/context objects and do not open a GUI.
+
+## Skeleton and verification
+
+```ts
+// shared/renderers/example.ts
+import { z } from 'zod';
+import type { RendererSpec } from './spec';
+export const exampleDataSchema = z.object({ question: z.string().min(1).max(1000) }).strict();
+export type ExampleData = z.infer<typeof exampleDataSchema>;
+export const exampleSpec = {
+  id: 'example', dataSchema: exampleDataSchema, interactive: true,
+  guidance: 'Set a guiding question and explicit declarative parameters.',
+  blockType: { id: 'example', name: 'Ejemplo', description: 'Datos de ejemplo.',
+    renderer: 'example', properties: [{key:'question',label:'Pregunta',kind:'text',required:true}],
+    defaults: {question:'¿Qué cambia al mover el parámetro?'} },
+} satisfies RendererSpec;
+```
+
+```tsx
+// client/renderers/example.tsx
+import React from 'react';
+import { View } from 'react-native';
+import type { ExampleData } from '../../shared/renderers/example';
+import type { ClientRenderer, RendererProps } from './types';
+import { Button, Txt } from '../ui';
+import { NativeLearningFallback } from '../Surfaces';
+function Example({data,ui,runtime,readOnly}: RendererProps<ExampleData>) {
+  if (ui.layout.platform !== 'web') return <NativeLearningFallback summary={data.question} />;
+  return <View style={{gap:8}}><Txt>{data.question}</Txt>
+    {/* Add declarative controls/drawing here; honor readOnly. */}
+    <Button label="Reiniciar" disabled={readOnly} onPress={() => {
+      runtime.set(null);
+      void runtime.settle('example.reset', {}, 'Reiniciar ejemplo').catch(() => {
+        // Show a useful Spanish retry message in component state.
+      });
+    }} />
+  </View>;
+}
+export const exampleRenderer: ClientRenderer<ExampleData> = {
+  id:'example', Component:Example, visual:{icon:'Square',tone:'neutro',width:'standard'},
+};
+```
+
+Test valid/invalid data and expressions, actual calculations, reset, missing references,
+readOnly, and native fallback. Do not edit registry indices in parallel worktrees; send
+registration lines to the coordinator, who can validate registry dispatch after integration.
+Run `PATH="$HOME/.local/share/pnpm/bin:$PATH" pnpm typecheck` and `pnpm test`.
+Here the pnpm executable requires execution outside the sandbox. No dependency install,
+plugin install, daemon restart, GUI or public preview is needed for these checks.
