@@ -1,5 +1,6 @@
+import { getRendererVisual } from "./renderer-visuals";
 // Generated from design/tokens.json. Keep both files in sync.
-export const tokens = {
+const baseTokens = {
   "$meta": {
     "product": "Lienzo",
     "subtitle": "Paseo Canvas",
@@ -910,3 +911,8 @@ export const tokens = {
     ]
   }
 } as const;
+
+// Compatibility for callers that still index this closed legacy table. Registry cards own their visuals.
+export const tokens = { ...baseTokens, renderers: new Proxy(baseTokens.renderers, {
+  get(target, key: string) { return getRendererVisual(key) ?? (Object.hasOwn(target, key) ? target[key as keyof typeof target] : target.generic); },
+}) as typeof baseTokens.renderers & Record<string, { icon: string; tone: string; width: string }> };

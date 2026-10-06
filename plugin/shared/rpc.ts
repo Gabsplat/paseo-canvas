@@ -1,3 +1,4 @@
+import { runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import {
@@ -38,3 +39,12 @@ export const configureInjection = defineRpc({ name: "canvas.injection", input: z
 export const readSharing = defineRpc({ name: "canvas.sharing.read", input: scopeSchema, output: z.object({ mode: sharingModeSchema }) });
 export const configureSharing = defineRpc({ name: "canvas.sharing", input: scopeSchema.extend({ mode: sharingModeSchema }), output: readSharing.output });
 export const readInjection = defineRpc({ name: "canvas.injection.read", input: z.object({}).strict(), output: configureInjection.output });
+
+export const runtimeReadInputSchema = readInputSchema.extend({ blockIds: z.array(idSchema).max(4).default([]), scopeIds: z.array(z.union([idSchema, z.literal('$document')])).max(4).default([]) });
+export const runtimeSetInputSchema = readInputSchema.extend({
+  blocks: z.array(z.object({ id: idSchema, state: runtimeBlockStateSchema.nullable() }).strict()).max(4).default([]),
+  scopes: z.array(z.object({ id: z.union([idSchema, z.literal('$document')]), values: z.record(variableNameSchema, z.number().finite().nullable()) }).strict()).max(4).default([]),
+});
+export const runtimeOutputSchema = z.object({ runtimeVersion: revisionSchema, runtime: runtimeStateSchema });
+export const readRuntime = defineRpc({ name: 'canvas.runtime.read', input: runtimeReadInputSchema, output: runtimeOutputSchema });
+export const setRuntime = defineRpc({ name: 'canvas.runtime.set', input: runtimeSetInputSchema, output: runtimeOutputSchema });

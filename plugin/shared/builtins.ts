@@ -1,3 +1,4 @@
+import { rendererSpecs } from "./renderers";
 import type { BlockType, CanvasPack, DocumentContent, GroupTemplate } from "./model";
 
 const propertyLabels = {
@@ -9,8 +10,8 @@ const propertyLabels = {
 };
 const property = (key: keyof typeof propertyLabels, kind: "text" | "number" | "boolean" | "json", required = false) => ({ key, label: propertyLabels[key], kind, required });
 export const builtinTypes: BlockType[] = [
+  ...rendererSpecs.map(spec => spec.blockType),
   { id: "node", name: "Nodo", description: "Tarjeta compacta para sistemas, flujos y explicaciones. Une nodos con links y agrúpalos con layout.mode graph; deja la explicación extensa en details.", renderer: "node", properties: [property("kind", "text"), property("status", "text"), property("summary", "text"), property("details", "text")], defaults: {} },
-  { id: "diagram", name: "Diagrama", description: "Nodos y conexiones declarativos. Añade pasos progresivamente con block.update; el cliente los dibuja como tarjetas y conectores.", renderer: "diagram", properties: [property("nodes", "json", true), property("edges", "json", true), property("caption", "text")], defaults: { nodes: [], edges: [] } },
   { id: "note", name: "Nota", description: "Texto explicativo.", renderer: "note", properties: [property("text", "text", true)], defaults: { text: "" } },
   { id: "code", name: "Código", description: "Código de ejemplo; no se ejecuta.", renderer: "code", properties: [property("code", "text", true), property("language", "text")], defaults: { code: "", language: "text" } },
   { id: "checklist", name: "Lista", description: "Pasos y revisión.", renderer: "checklist", properties: [property("items", "json", true)], defaults: { items: [] } },

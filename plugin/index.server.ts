@@ -19,6 +19,8 @@ export default function contribute(server: PluginServerContext) {
   void bridge.ensure().catch(() => { console.error("Canvas bridge did not start with the plugin; it will retry on first use."); });
   server.handle(rpc.listDocuments, input => service.list(input));
   server.handle(rpc.readDocument, input => service.read(input));
+  server.handle(rpc.readRuntime, input => service.runtimeRead(input));
+  server.handle(rpc.setRuntime, input => service.runtimeSet(input));
   server.handle(rpc.watchDocument, input => service.watch(input));
   server.handle(rpc.createDocument, input => service.create(input));
   server.handle(rpc.mutateDocument, input => service.mutate(input));

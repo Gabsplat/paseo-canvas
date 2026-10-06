@@ -1,3 +1,5 @@
+import { cleanRuntime, DOCUMENT_SCOPE, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
+import { safeJson } from "./reducer";
 import type { RpcInput } from "@getpaseo/plugin";
 import * as rpc from "../shared/rpc";
 import {
@@ -5,7 +7,7 @@ import {
   type CanvasDocument, type DocumentView, type AgentEvent,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
-import { CanvasStore, documentRecord, assertRevision, changedEntities, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
+import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
 import { catalogView, packDiff, packIssues, parsePack, validateTemplate, validateType } from "./catalog";
 import { clone, newId, reduce, validateDocument, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
 
@@ -21,9 +23,9 @@ const view = (record: DocumentRecord, actor: Actor = "user", agentId?: string): 
   document: clone(record.document), connection: clone(record.connection),
   canUndo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && !entry.undone),
   canRedo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && entry.undone),
-  selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion,
+  selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion, runtime: clone(record.runtime),
 });
-const touchRuntime = (record: DocumentRecord) => { record.runtimeVersion++; };
+const touchRuntime = (record: RuntimeRecord) => { record.runtimeVersion++; };
 function recordEdit(record: DocumentRecord, next: CanvasDocument, actor: Actor, label: string, kind: HistoryEntry["kind"] = "edit", target?: string, agentId?: string): void {
   const before = clone(record.document);
   next.revision = before.revision + 1;
@@ -36,6 +38,8 @@ function recordEdit(record: DocumentRecord, next: CanvasDocument, actor: Actor, 
   record.history = record.history.slice(-50);
   while (record.history.length > 1 && Buffer.byteLength(JSON.stringify(record.history)) > 8 * 1024 * 1024) record.history.shift();
   record.document = next;
+  const oldRuntime = JSON.stringify(record.runtime); cleanRuntime(next, record.runtime);
+  if (oldRuntime !== JSON.stringify(record.runtime)) touchRuntime(record);
 }
 
 export class CanvasService {
@@ -59,7 +63,7 @@ export class CanvasService {
       for (const block of document.blocks) if (!catalog.blockTypes.some(type => type.id === block.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}.`);
       validateDocument(document, catalog);
       if (Buffer.byteLength(JSON.stringify(document)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
-      state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, events: [], outboundBatches: [], ...(actor === "agent" && connection ? { ownerAgentId: connection.agentId } : {}) };
+      state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, runtime: { blocks: {}, scopes: {} }, events: [], outboundBatches: [], ...(actor === "agent" && connection ? { ownerAgentId: connection.agentId } : {}) };
       return view(state.documents[id], actor);
     });
   }
@@ -96,7 +100,7 @@ export class CanvasService {
       next.blocks = restore(next.blocks, snapshot.blocks);
       next.groups = restore(next.groups, snapshot.groups);
       next.links = restore(next.links, snapshot.links);
-      if (affected.has("$document")) { next.title = snapshot.title; next.description = snapshot.description; next.example = snapshot.example; next.communication = clone(snapshot.communication); if (snapshot.layout) next.layout = clone(snapshot.layout); else delete next.layout; }
+      if (affected.has("$document")) { next.title = snapshot.title; next.description = snapshot.description; next.example = snapshot.example; next.communication = clone(snapshot.communication); next.variables = clone(snapshot.variables); if (snapshot.layout) next.layout = clone(snapshot.layout); else delete next.layout; }
       const ids = new Set([...next.blocks, ...next.groups].map(entity => entity.id));
       next.selectedIds = next.selectedIds.filter(id => ids.has(id));
       try { validateDocument(next); }
@@ -120,6 +124,51 @@ export class CanvasService {
       const next = clone(record.document); next.selectedIds = [...input.ids]; validateDocument(next);
       record.document.selectedIds = next.selectedIds; record.selectionVersion++; touchRuntime(record);
       return view(record);
+    });
+  }
+  async runtimeRead(raw: RpcInput<typeof rpc.readRuntime>) {
+    const input = rpc.runtimeReadInputSchema.parse(raw);
+    const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
+    return this.runtimeSubset(record, input.blockIds, input.scopeIds);
+  }
+  private runtimeSubset(record: RuntimeRecord, blockIds: string[], scopeIds: string[]) {
+    return { runtimeVersion: record.runtimeVersion, runtime: {
+      blocks: Object.fromEntries(blockIds.filter(id => Object.hasOwn(record.runtime.blocks, id)).map(id => [id, clone(record.runtime.blocks[id])])),
+      scopes: Object.fromEntries(scopeIds.filter(id => Object.hasOwn(record.runtime.scopes, id)).map(id => [id, clone(record.runtime.scopes[id])])),
+    } };
+  }
+  runtimeSet(raw: RpcInput<typeof rpc.setRuntime>) {
+    safeJson(raw);
+    const input = rpc.runtimeSetInputSchema.parse(raw);
+    return this.store.runtimeTransaction(input.documentId, input.workspaceId, record => {
+      const before = JSON.stringify(record.runtime);
+      for (const entry of input.blocks) {
+        if (!record.document.blocks.some(b => b.id === entry.id)) throw new CanvasError('NOT_FOUND', `Block ${entry.id} was not found.`);
+        if (entry.state === null) delete record.runtime.blocks[entry.id];
+        else {
+          safeJson(entry.state);
+          if (Buffer.byteLength(JSON.stringify(entry.state)) > RUNTIME_BLOCK_BYTES) throw new CanvasError('TOO_LARGE', 'Block runtime exceeds 4 KiB.');
+          record.runtime.blocks[entry.id] = clone(entry.state);
+        }
+      }
+      for (const entry of input.scopes) {
+        const declarations = entry.id === DOCUMENT_SCOPE ? record.document.variables : record.document.groups.find(g => g.id === entry.id)?.variables;
+        if (!declarations) throw new CanvasError('NOT_FOUND', 'Scope has no variable declarations.');
+        const values = record.runtime.scopes[entry.id] ?? {};
+        for (const [name, value] of Object.entries(entry.values)) {
+          const variable = declarations.find(v => v.name === name);
+          if (!variable) throw new CanvasError('NOT_FOUND', `Variable ${name} is not declared in ${entry.id}.`);
+          if (value === null) delete values[name];
+          else {
+            if (value < variable.min || value > variable.max) throw new CanvasError('VALIDATION', `Variable ${name} is outside its declared range.`);
+            values[name] = value;
+          }
+        }
+        if (Object.keys(values).length) record.runtime.scopes[entry.id] = values; else delete record.runtime.scopes[entry.id];
+      }
+      if (Buffer.byteLength(JSON.stringify(record.runtime)) > RUNTIME_DOCUMENT_BYTES) throw new CanvasError('TOO_LARGE', 'Document runtime exceeds 256 KiB.');
+      if (before !== JSON.stringify(record.runtime)) touchRuntime(record);
+      return this.runtimeSubset(record, input.blocks.map(b => b.id), input.scopes.map(s => s.id));
     });
   }
   async selected(input: RpcInput<typeof rpc.readDocument>) {
@@ -197,11 +246,28 @@ export class CanvasService {
         if (JSON.stringify(existing.action) !== JSON.stringify(input.action)) throw new CanvasError("VALIDATION", "Event ID was reused with a different action.");
         return existing;
       }
-      assertRevision(record, input.expectedRevision);
+      if (!input.action.settled) assertRevision(record, input.expectedRevision);
       const ids = new Set([...record.document.blocks, ...record.document.groups].map(entity => entity.id));
       if (input.action.targetIds?.some(id => !ids.has(id))) throw new CanvasError("NOT_FOUND", "Action target was not found.");
+      if (input.action.settled) {
+        if (input.action.delivery !== 'batched' || input.action.targetIds?.length !== 1) throw new CanvasError('VALIDATION', 'Settled events need batched delivery and one block target.');
+        if (!record.document.blocks.some(b => b.id === input.action.targetIds![0])) throw new CanvasError('NOT_FOUND', 'Settled target must be a block.');
+        if (Buffer.byteLength(JSON.stringify(input.action.payload)) > 4096) throw new CanvasError('TOO_LARGE', 'Settled payload exceeds 4 KiB.');
+        const protectedIds = new Set(record.outboundBatches.filter(b => b.status !== 'completed').flatMap(b => b.eventIds));
+        record.events = record.events.filter(e => !(e.status === 'pending' && e.action.settled && e.action.kind === input.action.kind && e.action.targetIds?.[0] === input.action.targetIds![0] && !protectedIds.has(e.id)));
+      }
       if (record.events.filter(event => event.status === "pending" || event.status === "failed").length >= 100) throw new CanvasError("TOO_LARGE", "Too many pending feedback events. Connect an agent and send them first.");
       const { id: _id, workspaceId: _workspace, revision: _revision, createdAt: _created, updatedAt: _updated, ...content } = record.document;
+      if (input.action.settled) {
+        const kept = new Set(input.action.targetIds);
+        for (const id of input.action.targetIds ?? []) {
+          let parent = record.document.blocks.find(b => b.id === id)?.parentGroupId;
+          while (parent) { kept.add(parent); parent = record.document.groups.find(g => g.id === parent)?.parentGroupId; }
+        }
+        content.blocks = content.blocks.filter(b => kept.has(b.id));
+        content.groups = content.groups.filter(g => kept.has(g.id)).map(g => ({ ...g, blockIds: g.blockIds.filter(id => kept.has(id)), groupIds: g.groupIds.filter(id => kept.has(id)) }));
+        content.links = []; content.selectedIds = content.selectedIds.filter(id => kept.has(id));
+      }
       const event: AgentEvent = { id: input.eventId, documentId: input.documentId, agentId: record.connection?.agentId ?? null, workspaceId: input.workspaceId, createdAt: timestamp(), revision: record.document.revision, action: clone(input.action), context: documentContentSchema.parse(content), status: "pending" };
       record.events.push(event);
       const retained = new Set(record.outboundBatches.filter(batch => batch.status !== "completed").flatMap(batch => batch.eventIds));

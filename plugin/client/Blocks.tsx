@@ -13,8 +13,9 @@ import { Modal, Button, CheckRow, Chip, Field, IconButton, OptionRow, Txt, useUI
 import { WebFrame, WebMedia } from './web';
 import { mediaSource } from './media';
 import { ImageViewer } from './ImageViewer';
-import { Diagram } from './Diagram';
-export const visual = (type?: BlockType) => tokens.renderers[type ? type.renderer ?? 'generic' : 'unknown'];
+import { getClientRenderer } from './renderers';
+import { RegisteredRenderer } from './renderers/RegisteredRenderer';
+export const visual = (type?: BlockType) => getClientRenderer(type?.renderer)?.visual ?? tokens.renderers[type ? type.renderer ?? 'generic' : 'unknown'];
 const str = (value: unknown) => typeof value === 'string' ? value : value === undefined ? '' : JSON.stringify(value);
 const G = tokens.graph;
 export function statusTone(status: string): Tone {
@@ -92,6 +93,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   let body: React.ReactNode = generic(), qualifier = '';
   const renderer = type?.renderer;
   if (!type) body = <View style={{ gap: 8 }}><Txt>Este tipo no está en tu catálogo. Importa el pack que lo define.</Txt><Button label="Abrir packs" small variant="ghost" onPress={onPacks} /></View>;
+  else if (getClientRenderer(renderer)) body = <RegisteredRenderer block={block} id={renderer!} controller={c} readOnly={disabled} send={send} />;
   else if (['note', 'text', 'callout', 'step'].includes(renderer ?? '') && typeof block.data.text === 'string') body = <Txt selectable numberOfLines={outline || sized ? undefined : 8}>{block.data.text}</Txt>;
   else if (renderer === 'code' && typeof block.data.code === 'string') {
     const lines = block.data.code.split('\n'); qualifier = str(block.data.language);
@@ -107,7 +109,6 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
     body = <View style={{ gap: 6 }}><View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: Math.max(0, total), now: current }} style={{ height: 6, backgroundColor: u.c.surface2, borderRadius: 3, overflow: 'hidden' }}><View style={{ width: `${total > 0 ? current / total * 100 : 0}%`, height: 6, backgroundColor: u.tone('exito') }} /></View><Txt kind="small" muted>{total > 0 ? `${current} de ${total}` : 'Sin total'}</Txt></View>;
   } else if (renderer === 'preview-frame') { qualifier = safeUrl(block.data.url) ? 'Web' : ''; body = <UrlPreview block={block} fill={sized} />; }
   else if (renderer === 'image-ref') body = <Media block={block} fill={sized} />;
-  else if (renderer === 'diagram') { qualifier = `${Array.isArray(block.data.nodes) ? block.data.nodes.length : 0} nodos`; body = <Diagram block={block} disabled={disabled || sending} onAsk={(nodeId, label) => { void send('diagram.step', { nodeId, label }, `Preguntar por «${label}»`); }} />; }
   else if (renderer === 'metric') body = <View><Txt kind="display">{str(block.data.value)} {str(block.data.unit)}</Txt><Txt kind="small" muted>{str(block.data.label)}</Txt></View>;
   else if (renderer === 'form') body = <FormBody block={block} type={type} controller={c} submit={values => send('block.submit', { values }, `Enviar «${block.title}»`)} />;
   const doc = c.view?.document, connections = outline && doc ? <ConnectionRows doc={doc} id={block.id} onOpen={id => onSelect(id)} /> : null;
