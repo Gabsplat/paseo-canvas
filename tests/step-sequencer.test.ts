@@ -374,3 +374,43 @@ test('having listened belongs to the exact music that sounded: a new scale with 
   for (const patch of [{ voice: 'square' }, { stepsPerBeat: 2 }, { rows: [1, 5] }]) assert.equal(sequencerHeard(stepSequencerDataSchema.parse({ ...major, ...patch }), state, store.getSnapshot().blocks.seq), false, JSON.stringify(patch));
   assert.equal(sequencerHeard(major, state, { ...state, heard: true }), false); h.unmount();
 });
+test('a cycle is credited only to the music whose steps the audio clock actually reached', async t => {
+  const fake = browser(); t.after(fake.restore); const timers = clock(t);
+  const doc = documentSchema.parse({ id: 'doc', workspaceId: 'w', revision: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', title: 'Ejemplo', communication: { instructions: '' }, blocks: [{ id: 'seq', typeId: 'note', title: 'Secuenciador de ejemplo', data: {} }], groups: [] });
+  let version = 0; const server: Record<string, Record<string, unknown>> = {};
+  const store = new LearningRuntimeStore(async request => {
+    for (const entry of request.blocks) { if (entry.state) server[entry.id] = entry.state; else delete server[entry.id]; }
+    return { runtimeVersion: ++version, runtime: { blocks: structuredClone(server), scopes: {} } } as never;
+  }, error => assert.fail(String(error)));
+  store.sync(doc, 0, { blocks: {}, scopes: {} });
+  const h = harness(four()), data = h.props.data;
+  const mount = () => { Object.assign(h.props.runtime, { state: store.getSnapshot().blocks.seq ?? {}, set: (state: Record<string, never> | null, settled?: boolean) => store.setBlock('seq', state, settled) }); return h.render(); };
+  const stored = () => store.getSnapshot().blocks.seq ?? {}, heard = () => sequencerHeard(data, sequencerState(data, stored()), stored());
+  const run = (context: FakeContext, seconds: number) => { for (let t = 0; t < seconds - 1e-9; t += .025) { context.currentTime += .025; timers.tick(25); } };
+  const range = () => all(mount()).find(n => n.type === WebRange)!;
+  // Pattern A plays for more than a full cycle (four half-second steps), then B is entered and paused at once.
+  button(mount(), 'Reproducir')!.props.onPress(); await settleMicrotasks(); let context = fake.contexts.at(-1)!;
+  run(context, 2.6);
+  cell(mount(), 1, 1).props.onPress(press); button(mount(), 'Pausar')!.props.onPress(); timers.tick(600); await settleMicrotasks();
+  assert.deepEqual(sequencerState(data, stored()).pattern, ['x...', '.xx.']); assert.equal(heard(), false, 'B never sounded: A\'s cycle is not B\'s.');
+  assert.deepEqual(h.events.map(e => e[1].heard), [false]);
+  // B again, but paused before its cycle completes; notes waiting in the lookahead are not credit.
+  button(mount(), 'Reproducir')!.props.onPress(); await settleMicrotasks(); context = fake.contexts.at(-1)!;
+  run(context, 1); assert.ok(context.oscillators.some(o => o.startedAt! > context.currentTime), 'A note is already queued ahead of the clock.');
+  button(mount(), 'Pausar')!.props.onPress(); await settleMicrotasks(); assert.equal(heard(), false, 'Two reached steps and one queued are not a cycle.');
+  // A tempo change mid-playback starts the count again for the new tempo.
+  button(mount(), 'Reproducir')!.props.onPress(); await settleMicrotasks(); context = fake.contexts.at(-1)!;
+  run(context, 2.6); range().props.onChange(240); range().props.onSettle(240); button(mount(), 'Pausar')!.props.onPress(); await settleMicrotasks();
+  assert.equal(sequencerState(data, stored()).bpm, 240); assert.equal(heard(), false, 'The faster version was not heard.');
+  // Enough of the final pattern and tempo: now, and only now, it is heard. One second covers four quarter-second steps.
+  const before = h.events.length;
+  button(mount(), 'Reproducir')!.props.onPress(); await settleMicrotasks(); context = fake.contexts.at(-1)!;
+  run(context, 1.3); button(mount(), 'Pausar')!.props.onPress(); await settleMicrotasks();
+  assert.equal(heard(), true); assert.deepEqual(h.events.slice(before).map(e => [e[1].heard, e[1].bpm, e[1].rows.map((r: { pattern: string }) => r.pattern)]), [[true, 240, ['.xx.', 'x...']]]);
+  // An edit made while playing is credited once its own full cycle has passed, without restarting.
+  button(mount(), 'Reproducir')!.props.onPress(); await settleMicrotasks(); context = fake.contexts.at(-1)!;
+  run(context, .6); cell(mount(), 0, 2).props.onPress(press); run(context, 1.4);
+  assert.equal(fake.contexts.filter(c => !c.closed).length, 1, 'Still the same single context.'); assert.equal(heard(), false, 'Nothing is persisted per step while it plays.');
+  button(mount(), 'Pausar')!.props.onPress(); await settleMicrotasks();
+  assert.deepEqual(sequencerState(data, stored()).pattern, ['x.x.', '.xx.']); assert.equal(heard(), true); h.unmount();
+});

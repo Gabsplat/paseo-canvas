@@ -51,9 +51,9 @@ function StepSequencer(props: RendererProps<StepSequencerData>) {
     const active = audio.current;
     audio.current = null; current.attempt++; current.step = -1;
     if (!active) return;
-    const played = active.engine?.played ?? 0;
+    const now = live.current.data, reached = active.engine?.reached(sequencerFingerprint(now, current.state)) ?? 0;
     active.engine?.stop(); active.port.close();
-    if (report && played >= live.current.data.steps && !current.heard) { current.heard = true; commit(); }
+    if (report && reached >= now.steps && !current.heard) { current.heard = true; commit(); }
   };
   const edit = (next: StepSequencerState, settleNow = false) => {
     if (!enabled()) return;
@@ -75,7 +75,7 @@ function StepSequencer(props: RendererProps<StepSequencerData>) {
       if (!ok) { audio.current = null; current.status = 'blocked'; refresh(); return; }
       session.engine = createSequencer({
         port: opened.port,
-        read: () => { const now = live.current.data; return { frequencies: now.rows.map(degree => midiFrequency(degreeMidi(now.scale, degree))), pattern: current.state.pattern, steps: now.steps, stepSeconds: stepSeconds(current.state.bpm, now.stepsPerBeat) }; },
+        read: () => { const now = live.current.data; return { frequencies: now.rows.map(degree => midiFrequency(degreeMidi(now.scale, degree))), pattern: current.state.pattern, steps: now.steps, stepSeconds: stepSeconds(current.state.bpm, now.stepsPerBeat), key: sequencerFingerprint(now, current.state) }; },
         onStep: step => { current.step = step; refresh(); },
         onStall: () => { silence(); current.status = 'interrupted'; refresh(); },
       });
