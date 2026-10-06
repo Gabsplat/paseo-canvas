@@ -373,7 +373,11 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
     };
     const stop = () => { if (frameId) host.cancelAnimationFrame(frameId); frameId = 0; };
     const visibility = () => { notifyVisibility(); if (doc.hidden) stop(); else schedule(); };
-    const onLost = (event: { preventDefault(): void }) => { event.preventDefault(); lost = true; stop(); notifyVisibility(); dispose = undefined; report('El contexto WebGL se perdió. Esperando restauración.'); };
+    const onLost = (event: { preventDefault(): void }) => {
+      event.preventDefault(); lost = true; stop(); notifyVisibility();
+      const cleanup = dispose; dispose = undefined; context = null;
+      try { cleanup?.(); } finally { report('El contexto WebGL se perdió. Esperando restauración.'); }
+    };
     const onRestored = () => { lost = false; initialize(); notifyVisibility(); schedule(); };
     initialize(); invalidate.current = schedule;
     const intersection = host.IntersectionObserver ? new host.IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); notifyVisibility(); if (visible) schedule(); else stop(); }) : null;

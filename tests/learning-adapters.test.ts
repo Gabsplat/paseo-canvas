@@ -59,15 +59,15 @@ function fakeGL() {
   return { viewport() {}, getExtension: () => ({ loseContext: () => disposed++ }), disposed: () => disposed };
 }
 test('WebGL adapter pauses on context loss, reinitializes on restore, and releases its context', () => {
-  const gl = fakeGL(); let initializations = 0, draws = 0;
-  const h = harness('webgl', { animated: true, initialize: () => { initializations++; }, draw: () => draws++ }, gl);
+  const gl = fakeGL(); let initializations = 0, draws = 0, releases = 0;
+  const h = harness('webgl', { animated: true, initialize: () => { initializations++; return { dispose: () => releases++ }; }, draw: () => draws++ }, gl);
   try {
     h.observers.intersection([{ isIntersecting: true }]); h.frame(); assert.equal(draws, 1);
     let prevented = false; h.canvasEvents.get('webglcontextlost')!({ preventDefault() { prevented = true; } });
-    assert.equal(prevented, true); assert.equal(h.frames.size, 0); h.frame(); assert.equal(draws, 1);
+    assert.equal(prevented, true); assert.equal(h.frames.size, 0); h.frame(); assert.equal(draws, 1); assert.equal(releases, 1);
     h.canvasEvents.get('webglcontextrestored')!({}); h.frame(); assert.equal(initializations, 2); assert.equal(draws, 2);
   } finally { h.close(); }
-  assert.equal(gl.disposed(), 1);
+  assert.equal(gl.disposed(), 1); assert.equal(releases, 2);
 });
 test('surface visibility pauses playback on hidden stages and pixel caps bound physical drawing size', () => {
   const visibility: boolean[] = [];
