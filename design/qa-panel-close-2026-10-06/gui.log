@@ -1,0 +1,18 @@
+PASS one node has approved toolbar and Preguntar focuses without sending
+PASS Estado writes through real block.update and keeps authored data
+PASS instruction persists and preserves intent/audience
+PASS Más contains bounded named actions, Conectar selects existing link
+PASS connection label Escape cancels without write, Enter saves link.update
+PASS link type, color automatic and inverse preserve label
+PASS group toolbar layout and add inside use real transactions
+PASS multi-selection groups/ungroups without opening generic details
+PASS inheritance opens group and whole-document instructions with no inspector
+PASS Vaciar clears three fields and undo restores the instruction
+PASS failed data write keeps authored state and shows honest failure
+PASS toolbar arrows move focus; keyboard duplicate remains transactional
+PASS toolbar Reiniciar clears runtime, sends existing settled reset event and preserves scope/authored data
+PASS Datos validates JSON before any write and retains authored values
+PASS toolbar sequencer reset stops local audio, cancels pending pattern and emits exactly one reset
+PASS rejected sequencer reset has visible error and zero live contexts, no success event
+PASS dark theme keeps scoped menus bounded and blank pan passes next to toolbar
+PASS compact docks 48px selection toolbar above composer and opens host sheet

@@ -3,9 +3,11 @@
 `plugin/client/Panel.tsx` exports `LienzoPanel` for Paseo 0.10.3
 `PluginWorkspacePanelProps`. The existing client entry mounts it as workspace
 panel `canvas`. It uses the host theme, layout and connection through
-`UIProvider`, `useAgent` and `useCanvas`. Browser helpers and drawing remain
-owned by the frontend engineer. This delivery changes only `Panel.tsx` and this
-file.
+`UIProvider`, `useAgent` and `useCanvas`. The contextual actions are split into `SelectionActions`, `SelectionOverlay`,
+`DocumentActions`, `NumberPropertyField` and the pure `panel-actions` helpers.
+Canvas keeps the `selectionToolbar: ReactNode` contract and adds
+`CanvasApi.editLinkLabel()`. Its three drawing anchor lookups pass the catalog
+so custom renderer aliases work without capturing ordinary card data.
 
 ## Layout and navigation
 
@@ -44,9 +46,7 @@ tool closes the sheet; Listo returns to selection. The compact tool set uses
 44 px buttons, with 8 px gaps, no dividers and no horizontal tool scroller. Its
 200 px grid is centred in the sheet. Applicable style controls follow the tools,
 then an explicit Biblioteca row opens the existing library picker. Noncompact
-tool dialogs retain the normal horizontal island. The catalog and inspector
-are real host modals
-on every width. The local Modal wrapper carries the UI context through host
+tool dialogs retain the normal horizontal island. The catalog uses a host Modal. Selection popovers become host sheets in compact mode. Document settings, history and activity have dedicated content in host dialogs. The local Modal wrapper carries the UI context through host
 portals. Solo lienzo hides the Panel controls while retaining Canvas zoom and
 save, conflict and connection notices.
 
@@ -100,14 +100,46 @@ flush RPC. Queue, sent, failed and acknowledged labels come from returned or
 polled events. Selection remains shared through the controller selection RPC.
 Drawing and style edits do not independently send an assistant prompt.
 
-Panel composes `selectionToolbar` and passes it to Canvas for placement above
-the selection and camera tracking. A whiteboard selection has Duplicar,
-Eliminar and Más. Ordinary selection also has Preguntar and, only when
-`needsContentInteraction` applies, Interactuar. Enter/F2 delegates text editing
-or content interaction to `CanvasApi.editSelection`. Interaction entry and exit
-use `beginInteraction` and `endInteraction`, with state reported through
-`onInteractionChange`. Canvas owns drag, middle-button pan, text editing,
-interaction shields, creation, resizing and contextual toolbar positioning.
+Panel composes `selectionToolbar` and passes it to Canvas only outside compact
+mode. Canvas positions its separate overlay above the current selection or a
+connection label point, measures its width, clamps it to the viewport and flips
+it away from the last selection pointer. It unmounts during drag, resize, pan,
+zoom, connection gestures, drawing, editing and interaction. It returns after
+120 ms with the approved 100 ms fade and 4 px movement, respecting reduced motion.
+In compact mode Panel docks the same actions in a 48 px bar above the composer.
+The compact header exposes Deshacer and Añadir.
+
+The toolbar offers type-specific data edits, communication instructions,
+grouping, connections and group operations directly. Más includes scoped text
+editing, data, variables, collapse, templates, selection export, leaving a group,
+releasing positions, automatic sizing and ordering where applicable. These
+operations use the current controller and existing RPCs. Numeric fields validate
+before saving, JSON validates on blur, failed edits retain their draft, and
+missing collections show the unknown-type message. Instruction edits preserve
+intent and audience; Vaciar clears all three local fields. Ancestor instruction
+rows reopen this same form at the group or document level. Hidden results and
+active prediction gates retain their presentation restrictions.
+
+Layout changes to Libre freeze drawn child positions in the same transaction.
+Leaving a group preserves world positions. Connection controls edit labels,
+kind, tone and direction; inline Escape cancels without a transaction. All
+writes use `c.edit` and retain revision conflicts and undo. Deletion and clearing
+instructions also show a temporary Deshacer receipt. The pinned SDK toast API
+has no action callback, so the receipt carries the working undo button.
+
+On web, Reiniciar calls `activateRendererReset(panelRoot, blockId, guard)` after
+pending writes settle. The adapter searches only within the mounted Panel root,
+checks the current document, workspace, single selection and enabled button,
+then activates the renderer's existing handler. It does not add a generic reset
+transaction or event. This preserves renderer-local cleanup, pending edits,
+audio shutdown and its own event payload. Missing, disabled or stale targets
+produce a visible failure. Native supports an explicit runtime fallback for
+controls and prediction gates; other learning resets remain disabled there.
+
+Enter/F2 opens scoped ordinary text fields or delegates whiteboard editing to
+Canvas. Interactuar remains reachable through Más where content interaction is
+needed. The separate `LinkLabelEditor` uses the existing controller transaction;
+Canvas still owns free drag, middle-button pan, resizing and interaction shields.
 
 Existing undo/redo, group, delete, connect, send, selection traversal, arrow
 nudges, zoom, catalog and immersive shortcuts remain reachable. Panel also
@@ -124,17 +156,23 @@ Run at the workspace root:
 PATH=/home/gabsplat/.local/share/pnpm/bin:$PATH pnpm typecheck
 ```
 
-Panel and Canvas compile together with the implemented tool, SVG, interaction
-and contextual toolbar contracts. The final integrated suite passes 257 tests;
-`pnpm typecheck` and `git diff --check` pass. The coordinator exercised the real
-Panel and useCanvas under RN-web in an isolated omabox, with a simulated host
-transport applying production RPC schemas and the production reducer. The 24
-browser cases cover creation, persistence transactions, rejection, media
-interaction, compact layouts, the compact grid and the narrow zoom menu.
+The Panel closure passes 104 directed tests and `pnpm typecheck`. The tests use
+production schemas, reducer, persistence service and learning runtime for
+instruction inheritance, layouts, leaving groups, ordering, links, undo/redo,
+revision conflicts, scope preservation and reset adapter boundaries. The only
+change to `tests/whiteboard-frontend.test.ts` is its authorized mock entry for
+the new separate SelectionOverlay module; existing assertions are unchanged.
 
-Evidence and precise limitations are in
-`design/qa-whiteboard-2026-10-06/report.md`; the reproducible harness is
-`design/whiteboard-harness/`. Icons, host Modal and transport are stand-ins,
-so this is not an installed Paseo or native-device verification. All four approved
-Opus adjustments are implemented, including the narrow zoom owned by Canvas.
-No plugin installation or reload was performed.
+The isolated omabox browser QA passes 18 cases with the real Panel, useCanvas,
+registered renderers, scheduler, RPC schemas and reducer. Its host transport,
+icons, Modal and instrumented AudioHost are stand-ins. The audio regression
+checks context shutdown, cancelled pending edits, one settled reset event and a
+rejected save with visible error and zero live contexts. It does not certify
+physical audio or an installed Paseo/native-device build. No plugin installation,
+reload or shared service change was performed.
+
+New evidence and reproduction commands are in
+[`design/qa-panel-close-2026-10-06/report.md`](../design/qa-panel-close-2026-10-06/report.md).
+Earlier whiteboard evidence remains in its original directory. The coordinator
+runs the full combined suite after integration and retains the independent core
+and onboarding commits.

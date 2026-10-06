@@ -20,6 +20,7 @@ import { isWhiteboardRenderer, whiteboardMinSize, type WbRenderer } from '../sha
 import { useWhiteboard } from './useWhiteboard';
 import { WhiteboardContent } from './WhiteboardContent';
 import { WhiteboardEditor, WhiteboardPreview } from './WhiteboardOverlay';
+import { LinkLabelEditor, SelectionOverlay, type LinkLabelSession } from './SelectionOverlay';
 import { ZoomControl } from './ZoomControl';
 import { ContentInteractionProvider, needsContentInteraction } from './interaction';
 import { resizeWhiteboardBox, resizeLineBox, lineEnds, type ResizeHandle } from './whiteboard-geometry';
@@ -28,7 +29,7 @@ import { attachToolPointer, attachCanvasKeys } from './web';
 export type { CanvasTool } from './whiteboard-tools';
 export type { Camera } from './logic';
 /** What the panel can ask of the canvas: camera moves, and "the next change is a keystroke, do not animate it". */
-export type CanvasApi = { fit(): void; zoomToSelection(): void; zoomStep(direction: 1 | -1): void; zoomTo(scale: number): void; instant(): void; setTool(tool: CanvasTool): void; getTool(): CanvasTool; cancelGesture(): void; viewportCenter(): Point; insertSvg(svg: string, options?: SvgInsertOptions): Promise<boolean>; beginInteraction(id?: string): void; endInteraction(): void; editSelection(): void; interactionId(): string | null };
+export type CanvasApi = { fit(): void; zoomToSelection(): void; zoomStep(direction: 1 | -1): void; zoomTo(scale: number): void; instant(): void; setTool(tool: CanvasTool): void; getTool(): CanvasTool; cancelGesture(): void; viewportCenter(): Point; insertSvg(svg: string, options?: SvgInsertOptions): Promise<boolean>; beginInteraction(id?: string): void; endInteraction(): void; editSelection(): void; editLinkLabel(): void; interactionId(): string | null };
 const G = tokens.graph, M = tokens.motion, C = tokens.motion.camera;
 type Page = { pageX?: number; pageY?: number; target?: unknown };
 type Box = { x: number; y: number; width: number; height: number };
@@ -99,7 +100,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const minX = Math.min(0, ...roots.map(r => r.x)), minY = Math.min(0, ...roots.map(r => r.y)), maxX = Math.max(0, ...roots.map(r => r.x + r.width)), maxY = Math.max(0, ...roots.map(r => r.y + r.height));
   const bound = { x: minX - 600, y: minY - 600, width: maxX - minX + 1200, height: maxY - minY + 1200 };
   const ready = doc.blocks.filter(b => !rects.get(b.id)?.hidden).every(b => !!b.size || ['wb-shape','wb-svg','wb-draw'].includes(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer ?? '') || heights[b.id] !== undefined), fitted = useRef('');
-  const latest = useRef({ size, c, doc, layout, rects, bound, onLink, onGeometry, onRelease, linkDraft }); latest.current = { size, c, doc, layout, rects, bound, onLink, onGeometry, onRelease, linkDraft };
+  const latest = useRef({ size, c, doc, layout, rects, bound, onLink, onGeometry, onRelease, linkDraft, linkId }); latest.current = { size, c, doc, layout, rects, bound, onLink, onGeometry, onRelease, linkDraft, linkId };
   // ---- Camera. `screen = scale · world + offset`. It lives in a ref and three Animated values, never in React state,
   // so panning, zooming and auto-panning do not render anything.
   const cam = useRef<Camera>({ scale: 1, offset: { x: 24, y: 24 } }), goal = useRef<Camera | null>(null), camSubs = useRef(new Set<() => void>());
@@ -112,6 +113,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     const x = draftX.addListener(({ value }) => { draftTo.current.x = value; update(); }), y = draftY.addListener(({ value }) => { draftTo.current.y = value; update(); });
     return () => { draftX.stopAnimation(); draftY.stopAnimation(); draftX.removeListener(x); draftY.removeListener(y); };
   }, []);
+  const [linkLabel, setLinkLabel] = useState<LinkLabelSession | null>(null);
+  const selectionPointer = useRef<Point | null>(null);
   const busyHands = useRef(false), gesture = useRef<Gesture | null>(null), linkGesture = useRef<{ documentId: string; from: string; origin: Point; side: Side; grab: Point; viewport: Point; target: MagnetTarget | null } | null>(null), textGesture = useRef(false), panFrom = useRef<Point>({ x: 0, y: 0 });
   const anims = useRef(new Map<string, Anim>()), placed = useRef(false), instantUntil = useRef(0), dropped = useRef(new Map<string, number>()), gestureEpoch = useRef(0);
   const guideV = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), length: new Animated.Value(0), thickness: new Animated.Value(1), opacity: new Animated.Value(0) }).current, guideH = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), length: new Animated.Value(0), thickness: new Animated.Value(1), opacity: new Animated.Value(0) }).current;
@@ -196,6 +199,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
   function select(id: string, event?: GestureResponderEvent, long = false) {
     event?.stopPropagation();
+    const page = event?.nativeEvent as Page | undefined; selectionPointer.current = page?.pageX !== undefined && page.pageY !== undefined ? { x: page.pageX - (vp.current?.x ?? 0), y: page.pageY - (vp.current?.y ?? 0) } : null;
     const ev = event?.nativeEvent as unknown as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } | undefined;
     if (long) setMulti(true);
     onLink(null);
@@ -224,8 +228,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     if (options?.atPage) { const point = options.atPage, origin = vp.current ?? { x: 0, y: 0 }, size = latest.current.size;
       if (point.x < origin.x || point.y < origin.y || point.x > origin.x + size.width || point.y > origin.y + size.height) return Promise.resolve(false);
     } return wbRef.current.insertSvg(svg, options);
-  }, beginInteraction, endInteraction: () => setInteractionMode(null), editSelection: () => beginInteraction(), interactionId: () => interactionRef.current }), []);
+  }, beginInteraction, endInteraction: () => setInteractionMode(null), editSelection: () => beginInteraction(), editLinkLabel: () => { const current = latest.current, link = current.doc.links.find(l => l.id === current.linkId); if (link && !current.c.busy && !current.c.offline) setLinkLabel({ documentId: current.doc.id, linkId: link.id, value: link.label ?? '' }); }, interactionId: () => interactionRef.current }), []);
   useEffect(() => { if (interactionRef.current && !c.selection.includes(interactionRef.current)) setInteractionMode(null); }, [c.selection, doc.id]);
+  useEffect(() => { setLinkLabel(null); }, [doc.id, linkId]);
   useEffect(() => { setInteractionMode(null); dragEnd(0,0,true); resizeEnd(true); clearLinkGesture(); }, [doc.id]);
   useEffect(() => {
     if (!web || mode !== 'canvas') return;
@@ -281,7 +286,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     const page = pointer(event, gs), ids = c.selection.includes(id) ? c.selection : [id];
     if (!c.selection.includes(id)) void c.select([id]);
     // A drawing anchored to a card that is also moving rides on that card's motion instead of its own.
-    const all = new Set(travellers(doc, ids)), moving = [...all].filter(m => anims.current.get(m)?.target && !all.has(anchorCard(doc, doc.blocks.find(b => b.id === m))?.id ?? '')), home = layout.index.parent.get(id) || null, origin = vp.current ?? { x: 0, y: 0 };
+    const all = new Set(travellers(doc, ids)), moving = [...all].filter(m => anims.current.get(m)?.target && !all.has(anchorCard(doc, doc.blocks.find(b => b.id === m), c.catalog)?.id ?? '')), home = layout.index.parent.get(id) || null, origin = vp.current ?? { x: 0, y: 0 };
     halt(); measureViewport();
     // Picked up from wherever it is drawn right now, so a card can be caught again while it is still settling.
     const epoch = ++gestureEpoch.current;
@@ -421,7 +426,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     if (cancelled || !changed || !block || doc.id !== state.documentId || c.offline || c.busy) { finish(); return; }
     const kind = c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer;
     if (isWhiteboardRenderer(kind)) {
-      const card = anchorCard(doc, block), parent = card ? latest.current.rects.get(card.id) : block.parentGroupId ? latest.current.rects.get(block.parentGroupId) : null;
+      const card = anchorCard(doc, block, c.catalog), parent = card ? latest.current.rects.get(card.id) : block.parentGroupId ? latest.current.rects.get(block.parentGroupId) : null;
       const position = { x: state.nextPosition.x - (parent?.x ?? 0), y: state.nextPosition.y - (parent?.y ?? 0) };
       const patch: Partial<Omit<CanvasBlock, 'id'>> = kind === 'wb-text' ? { position, data: { width: state.next.width } } : { position, size: state.next, ...(state.from ? { data: { from: state.from } } : {}) };
       void c.edit([{ type: 'block.update', id: state.id, patch }], kind === 'wb-text' ? 'Redimensionar texto' : 'Redimensionar forma').then(next => finish(next?.document)); return;
@@ -564,7 +569,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const wbKind = (b: CanvasBlock) => c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer;
   function whiteboardItems(kinds: WbRenderer[]) {
     return doc.blocks.filter(b => !rects.get(b.id)?.hidden && kinds.includes(wbKind(b) as WbRenderer)).map(b => {
-      const r = rects.get(b.id)!, a = animOf(b.id, NATIVE), kind = wbKind(b) as WbRenderer, card = kind === 'wb-draw' ? anchorCard(doc, b) : undefined, ride = card ? animOf(card.id, NATIVE) : null, selected = c.selection.includes(b.id), lifted = !!drag?.ids.has(b.id), line = kind === 'wb-shape' && b.data.shape === 'line';
+      const r = rects.get(b.id)!, a = animOf(b.id, NATIVE), kind = wbKind(b) as WbRenderer, card = kind === 'wb-draw' ? anchorCard(doc, b, c.catalog) : undefined, ride = card ? animOf(card.id, NATIVE) : null, selected = c.selection.includes(b.id), lifted = !!drag?.ids.has(b.id), line = kind === 'wb-shape' && b.data.shape === 'line';
       const handles: ResizeHandle[] = kind === 'wb-text' ? ['w','e'] : line ? ['start','end'] : ['nw','n','ne','e','se','s','sw','w'];
       const ends = line ? lineEnds(b.data as unknown as Parameters<typeof lineEnds>[0], r.width, r.height) : null;
       const hpos = (handle: ResizeHandle) => ends && (handle === 'start' || handle === 'end') ? { x: ends[handle === 'start' ? 0 : 1].x / r.width, y: ends[handle === 'start' ? 0 : 1].y / r.height } : { x: handle.includes('w') ? 0 : handle.includes('e') ? 1 : .5, y: handle.includes('n') ? 0 : handle.includes('s') ? 1 : .5 };
@@ -575,6 +580,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       </Animated.View>;
     });
   }
+  const subscribeCamera = useCallback((listener: () => void) => { camSubs.current.add(listener); return () => { camSubs.current.delete(listener); }; }, []);
   const selectedBounds = boundsOf(c.selection.map(id => rects.get(id)).filter((r): r is Rect => !!r && !r.hidden));
   const guideLine = (line: typeof guideV, vertical: boolean) => <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, zIndex: 6, backgroundColor: u.c.accent, opacity: line.opacity, transformOrigin: 'top left', transform: [{ translateX: line.x }, { translateY: line.y }, { scaleX: vertical ? line.thickness : line.length }, { scaleY: vertical ? line.length : line.thickness }] }} />;
   return <View ref={viewport} nativeID="lienzo-canvas-viewport" onLayout={e => { setSize(e.nativeEvent.layout); measureViewport(); }} style={{ flex: 1, overflow: 'hidden', backgroundColor: u.c.surface0 }}>
@@ -611,7 +617,14 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     </View>
     {!ready && <View pointerEvents="none" style={{ position: 'absolute', inset: 24, gap: 16 }}><Txt kind="small" muted>Preparando el lienzo…</Txt><View style={{ width: 288, height: 96, backgroundColor: u.c.surface2, borderRadius: 10 }} /></View>}
     {interaction && rects.get(interaction) && <Animated.View style={{ position:'absolute', zIndex:20, transform:[{translateX:Animated.add(camX,Animated.multiply(camS,rects.get(interaction)!.x+rects.get(interaction)!.width))},{translateY:Animated.add(camY,Animated.multiply(camS,rects.get(interaction)!.y))}], marginTop:-30, marginLeft:-148 }}><Pressable nativeID={`lienzo-interaction-exit-${interaction}`} accessibilityRole="button" accessibilityLabel="Salir del modo interacción" onPress={() => setInteractionMode(null)} style={[islandStyle(u),{height:24,paddingHorizontal:8,justifyContent:'center',borderRadius:12}]}><Txt kind="label">Interactuando · Esc</Txt></Pressable></Animated.View>}
-    {selectionToolbar && interaction === null && selectedBounds && !drag?.live && !resizeId && !wb.editor && <Animated.View pointerEvents="box-none" style={{ position:'absolute', zIndex:10, alignItems:'center', left:-180, width:360, transform:[{translateX:Animated.add(camX,Animated.multiply(camS,selectedBounds.x+selectedBounds.width/2))},{translateY:Animated.add(Animated.add(camY,Animated.multiply(camS,selectedBounds.y)),-52)}] }}>{selectionToolbar}</Animated.View>}
+    {selectionToolbar && interaction === null && !linkLabel && !wb.editor && (selectedBounds || linkId) && (() => {
+      const route = routes.find(r => r.links.some(l => l.id === linkId)), box = selectedBounds ?? (route ? { ...route.labelPoint, width: 0, height: 0, depth: 0 } : null);
+      return box ? <SelectionOverlay box={box} link={!!route && !selectedBounds} camera={() => cam.current} subscribe={subscribeCamera} pointer={selectionPointer.current} busy={() => !!(busyHands.current || gesture.current || resize.current || linkGesture.current || goal.current || coast.current !== null || wbRef.current.store.snapshot())} viewport={size}>{selectionToolbar}</SelectionOverlay> : null;
+    })()}
+    {linkLabel && (() => { const route = routes.find(r => r.links.some(l => l.id === linkLabel.linkId)); if (!route) return null; return <LinkLabelEditor key={linkLabel.linkId} session={linkLabel} at={{ x: cam.current.offset.x + route.labelPoint.x * cam.current.scale, y: cam.current.offset.y + route.labelPoint.y * cam.current.scale }} disabled={c.offline || c.busy} cancel={() => setLinkLabel(null)} save={async label => {
+      const controller = latest.current.c; await controller.settle(); if (controller.current.current?.document.id !== linkLabel.documentId || !controller.current.current.document.links.some(l => l.id === linkLabel.linkId)) return false;
+      const next = await controller.edit([{ type: 'link.update', id: linkLabel.linkId, patch: { label } }], 'Editar etiqueta del enlace'); if (next) setLinkLabel(null); return !!next;
+    }} />; })()}
     <ZoomControl width={size.width} camera={cam} subscribe={listener => { camSubs.current.add(listener); return () => { camSubs.current.delete(listener); }; }} onStep={zoomStep} onReset={() => zoomTo(1)} onFit={() => fit()} />
   </View>;
 }
