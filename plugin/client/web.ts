@@ -7,6 +7,7 @@ import { frameSandbox } from './media';
 import type { LinkMotionSample } from './renderers/types';
 import { sanitizeSvg, SVG_LIMITS } from '../shared/svg';
 import { useContentInteraction } from './interaction';
+import type { StepAudioPort } from './sequencer-audio';
 interface BrowserEventTarget {
   addEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
   removeEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
@@ -685,4 +686,83 @@ export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () =
   };
   doc.addEventListener('pointerdown', outside, true); doc.addEventListener('keydown', key, true);
   return () => { doc.removeEventListener('pointerdown', outside, true); doc.removeEventListener('keydown', key, true); };
+// ---- Step sequencer audio ----------------------------------------------------------------------------------------
+// The only Web Audio entry. A context exists only between a learner's press and the next stop: closing is the one
+// way to stop, so nothing keeps sounding or holding an audio thread after pause, hide, replace or unmount.
+type AudioParam = { setValueAtTime(value: number, time: number): void; linearRampToValueAtTime(value: number, time: number): void };
+type AudioNode = { connect(target: unknown): void; disconnect(): void };
+type AudioOscillator = AudioNode & { type: string; frequency: AudioParam; onended: (() => void) | null; start(time: number): void; stop(time?: number): void };
+interface AudioHost {
+  currentTime: number; state: string; destination: unknown; onstatechange: (() => void) | null;
+  resume(): Promise<void>; close(): Promise<void>;
+  createGain(): AudioNode & { gain: AudioParam }; createOscillator(): AudioOscillator;
+}
+export const STEP_AUDIO = { master: .2, peak: { sine: .3, triangle: .3, square: .1 }, attack: .006, maxNote: .5, maxVoices: 24, minHz: 30, maxHz: 4200, activationMs: 1500 } as const;
+export type StepAudioInterrupt = 'hidden' | 'suspended' | 'replaced';
+export type StepAudioOpen = { port: StepAudioPort; ready: Promise<boolean> } | { error: 'unsupported' | 'failed' };
+let liveStepAudio: ((reason: StepAudioInterrupt) => void) | null = null;
+/**
+ * Call synchronously from a press handler. `ready` resolves false, with the context already closed, when the
+ * browser refuses to start it. One context is live across the plugin: opening another interrupts the previous owner.
+ */
+export function openStepAudio(options: { voice: keyof typeof STEP_AUDIO.peak; elementId?: string; onInterrupt(reason: StepAudioInterrupt): void }): StepAudioOpen {
+  const host = browser() as unknown as { AudioContext?: new () => AudioHost; webkitAudioContext?: new () => AudioHost; document?: BrowserHost['document'] & { getElementById?(id: string): unknown };
+    IntersectionObserver?: new (cb: (entries: { isIntersecting: boolean }[]) => void) => { observe(node: unknown): void; disconnect(): void } };
+  const Context = host.AudioContext ?? host.webkitAudioContext, doc = host.document;
+  if (!doc || !Context) return { error: 'unsupported' };
+  liveStepAudio?.('replaced');
+  let context: AudioHost, master: AudioNode & { gain: AudioParam };
+  try {
+    context = new Context(); master = context.createGain();
+    master.gain.setValueAtTime(STEP_AUDIO.master, context.currentTime); master.connect(context.destination);
+  } catch { return { error: 'failed' }; }
+  const voices = new Set<AudioOscillator>();
+  let closed = false, started = false, observer: { observe(node: unknown): void; disconnect(): void } | null = null;
+  const close = () => {
+    if (closed) return;
+    closed = true; if (liveStepAudio === interrupt) liveStepAudio = null;
+    doc.removeEventListener('visibilitychange', visibility); observer?.disconnect(); context.onstatechange = null;
+    for (const voice of voices) { voice.onended = null; try { voice.stop(); } catch { /* not started */ } try { voice.disconnect(); } catch { /* already released */ } }
+    voices.clear();
+    try { master.disconnect(); } catch { /* already released */ }
+    try { void context.close().catch(() => {}); } catch { /* already closed */ }
+  };
+  const interrupt = (reason: StepAudioInterrupt) => { if (closed) return; close(); options.onInterrupt(reason); };
+  const visibility = () => { if (doc.hidden) interrupt('hidden'); };
+  liveStepAudio = interrupt;
+  doc.addEventListener('visibilitychange', visibility);
+  const element = options.elementId ? doc.getElementById?.(options.elementId) : null;
+  if (element && host.IntersectionObserver) { observer = new host.IntersectionObserver(entries => { if (entries.some(entry => !entry.isIntersecting)) interrupt('hidden'); }); observer.observe(element); }
+  context.onstatechange = () => { if (started && context.state !== 'running') interrupt('suspended'); };
+  const port: StepAudioPort = {
+    now: () => context.currentTime,
+    running: () => !closed && context.state === 'running',
+    note(frequency, at, duration) {
+      if (closed || voices.size >= STEP_AUDIO.maxVoices || !(frequency >= STEP_AUDIO.minHz && frequency <= STEP_AUDIO.maxHz) || !(duration > 0)) return false;
+      const length = Math.min(STEP_AUDIO.maxNote, duration), start = Math.max(at, context.currentTime);
+      const oscillator = context.createOscillator(), envelope = context.createGain();
+      oscillator.type = options.voice; oscillator.frequency.setValueAtTime(frequency, start);
+      envelope.gain.setValueAtTime(0, start); envelope.gain.linearRampToValueAtTime(STEP_AUDIO.peak[options.voice], start + Math.min(STEP_AUDIO.attack, length / 2)); envelope.gain.linearRampToValueAtTime(0, start + length);
+      oscillator.connect(envelope); envelope.connect(master);
+      oscillator.onended = () => { voices.delete(oscillator); try { oscillator.disconnect(); envelope.disconnect(); } catch { /* already released */ } };
+      voices.add(oscillator); oscillator.start(start); oscillator.stop(start + length + .01);
+      return true;
+    },
+    close,
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined, resumed: Promise<void>;
+  // Requested in this same call stack: a deferred resume() can fall outside the browser's user activation.
+  try { resumed = context.resume(); } catch (error) { resumed = Promise.reject(error); }
+  const ready = Promise.race([
+    resumed.then(() => context.state === 'running', () => false),
+    new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), STEP_AUDIO.activationMs); }),
+  ]).then(ok => { clearTimeout(timer); if (ok && !closed) started = true; else close(); return ok && started; });
+  return { port, ready };
+}
+/** Arrow, Home and End inside a grid. The handler returns true when it used the key. Nothing happens on native. */
+export function attachGridKeys(element: unknown, handler: (key: string) => boolean): () => void {
+  const node = element as BrowserElement | null;
+  if (!browser().document || !node?.addEventListener) return () => {};
+  const listener = (event: BrowserKeyEvent) => { if (!event.ctrlKey && !event.metaKey && handler(event.key)) { event.preventDefault(); event.stopPropagation(); } };
+  node.addEventListener('keydown', listener); return () => node.removeEventListener('keydown', listener);
 }
