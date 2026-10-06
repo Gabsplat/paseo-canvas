@@ -1,0 +1,40 @@
+{
+  "checks": [
+    {
+      "name": "Slider updates shared scope and plot before transport acknowledgement; controls do not drag card",
+      "result": "pass"
+    },
+    {
+      "name": "Prediction hides target, commits choice, reveals once, resets to hidden",
+      "result": "pass"
+    },
+    {
+      "name": "Prediction remote reset and document switch invalidate late comparison callbacks",
+      "result": "pass"
+    },
+    {
+      "name": "Figure next/back/play reaches declared step and reset",
+      "result": "pass"
+    },
+    {
+      "name": "Flow follows current SVG geometry during node drag and pauses",
+      "result": "pass"
+    },
+    {
+      "name": "WebGL environment",
+      "details": {
+        "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+        "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1050 Ti/PCIe/SSE2, OpenGL ES 3.2)"
+      }
+    },
+    {
+      "name": "Shader uses browser WebGL or honest fallback, uniform input and compiler error",
+      "result": "pass"
+    },
+    {
+      "name": "Image and text hotspots select, layer hides and reset clears exploration",
+      "result": "pass"
+    }
+  ],
+  "uncaughtExceptions": []
+}

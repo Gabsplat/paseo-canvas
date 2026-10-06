@@ -16,6 +16,10 @@ import { reducedMotion } from '../../../plugin/client/motion';
 import { Onboarding } from '../../../plugin/client/Onboarding';
 import { dismissGuide, guideWasDismissed } from '../../../plugin/client/web';
 import { setMockModalColors } from './host-rn';
+import { learningFixture } from './learning-fixtures';
+import { LearningRuntimeStore } from '../../../plugin/client/learning-state';
+import { cleanRuntime, type RuntimeState } from '../../../plugin/shared/learning';
+import { runtimeSetInputSchema, runtimeOutputSchema } from '../../../plugin/shared/rpc';
 declare const document: any, location: any, window: any;
 const params = new URLSearchParams(location.search), dark = params.get('theme') !== 'papel';
 const palette = tokens.contributedThemes[dark ? 'lienzo-tinta' : 'lienzo-papel'].colors, status = tokens.mockOnly[dark ? 'dark' : 'light'];
@@ -41,11 +45,42 @@ const interactive = (): CanvasDocument => ({ ...base, title: 'Medios interactivo
   { id: 'vimeo', title: 'Vimeo de ejemplo', typeId: 'media', data: { url: 'https://vimeo.com/76979871', mediaKind: 'video' }, position: { x: 352, y: 480 }, size: { width: 320, height: 360 } },
   { id: 'audio', title: 'Audio de ejemplo', typeId: 'media', data: { url: 'http://127.0.0.1:8765/audio.wav', mediaKind: 'audio' }, position: { x: 704, y: 480 }, size: { width: 320, height: 240 } },
 ] });
-const initial = params.get('doc') === 'many' ? many() : params.get('doc') === 'interactive' ? interactive() : reference();
+const initial = params.has('lesson') ? learningFixture(reference(), params.get('lesson')!) : params.get('doc') === 'many' ? many() : params.get('doc') === 'interactive' ? interactive() : reference();
 function App() {
   const [doc, setDoc] = useState<CanvasDocument>(initial), [selection, setSelection] = useState<string[]>([]), [busy, setBusy] = useState(false), [last, setLast] = useState('—'), [fail, setFail] = useState(false);
   const guideScope = 'harness-only', [guide, setGuide] = useState(params.has('guide') || params.has('first-visit') && !guideWasDismissed(guideScope));
   const current = useRef<any>(null), api = useRef<CanvasApi>(null), log = useRef<{ label: string; operations: CanvasOperation[] }[]>([]), failNext = useRef(false), writes = useRef<Promise<unknown>>(Promise.resolve());
+  const runtimeServer = useRef<RuntimeState>({ blocks: {}, scopes: {} }), runtimeVersion = useRef(0);
+  const runtimeLog = useRef<any[]>([]), events = useRef<any[]>([]);
+  const learningRef = useRef<LearningRuntimeStore | null>(null);
+  if (!learningRef.current) {
+    learningRef.current = new LearningRuntimeStore(async raw => {
+      const request = runtimeSetInputSchema.parse(raw), destination = current.current.document;
+      const previousRuntime = structuredClone(runtimeServer.current), previousVersion = runtimeVersion.current;
+      await new Promise(resolve => setTimeout(resolve, Number(params.get('runtimeLatency') ?? 60)));
+      if (current.current.document.id !== destination.id) return runtimeOutputSchema.parse({ runtime: previousRuntime, runtimeVersion: previousVersion });
+      const runtime = structuredClone(runtimeServer.current);
+      for (const entry of request.blocks) {
+        if (!current.current.document.blocks.some((b: any) => b.id === entry.id)) throw new Error('Missing block');
+        if (entry.state === null) delete runtime.blocks[entry.id]; else runtime.blocks[entry.id] = entry.state;
+      }
+      for (const entry of request.scopes) {
+        const declarations = entry.id === '$document' ? current.current.document.variables : current.current.document.groups.find((g: any) => g.id === entry.id)?.variables;
+        const values = runtime.scopes[entry.id] ??= {};
+        for (const [name, value] of Object.entries(entry.values)) {
+          const declaration = declarations?.find((v: any) => v.name === name);
+          if (!declaration || value !== null && (value < declaration.min || value > declaration.max)) throw new Error('Invalid scope value');
+          if (value === null) delete values[name]; else values[name] = value;
+        }
+      }
+      cleanRuntime(current.current.document, runtime);
+      if (JSON.stringify(runtime) !== JSON.stringify(runtimeServer.current)) runtimeVersion.current++;
+      runtimeServer.current = runtime; runtimeLog.current.push(request);
+      return runtimeOutputSchema.parse({ runtime, runtimeVersion: runtimeVersion.current });
+    }, error => setLast(`ERROR runtime: ${String(error)}`));
+    learningRef.current.sync(initial, 0, runtimeServer.current);
+  }
+  const learning = learningRef.current;
   const view = useMemo(() => ({ document: doc, connection: null, canUndo: false, canRedo: false, selectionVersion: 0, runtimeVersion: 0 }), [doc]); current.current = view;
   const commit = async (operations: CanvasOperation[], label: string) => {
     setBusy(true); await new Promise(resolve => setTimeout(resolve, Number(params.get('latency') ?? 60)));
@@ -54,14 +89,18 @@ function App() {
       const parsed = mutateInputSchema.parse({ workspaceId: 'w', documentId: 'harness', expectedRevision: current.current.document.revision, operations, label });
       const next = reuseDocumentEntities(current.current.document, { ...reduce(current.current.document, parsed.operations, catalog), revision: current.current.document.revision + 1 });
       const result = { ...current.current, document: next }; current.current = result;
-      log.current.push({ label, operations }); setLast(`REV ${next.revision} · ${label} · ${operations.length} op`); setDoc(next); return result;
+      learning.sync(next, runtimeVersion.current, runtimeServer.current); log.current.push({ label, operations }); setLast(`REV ${next.revision} · ${label} · ${operations.length} op`); setDoc(next); return result;
     } catch (error) { setLast(`ERROR: ${String(error)}`); return undefined; } finally { setBusy(false); }
   };
   // Match useCanvas.edit's serialization; the failure and latency are simulated, not a live RPC.
   const edit = (operations: CanvasOperation[], label: string) => { const result = writes.current.then(() => commit(operations, label)); writes.current = result; return result; };
-  const controller: any = { view, current, catalog, selection, select: async (ids: string[]) => setSelection([...new Set(ids)]), edit, offline: false, busy, pendingIds: [], failure: null, events: [], workspaceId: 'w', api: {}, task: async () => undefined, setEvents: () => {}, send: async () => undefined, settle: async () => {}, fail: () => {}, clearFailure: () => {} };
+  const controller: any = { learning, view, current, catalog, selection, select: async (ids: string[]) => setSelection([...new Set(ids)]), edit, offline: false, busy, pendingIds: [], failure: null, events: [], workspaceId: 'w', api: {}, task: async () => undefined, setEvents: () => {}, send: async (action: any, eventId: string) => { events.current.push({ action, eventId, simulated: true }); await new Promise(resolve => setTimeout(resolve, Number(params.get('sendLatency') ?? 0))); return current.current; }, settle: async () => {}, fail: () => {}, clearFailure: () => {} };
   const release = (ids: string[]) => { const operations = releaseOperations(current.current.document, ids, catalog); if (operations.length) void edit(operations, ids.length === 1 ? 'Soltar posición' : 'Reordenar automáticamente'); };
-  window.__lienzo = { doc: () => current.current.document, log: log.current, selection, reducedMotion: () => reducedMotion.current, fit: () => api.current?.fit(), edit };
+  window.__lienzo = {
+    // Simulated remote changes exercise production subscription/reset paths, not host RPC.
+    resetRuntime: (blockId: string) => { delete runtimeServer.current.blocks[blockId]; learning.sync(current.current.document, ++runtimeVersion.current, structuredClone(runtimeServer.current)); },
+    switchExample: () => { const next = { ...learningFixture(initial, 'prediction'), id: 'second-example' }; runtimeServer.current = { blocks: {}, scopes: {} }; current.current = { ...current.current, document: next }; learning.sync(next, 0, runtimeServer.current); runtimeVersion.current = 0; setDoc(next); },
+    runtime: () => learning.getSnapshot(), runtimeServer: () => runtimeServer.current, runtimeLog: runtimeLog.current, events: events.current, flushRuntime: () => learning.flush(), doc: () => current.current.document, log: log.current, selection, reducedMotion: () => reducedMotion.current, fit: () => api.current?.fit(), edit };
   const button = (label: string, onPress: () => void) => <Pressable accessibilityLabel={label} onPress={onPress} style={{ paddingHorizontal: 8, height: 24, justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 6 }}><Text style={{ color: theme.colors.foreground, fontSize: 12 }}>{label}</Text></Pressable>;
   return <View style={{ position: 'absolute', inset: 0, backgroundColor: theme.colors.surface0 }}>
       <View style={{ height: 36, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface1 }}>

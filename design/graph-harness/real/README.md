@@ -16,6 +16,33 @@ up uses DOM stand-in cards; its results should be distinguished from these resul
 
 ## Build and run
 
+### Learning interaction QA
+
+`?lesson=controls|prediction|figure|flow|shader|annotations` adds authored local
+examples for the learning renderers. `runtimeLatency=2000` delays the stand-in
+acknowledgement so optimistic scope updates can be checked separately. The harness
+uses the production `LearningRuntimeStore`, `useLearning`, registered dispatcher,
+presentation gates and link-motion adapter. Runtime requests/responses use production
+schemas. The transport applies block/scope changes in memory with simulated latency;
+it has no disk persistence, host RPC, polling, undo or agent delivery. Settled actions
+are recorded as simulated, and never represented as a real agent response.
+
+After building, start an isolated box from this worktree. Use the worktree's absolute
+path for the server directory and script. Keep GPU enabled to exercise WebGL:
+
+```bash
+omabox up lienzo-qa-learning --net isolated --size 1920x1080
+omabox -b lienzo-qa-learning run -d -- python3 -m http.server 8765 --bind 127.0.0.1 --directory "$PWD/dist/rn-harness"
+omabox -b lienzo-qa-learning run -d -- chromium --no-first-run --remote-debugging-port=9222 --user-data-dir=/tmp/lienzo-qa-chromium --ozone-platform=wayland --app='http://127.0.0.1:8765/?theme=papel&lesson=controls'
+omabox -b lienzo-qa-learning run -- node "$PWD/design/graph-harness/real/learning-smoke.cjs"
+omabox -b lienzo-qa-learning down
+```
+
+Wait for Chromium's debug port before starting the script. It writes screenshots
+and `/tmp/lienzo-qa-results.json` inside the box. Copy evidence before closing it.
+The image example uses the existing local synthetic SVG, with no network download.
+The 2026-10-06 verification is in `design/qa-learning-2026-10-06/report.md`.
+
 Read the omabox skill before launching Chromium. Run from the repository root:
 
 ```bash
