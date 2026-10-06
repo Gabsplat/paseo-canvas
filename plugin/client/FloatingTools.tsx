@@ -36,11 +36,15 @@ export function ToolIsland({ tool, onToolChange, locked = false, onLockChange, o
 }
 export const FloatingTools = ToolIsland;
 export type SelectionKind = WbRenderer | 'line';
-export type StyleIslandProps = { tool: CanvasTool; selectionKinds: ReadonlySet<SelectionKind>; value: ToolStyle; onChange(patch: Partial<ToolStyle>): void; orientation: 'vertical' | 'horizontal'; touch?: boolean; disabled?: boolean };
-export function StyleIsland({ tool, selectionKinds, value, onChange, orientation, touch = false, disabled = false }: StyleIslandProps) {
+export type StyleIslandProps = { tool: CanvasTool; selectionKinds: ReadonlySet<SelectionKind>; value: ToolStyle; onChange(patch: Partial<ToolStyle>): void; orientation: 'vertical' | 'horizontal'; touch?: boolean; disabled?: boolean;
+  /** Stroke layer reset (§18.12): how many of the learner's own strokes exist, and the action that removes only those. */
+  myStrokes?: number; onClearMyStrokes?(): void };
+export function StyleIsland({ tool, selectionKinds, value, onChange, orientation, touch = false, disabled = false, myStrokes = 0, onClearMyStrokes }: StyleIslandProps) {
   const u = useUI(), [more, setMore] = useState(false), horizontal = orientation === 'horizontal';
   const text = selectionKinds.has('wb-text') || tool === 'text', shape = selectionKinds.has('wb-shape') || selectionKinds.has('line') || tool === 'shape', line = selectionKinds.has('line') || tool === 'shape' && value.shape === 'line';
-  if (!selectionKinds.size && !['text','shape','draw'].includes(tool)) return null;
+  const pencil = tool === 'draw' || tool === 'eraser';
+  if (!selectionKinds.size && !['text','shape','draw','eraser'].includes(tool)) return null;
+  const reset = pencil && onClearMyStrokes ? <Pressable key="Borrar mis trazos" accessibilityRole="button" accessibilityLabel="Borrar mis trazos" accessibilityHint="Conserva los trazos del asistente y los del autor" accessibilityState={{ disabled: disabled || !myStrokes }} disabled={disabled || !myStrokes} onPress={e => { e.stopPropagation(); onClearMyStrokes(); }} style={{ minHeight: touch ? 44 : 32, paddingHorizontal: 8, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: u.c.border, opacity: disabled || !myStrokes ? .45 : 1 }}><Icon name="RotateCcw" size={14} color={u.c.foreground} /><Txt kind="small" numberOfLines={1} style={{ fontWeight: '600' }}>Borrar mis trazos</Txt></Pressable> : null;
   const choose = (label: string, active: boolean, content: React.ReactNode, press: () => void, wide = false) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active, disabled }} disabled={disabled} onPress={e => { e.stopPropagation(); press(); }} style={{ minWidth: wide ? 44 : 32, height: touch ? 44 : 32, paddingHorizontal: wide ? 6 : 0, borderRadius: 6, justifyContent: 'center', alignItems: 'center', backgroundColor: active ? withAlpha(u.c.accent, .14) : 'transparent', opacity: disabled ? .45 : 1 }}>{content}</Pressable>;
   const section = (label: string, content: React.ReactNode) => <View key={label} style={{ gap: 4 }}><Txt kind="label" muted>{label}</Txt><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>{content}</View></View>;
   const extras = <>
@@ -51,9 +55,10 @@ export function StyleIsland({ tool, selectionKinds, value, onChange, orientation
       {line && section('Puntas', (['none','end','both'] as const).map(heads => choose({none:'Sin punta',end:'Flecha',both:'Doble'}[heads], value.heads === heads, <Icon name={{none:'Minus',end:'ArrowRight',both:'ArrowLeftRight'}[heads]} size={16} color={u.c.foreground} />, () => onChange({ heads }))))}
   </>;
   const body = <View style={{ flexDirection: horizontal ? 'row' : 'column', gap: 8 }}>
-    {section('Color', WB_COLORS.map(color => choose(tokens.whiteboard.colors.find(c => c.id === color)!.label, value.color === color, <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: value.color === color ? 2 : 0, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: wbColor(color, u) }} /></View>, () => onChange({ color }))))}
-    {(text || shape || tool === 'draw' || selectionKinds.has('wb-draw')) && section('Tamaño', WB_SCALE.map(scale => choose(scale.toUpperCase(), value.scale === scale, <Txt kind="label">{scale.toUpperCase()}</Txt>, () => onChange({ scale }))))}
+    {tool !== 'eraser' && section('Color', WB_COLORS.map(color => choose(tokens.whiteboard.colors.find(c => c.id === color)!.label, value.color === color, <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: value.color === color ? 2 : 0, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: wbColor(color, u) }} /></View>, () => onChange({ color }))))}
+    {(text || shape || tool === 'draw' || selectionKinds.has('wb-draw')) && tool !== 'eraser' && section('Tamaño', WB_SCALE.map(scale => choose(scale.toUpperCase(), value.scale === scale, <Txt kind="label">{scale.toUpperCase()}</Txt>, () => onChange({ scale }))))}
     {horizontal ? (text || shape ? choose('Más estilo', false, <Icon name="SlidersHorizontal" size={16} color={u.c.foreground} />, () => setMore(true)) : null) : extras}
+    {reset && (horizontal ? reset : <View style={{ gap: 4 }}><Txt kind="label" muted>Mis trazos</Txt>{reset}</View>)}
   </View>;
   return <View style={[islandStyle(u), { padding: 8, width: horizontal ? undefined : 168, maxWidth: horizontal ? '100%' : undefined }]}>{horizontal ? <ScrollView horizontal contentContainerStyle={{ gap: 8 }}>{body}</ScrollView> : body}{horizontal && (text || shape) && <Modal open={more} onOpenChange={setMore} title="Estilo"><Modal.Content><View style={{gap:8}}>{extras}</View></Modal.Content></Modal>}</View>;
 }

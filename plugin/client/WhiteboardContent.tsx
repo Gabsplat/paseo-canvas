@@ -13,7 +13,7 @@ export function whiteboardLabel(block: CanvasBlock, kind: WbRenderer): string {
   if (block.title) return block.title;
   if (kind === 'wb-text') return String(block.data.text || 'Texto libre');
   if (kind === 'wb-svg') return String(block.data.caption || 'Imagen SVG');
-  if (kind === 'wb-draw') return `Dibujo (${Array.isArray(block.data.strokes) ? block.data.strokes.length : 0} trazos)`;
+  if (kind === 'wb-draw') return `Dibujo${block.data.author === 'assistant' ? ' del asistente' : block.data.author === 'learner' ? ' propio' : ''} (${Array.isArray(block.data.strokes) ? block.data.strokes.length : 0} trazos)`;
   return String(block.data.text || tokens.whiteboard.shapes.items.find(s => s.id === block.data.shape)?.label || 'Forma');
 }
 export type WhiteboardContentProps = { block: CanvasBlock; kind: WbRenderer; width: number; height: number; scale?: number; outline?: boolean; onSelect(event?: GestureResponderEvent): void; onHover?(inside: boolean): void; onMeasure?(height: number): void };
@@ -33,9 +33,11 @@ export function WhiteboardContent({ block, kind, width, height, scale = 1, outli
   let paths: VectorPath[]=[];
   if (kind === 'wb-draw') {
     const parsed=wbDrawDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">Dibujo no válido</Txt>;const data=parsed.data;
-    paths=data.strokes.map(s=>({d:strokePath(s.points.map((v,i)=>v*(i%2?height/data.extent.height:width/data.extent.width))),color:wbColor(s.color,u),weight:wbWeight(s.weight)}));
-    if(u.layout.platform!=='web')return <Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:u.c.foregroundMuted}}><Txt kind="small">Dibujo; se ve en la versión web</Txt></Pressable>;
-    return <WebVectors width={width} height={height} paths={paths} label={label} scale={scale} onPress={press} onHover={onHover}/>;
+    // Authorship is drawn, not only stored: the assistant's strokes are dashed and carry its name.
+    const assistant=data.author==='assistant';
+    paths=data.strokes.map(s=>{const weight=wbWeight(s.weight);return{d:strokePath(s.points.map((v,i)=>v*(i%2?height/data.extent.height:width/data.extent.width))),color:wbColor(s.color,u),weight,...(assistant?{dash:tokens.whiteboard.dash.dashed.map(n=>n*weight/2.5).join(' ')}:{})};});
+    if(u.layout.platform!=='web')return <Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:u.c.foregroundMuted}}><Txt kind="small">{label}; se ve en la versión web</Txt></Pressable>;
+    return <>{assistant&&<View pointerEvents="none" style={{position:'absolute',left:0,bottom:'100%',marginBottom:2,paddingHorizontal:4,borderRadius:4,backgroundColor:u.c.surface1,borderWidth:1,borderColor:u.c.border}}><Txt kind="label" muted numberOfLines={1}>Asistente</Txt></View>}<WebVectors width={width} height={height} paths={paths} label={label} scale={scale} onPress={press} onHover={onHover}/></>;
   }
   const parsed=wbShapeDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">Forma no válida</Txt>;const data=parsed.data,color=wbColor(data.color,u),weight=wbWeight(data.weight);
   const fill=data.shape==='line'||data.fill==='none'?'none':data.fill==='wash'?withAlpha(color,.14):color;
