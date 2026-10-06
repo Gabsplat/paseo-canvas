@@ -39,6 +39,8 @@ type RendererSpec = {
   interactive: boolean;
   minSize?: { width: number; height: number };
   defaultSize?: { width: number; height: number };
+  hiddenTargets?: (data: unknown, runtime: Record<string, JSONValue>,
+    document: CanvasDocument, blockId: string) => readonly string[];
 };
 ```
 
@@ -48,6 +50,12 @@ Client dispatch parses data before calling the renderer. Defaults must pass the 
 List every top-level data key in `blockType.properties`. One-line guidance appears in MCP
 catalog results and agent integration instructions. The 15 legacy renderer names remain
 valid. Diagram uses the registry; the remaining legacy renderers still work.
+
+`hiddenTargets` is an optional pure presentation hook for a prediction gate. Return
+existing target block IDs while their result must stay hidden; validate raw runtime
+against the current data before accepting a revealed state. The coordinator connects
+the hook to canvas, list and details. It does not change the stored document, export,
+MCP access or permissions. Several gates on one target require all gates to open.
 
 ## Client props
 
@@ -99,7 +107,7 @@ type RendererRuntime = {
   state: Record<string, JSONValue>;
   set(state: Record<string, JSONValue> | null, settled?: boolean): void;
   flush(): Promise<void>;
-  settle(kind: string, payload: CanvasBlock['data'], label?: string): Promise<void>;
+  settle(kind: string, payload: CanvasBlock['data'], label?: string, eventId?: string): Promise<void>;
 };
 type RendererScope = {
   variables: Record<string, ScopeVariable & { scopeId: string; current: number }>;
@@ -119,6 +127,13 @@ one for the same block/kind. Events already prepared for delivery remain immutab
 Settled context retains the target and ancestor groups, rather than the entire document.
 Normal feedback still retains its full snapshot. Batched-only feedback waits for the
 existing explicit flush mechanism.
+
+The optional `eventId` lets an attempt retry the same event after an ambiguous network
+response. Keep kind, payload, label and target identical on every retry: the server
+deduplicates a retained event by ID and rejects reuse with a different action. This
+is bounded by event retention (pending events and the most recent 100 sent/acknowledged
+events); it is not a permanent delivery ledger. Use a distinct kind per prediction
+attempt to prevent pending coalescing from replacing an earlier attempt.
 
 Declare `variables` on the document or a group through revisioned `document.update` or
 `group.update`. Each declaration is `{name, value, min, max, label?, step?, unit?}`. Names

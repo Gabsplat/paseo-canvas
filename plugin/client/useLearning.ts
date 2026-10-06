@@ -7,7 +7,7 @@ export type RendererRuntime = {
   state: RuntimeState['blocks'][string];
   set(state: RuntimeState['blocks'][string] | null, settled?: boolean): void;
   flush(): Promise<void>;
-  settle(kind: string, payload: CanvasBlock['data'], label?: string): Promise<void>;
+  settle(kind: string, payload: CanvasBlock['data'], label?: string, eventId?: string): Promise<void>;
 };
 export type RendererScope = {
   variables: Record<string, ResolvedVariable>; values: Record<string, number>;
@@ -24,11 +24,11 @@ export function useLearning(block: CanvasBlock, controller: CanvasController): {
       state: snapshot.blocks[block.id] ?? {},
       set: (state, settled = false) => controller.learning.setBlock(block.id, state, settled),
       flush: () => controller.learning.flush(),
-      async settle(kind, payload, label = 'Interacción completada') {
+      async settle(kind, payload, label = 'Interacción completada', eventId = newId('evt')) {
         const documentId = controller.current.current?.document.id;
         await controller.learning.flush();
         if (documentId !== controller.current.current?.document.id) return;
-        const result = await controller.send({ kind, payload, label, delivery: 'batched', settled: true, targetIds: [block.id] }, newId('evt'));
+        const result = await controller.send({ kind, payload, label, delivery: 'batched', settled: true, targetIds: [block.id] }, eventId);
         if (!result) throw new Error('No se guardó la interacción.');
       },
     },
