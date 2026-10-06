@@ -9,7 +9,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 // The production pencil hook, layout, move/group builders and reducer. Only React and the transport are stand-ins.
 const { useWhiteboard } = require('../plugin/client/useWhiteboard');
 const { DEFAULT_TOOL_STYLE } = require('../plugin/client/whiteboard-tools');
-const { layoutCanvas, moveOperations, groupOperations } = require('../plugin/client/logic');
+const { layoutCanvas, moveOperations, groupOperations, anchorCard } = require('../plugin/client/logic');
 const { builtinTypes, builtinTemplates, builtinPacks } = require('../plugin/shared/builtins');
 const { reduce } = require('../plugin/server/reducer');
 const { appendStroke, layerFits, WB_LAYER_LIMIT_MESSAGE } = require('../plugin/shared/whiteboard');
@@ -30,6 +30,28 @@ function harness(initial = document()) {
     setTool: async (next: string) => { tool = next; toolEffect(); await Promise.resolve(); await Promise.resolve(); } };
 }
 const draws = (doc: any) => doc.blocks.filter((b: any) => b.typeId === 'wb-draw');
+
+test('anchor data in an ordinary custom card does not change dragging or grouping; drawing aliases still follow their cards', () => {
+  const nodeType = builtinTypes.find((type: any) => type.id === 'node');
+  const referenceType = { ...nodeType, id: 'reference-card', properties: [...nodeType.properties, { key: 'anchor', label: 'Referenced card', kind: 'text' }], defaults: { ...nodeType.defaults, anchor: 'a' } };
+  const drawingType = { ...builtinTypes.find((type: any) => type.id === 'wb-draw'), id: 'custom-drawing' };
+  const customCatalog = { ...catalog, blockTypes: [...catalog.blockTypes, referenceType, drawingType] };
+  const initial = document([card('a', 200, 100), card('ref', 600, 100, { typeId: referenceType.id, data: { anchor: 'a' } })]);
+  const rects = layoutCanvas(initial, {}, customCatalog).rects;
+  const moved = moveOperations(initial, rects, ['a', 'ref'], { x: 30, y: 20 }, undefined, { catalog: customCatalog, grid: false });
+  assert.deepEqual(moved.filter((op: any) => op.type === 'entity.move').map((op: any) => op.id).sort(), ['a', 'ref'], 'Both ordinary cards receive their own move.');
+  const afterMove = reduce(initial, moved, customCatalog), movedRects = layoutCanvas(afterMove, {}, customCatalog).rects;
+  assert.equal(movedRects.get('ref').x, rects.get('ref').x + 30);
+  assert.equal(anchorCard(initial, initial.blocks[1], customCatalog), undefined, 'The field belongs to the custom type, not to a stroke layer.');
+  const grouped = reduce(initial, groupOperations(initial, rects, ['ref'], 'g', customCatalog), customCatalog);
+  assert.equal(grouped.blocks.find((block: any) => block.id === 'ref').parentGroupId, 'g');
+  assert.equal(grouped.blocks.find((block: any) => block.id === 'ref').data.anchor, 'a');
+  const ink = { id: 'ink', typeId: drawingType.id, title: '', position: { x: 10, y: 10 }, size: { width: 40, height: 12 }, data: { anchor: 'a', extent: { width: 40, height: 12 }, strokes: [{ points: [0, 0, 40, 12], color: 'tinta', weight: 'm' }] } };
+  const annotated = document([...initial.blocks, ink]);
+  assert.equal(anchorCard(annotated, ink, customCatalog)?.id, 'a', 'A custom type using the drawing renderer remains anchored.');
+  const drawingMoves = moveOperations(annotated, layoutCanvas(annotated, {}, customCatalog).rects, ['a', 'ink'], { x: 30, y: 20 }, undefined, { catalog: customCatalog, grid: false });
+  assert.deepEqual(drawingMoves.filter((op: any) => op.type === 'entity.move').map((op: any) => op.id), ['a']);
+});
 
 test('the pencil signs strokes as the learner and anchors them to the card they start on', async () => {
   const h = harness();
