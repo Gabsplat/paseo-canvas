@@ -182,6 +182,23 @@ export function attachMiddlePan(element: unknown, handler: (delta: { dx: number;
     doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true);
   };
 }
+/**
+ * A press on empty canvas, a pencil stroke, or a button that then disables itself leaves browser focus on <body>, so
+ * the keys that follow would never reach a listener on the panel. Keys typed while nothing is focused go to the panel
+ * that was pressed last. The pressed ancestors are remembered at press time, at module level: listeners are replaced
+ * on every render that changes their handler, and the pressed element itself may be gone by the time a key arrives.
+ */
+let pressedChain = new WeakSet<object>(), stopPressTracking: (() => void) | undefined, keyScopes = 0;
+function listenKeys(node: BrowserElement, listener: (event: BrowserKeyEvent) => void, capture: boolean): () => void {
+  const doc = browser().document!;
+  if (!keyScopes++) {
+    const press = (event: BrowserKeyEvent) => { pressedChain = new WeakSet(); for (let element = event.target as (BrowserElement & { parentElement?: BrowserElement | null }) | null; element; element = element.parentElement ?? null) pressedChain.add(element); };
+    doc.addEventListener('pointerdown', press, true); stopPressTracking = () => doc.removeEventListener('pointerdown', press, true);
+  }
+  const unfocused = (event: BrowserKeyEvent) => { if (event.target === doc.body && pressedChain.has(node)) listener(event); };
+  node.addEventListener('keydown', listener, capture); doc.addEventListener('keydown', unfocused, capture);
+  return () => { node.removeEventListener('keydown', listener, capture); doc.removeEventListener('keydown', unfocused, capture); if (!--keyScopes) { stopPressTracking?.(); stopPressTracking = undefined; } };
+}
 export function keyboard(element: unknown, handler: (event: { key: string; shift: boolean; command: boolean }) => boolean): () => void {
   const node = element as BrowserElement | null;
   if (!browser().document || !node?.addEventListener) return () => {};
@@ -190,7 +207,7 @@ export function keyboard(element: unknown, handler: (event: { key: string; shift
     if (target?.closest('input,textarea,select,[contenteditable="true"],iframe,video,audio,[id^="lienzo-interactive-"]')) return;
     if (handler({ key: event.key, shift: event.shiftKey, command: event.ctrlKey || event.metaKey })) { event.preventDefault(); event.stopPropagation(); }
   };
-  node.addEventListener('keydown', listener); return () => node.removeEventListener('keydown', listener);
+  return listenKeys(node, listener, false);
 }
 /**
  * After a drag or a pan the browser still sends a click to whatever is under the pointer when the button comes up,
@@ -628,7 +645,7 @@ export function attachCanvasKeys(element:unknown,handler:(key:string,typing:bool
   const down=(e:BrowserKeyEvent)=>{if(pointerElement(e.target)?.closest?.('input,textarea,select,[contenteditable="true"],iframe,video,audio,[id^="lienzo-interactive-"],[id^="lienzo-using-"],[data-lienzo-interacting="true"]'))return;if(e.key===' '){if(!space){space=true;temporaryHand(true);}e.preventDefault();e.stopPropagation();return;}if(!e.ctrlKey&&!e.metaKey&&handler(e.key,e.key.length===1)){e.preventDefault();e.stopPropagation();}};
   const up=(e:BrowserKeyEvent)=>{if(e.key===' '&&space){space=false;temporaryHand(false);e.preventDefault();}};
   const cancel=()=>{if(space){space=false;temporaryHand(false);}};
-  node.addEventListener('keydown',down,true);doc.addEventListener('keyup',up,true);doc.addEventListener('visibilitychange',cancel);return()=>{cancel();node.removeEventListener('keydown',down,true);doc.removeEventListener('keyup',up,true);doc.removeEventListener('visibilitychange',cancel);};
+  const keys=listenKeys(node,down,true);doc.addEventListener('keyup',up,true);doc.addEventListener('visibilitychange',cancel);return()=>{cancel();keys();doc.removeEventListener('keyup',up,true);doc.removeEventListener('visibilitychange',cancel);};
 }
 
 /** Library clicks use normal controls. Only an actual drag creates a ghost and consumes the release. */

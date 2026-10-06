@@ -1,0 +1,52 @@
+{
+  "checks": [
+    {
+      "name": "pencil strokes are signed as the learner; one that starts on a card is anchored to it",
+      "result": "pass"
+    },
+    {
+      "name": "an assistant drawing cannot be signed as the learner and is shown dashed and labelled",
+      "result": "pass"
+    },
+    {
+      "name": "leaving the pencil settles exactly one bounded summary without points",
+      "result": "pass"
+    },
+    {
+      "name": "dragging the card carries its annotation live and commits a single card move",
+      "result": "pass"
+    },
+    {
+      "name": "\"Borrar mis trazos\" removes only the learner layers in one undoable transaction",
+      "result": "pass"
+    },
+    {
+      "name": "deleting a card removes its annotations with it, and undo restores both",
+      "result": "pass"
+    },
+    {
+      "name": "a short click on a cell toggles it without Interactuar and without moving the card",
+      "result": "pass"
+    },
+    {
+      "name": "tool shortcuts and Space typed on a focused cell stay in the sequencer",
+      "result": "pass"
+    },
+    {
+      "name": "a drag that starts on a cell moves the card and does not toggle the cell",
+      "result": "pass"
+    },
+    {
+      "name": "with the pencil active the grid is drawing surface: no toggle, and the stroke is anchored to the sequencer card",
+      "result": "pass"
+    },
+    {
+      "name": "listening is credited to the music that sounded: edit then immediate pause is unheard; a full cycle of the final pattern is heard",
+      "result": "pass"
+    },
+    {
+      "name": "Uncaught page errors",
+      "result": "pass"
+    }
+  ]
+}

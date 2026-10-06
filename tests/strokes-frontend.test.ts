@@ -102,3 +102,25 @@ test('a stroke that cannot fit is refused with the size message and the earlier 
   assert.equal(h.transactions.length, 1, 'The oversized stroke was never sent.'); assert.equal(h.wb.store.current, null, 'Its preview is gone.');
   assert.equal(layerFits('ñ'.repeat(10), '', 80), false, 'Size is counted in UTF-8 bytes, as the server does.'); assert.equal(layerFits('n'.repeat(10), '', 80), true);
 });
+test('keys typed with nothing focused reach the panel that was pressed last, across listener replacement', () => {
+  // Reproduces the browser sequence: press inside the panel, the pressed control disables itself so focus falls
+  // to <body>, React replaces the key listener, then Escape is typed. It used to be lost, leaving the pencil on.
+  const { keyboard } = require('../plugin/client/web');
+  const listeners = new Map<string, Set<Function>>();
+  const target = () => ({ addEventListener(name: string, fn: Function) { (listeners.get(name) ?? listeners.set(name, new Set()).get(name)!).add(fn); }, removeEventListener(name: string, fn: Function) { listeners.get(name)?.delete(fn); } });
+  const body: any = { closest: () => null, parentElement: null }, doc: any = { ...target(), body };
+  const panel: any = { ...target(), listeners: new Set<Function>(), addEventListener(_: string, fn: Function) { this.listeners.add(fn); }, removeEventListener(_: string, fn: Function) { this.listeners.delete(fn); }, parentElement: body };
+  const other: any = { ...panel, listeners: new Set<Function>() }, button: any = { parentElement: panel, closest: () => null };
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'document'); Object.defineProperty(globalThis, 'document', { configurable: true, value: doc });
+  try {
+    const seen: string[] = [], fire = (name: string, event: any) => { for (const fn of [...(listeners.get(name) ?? [])]) fn(event); };
+    const type = (key: string) => { const event = { key, target: body, shiftKey: false, ctrlKey: false, metaKey: false, preventDefault() {}, stopPropagation() {} }; fire('keydown', event); };
+    let detach = keyboard(panel, (e: { key: string }) => { seen.push('first:' + e.key); return true; }); const detachOther = keyboard(other, (e: { key: string }) => { seen.push('other:' + e.key); return true; });
+    type('Escape'); assert.deepEqual(seen, [], 'Nothing was pressed yet: unfocused keys belong to no panel.');
+    fire('pointerdown', { target: button }); detach(); detach = keyboard(panel, (e: { key: string }) => { seen.push('second:' + e.key); return true; });
+    button.parentElement = null; // the pressed control has since left the page
+    type('Escape'); assert.deepEqual(seen, ['second:Escape'], 'The current listener of the pressed panel gets the key; the other panel does not.');
+    fire('pointerdown', { target: { parentElement: body } }); type('v'); assert.deepEqual(seen, ['second:Escape'], 'A press outside every panel releases the keys.');
+    detach(); detachOther(); assert.equal([...listeners.values()].reduce((sum, set) => sum + set.size, 0), 0, 'No document listener is left behind.');
+  } finally { if (prior) Object.defineProperty(globalThis, 'document', prior); else delete (globalThis as any).document; }
+});

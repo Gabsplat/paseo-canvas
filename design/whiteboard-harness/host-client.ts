@@ -1,7 +1,7 @@
 // QA-only host transport. Uses real RPC schemas and reducer, with explicitly simulated delivery.
 import { useCallback, useMemo, useState } from 'react';
 import { builtinTypes, builtinTemplates, builtinPacks } from '../../plugin/shared/builtins';
-import { documentViewSchema, documentSummarySchema, type CanvasDocument } from '../../plugin/shared/model';
+import { documentViewSchema, documentSummarySchema, documentContentSchema, type CanvasDocument } from '../../plugin/shared/model';
 import { reduce } from '../../plugin/server/reducer';
 export type PluginHostProps = any; export type PluginWorkspacePanelProps = any;
 const catalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks };
@@ -15,9 +15,11 @@ let doc: CanvasDocument = {
  links:[{id:'qa-link',from:'server',to:'note',kind:'flow'}]
 };
 let selectionVersion=0, runtimeVersion=0, runtime={blocks:{},scopes:{}}, fail=false;
-const undo:CanvasDocument[]=[], redo:CanvasDocument[]=[], log:any[]=[], errors:any[]=[];
+const undo:CanvasDocument[]=[], redo:CanvasDocument[]=[], log:any[]=[], errors:any[]=[], actions:any[]=[];
 const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime}));
-(globalThis as any).__panelQA={doc:()=>structuredClone(doc),log,errors,failNext:()=>{fail=true;},catalog,seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},view:snapshot};
+// `seed` stands in for another author; `seedAgent` runs the reducer as the assistant actor. `actions` records what
+// would be delivered: nothing here reaches an assistant.
+(globalThis as any).__panelQA={doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};},view:snapshot};
 async function invoke(contract:any, raw:any) {
  const input=contract.input.parse(raw), name=contract.name;
  let output:any;
@@ -38,7 +40,17 @@ async function invoke(contract:any, raw:any) {
    const next=src.pop();if(next){dest.push(structuredClone(doc));doc={...next,revision:doc.revision+1};}output=snapshot();
  } else if(name==='canvas.history') output={revision:doc.revision,transactions:[]};
  else if(name==='canvas.create'){doc={...input.content,id:'qa-new',workspaceId:'qa-workspace',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};output=snapshot();}
- else if(name==='canvas.runtime.set'){runtimeVersion++;output={runtime,runtimeVersion};}
+ else if(name==='canvas.runtime.set'){
+   const blocks:any={...runtime.blocks},scopes:any={...runtime.scopes};
+   for(const entry of input.blocks){if(entry.state)blocks[entry.id]=entry.state;else delete blocks[entry.id];}
+   for(const entry of input.scopes){const values:any={...(scopes[entry.id]??{})};for(const [key,value] of Object.entries(entry.values)){if(value===null)delete values[key];else values[key]=value;}scopes[entry.id]=values;}
+   runtime={blocks,scopes};runtimeVersion++;output={runtime,runtimeVersion};
+ }
+ else if(name==='canvas.agent.action'){
+   const {id:_id,workspaceId:_w,revision:_r,createdAt:_c,updatedAt:_u,...content}=doc as any;
+   output={id:input.eventId,documentId:doc.id,agentId:null,workspaceId:doc.workspaceId,createdAt:new Date().toISOString(),revision:doc.revision,action:input.action,context:documentContentSchema.parse(content),status:'pending'};
+   actions.push({...input.action,simulated:true});
+ }
  else throw Error('QA host does not implement '+name);
  return contract.output.parse(output);
 }

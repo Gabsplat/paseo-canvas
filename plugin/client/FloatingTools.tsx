@@ -21,7 +21,7 @@ export function ToolIsland({ tool, onToolChange, locked = false, onLockChange, o
     {order.map((id, i) => {
       if (id === '|') return <View key={`divider-${i}`} style={{ width: 1, height: 20, marginHorizontal: 4, backgroundColor: u.c.border }} />;
       const item = tokens.whiteboard.tools.items[id], active = tool === id, blocked = disabled && id !== 'select' && id !== 'hand';
-      return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`${item.label}${'key' in item ? ` (${item.key})` : ''}`} accessibilityState={{ selected: active, disabled: blocked }} disabled={blocked} onPress={e => {
+      return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`${item.label}${'key' in item ? ` (${item.key})` : ''}`} accessibilityState={{ selected: active, disabled: blocked }} aria-pressed={id === 'library' || id === 'add' ? undefined : active} disabled={blocked} onPress={e => {
         e.stopPropagation();
         if (id === 'library') { onOpenLibrary(); return; } if (id === 'add') { onOpenPicker(); return; }
         const now = Date.now(), double = last.current?.tool === id && now - last.current.time < 300; last.current = { tool: id, time: now };
