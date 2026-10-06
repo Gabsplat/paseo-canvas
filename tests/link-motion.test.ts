@@ -11,6 +11,8 @@ import type { RuntimeState } from '../plugin/shared/learning';
 import type { LinkDraw, LinkScene } from '../plugin/client/web';
 import type { LinkMotionSample } from '../plugin/client/renderers/types';
 import { predictionGateDataSchema, createPredictionAttempt, editPrediction, commitPrediction, revealPrediction } from '../plugin/shared/renderers/prediction-gate';
+import { LearningRuntimeStore } from '../plugin/client/learning-state';
+import type { Element } from './fixtures/react-headless';
 
 export const reducedMotion = { current: false };
 registerHooks({ resolve(specifier, context, nextResolve) {
@@ -23,8 +25,34 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 const { getClientRenderer } = require('../plugin/client/renderers');
 const { mountLinkLayer } = require('../plugin/client/web');
 const { usePresentation } = require('../plugin/client/usePresentation');
+const { RegisteredRenderer } = require('../plugin/client/renderers/RegisteredRenderer');
+const { HiddenResult } = require('../plugin/client/HiddenResult');
 const reference = { documentId: 'd', workspaceId };
 const flow = { question: '¿Cuándo llega?', events: [{ t: 100, from: 'b', to: 'c', kind: 'signal', payload: 2 }], duration: 2000, travelMs: 1000, links: { bc: { sign: -1, delay: 50 } } };
+
+test('real dispatcher passes a protected document to neighboring renderers and cannot mount a gated renderer directly', async t => {
+  const { service } = await setup(t);
+  const view = await service.mutate(mutation(0, [
+    { type: 'block.update', id: 'c', patch: { title: 'SECRET RESULT', data: { text: 'SECRET DATA' } } },
+    { type: 'link.create', link: { id: 'bc', from: 'b', to: 'c', kind: 'flow' } },
+    { type: 'block.create', block: { id: 'flow', typeId: 'animated-flow', title: 'Flujo', data: flow } },
+    { type: 'block.create', block: { id: 'gate', typeId: 'prediction-gate', title: 'Apuesta', data: { question: 'Pregunta', targetBlockId: 'c' } } },
+  ]));
+  const learning = new LearningRuntimeStore(async () => { throw new Error('Read only probe'); }, () => {}); t.after(() => learning.reset());
+  learning.sync(view.document, 0, { blocks: { flow: { playhead: 625 } }, scopes: {} });
+  const controller = { view, current: { current: view }, catalog: await service.catalog(), learning } as unknown as CanvasController;
+  const block = view.document.blocks.find(b => b.id === 'flow')!;
+  const wrapper = RegisteredRenderer({ block, id: 'animated-flow', controller, readOnly: false, send: async () => {} }) as Element;
+  const child = wrapper.props.children as Element;
+  assert.equal(child.props.document.blocks.find((b: any) => b.id === 'c').title, 'Resultado oculto');
+  assert.deepEqual(child.props.document.blocks.find((b: any) => b.id === 'c').data, {});
+  const rendered = (child.type as Function)(child.props) as Element;
+  assert.ok(!JSON.stringify(rendered).includes('SECRET RESULT'));
+  assert.ok(!JSON.stringify(rendered).includes('SECRET DATA'));
+  const target = RegisteredRenderer({ block: view.document.blocks.find(b => b.id === 'c')!, id: 'function-plot', controller, readOnly: false, send: async () => {} }) as Element;
+  assert.equal(target.type, HiddenResult);
+  assert.equal(view.document.blocks.find(b => b.id === 'c')!.title, 'SECRET RESULT');
+});
 
 test('registered bridge reads optimistic runtime, filters gated endpoints/source, and leaves authored graph and feedback unchanged', async t => {
   const { service } = await setup(t);

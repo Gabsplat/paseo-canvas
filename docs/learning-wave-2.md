@@ -1,9 +1,10 @@
 # Ola 2 de aprendizaje
 
-Estado: autorizado por el dueño; piloto Apuesta + Gráfica integrado y revisado.
-Prerequisito cumplido: cimientos integrado en `aprendizaje`; baseline `17203e5`,
-typecheck y 116/116 pruebas verdes. Flujo integrado; en curso Figura por pasos, Shader e
-Imagen/texto anotado. Trazos, Secuenciador y la implementación de UI flotante siguen pendientes.
+Estado: Apuesta, Gráfica, Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto
+anotado integrados en `aprendizaje`. Typecheck y 207/207 pruebas verdes, incluida la
+protección de resultados ocultos en el dispatcher y los documentos que reciben los
+renderers vecinos. Trazos, Secuenciador y la implementación de UI flotante siguen pendientes.
+La revisión de interacciones browser/native es independiente de estas pruebas headless.
 
 | Renderer | Rama / worktree | Agente Sol High |
 | --- | --- | --- |
