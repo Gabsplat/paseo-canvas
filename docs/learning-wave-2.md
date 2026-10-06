@@ -1,7 +1,17 @@
 # Ola 2 de aprendizaje
 
-Estado: pendiente de autorización del dueño. No se han lanzado agentes de esta ola.
-Prerequisito: cimientos integrado en `aprendizaje`, con typecheck y pruebas completos.
+Estado: autorizado por el dueño; piloto Apuesta + Gráfica en curso.
+Prerequisito cumplido: cimientos integrado en `aprendizaje`; baseline `17203e5`,
+typecheck y 116/116 pruebas verdes. Los demás renderers esperan la revisión del piloto.
+
+| Renderer | Rama / worktree | Agente Sol High |
+| --- | --- | --- |
+| Apuesta | `lienzo/apuesta` · `lienzo-apuesta` | `e22e6698-4a82-4ca6-94e3-084bfc12a498` |
+| Gráfica | `lienzo/grafica-funciones` · `lienzo-grafica-funciones` | `12de1ffe-f370-456d-9d91-064cbc1b7816` |
+
+Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
+El coordinador integra la visibilidad del resultado de Apuesta en el núcleo y registra
+los renderers; los ingenieros conservan la propiedad exclusiva de su módulo y pruebas.
 
 ## Forma de trabajo
 
