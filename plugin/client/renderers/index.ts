@@ -13,6 +13,7 @@ import { predictionGateRenderer } from './prediction-gate'; registerClientRender
 import { functionPlotRenderer } from './function-plot'; registerClientRenderer(functionPlotRenderer);
 import { animatedFlowRenderer } from './animated-flow';
 import { annotatedContentRenderer } from './annotated-content'; registerClientRenderer(annotatedContentRenderer);
+import { stepFigureRenderer } from './step-figure'; registerClientRenderer(stepFigureRenderer);
 import { simulateAnimatedFlow, tokensAt, flowTimeAt } from '../../shared/renderers/animated-flow';
 registerClientRenderer({ ...animatedFlowRenderer, prepareLinkMotion(data, document) {
   const simulation = simulateAnimatedFlow(data, document);

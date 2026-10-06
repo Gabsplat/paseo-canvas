@@ -11,6 +11,7 @@ import { predictionGateSpec, remapPredictionGateReferences } from './prediction-
 import { functionPlotSpec } from './function-plot'; registerRenderer(functionPlotSpec);
 import { animatedFlowSpec } from './animated-flow'; registerRenderer(animatedFlowSpec);
 import { annotatedContentSpec } from './annotated-content'; registerRenderer(annotatedContentSpec);
+import { stepFigureSpec } from './step-figure'; registerRenderer(stepFigureSpec);
 export const rendererSpecs: readonly RendererSpec[] = entries;
 export const legacyRendererNames = ['text', 'note', 'code', 'checklist', 'choice', 'form', 'metric', 'image-ref', 'step', 'callout', 'preview-frame', 'quiz', 'progress', 'diagram', 'node'] as const;
 export const rendererNames: [string, ...string[]] = [...new Set([...legacyRendererNames, ...entries.map(s => s.id)])] as [string, ...string[]];

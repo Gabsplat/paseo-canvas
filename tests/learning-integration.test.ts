@@ -5,10 +5,23 @@ import { predictionGateDataSchema, createPredictionAttempt, editPrediction, comm
 import { canvasPresentation } from '../plugin/client/presentation';
 import { documentContent, selectionPack, forkPack } from '../plugin/client/logic';
 import { annotatedContentDataSchema, initialAnnotatedState, readAnnotatedState, resolveAnnotatedAnchor } from '../plugin/shared/renderers/annotated-content';
+import { stepFigureDataSchema } from '../plugin/shared/renderers/step-figure';
 
 const reference = { documentId: 'd', workspaceId };
 const data = predictionGateDataSchema.parse({ question: '¿Qué cambia?', targetBlockId: 'c', mode: 'numeric', min: 0, max: 10, outcome: { value: 7 } });
 const prepared = () => commitPrediction(data, editPrediction(data, createPredictionAttempt(data, 'evt_pg_integration'), { mode: 'numeric', value: 3 }));
+
+test('registered step figures enforce atomic replay before committing authored patches', async t => {
+  const { service } = await setup(t);
+  const view = await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'figure', typeId: 'step-figure', title: 'Figura', data: {} } }]));
+  const figure = stepFigureDataSchema.parse(view.document.blocks.find(b => b.id === 'figure')!.data);
+  const invalidSteps = figure.steps.map(step => ({ ...step, patches: [...step.patches, { op: 'remove', id: 'missing' }] }));
+  await assert.rejects(service.mutate(mutation(1, [{ type: 'block.update', id: 'figure', patch: { data: { steps: invalidSteps } } }])));
+  assert.deepEqual((await service.read(reference)).document, view.document);
+  await service.runtimeSet({ ...reference, blocks: [{ id: 'figure', state: { step: 1, visited: [0, 1] } }], scopes: [] });
+  const after = await service.read(reference);
+  assert.equal(after.document.revision, 1); assert.deepEqual(after.document, view.document);
+});
 
 test('registered annotations validate authored data, preserve obsolete anchors after edits, and export without learner runtime', async t => {
   const { service } = await setup(t);
