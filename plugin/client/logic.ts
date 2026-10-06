@@ -356,7 +356,9 @@ export function resizeBlockSize(start: BlockSize, delta: Point, minimum: BlockSi
 /** The card a drawing annotates, when it names one. */
 export const drawAnchor = (block?: { data: Record<string, unknown> } | null): string | undefined => typeof block?.data.anchor === 'string' ? block.data.anchor : undefined;
 /** Resolved only when the card exists in the same container; otherwise the drawing stays where its position says. */
-export function anchorCard(doc: CanvasDocument, block?: CanvasBlock | null): CanvasBlock | undefined {
+export function anchorCard(doc: CanvasDocument, block?: CanvasBlock | null, catalog?: CanvasCatalog | null): CanvasBlock | undefined {
+  const renderer = block && (catalog?.blockTypes.find(type => type.id === block.typeId)?.renderer ?? block.typeId);
+  if (renderer !== 'wb-draw') return undefined;
   const id = drawAnchor(block), card = id ? doc.blocks.find(b => b.id === id) : undefined;
   return card && block && card.id !== block.id && (card.parentGroupId ?? null) === (block.parentGroupId ?? null) ? card : undefined;
 }
@@ -697,7 +699,7 @@ export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, id
   const frozen = result.length;
   for (const { e, to } of moves) {
     // An anchored drawing travels with its card. Moved on its own, only its offset from the card changes.
-    const card = 'typeId' in e ? anchorCard(doc, e) : undefined, cardRect = card && rects.get(card.id);
+    const card = 'typeId' in e ? anchorCard(doc, e, options.catalog) : undefined, cardRect = card && rects.get(card.id);
     if (card && cardRect) { if (!moving.has(card.id)) { const own = rects.get(e.id)!; result.push({ type: 'entity.move', id: e.id, parentGroupId: e.parentGroupId ?? null, position: { x: Math.round(own.x + delta.x - cardRect.x), y: Math.round(own.y + delta.y - cardRect.y) } }); } continue; }
     const r = rects.get(e.id)!, origin = to ? rects.get(to) : null;
     result.push({ type: 'entity.move', id: e.id, parentGroupId: to, position: { x: Math.round(r.x + delta.x - (origin?.x ?? 0)), y: Math.round(r.y + delta.y - (origin?.y ?? 0)) } });
@@ -745,7 +747,7 @@ export function releaseOperations(doc: CanvasDocument, ids: string[], catalog?: 
  */
 export function groupOperations(doc: CanvasDocument, rects: Map<string, Rect>, ids: string[], id: string, catalog?: CanvasCatalog | null): CanvasOperation[] {
   // Anchored drawings are not members in their own right: the server keeps each one in its card's group.
-  const items = topSelection(doc, ids).filter(e => rects.has(e.id) && !('typeId' in e && anchorCard(doc, e))); if (!items.length) return [];
+  const items = topSelection(doc, ids).filter(e => rects.has(e.id) && !('typeId' in e && anchorCard(doc, e, catalog))); if (!items.length) return [];
   const index = graphIndex(doc, catalog), parent = items.every(e => (e.parentGroupId ?? null) === (items[0].parentGroupId ?? null)) ? items[0].parentGroupId ?? null : null;
   const nested = !!parent, pad = nested ? tokens.size.groupPaddingNested : tokens.size.groupPadding, head = nested ? tokens.size.groupHeaderNested : tokens.size.groupHeader;
   const left = Math.min(...items.map(e => rects.get(e.id)!.x)), top = Math.min(...items.map(e => rects.get(e.id)!.y)), origin = parent ? rects.get(parent) : null;
