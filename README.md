@@ -20,8 +20,7 @@ Los plugins de Paseo son código de confianza sin sandbox: instálalo solo si co
 
 La rama `aprendizaje` incorpora arrastre libre, resize guardado, medios interactivos,
 siete bloques de aprendizaje y una pizarra con texto, formas, trazos anclados y SVG.
-Los pasos para probarla,
-las comprobaciones realizadas y el trabajo pendiente están en
+Los pasos para probarla y el alcance de las comprobaciones están en
 [`docs/probar-aprendizaje.md`](docs/probar-aprendizaje.md).
 
 Los agentes nuevos reciben las herramientas de Lienzo de forma predeterminada. Desde el
@@ -79,8 +78,8 @@ Una vez instalado el plugin:
    `/lienzo` también abre el panel.
 2. Crea un documento vacío o usa un ejemplo de frontend o aprendizaje. Los ejemplos
    llevan una etiqueta visible.
-3. Inserta bloques o plantillas desde el catálogo. Selecciona un bloque, grupo o el documento
-   para editar contenido e instrucciones de comunicación en el inspector.
+3. Inserta bloques o plantillas desde el catálogo. La barra de selección permite editar
+   propiedades e instrucciones de bloques y grupos. Más acciones abre los ajustes del documento.
 4. No hace falta conectar nada: los agentes que crees después de instalar el plugin reciben
    las herramientas de Lienzo, y el agente que usa un lienzo pasa a recibir tus acciones.
    Desde el diálogo de agente puedes fijar un destinatario, desactivar las herramientas

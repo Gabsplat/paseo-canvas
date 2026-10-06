@@ -94,7 +94,7 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-El núcleo integrado pasa typecheck y 289 pruebas headless. Cubren persistencia,
+El conjunto integrado pasa typecheck y 302 pruebas headless. Cubren persistencia,
 conflictos, packs, runtime, protección de resultados y validación de los cuatro tipos de
 pizarra. Pasan 24 casos de navegador con el Panel, useCanvas, reducer y esquemas RPC reales
 bajo RN-web en omabox aislado. El host y el transporte son sustitutos. Se probaron texto,
@@ -112,7 +112,22 @@ de 12 casos con el Panel real comprobó su
 convivencia con los trazos, los controles de teclado y el crédito de escucha después de
 editar. [Resultados y capturas](../design/qa-cierre-2026-10-06/).
 
-El cierre de las acciones contextuales de la interfaz flotante continúa en revisión.
+La barra contextual ofrece acciones para bloques, grupos, selección múltiple y enlaces.
+Instrucción permite editar indicaciones propias, consultar las heredadas y vaciar con
+deshacer. Los popovers de Datos y Disposición sustituyen el inspector genérico. Etiqueta
+edita el texto de un enlace en el lienzo; Escape cancela sin escribir. En compacto hay
+Deshacer y Añadir en la cabecera y una barra de 48 px sobre el compositor.
+
+Reiniciar desde la barra utiliza el mismo handler del bloque. En Secuenciador cierra el
+audio y cancela ediciones pendientes antes de guardar; un rechazo muestra un error y no
+envía un evento de éxito. Sacar del grupo mueve una tarjeta junto con sus anotaciones;
+si sacas sólo el dibujo, lo desvincula y conserva su posición.
+
+La comprobación final del conjunto pasó 35 casos RN-web: 18 de acciones contextuales,
+12 de convivencia de Trazos/Secuenciador y cinco de la guía. El AudioHost del caso de
+reset contextual está instrumentado; la convivencia usa Web Audio del navegador, sin
+dispositivo físico. [Informe final y capturas](../design/qa-final-integration-2026-10-06/report.md).
+
 Paseo instalado, dispositivos nativos y nuevas interacciones con un agente real siguen
 sin verificarse. Las pruebas de navegador usan un host y transporte sustitutos, sin
 instalar ni recargar el plugin.

@@ -1,8 +1,8 @@
 # Aprendizaje interactivo
 
 La rama `aprendizaje` integra siete tarjetas de aprendizaje y Trazos sobre las capas
-`wb-draw` de la pizarra. El núcleo pasa 289 pruebas headless y typecheck. El cierre
-de las acciones contextuales de la interfaz flotante continúa en revisión.
+`wb-draw` de la pizarra. El conjunto pasa 302 pruebas headless y typecheck. Las acciones
+contextuales y los popovers de la interfaz flotante están implementados e integrados.
 
 | Función | Comportamiento implementado |
 | --- | --- |
@@ -45,6 +45,12 @@ La comprobación en navegador se hizo dentro de omabox aislado:
 - Doce casos posteriores con el Panel real comprobaron trazos anclados,
   identificación del autor, borrado propio, teclado y escucha del patrón final.
   [Resultados](../design/qa-cierre-2026-10-06/cierre-results.json).
+
+La comprobación final del conjunto volvió a ejecutar 18 casos de acciones contextuales,
+12 de convivencia de Trazos y Secuenciador y cinco de la guía. Incluye instrucciones
+heredadas, conexiones, foco, compacto de 48 px y reset contextual con rechazo visible.
+El reset contextual usa un AudioHost instrumentado; la convivencia usa Web Audio del
+navegador. [Informe final](../design/qa-final-integration-2026-10-06/report.md).
 
 El host y transporte de los arneses son sustitutos. No equivalen a instalar el
 plugin en Paseo, probar dispositivos nativos o enviar feedback a un agente real.
