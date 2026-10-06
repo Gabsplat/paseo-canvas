@@ -18,8 +18,9 @@ paseo plugin ls        # debe mostrar `canvas` como running
 También se puede pegar `Gabsplat/paseo-canvas:plugin` en **Settings → Plugins → Plugin source**.
 Los plugins de Paseo son código de confianza sin sandbox: instálalo solo si confías en este repositorio.
 
-La rama `aprendizaje` incorpora arrastre libre, medios interactivos, seis bloques de
-aprendizaje y una pizarra con texto, formas, lápiz, goma y SVG. Los pasos para probarla,
+La rama `aprendizaje` incorpora arrastre libre, resize guardado, medios interactivos,
+siete bloques de aprendizaje y una pizarra con texto, formas, trazos anclados y SVG.
+Los pasos para probarla,
 las comprobaciones realizadas y el trabajo pendiente están en
 [`docs/probar-aprendizaje.md`](docs/probar-aprendizaje.md).
 
@@ -39,6 +40,7 @@ Los contratos publicados están en
 - Revisiones, transacciones, selección y feedback explícito al agente.
 - Referencias a medios y previews web, con enlaces en clientes nativos.
 - Pizarra con herramientas flotantes, texto libre, formas y SVG importado o de biblioteca.
+- Secuenciador con audio tras pulsar Reproducir y trazos que acompañan a su tarjeta.
 
 Los ejemplos están identificados como ejemplos. El documento persistido es la fuente del contenido;
 la interfaz no simula actividad ni respuestas del agente.

@@ -279,6 +279,28 @@ at most 0.5 s, 24 voices, 30..4200 Hz. A refused start shows "No se pudo activar
 "Activar sonido" and keeps the grid editable; a browser without Web Audio says so. Native shows
 the labelled grid and its text description as static and never reaches for audio.
 
+## Stroke annotations (`wb-draw`)
+
+Trazos extends the existing whiteboard drawing layer. Data keeps bounded `extent` and
+`strokes`, with optional `author` (`learner` or `assistant`) and `anchor` (a card ID).
+An absent author denotes authored document or template content. The pencil creates learner
+layers; agent-created layers are marked assistant. Assistant layers are dashed and labelled.
+
+An anchored layer stores its position relative to the card's top-left corner and follows
+that card during dragging, layout changes and reparenting. Deleting the card removes its
+annotations in the same transaction, and undo restores them. Copying both remaps the anchor.
+Custom types use their registered renderer to determine these semantics; an unrelated
+custom card's `data.anchor` remains ordinary authored data.
+
+`Borrar mis trazos` removes only learner layers in one undoable transaction. The eraser
+removes whole strokes. Leaving the pencil or eraser emits one bounded `whiteboard.strokes`
+summary with counts and anchor titles, never points or per-frame events. The document cap
+remains 1 MiB; a rejected append retains the earlier drawing and shows the size error.
+An append replaces its old layer in the client size estimate rather than counting it twice.
+
+The schema and exact point limits are in `shared/whiteboard.ts`; persistent changes use
+the existing document transaction path, not the interactive-card runtime channel.
+
 ## Skeleton and verification
 
 ```ts

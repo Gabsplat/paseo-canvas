@@ -1,129 +1,72 @@
-# Ola 2 de aprendizaje
+# Aprendizaje interactivo
 
-Estado: Apuesta, Gráfica, Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto
-anotado integrados en `aprendizaje`. Typecheck y 214/214 pruebas verdes, incluida la
-protección de resultados ocultos en el dispatcher y los documentos que reciben los
-renderers vecinos. Trazos, Secuenciador y la implementación de UI flotante siguen pendientes.
-Siete escenarios de interacción pasan en RN-web dentro de omabox aislado. El host real
-de Paseo y los clientes nativos siguen pendientes de verificación.
+La rama `aprendizaje` integra siete tarjetas de aprendizaje y Trazos sobre las capas
+`wb-draw` de la pizarra. El núcleo pasa 289 pruebas headless y typecheck. El cierre
+de las acciones contextuales de la interfaz flotante continúa en revisión.
 
-| Renderer | Rama / worktree | Agente Sol High |
-| --- | --- | --- |
-| Apuesta, integrada `b883b9d` | `lienzo/apuesta` · `lienzo-apuesta` | `e22e6698-4a82-4ca6-94e3-084bfc12a498`, finalizado |
-| Gráfica, integrada `51e8021` | `lienzo/grafica-funciones` · `lienzo-grafica-funciones` | `12de1ffe-f370-456d-9d91-064cbc1b7816`, finalizado |
-| Figura por pasos, integrada | `lienzo/figura-pasos` · `lienzo-figura-pasos`, entrega `73bf296` | `ed71567b-4481-4fcb-9fca-5307193521f1`, finalizado |
-| Flujo animado, integrado con puente Canvas/Links | `lienzo/flujo-animado` · `lienzo-flujo-animado`, entrega `781173b` | `20b41949-b66f-4a7f-a5bd-1681b68e3fd4`, finalizado |
-| Shader GLSL, integrado | `lienzo/shader-glsl` · `lienzo-shader-glsl`, entrega `6c5a262` | `796bd056-4cca-4bcc-a0c4-dbce9ff2763e`, finalizado |
-| Imagen/texto anotado, integrado | `lienzo/anotaciones` · `lienzo-anotaciones`, entrega `81cff72` | `9ea8513e-bc77-4784-a062-2983b03aa109`, finalizado |
+| Función | Comportamiento implementado |
+| --- | --- |
+| Apuesta | Compromiso previo de elección, estimación o curva; resultado oculto hasta confirmar; Reiniciar lo oculta desde el primer render. |
+| Gráfica de funciones | Variables compartidas, respuesta durante el arrastre, huecos de dominio y lectura de traza. |
+| Figura por pasos | Parches declarativos validados, avance y retroceso, descripción y reproducción opcional. |
+| Flujo animado | Eventos sobre nodos y conexiones reales, referencias ausentes visibles y pausa fuera de vista. |
+| Shader GLSL | Uniforms declarados, variables compartidas, errores de compilación visibles y alternativa sin WebGL. |
+| Imagen/texto anotado | Hotspots, detalles accesibles y anclas que se invalidan si cambia el contenido. |
+| Secuenciador | Escala fija, patrón y tempo; audio tras pulsar Reproducir y silencio al salir; ningún evento por paso. |
+| Trazos | Capas persistentes, autor distinguible, anclaje a una tarjeta, Borrar mis trazos y resumen asentado al salir. |
 
-Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
-El coordinador integra la visibilidad del resultado de Apuesta en el núcleo y registra
-los renderers; los ingenieros conservan la propiedad exclusiva de su módulo y pruebas.
+Trazos extiende el renderer de pizarra existente. Conserva los límites de puntos y
+de 1 MiB por documento, las transacciones y el deshacer. Las copias remapean el
+anclaje cuando también copian la tarjeta. Borrar mis trazos conserva las capas del
+asistente y del documento original. La estimación de tamaño cuenta una capa
+reemplazada una sola vez.
 
-Integración preparatoria confirmada: `f279278` añade el hook de visibilidad y el ID opcional
-de eventos settled; `adeee27` conecta Canvas, Lista, Detalles y chips de selección.
-Typecheck y 122/122 pruebas verdes tras esta preparación. El piloto integrado pasa
-typecheck y 152/152 pruebas. La integración de Apuesta detectó y corrigió defaults de
-elección que contaminaban la variante numérica; datos completos válidos ahora reemplazan
-una variante incompatible, y las actualizaciones parciales conservan JSON merge patch.
-Duplicación, inserción de plantillas y packs verifican referencias internas remapeadas,
-referencias externas conservadas y runtime excluido. Revisión GUI/native real pendiente.
-La tanda actual parte de `25092f0`, con typecheck y 153/153 pruebas verdes. El adaptador
-expone `onVisibilityChange` para detener reproducción oculta y `maxPixelSize` para limitar
-resolución física. Flujo está registrado y su puente dibuja tokens sobre paths reales,
-incluyendo enlaces paralelos y geometría durante arrastre. Filtra resultados ocultos de
-Apuesta y limita el dibujo a 256 tokens por frame; no guarda ni envía frames. Las pruebas
-de integración verifican runtime optimista, ocultamiento, duplicación de referencias,
-pausa/visibilidad y limpieza; la inspección browser/native real continúa pendiente.
-La integración de Flujo pasa typecheck y 169/169 pruebas, sin omitidas. Los primeros
-fallos del coordinador fueron de fixtures headless y del esquema del test de duplicación;
-se corrigieron antes de la validación completa.
-Puente y registro committed en `b60ff74`. Imagen/texto anotado ocupa la plaza libre
-de Flujo; workspace `wks_f429ebc02f3b0382`, dependencias offline y configuración
-explícita codex/gpt-6.1-sol, High, auto-review. Mantiene propiedad de sus tres archivos.
-Anotaciones registrado pasa typecheck y 180/180 pruebas. La integración valida el esquema
-real mediante CanvasService, edición de texto con el mismo ID/revisión sin reubicar anclas,
-rollback ante offsets inválidos, packs sin runtime y cambio completo de texto a imagen.
-Hotspots requieren carga y medida de la imagen. URLs mutables requieren actualizar la
-revisión authored; no se descargan imágenes para comparar bytes. GUI/native real omitidas.
-Figura por pasos registrada pasa typecheck y 192/192 pruebas. CanvasService rechaza
-secuencias incoherentes sin aplicar un prefijo de sus parches, y el runtime de pasos no
-cambia el documento. Se corrigió una comparación de defaults en el test de integración.
-El helper/componente conserva la última figura válida si recibe datos corruptos directamente;
-el dispatcher genérico rechaza esa definición y muestra un error, sin ejecutar el renderer.
-Shader registrado pasa typecheck y 206/206 pruebas. Source/uniforms excedidos rechazan
-transacciones sin tocar el documento; errores de sintaxis GLSL se conservan para que el
-compilador cliente muestre diagnósticos. fakeGL verifica uniforms compartidos por frame,
-recompilación, contexto perdido y limpieza idempotente. GPU/GUI/native reales omitidos.
+La marca de escucha del Secuenciador corresponde a la música que completó un ciclo
+real. Cambiar el patrón o el tempo y pausar enseguida no acredita el patrón nuevo.
+El scheduler cuenta los pasos que alcanzó el reloj de audio; las notas en cola aún
+no cuentan. El contador por paso no es una región viva para lectores de pantalla.
 
-La revisión de publicación añade seis regresiones de ciclo de vida del dispatcher.
-Reiniciar Apuesta o cambiar de documento oculta el resultado desde el primer render,
-sin esperar al efecto de reconciliación. Las respuestas tardías no escriben runtime ni
-variables en el documento nuevo. La suite completa pasa 213/213 pruebas y typecheck.
-El dueño autorizó publicar `aprendizaje`; la PR de progreso es un borrador y la comprobación
-de interacciones en navegador pasó siete escenarios en un worktree separado. QA corrigió
-el evento de carga de Imagen anotada en RN-web y añadió una regresión del adaptador.
-La integración final pasa 214/214 pruebas y typecheck. Controles/Gráfica, Apuesta con
-callbacks tardíos, Figura, Flujo, Shader y hotspots fueron comprobados con componentes
-reales bajo RN-web y transporte simulado. WebGL real del navegador funcionó; el box se
-cerró. [Informe y capturas](../design/qa-learning-2026-10-06/report.md). Paseo real y native
-siguen sin comprobar.
+## Validación
 
-## Forma de trabajo
+La suite headless usa los contratos, reducer, servicio y store de runtime reales.
+Cubre persistencia, conflictos, grupos, packs, límites, referencias remapeadas,
+resultados ocultos y callbacks tardíos después de cambiar de documento.
 
-Un ingeniero GPT 6.1 Sol con pensamiento High por renderer, en un worktree propio creado desde
-`aprendizaje`. Ramas bajo `lienzo/`; nunca `aprendizaje/`. Máximo tres ingenieros activos además
-del coordinador. No agentes Claude, push, instalación del plugin, reinicio del daemon o cambios
-de exposición. El checkout principal queda fuera del trabajo.
+La comprobación en navegador se hizo dentro de omabox aislado:
 
-Cada ingeniero lee `AGENTS.md`, `docs/design.md` y `docs/learning-blocks.md`. Posee exclusivamente
-su archivo compartido de renderer, su archivo cliente y sus pruebas. El coordinador añade las
-líneas de registro, resuelve integraciones y conserva verde la rama después de cada fusión.
-Si un renderer necesita un cambio de contrato, presenta una necesidad concreta antes de editar
-el núcleo. No modifica archivos de otro renderer.
+- Siete escenarios de aprendizaje con componentes RN-web, incluidos WebGL real y
+  carga de hotspots. [Informe](../design/qa-learning-2026-10-06/report.md).
+- Veinticuatro casos de pizarra con el Panel y useCanvas reales, texto, formas,
+  resize, SVG, iframes, compacto claro/oscuro y 150 bloques.
+  [Informe](../design/qa-whiteboard-2026-10-06/report.md).
+- Catorce casos del Secuenciador con señal de audio real tras el clic. El rechazo
+  de audio y la pestaña oculta se simularon.
+  [Resultados](../design/qa-cierre-2026-10-06/sequencer-results.json).
+- Doce casos posteriores con el Panel real comprobaron trazos anclados,
+  identificación del autor, borrado propio, teclado y escucha del patrón final.
+  [Resultados](../design/qa-cierre-2026-10-06/cierre-results.json).
 
-La especificación visual la terminó Sol con autorización del dueño, sobre material parcial de
-Opus. No equivale a una implementación ni a una revisión final de Opus.
+El host y transporte de los arneses son sustitutos. No equivalen a instalar el
+plugin en Paseo, probar dispositivos nativos o enviar feedback a un agente real.
+En nativo, las tarjetas de aprendizaje muestran una descripción estática; el
+Secuenciador no abre un contexto de audio.
 
-## Entregas en orden de prioridad
+## Contratos y forma de trabajo
 
-| Prioridad | Entrega | Comportamiento que debe probarse |
-| --- | --- | --- |
-| 1 | Apuesta | Compromiso previo de elección, estimación o curva; resultado oculto antes del compromiso; comparación y un evento settled por intento. Referencias ausentes y reinicio coherentes. |
-| 2 | Gráfica de funciones | expr.ts, variables compartidas en vivo, huecos de dominio, familia opcional y lectura de traza. El slider vecino actualiza la figura sin esperar a la red. |
-| 3 | Figura por pasos | Una figura con parches declarativos validados, avance/retroceso, descripción y cambios destacados; reproducción opcional. |
-| 4 | Flujo animado | Eventos sobre nodos y conexiones reales, timeline y referencias ausentes. Signo/demora mediante un esquema explícito, sin claves ajenas al modelo de enlaces. |
-| 5 | Shader GLSL | Uniforms declarados, binding de variables, errores de compilación visibles, recursos liberados y fallback sin WebGL. |
-| 6 | Imagen/texto anotado | Un esquema de anclaje, hotspots accesibles, capas y anclas invalidadas por cambios del contenido. |
-| 7 | Trazos | Puntos acotados, autor distinguible, dibujo aislado de gestos de cámara y límites de tamaño efectivos. |
-| 8 | Secuenciador | Escala fija, patrón y tempo, audio tras gesto real y silencio al salir; ningún tick enviado al asistente. |
+Los datos y eventos están descritos en [learning-blocks.md](learning-blocks.md).
+Los contratos de pizarra están en [whiteboard-spec.md](../design/whiteboard-spec.md)
+y las decisiones visuales en [design.md](design.md).
 
-Después de los renderers: implementar las islas, toolbar de selección, edición en lugar y
-popovers conforme a `docs/design.md`, reemplazando el inspector acoplado. Esta refactorización
-es una novena entrega; no debe confundirse con la documentación de diseño ya terminada.
+Arquitectura y diseño corresponden a Claude Opus 5.5 con pensamiento Medium;
+la implementación de ingeniería usa GPT 6.1 Sol con High. Cada agente trabaja
+en un checkout aislado con ownership explícito. El coordinador integra las
+entregas limpias, repite las comprobaciones tras cambios y publica la rama de
+prueba. El checkout principal conserva los cambios previos del usuario.
 
-## Alcance y control de coste
+Los renderers usan JSON declarativo. GLSL es la excepción explícita y sus errores
+los muestra el bloque. La respuesta gráfica sigue al gesto y el asistente recibe
+solo acciones asentadas. Los trazos permanecen en el documento, sin usar el canal
+runtime para eludir sus límites.
 
-Estimación de tamaño, antes de implementar: ocho módulos con sus pruebas y una refactorización
-principal de UI; aproximadamente 4.000–7.000 líneas entre código y pruebas. La cifra no es un
-presupuesto monetario ni una promesa de duración. Gate, flujo y trazos tienen la mayor incertidumbre
-por visibilidad de resultados, integración con el grafo y límites de almacenamiento.
-
-Propuesta económica: validar primero Apuesta y Gráfica, revisar el contrato con ese piloto y
-continuar con los otros seis en tandas de hasta tres. Evitar ocho agentes simultáneos y reabrir
-un renderer solo por un fallo concreto. Cada fusión pasa typecheck y la suite completa una vez;
-se repiten pruebas solo si aparece un cambio o un fallo nuevo.
-
-## Reglas de aceptación
-
-- JSON declarativo; ningún JS ni HTML provisto por el asistente. La única excepción es el fragment
-  shader GLSL, con errores de compilación capturados.
-- Una pregunta u objetivo visible, pocos controles y Reiniciar visible por bloque manipulable.
-- Respuesta gráfica en cada frame de interacción. El asistente recibe solo valores settled,
-  intervalos explorados y apuesta frente a resultado; pistas antes que soluciones.
-- Web/escritorio interactivo y alternativa native estática, identificada como tal.
-- Respetar 1 MiB por documento y los límites explícitos del canal runtime. Los trazos no pueden
-  usar ese canal para eludir los límites.
-- Validación real de persistencia, conflictos, grupos, packs y comportamiento MCP conservada.
-- Las pruebas de lógica son headless. GUI y capturas solo dentro de omabox. La inspección visual
-  final es una comprobación separada y se reporta como omitida si no se realiza.
+Los pasos para cargar y probar la rama están en
+[probar-aprendizaje.md](probar-aprendizaje.md).

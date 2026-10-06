@@ -2,7 +2,8 @@
 
 La rama `aprendizaje` incluye el arrastre libre, resize guardado, onboarding, medios
 interactivos y la pizarra con herramientas flotantes. También incluye Apuesta, Gráfica,
-Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto anotado. Es una rama de
+Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto anotado, además del
+Secuenciador y las anotaciones con Trazos. Es una rama de
 desarrollo para probar el progreso.
 
 ## Cargarla en Paseo
@@ -54,8 +55,10 @@ Prueba las herramientas de la pizarra desde la barra flotante:
 - Formas: elige Forma y arrastra para fijar sus dimensiones. Cambia relleno y trazo desde
   el panel de estilo; prueba resize y deshacer.
 - Lápiz y goma: dibuja varios trazos en la misma capa. La goma quita trazos completos;
-  deshacer recupera el último cambio. Este dibujo libre es distinto del bloque progresivo
-  Trazos, todavía pendiente de integración.
+  deshacer recupera el último cambio. Empieza sobre una tarjeta para anclar el dibujo:
+  al moverla, sus trazos la acompañan. Tus trazos son continuos y los del asistente son
+  discontinuos, con un rótulo. Borrar mis trazos conserva los del asistente y los del
+  documento original. Escape sale del lápiz y envía un resumen asentado.
 - SVG: abre la biblioteca de arquitectura o importa código, un archivo o una URL. El
   servidor rechaza contenido activo de forma atómica. La carga por URL necesita CORS.
 - Medios y webs: mueve el bloque mientras está pasivo. Usa Interactuar para seleccionar
@@ -67,7 +70,7 @@ de herramientas son V para seleccionar, H para mano, T para texto, R para forma,
 lápiz y E para goma. Los controles enfocados conservan sus teclas. La ayuda del onboarding
 reúne los controles de cámara, selección, enlaces, medios y posiciones automáticas.
 
-Los seis bloques nuevos están en el catálogo. Para armar un ejemplo con variables,
+Los siete bloques nuevos están en el catálogo. Para armar un ejemplo con variables,
 enlaces y resultados referenciados, crea un agente nuevo después de cargar esta versión
 y pídele:
 
@@ -75,7 +78,14 @@ y pídele:
 > con una variable y un bloque Controles para moverla. Agrega una Apuesta que oculte el
 > resultado hasta que confirme mi respuesta. Incluye Figura por pasos, un Flujo animado
 > sobre enlaces reales, un Shader GLSL sencillo e Imagen/texto anotado con texto de
-> ejemplo. Etiqueta el documento como ejemplo y crea todo con transacciones confirmadas.
+> ejemplo. Añade un Secuenciador en La menor con seis filas y ocho pasos para experimentar
+> con notas y tempo. Etiqueta el documento como ejemplo y crea todo con transacciones confirmadas.
+
+En el Secuenciador, pulsa las celdas para activar notas y Reproducir para habilitar el
+audio. Prueba Pausar, Reiniciar y cambiar de documento mientras suena. El sonido debe
+detenerse al salir del documento o sacar la rejilla de vista. Los pasos en cola todavía
+no cuentan como escuchados; después de editar, la música nueva necesita su propio ciclo.
+El asistente recibe el patrón y tempo finales, sin eventos por cada paso.
 
 Los contratos y ejemplos de datos están en [learning-blocks.md](learning-blocks.md).
 Las declaraciones de variables son parte del documento; su valor durante la interacción
@@ -84,7 +94,7 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-La entrega de pizarra `8a7051c` pasa typecheck y 257 pruebas headless. Cubren persistencia,
+El núcleo integrado pasa typecheck y 289 pruebas headless. Cubren persistencia,
 conflictos, packs, runtime, protección de resultados y validación de los cuatro tipos de
 pizarra. Pasan 24 casos de navegador con el Panel, useCanvas, reducer y esquemas RPC reales
 bajo RN-web en omabox aislado. El host y el transporte son sustitutos. Se probaron texto,
@@ -96,7 +106,12 @@ controles compartidos, reinicio de Apuesta, enlaces en movimiento y hotspots. Sh
 comprobó con WebGL real del navegador.
 [Informe de aprendizaje y capturas](../design/qa-learning-2026-10-06/report.md).
 
-Secuenciador está implementado en una rama separada y Trazos está en curso. Esos dos bloques
-todavía no forman parte de esta entrega publicada. La interfaz flotante ya funciona y
-tiene una auditoría final en curso. Paseo instalado, dispositivos nativos y nuevas
-interacciones con un agente real siguen sin verificarse.
+Secuenciador y Trazos están integrados. La QA del Secuenciador pasó 14 casos con audio
+real en Chromium bajo RN-web. Otra pasada de 12 casos con el Panel real comprobó su
+convivencia con los trazos, los controles de teclado y el crédito de escucha después de
+editar. [Resultados y capturas](../design/qa-cierre-2026-10-06/).
+
+El cierre de las acciones contextuales de la interfaz flotante continúa en revisión.
+Paseo instalado, dispositivos nativos y nuevas interacciones con un agente real siguen
+sin verificarse. Las pruebas de navegador usan un host y transporte sustitutos, sin
+instalar ni recargar el plugin.
