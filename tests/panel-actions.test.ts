@@ -44,6 +44,25 @@ test('Mover antes/después have boundary states and keep membership intact', () 
   const before = fixture(); assert.deepEqual(reorderOperation(before, 'a', -1), []); assert.deepEqual(reorderOperation(before, 'b', 1), []);
   const after = apply(reorderOperation(before, 'a', 1), before); assert.deepEqual(after.groups[0].blockIds, ['b', 'a']); assert.equal(after.blocks[0].parentGroupId, 'g');
 });
+test('leaving a group with a card and its annotation preserves the anchor offset and moves the card once', () => {
+  const before = apply([{ type: 'block.create', block: { id: 'ink', typeId: 'wb-draw', title: '', parentGroupId: 'g', position: { x: 12, y: 18 }, size: { width: 80, height: 24 }, data: { extent: { width: 80, height: 24 }, strokes: [{ points: [0, 0, 80, 24], color: 'azul', weight: 'm' }], author: 'learner', anchor: 'a' } } }]);
+  const rects = layoutDocument(before, {}, catalog), operations = leaveGroupOperations(before, ['a', 'ink'], rects);
+  const after = apply(operations, before), nextRects = layoutDocument(after, {}, catalog), newInk = nextRects.get('ink')!, card = nextRects.get('a')!, layer = after.blocks.find(b => b.id === 'ink')!;
+  assert.deepEqual(layer.position, { x: 12, y: 18 });
+  assert.equal(layer.data.anchor, 'a'); assert.equal(layer.parentGroupId, null);
+  assert.deepEqual(after.blocks.find(b => b.id === 'a')!.position, { x: rects.get('a')!.x, y: rects.get('a')!.y });
+  assert.deepEqual({ x: newInk.x - card.x, y: newInk.y - card.y }, { x: 12, y: 18 }, 'The annotation follows any existing overlap resolution of the card.');
+  assert.deepEqual(operations.filter(op => op.type === 'entity.move').map(op => op.id), ['a']);
+});
+test('leaving a group with only an annotation detaches it and preserves its world position and strokes', () => {
+  const before = apply([{ type: 'block.create', block: { id: 'ink', typeId: 'wb-draw', title: '', parentGroupId: 'g', position: { x: 12, y: 18 }, size: { width: 80, height: 24 }, data: { extent: { width: 80, height: 24 }, strokes: [{ points: [0, 0, 80, 24], color: 'azul', weight: 'm' }], author: 'learner', anchor: 'a' } } }]);
+  const rects = layoutDocument(before, {}, catalog), oldInk = rects.get('ink')!;
+  const after = apply(leaveGroupOperations(before, ['ink'], rects), before), layer = after.blocks.find(b => b.id === 'ink')!, newInk = layoutDocument(after, {}, catalog).get('ink')!;
+  assert.equal(layer.parentGroupId, null); assert.equal(layer.data.anchor, undefined);
+  assert.deepEqual(layer.data.strokes, before.blocks.find(b => b.id === 'ink')!.data.strokes);
+  assert.deepEqual({ x: newInk.x, y: newInk.y }, { x: oldInk.x, y: oldInk.y });
+  assert.equal(after.blocks.find(b => b.id === 'a')!.parentGroupId, 'g');
+});
 test('type slots use renderer aliases and Datos excludes in-place fields only outside compact', () => {
   for (const [id, kind] of [['node', 'status'], ['code', 'language'], ['preview', 'url'], ['media', 'url'], ['step-sequencer', 'reset']] as const) {
     const type = builtinTypes.find(t => t.id === id)!; assert.ok(type, id); assert.equal(typeSlot({ ...type, id: 'custom-alias' })?.kind, kind);

@@ -1,6 +1,6 @@
 import { tokens } from './tokens';
 import type { BlockType, CanvasBlock, CanvasDocument, CanvasGroup, CanvasOperation, CanvasCatalog } from '../shared/model';
-import { containerMode, freezeOperations, manual, topSelection, type Rect, type Camera } from './logic';
+import { anchorCard, containerMode, freezeOperations, manual, topSelection, type Rect, type Camera } from './logic';
 import { getRendererSpec } from '../shared/renderers';
 export type Entity = CanvasBlock | CanvasGroup;
 export const layoutIcons = { graph: 'Workflow', stack: 'Rows3', grid: 'Grid2x2', flow: 'ArrowRightFromLine', free: 'Move', rows: 'Rows3' } as const;
@@ -28,12 +28,22 @@ export function layoutOperations(doc: CanvasDocument, groupId: string | null, ne
   return [...frozen, group ? { type: 'group.update', id: group.id, patch: { layout: next } } : { type: 'document.update', layout: next }];
 }
 /** Leave the parent without changing the drawn world position, including nested group frames. */
-export function leaveGroupOperations(doc: CanvasDocument, ids: string[], rects: Map<string, Rect>): CanvasOperation[] {
+export function leaveGroupOperations(doc: CanvasDocument, ids: string[], rects: Map<string, Rect>, catalog?: CanvasCatalog | null): CanvasOperation[] {
   const items = topSelection(doc, ids);
   if (!items.length || !items[0].parentGroupId || !items.every(e => e.parentGroupId === items[0].parentGroupId)) return [];
   const parent = doc.groups.find(g => g.id === items[0].parentGroupId), to = parent?.parentGroupId ?? null, origin = to ? rects.get(to) : undefined;
   if (items.length > 200) throw new Error('El cambio supera las 200 operaciones de una transacción.');
-  return items.flatMap(item => { const rect = rects.get(item.id); return rect ? [{ type: 'entity.move' as const, id: item.id, parentGroupId: to, position: { x: rect.x - (origin?.x ?? 0), y: rect.y - (origin?.y ?? 0) } }] : []; });
+  const moving = new Set(items.map(item => item.id)), operations: CanvasOperation[] = [];
+  for (const item of items) {
+    const rect = rects.get(item.id); if (!rect) continue;
+    const card = 'typeId' in item ? anchorCard(doc, item, catalog) : undefined;
+    if (card && moving.has(card.id)) continue;
+    // The card carries its annotation. Leaving on its own detaches the layer before moving it.
+    if (card) operations.push({ type: 'block.update', id: item.id, patch: { data: { anchor: null } } });
+    operations.push({ type: 'entity.move', id: item.id, parentGroupId: to, position: { x: rect.x - (origin?.x ?? 0), y: rect.y - (origin?.y ?? 0) } });
+  }
+  if (operations.length > 200) throw new Error('El cambio supera las 200 operaciones de una transacción.');
+  return operations;
 }
 export function reorderOperation(doc: CanvasDocument, id: string, direction: number): CanvasOperation[] {
   const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id), parent = doc.groups.find(g => g.id === entity?.parentGroupId);
