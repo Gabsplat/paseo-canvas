@@ -225,8 +225,10 @@ Native wrappers show the static fallback and never create contexts.
 Raster resolution samples DPR times CSS camera scale on each redraw, capped at 4x.
 A static bitmap can briefly soften after a camera-only zoom until its next redraw, since
 CSS transforms do not notify ResizeObserver. Animated surfaces resample each frame.
-Actual GPU/browser/native integration remains for coordinator verification; headless
-adapter tests use simulated host/context objects and do not open a GUI.
+Headless adapter tests use simulated host/context objects and do not open a GUI.
+The learning QA separately exercised real browser WebGL under RN-web in isolated omabox;
+installed Paseo, native devices and physical GPU behavior remain unverified. See
+`design/qa-learning-2026-10-06/report.md` for the browser environment and results.
 
 ### Motion over existing canvas links
 

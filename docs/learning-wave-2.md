@@ -39,8 +39,8 @@ La comprobación en navegador se hizo dentro de omabox aislado:
 - Veinticuatro casos de pizarra con el Panel y useCanvas reales, texto, formas,
   resize, SVG, iframes, compacto claro/oscuro y 150 bloques.
   [Informe](../design/qa-whiteboard-2026-10-06/report.md).
-- Catorce casos del Secuenciador con señal de audio real tras el clic. El rechazo
-  de audio y la pestaña oculta se simularon.
+- Catorce casos del Secuenciador con señal Web Audio medida tras el clic, sin
+  dispositivo de audio físico. El rechazo de audio y la pestaña oculta se simularon.
   [Resultados](../design/qa-cierre-2026-10-06/sequencer-results.json).
 - Doce casos posteriores con el Panel real comprobaron trazos anclados,
   identificación del autor, borrado propio, teclado y escucha del patrón final.

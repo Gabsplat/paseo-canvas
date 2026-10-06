@@ -106,8 +106,9 @@ controles compartidos, reinicio de Apuesta, enlaces en movimiento y hotspots. Sh
 comprobó con WebGL real del navegador.
 [Informe de aprendizaje y capturas](../design/qa-learning-2026-10-06/report.md).
 
-Secuenciador y Trazos están integrados. La QA del Secuenciador pasó 14 casos con audio
-real en Chromium bajo RN-web. Otra pasada de 12 casos con el Panel real comprobó su
+Secuenciador y Trazos están integrados. La QA del Secuenciador pasó 14 casos con señal
+Web Audio medida en Chromium bajo RN-web, sin escuchar un dispositivo físico. Otra pasada
+de 12 casos con el Panel real comprobó su
 convivencia con los trazos, los controles de teclado y el crédito de escucha después de
 editar. [Resultados y capturas](../design/qa-cierre-2026-10-06/).
 
