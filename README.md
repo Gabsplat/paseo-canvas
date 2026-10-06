@@ -18,9 +18,13 @@ paseo plugin ls        # debe mostrar `canvas` como running
 También se puede pegar `Gabsplat/paseo-canvas:plugin` en **Settings → Plugins → Plugin source**.
 Los plugins de Paseo son código de confianza sin sandbox: instálalo solo si confías en este repositorio.
 
-Para que un agente pueda leer y editar el lienzo: abre el panel, entra al diálogo de agente, marca
-«Dar las herramientas de Lienzo a los agentes nuevos de todos los espacios» y crea un agente **nuevo**
-(los que ya existían no reciben las herramientas). Después conéctalo desde ese mismo diálogo.
+La rama `aprendizaje` incorpora seis bloques interactivos nuevos. Los pasos para probarla,
+las comprobaciones realizadas y el trabajo pendiente están en
+[`docs/probar-aprendizaje.md`](docs/probar-aprendizaje.md).
+
+Los agentes nuevos reciben las herramientas de Lienzo de forma predeterminada. Desde el
+diálogo de agente puedes desactivarlas o fijar quién recibe las acciones. Los agentes que
+ya existían necesitan la configuración manual que ofrece ese diálogo.
 
 Los contratos publicados están en
 [`plugin/shared/model.ts`](plugin/shared/model.ts) y [`plugin/shared/rpc.ts`](plugin/shared/rpc.ts).
