@@ -62,10 +62,13 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-La integración hasta `ba9cd9c` pasa typecheck y 213 pruebas headless. Estas pruebas
+La integración hasta `4373025` pasa typecheck y 214 pruebas headless. Estas pruebas
 cubren persistencia, conflictos, packs, runtime y protección de resultados, entre otros
-casos. La revisión de interacciones en navegador está en curso. El host real de Paseo,
-los clientes nativos y la GPU real requieren comprobaciones separadas.
+casos. Siete escenarios pasan con los componentes reales bajo RN-web en omabox aislado,
+incluidos controles compartidos, reinicio de Apuesta, enlaces en movimiento y hotspots.
+Shader se comprobó con WebGL real del navegador. El transporte del harness es simulado;
+el host real de Paseo y los clientes nativos siguen sin comprobar.
+[Informe y capturas](../design/qa-learning-2026-10-06/report.md).
 
 Trazos, Secuenciador y la implementación completa de la interfaz flotante siguen
 pendientes. El diseño de esa interfaz ya está documentado; esta rama todavía conserva

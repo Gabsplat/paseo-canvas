@@ -1,10 +1,11 @@
 # Ola 2 de aprendizaje
 
 Estado: Apuesta, Gráfica, Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto
-anotado integrados en `aprendizaje`. Typecheck y 213/213 pruebas verdes, incluida la
+anotado integrados en `aprendizaje`. Typecheck y 214/214 pruebas verdes, incluida la
 protección de resultados ocultos en el dispatcher y los documentos que reciben los
 renderers vecinos. Trazos, Secuenciador y la implementación de UI flotante siguen pendientes.
-La revisión de interacciones browser/native es independiente de estas pruebas headless.
+Siete escenarios de interacción pasan en RN-web dentro de omabox aislado. El host real
+de Paseo y los clientes nativos siguen pendientes de verificación.
 
 | Renderer | Rama / worktree | Agente Sol High |
 | --- | --- | --- |
@@ -60,7 +61,13 @@ Reiniciar Apuesta o cambiar de documento oculta el resultado desde el primer ren
 sin esperar al efecto de reconciliación. Las respuestas tardías no escriben runtime ni
 variables en el documento nuevo. La suite completa pasa 213/213 pruebas y typecheck.
 El dueño autorizó publicar `aprendizaje`; la PR de progreso es un borrador y la comprobación
-de interacciones en navegador continúa en un worktree separado.
+de interacciones en navegador pasó siete escenarios en un worktree separado. QA corrigió
+el evento de carga de Imagen anotada en RN-web y añadió una regresión del adaptador.
+La integración final pasa 214/214 pruebas y typecheck. Controles/Gráfica, Apuesta con
+callbacks tardíos, Figura, Flujo, Shader y hotspots fueron comprobados con componentes
+reales bajo RN-web y transporte simulado. WebGL real del navegador funcionó; el box se
+cerró. [Informe y capturas](../design/qa-learning-2026-10-06/report.md). Paseo real y native
+siguen sin comprobar.
 
 ## Forma de trabajo
 
