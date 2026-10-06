@@ -86,6 +86,14 @@ export function sequencerState(data: StepSequencerData, raw: Readonly<Record<str
   const fits = Array.isArray(stored) && stored.length === data.rows.length && stored.every(row => typeof row === 'string' && row.length === data.steps && /^[x.]+$/.test(row));
   return { pattern: fits ? [...stored as string[]] : [...data.pattern], bpm: typeof raw.bpm === 'number' ? clampTempo(data.tempo, raw.bpm) : data.tempo.bpm };
 }
+/**
+ * Everything that decides what a full cycle sounds like. The runtime stores this bounded string as `heard`,
+ * so a later change to scale, rows, voice, subdivision, pattern or tempo cannot inherit an earlier listen.
+ */
+export function sequencerFingerprint(data: StepSequencerData, state: StepSequencerState): string {
+  return [data.scale.root, data.scale.mode, data.scale.octave, data.rows.join(','), data.voice, data.steps, data.stepsPerBeat, state.bpm, state.pattern.join('/')].join('|');
+}
+export const sequencerHeard = (data: StepSequencerData, state: StepSequencerState, raw: Readonly<Record<string, unknown>>) => raw.heard === sequencerFingerprint(data, state);
 export const cellOn = (pattern: readonly string[], row: number, step: number) => pattern[row]?.[step] === 'x';
 export function toggleCell(pattern: readonly string[], row: number, step: number): string[] {
   return pattern.map((value, i) => i === row && step >= 0 && step < value.length ? `${value.slice(0, step)}${value[step] === 'x' ? '.' : 'x'}${value.slice(step + 1)}` : value);

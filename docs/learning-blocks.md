@@ -260,7 +260,11 @@ URL, sample, script or autoplay field. Rows display highest first; `pattern[i]` 
 to `rows[i]`.
 
 Runtime holds `{pattern, bpm, heard?}` and falls back to the authored pattern when the stored
-shape no longer fits. The learner toggles cells (click, Space or Enter; arrows, Home and End
+shape no longer fits. `heard` is a short fingerprint of the exact music that completed a cycle
+(scale, rows, voice, steps, subdivision, tempo and pattern), so an authored change to any of them
+is unheard again while a still-fitting learner pattern and tempo are kept. The moving step
+counter is hidden from assistive technology; a polite live region announces only playback state
+and audio errors. The learner toggles cells (click, Space or Enter; arrows, Home and End
 move between cells) and moves tempo inside the declared range. One coalescing settled event,
 `step-sequencer.pattern`, describes the final pattern, tempo and whether a full cycle was heard:
 600 ms after the last toggle, on tempo release, and once when a first full cycle has been heard.

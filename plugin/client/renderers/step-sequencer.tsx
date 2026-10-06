@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
-  cellOn, clampTempo, degreeMidi, midiFrequency, scaleName, sequencerDescription, sequencerRows, sequencerState, sequencerSummary, stepSeconds, toggleCell,
+  cellOn, clampTempo, degreeMidi, midiFrequency, scaleName, sequencerDescription, sequencerFingerprint, sequencerHeard, sequencerRows, sequencerState, sequencerSummary, stepSeconds, toggleCell,
   type StepSequencerData, type StepSequencerState,
 } from '../../shared/renderers/step-sequencer';
 import { createSequencer, type StepAudioPort } from '../sequencer-audio';
@@ -27,13 +27,14 @@ function StepSequencer(props: RendererProps<StepSequencerData>) {
   const mounted = useRef(true), grid = useRef<View | null>(null), cells = useRef(new Map<string, { focus(): void }>());
   const audio = useRef<{ port: StepAudioPort; engine: Engine | null } | null>(null);
   const signature = JSON.stringify(runtime.state);
-  const local = useRef({ data, documentId: props.document.id, state: sequencerState(data, runtime.state), heard: runtime.state.heard === true, signature,
+  const stored = sequencerState(data, runtime.state);
+  const local = useRef({ data, documentId: props.document.id, state: stored, heard: sequencerHeard(data, stored, runtime.state), signature,
     status: 'idle' as AudioStatus, step: -1, attempt: 0, dragging: false, pending: null as ReturnType<typeof setTimeout> | null, focus: { row: 0, step: 0 }, focused: false });
   const current = local.current, keyboardFocus = useKeyboardFocus(ui.layout.platform === 'web');
   const refresh = () => { if (mounted.current) render(value => value + 1); };
   const enabled = () => !live.current.readOnly && live.current.ui.layout.platform === 'web';
   const fail = () => { if (mounted.current) setError('No se pudo guardar el patrón. Revisa la conexión y vuelve a intentarlo.'); };
-  const write = (settled = false) => live.current.runtime.set({ pattern: [...current.state.pattern], bpm: current.state.bpm, ...(current.heard ? { heard: true } : {}) }, settled);
+  const write = (settled = false) => live.current.runtime.set({ pattern: [...current.state.pattern], bpm: current.state.bpm, ...(current.heard ? { heard: sequencerFingerprint(live.current.data, current.state) } : {}) }, settled);
   /** One settled description of the final pattern and tempo. Playback position is never reported. */
   const commit = (kind: 'pattern' | 'reset' = 'pattern') => {
     if (current.pending !== null) clearTimeout(current.pending);
@@ -86,10 +87,10 @@ function StepSequencer(props: RendererProps<StepSequencerData>) {
   // Receive real runtime/content changes, while retaining an edit that has not settled yet.
   if (current.data !== data || current.documentId !== props.document.id) {
     silence(false); if (current.pending !== null) clearTimeout(current.pending);
-    Object.assign(current, { data, documentId: props.document.id, state: sequencerState(data, runtime.state), heard: runtime.state.heard === true, signature, status: 'idle', pending: null, dragging: false });
+    Object.assign(current, { data, documentId: props.document.id, state: stored, heard: sequencerHeard(data, stored, runtime.state), signature, status: 'idle', pending: null, dragging: false });
   } else if (current.signature !== signature) {
     current.signature = signature;
-    if (current.pending === null && !current.dragging) { current.state = sequencerState(data, runtime.state); current.heard = runtime.state.heard === true; }
+    if (current.pending === null && !current.dragging) { current.state = stored; current.heard = sequencerHeard(data, stored, runtime.state); }
   }
   useEffect(() => {
     mounted.current = true;
@@ -147,7 +148,12 @@ function StepSequencer(props: RendererProps<StepSequencerData>) {
       <Txt kind="small" muted>{description}</Txt>
       <Txt kind="small" muted>El sonido y la edición están disponibles en la versión web. Aquí no se reproduce audio.</Txt>
     </View>}
-    <Txt kind="code" accessibilityLiveRegion="polite">{state.bpm} pulsos por minuto{playing && playhead >= 0 ? `, paso ${playhead + 1} de ${data.steps}` : ''}</Txt>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 8 }}>
+      <Txt kind="code">{state.bpm} pulsos por minuto</Txt>
+      {/* The moving position is visual only; a screen reader hears the state change, not every step. */}
+      {playing && playhead >= 0 && <Txt kind="code" muted aria-hidden>paso {playhead + 1} de {data.steps}</Txt>}
+    </View>
+    <Txt kind="small" muted accessibilityLiveRegion="polite">{status === 'playing' ? 'Reproduciendo en bucle.' : status === 'starting' ? 'Activando el sonido.' : ''}</Txt>
     {isWeb && data.tempo.min < data.tempo.max && <WebRange id={`sequencer-tempo-${block.id}`} label="Tempo en pulsos por minuto" min={data.tempo.min} max={data.tempo.max} step={1} value={state.bpm} disabled={disabled} color={ui.c.accent}
       onChange={value => { if (!enabled()) return; current.dragging = true; current.state = { ...current.state, bpm: clampTempo(data.tempo, value) }; refresh(); }}
       onSettle={value => { current.dragging = false; edit({ ...current.state, bpm: clampTempo(data.tempo, value) }, true); }} />}
@@ -159,9 +165,9 @@ function StepSequencer(props: RendererProps<StepSequencerData>) {
         current.state = { pattern: [...live.current.data.pattern], bpm: live.current.data.tempo.bpm }; commit('reset'); refresh();
       }} />
     </View>
-    {status === 'blocked' && <Txt kind="small" style={{ color: ui.c.statusDanger }}>No se pudo activar el sonido. El navegador o el sistema lo impidió; el patrón se conserva.</Txt>}
-    {status === 'interrupted' && <Txt kind="small" style={{ color: ui.c.statusDanger }}>El sonido se detuvo porque el navegador suspendió el audio. El patrón se conserva.</Txt>}
-    {status === 'unsupported' && <Txt kind="small" style={{ color: ui.c.statusDanger }}>Este navegador no ofrece audio. Puedes editar el patrón, pero no sonará.</Txt>}
+    {status === 'blocked' && <Txt kind="small" accessibilityLiveRegion="polite" style={{ color: ui.c.statusDanger }}>No se pudo activar el sonido. El navegador o el sistema lo impidió; el patrón se conserva.</Txt>}
+    {status === 'interrupted' && <Txt kind="small" accessibilityLiveRegion="polite" style={{ color: ui.c.statusDanger }}>El sonido se detuvo porque el navegador suspendió el audio. El patrón se conserva.</Txt>}
+    {status === 'unsupported' && <Txt kind="small" accessibilityLiveRegion="polite" style={{ color: ui.c.statusDanger }}>Este navegador no ofrece audio. Puedes editar el patrón, pero no sonará.</Txt>}
     {!!error && <Txt kind="small" style={{ color: ui.c.statusDanger }}>{error}</Txt>}
   </View>;
 }

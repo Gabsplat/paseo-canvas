@@ -2,11 +2,13 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import {
-  stepSequencerDataSchema, stepSequencerSpec, degreeMidi, midiFrequency, sequencerRows, sequencerState, toggleCell, sequencerSummary, sequencerDescription, scaleName, stepSeconds,
+  stepSequencerDataSchema, stepSequencerSpec, degreeMidi, midiFrequency, sequencerRows, sequencerState, toggleCell, sequencerSummary, sequencerDescription, sequencerHeard, scaleName, stepSeconds,
   type StepSequencerData,
 } from '../plugin/shared/renderers/step-sequencer';
 import { createSequencer, SEQUENCER_AUDIO, type StepAudioPort } from '../plugin/client/sequencer-audio';
 import type { RendererProps } from '../plugin/client/renderers/types';
+import { LearningRuntimeStore } from '../plugin/client/learning-state';
+import { documentSchema } from '../plugin/shared/model';
 
 // Retained hook slots with dependency-aware effects and cleanup. Only React, React Native and the
 // UI kit are replaced: schema, scheduler, the web.ts audio adapter and the renderer are real code.
@@ -340,4 +342,35 @@ test('external runtime changes are adopted, and a stored pattern that no longer 
   assert.equal(cell(stale, 0, 0).props.accessibilityState.selected, true); assert.equal(cell(stale, 0, 1).props.accessibilityState.selected, false);
   assert.equal(sequencerCellWidth(496, 16, 4) * 16 + 44 + 2 + 12 * 2 + 3 * 8 <= 496, true, 'Sixteen steps fit the default card.'); assert.equal(sequencerCellWidth(100, 16, 4), 12);
   assert.equal(stepSeconds(120, 2), .25); fake.restore();
+});
+test('having listened belongs to the exact music that sounded: a new scale with the same grid must be heard again', async t => {
+  const fake = browser(); t.after(fake.restore); const timers = clock(t);
+  // The production optimistic runtime store; only its transport is a stand-in that acknowledges writes.
+  const doc = documentSchema.parse({ id: 'doc', workspaceId: 'w', revision: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', title: 'Ejemplo', communication: { instructions: '' }, blocks: [{ id: 'seq', typeId: 'note', title: 'Secuenciador de ejemplo', data: {} }], groups: [] });
+  let version = 0; const server: Record<string, Record<string, unknown>> = {};
+  const store = new LearningRuntimeStore(async request => {
+    for (const entry of request.blocks) { if (entry.state) server[entry.id] = entry.state; else delete server[entry.id]; }
+    return { runtimeVersion: ++version, runtime: { blocks: structuredClone(server), scopes: {} } } as never;
+  }, error => assert.fail(String(error)));
+  store.sync(doc, 0, { blocks: {}, scopes: {} });
+  const h = harness(four());
+  const mount = () => { Object.assign(h.props.runtime, { state: store.getSnapshot().blocks.seq ?? {}, set: (state: Record<string, never> | null, settled?: boolean) => store.setBlock('seq', state, settled) }); return h.render(); };
+  const listen = async () => { button(mount(), 'Reproducir')!.props.onPress(); await settleMicrotasks(); const context = fake.contexts.at(-1)!; for (let i = 0; i < 100; i++) { context.currentTime += .025; timers.tick(25); } button(mount(), 'Pausar')!.props.onPress(); await settleMicrotasks(); return context; };
+  cell(mount(), 1, 1).props.onPress(press); timers.tick(600); await settleMicrotasks();
+  await listen();
+  assert.deepEqual(h.events.map(e => [e[1].scale, e[1].heard]), [['La menor', false], ['La menor', true]]);
+  const minor = h.props.data, state = sequencerState(minor, store.getSnapshot().blocks.seq);
+  assert.deepEqual(state, { pattern: ['x...', '.xx.'], bpm: 120 }); assert.equal(sequencerHeard(minor, state, store.getSnapshot().blocks.seq), true);
+  assert.ok(Buffer.byteLength(JSON.stringify(store.getSnapshot().blocks.seq)) < 512, 'The marker is a short bounded string.');
+  // The author moves the exercise to another scale; rows, steps, the learner pattern and tempo still fit.
+  const major = stepSequencerDataSchema.parse({ ...minor, scale: { root: 'C', mode: 'major', octave: 4 } });
+  (h.props as any).data = major; let view = mount();
+  assert.equal(cell(view, 1, 1).props.accessibilityState.selected, true, 'The learner pattern is kept.'); assert.equal(sequencerHeard(major, state, store.getSnapshot().blocks.seq), false);
+  const context = await listen();
+  assert.deepEqual(context.oscillators.slice(0, 3).map(o => Math.round(o.frequency.value!)), [262, 330, 330], 'Do4 and Mi4 sounded this time, not La4 and Do5.');
+  assert.deepEqual(h.events.slice(2).map(e => [e[1].scale, e[1].heard, e[1].rows.map((r: { pattern: string }) => r.pattern)]), [['Do mayor', true, ['.xx.', 'x...']]], 'The new music is reported as heard only after it actually played.');
+  assert.equal(sequencerHeard(major, state, store.getSnapshot().blocks.seq), true);
+  // Voice, subdivision and a legacy boolean marker are all treated as unheard too.
+  for (const patch of [{ voice: 'square' }, { stepsPerBeat: 2 }, { rows: [1, 5] }]) assert.equal(sequencerHeard(stepSequencerDataSchema.parse({ ...major, ...patch }), state, store.getSnapshot().blocks.seq), false, JSON.stringify(patch));
+  assert.equal(sequencerHeard(major, state, { ...state, heard: true }), false); h.unmount();
 });
