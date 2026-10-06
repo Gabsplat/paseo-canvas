@@ -41,6 +41,8 @@ type RendererSpec = {
   defaultSize?: { width: number; height: number };
   hiddenTargets?: (data: unknown, runtime: Record<string, JSONValue>,
     document: CanvasDocument, blockId: string) => readonly string[];
+  remapReferences?: (data: CanvasBlock['data'],
+    ids: ReadonlyMap<string, string>) => CanvasBlock['data'];
 };
 ```
 
@@ -50,6 +52,12 @@ Client dispatch parses data before calling the renderer. Defaults must pass the 
 List every top-level data key in `blockType.properties`. One-line guidance appears in MCP
 catalog results and agent integration instructions. The 15 legacy renderer names remain
 valid. Diagram uses the registry; the remaining legacy renderers still work.
+
+Creation merges type defaults with supplied data. Updates use JSON merge patch, with null
+removing a key. For a schema with variants, a complete valid data object replaces the
+defaults or previous data when the merged object would be invalid. This allows changing
+from choice to numeric without retaining choice-only properties. Incomplete invalid data
+still rejects the transaction; ordinary partial updates keep their merge semantics.
 
 `hiddenTargets` is an optional pure presentation hook for a prediction gate. Return
 existing target block IDs while their result must stay hidden; validate raw runtime
@@ -62,6 +70,12 @@ instructions and adjacent link labels. Details shows the gate controls instead o
 outcome fields, and replaces a hidden target's editor with a link back to its gate.
 The authored document remains available to MCP and exports; this is a learning sequence,
 not a security boundary.
+
+`remapReferences` rewrites only declared reference fields on duplication and template
+insertion. The map includes copied block, group and link IDs. Internal references point
+to their copies; external references stay unchanged. Return declarative data without
+mutating the input or map. Document copies and pack exports preserve IDs, so they do
+not need remapping. Runtime stays excluded from every copy or template.
 
 ## Client props
 

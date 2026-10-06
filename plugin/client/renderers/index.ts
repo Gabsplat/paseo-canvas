@@ -9,5 +9,6 @@ function registerClientRenderer<Data>(renderer: ClientRenderer<Data>) {
 // Add one import/register line here. RegisteredRenderer parses data before dispatch.
 import { diagramRenderer } from './diagram'; registerClientRenderer(diagramRenderer);
 import { controlsRenderer } from './controls'; registerClientRenderer(controlsRenderer);
+import { predictionGateRenderer } from './prediction-gate'; registerClientRenderer(predictionGateRenderer);
 export const getClientRenderer = (id?: string) => entries.find(entry => entry.id === id);
 export type { RendererProps, ClientRenderer, RendererVisual } from './types';

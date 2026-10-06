@@ -124,6 +124,12 @@ export function mergePatch(target: Record<string, unknown>, patch: Record<string
   return result;
 }
 
+/** Complete variant data can replace incompatible defaults or an earlier variant. */
+function rendererData(type: BlockType | undefined, merged: CanvasBlock['data'], provided: CanvasBlock['data']): CanvasBlock['data'] {
+  const schema = getRendererSpec(type?.renderer)?.dataSchema;
+  return schema && !schema.safeParse(merged).success && schema.safeParse(provided).success ? clone(provided) : merged;
+}
+
 function entity(document: CanvasDocument, id: string): CanvasBlock | CanvasGroup {
   const found = [...document.blocks, ...document.groups].find(item => item.id === id);
   if (!found) throw new CanvasError("NOT_FOUND", `Entity ${id} does not exist.`);
@@ -169,10 +175,16 @@ function synchronizeChildren(document: CanvasDocument, group: CanvasGroup, block
   }
 }
 
-function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefix: string): void {
+function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefix: string, catalog: CanvasCatalog): void {
   const remap = (id: string) => `${prefix}.${id}`;
   const copied = new Set([...template.blocks, ...template.groups].map(entity => entity.id));
-  for (const block of template.blocks) document.blocks.push({ ...clone(block), id: remap(block.id), parentGroupId: block.parentGroupId ? remap(block.parentGroupId) : null });
+  const ids = new Map([...copied, ...template.links.map(link => link.id)].map(id => [id, remap(id)]));
+  const types = new Map(catalog.blockTypes.map(type => [type.id, type.renderer]));
+  for (const block of template.blocks) {
+    const cloned = clone(block), spec = getRendererSpec(types.get(block.typeId));
+    document.blocks.push({ ...cloned, data: spec?.remapReferences?.(cloned.data, ids) ?? cloned.data,
+      id: remap(block.id), parentGroupId: block.parentGroupId ? remap(block.parentGroupId) : null });
+  }
   for (const group of template.groups) document.groups.push({ ...clone(group), id: remap(group.id), parentGroupId: group.parentGroupId ? remap(group.parentGroupId) : null, blockIds: group.blockIds.map(remap), groupIds: group.groupIds.map(remap), templateId: template.id });
   for (const link of template.links) if (copied.has(link.from) && copied.has(link.to)) document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) });
 }
@@ -198,7 +210,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const block = clone(operation.block);
         const type = catalog.blockTypes.find(type => type.id === block.typeId);
         if (!type) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}. Read canvas_catalog first.`, { available: catalog.blockTypes.map(type => type.id) });
-        block.data = { ...clone(type.defaults), ...block.data };
+        block.data = rendererData(type, { ...clone(type.defaults), ...block.data }, block.data);
         next.blocks.push(block);
         attach(next, block.id, block.parentGroupId ?? null);
         break;
@@ -209,7 +221,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const { data, parentGroupId, ...patch } = operation.patch;
         if (patch.typeId && !catalog.blockTypes.some(type => type.id === patch.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${patch.typeId}.`);
         Object.assign(block, patch);
-        if (data) block.data = mergePatch(block.data, data) as CanvasBlock["data"];
+        if (data) block.data = rendererData(catalog.blockTypes.find(type => type.id === block.typeId), mergePatch(block.data, data) as CanvasBlock['data'], data);
         if (parentGroupId !== undefined) attach(next, block.id, parentGroupId);
         break;
       }
@@ -268,10 +280,12 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
           const subtree = new Set(groupSubtree(next, source.id));
           const template: GroupTemplate = { id: "duplicate", name: source.title, description: source.description, blocks: clone(next.blocks.filter(block => subtree.has(block.id))), groups: clone(next.groups.filter(group => subtree.has(group.id))), links: clone(next.links.filter(link => subtree.has(link.from) && subtree.has(link.to))) };
           template.groups.find(group => group.id === source.id)!.parentGroupId = null;
-          insertTemplate(next, template, operation.idPrefix);
+          insertTemplate(next, template, operation.idPrefix, catalog);
           attach(next, `${operation.idPrefix}.${source.id}`, source.parentGroupId ?? null);
         } else {
-          const block = { ...clone(source), id: `${operation.idPrefix}.${source.id}` };
+          const cloned = clone(source), renderer = catalog.blockTypes.find(type => type.id === source.typeId)?.renderer;
+          const ids = new Map([[source.id, `${operation.idPrefix}.${source.id}`]]);
+          const block = { ...cloned, data: getRendererSpec(renderer)?.remapReferences?.(cloned.data, ids) ?? cloned.data, id: `${operation.idPrefix}.${source.id}` };
           next.blocks.push(block);
           attach(next, block.id, source.parentGroupId ?? null);
         }
@@ -284,7 +298,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         if (!template) throw new CanvasError("NOT_FOUND", `Template ${operation.templateId} does not exist.`);
         for (const block of template.blocks) if (!catalog.blockTypes.some(type => type.id === block.typeId))
           throw new CanvasError("UNKNOWN_TYPE", `Template needs missing type ${block.typeId}.`);
-        insertTemplate(next, template, operation.idPrefix);
+        insertTemplate(next, template, operation.idPrefix, catalog);
         break;
       }
     }
