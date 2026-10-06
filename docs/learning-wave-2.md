@@ -2,7 +2,8 @@
 
 Estado: autorizado por el dueño; piloto Apuesta + Gráfica integrado y revisado.
 Prerequisito cumplido: cimientos integrado en `aprendizaje`; baseline `17203e5`,
-typecheck y 116/116 pruebas verdes. La siguiente tanda es Figura por pasos, Flujo y Shader.
+typecheck y 116/116 pruebas verdes. Flujo integrado; en curso Figura por pasos, Shader e
+Imagen/texto anotado. Trazos, Secuenciador y la implementación de UI flotante siguen pendientes.
 
 | Renderer | Rama / worktree | Agente Sol High |
 | --- | --- | --- |
@@ -11,6 +12,7 @@ typecheck y 116/116 pruebas verdes. La siguiente tanda es Figura por pasos, Fluj
 | Figura por pasos, en curso | `lienzo/figura-pasos` · `lienzo-figura-pasos` | `ed71567b-4481-4fcb-9fca-5307193521f1` |
 | Flujo animado, integrado con puente Canvas/Links | `lienzo/flujo-animado` · `lienzo-flujo-animado`, entrega `781173b` | `20b41949-b66f-4a7f-a5bd-1681b68e3fd4`, finalizado |
 | Shader GLSL, en curso | `lienzo/shader-glsl` · `lienzo-shader-glsl` | `796bd056-4cca-4bcc-a0c4-dbce9ff2763e` |
+| Imagen/texto anotado, en curso desde `b60ff74` | `lienzo/anotaciones` · `lienzo-anotaciones` | `9ea8513e-bc77-4784-a062-2983b03aa109` |
 
 Los worktrees están bajo `/home/gabsplat/.paseo/worktrees/0q8wzdvy/`.
 El coordinador integra la visibilidad del resultado de Apuesta en el núcleo y registra
@@ -34,6 +36,9 @@ pausa/visibilidad y limpieza; la inspección browser/native real continúa pendi
 La integración de Flujo pasa typecheck y 169/169 pruebas, sin omitidas. Los primeros
 fallos del coordinador fueron de fixtures headless y del esquema del test de duplicación;
 se corrigieron antes de la validación completa.
+Puente y registro committed en `b60ff74`. Imagen/texto anotado ocupa la plaza libre
+de Flujo; workspace `wks_f429ebc02f3b0382`, dependencias offline y configuración
+explícita codex/gpt-6.1-sol, High, auto-review. Mantiene propiedad de sus tres archivos.
 
 ## Forma de trabajo
 
