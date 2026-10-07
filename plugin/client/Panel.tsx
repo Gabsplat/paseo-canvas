@@ -364,7 +364,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   const displayedStyle: ToolStyle = selectedStyle ? (() => {
     const data = selectedStyle.data, renderer = rendererOf(selectedStyle.typeId);
     if (renderer === 'wb-draw') { const stroke = (data as WbDrawData).strokes[0]; return { ...toolStyle, color: stroke.color, scale: stroke.weight }; }
-    return { ...toolStyle, ...Object.fromEntries(Object.keys(DEFAULT_TOOL_STYLE).filter(key => data[key] !== undefined).map(key => [key, data[key]])), ...(data.weight ? { scale: data.weight as ToolStyle['scale'] } : {}) };
+    return { ...toolStyle, ...Object.fromEntries(Object.keys(DEFAULT_TOOL_STYLE).filter(key => data[key] !== undefined).map(key => [key, data[key]])), ...(data.weight ? { scale: data.weight as ToolStyle['scale'] } : {}), fillColor: data.fillColor as ToolStyle['fillColor'] };
   })() : toolStyle;
   const showStyle = selectionKinds.size > 0 || ['text', 'shape', 'draw', 'eraser'].includes(tool);
   // "Borrar mis trazos": only the learner's own drawings, in one undoable transaction. Assistant and authored strokes stay.
@@ -404,7 +404,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
           if (patch.color === undefined && patch.scale === undefined) continue;
           data.strokes = (block.data as WbDrawData).strokes.map(stroke => ({ ...stroke, ...(patch.color !== undefined ? { color: patch.color } : {}), ...(patch.scale !== undefined ? { weight: patch.scale } : {}) }));
         } else {
-          const allowed = renderer === 'wb-text' ? ['color', 'scale', 'font', 'align'] : renderer === 'wb-svg' ? ['color'] : ['color', 'shape', 'fill', 'stroke'];
+          const allowed = renderer === 'wb-text' ? ['color', 'scale', 'font', 'align'] : renderer === 'wb-svg' ? ['color'] : ['color', 'shape', 'fill', 'fillColor', 'stroke'];
           let changed = false;
           for (const key of allowed) { const value = patch[key as keyof ToolStyle]; if (value !== undefined) { data[key] = value; changed = true; } }
           if (renderer === 'wb-shape') {
@@ -416,7 +416,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
         }
         operations.push({ type: 'block.update', id: block.id, patch: { data } });
       }
-      const label = patch.color !== undefined ? 'Cambiar color' : patch.scale !== undefined ? 'Cambiar tamaño' : patch.fill !== undefined ? 'Cambiar relleno' : patch.stroke !== undefined ? 'Cambiar trazo' : patch.font !== undefined ? 'Cambiar fuente' : patch.align !== undefined ? 'Cambiar alineación' : patch.shape !== undefined ? 'Cambiar forma' : 'Cambiar puntas';
+      const label = patch.color !== undefined && patch.fillColor === undefined ? 'Cambiar color' : patch.scale !== undefined ? 'Cambiar tamaño' : patch.fill !== undefined || patch.fillColor !== undefined ? 'Cambiar relleno' : patch.stroke !== undefined ? 'Cambiar trazo' : patch.font !== undefined ? 'Cambiar fuente' : patch.align !== undefined ? 'Cambiar alineación' : patch.shape !== undefined ? 'Cambiar forma' : 'Cambiar puntas';
       if (operations.length) await c.edit(operations, label);
     })().catch(c.fail);
   }

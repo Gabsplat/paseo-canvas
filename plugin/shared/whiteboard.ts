@@ -20,6 +20,8 @@ export const wbTextDataSchema = z.object({
 }).strict();
 export const wbShapeDataSchema = z.object({
   shape: z.enum(WB_SHAPES).default('rect'), color, fill: z.enum(['none', 'wash', 'solid']).default('none'),
+  /** Colour of the interior. Absent: the fill takes the outline colour. */
+  fillColor: z.enum(WB_COLORS).optional(),
   stroke: z.enum(['solid', 'dashed', 'dotted']).default('solid'), weight: scale, text: z.string().max(WB_LIMITS.shapeText).default(''),
   from: z.enum(['nw', 'ne', 'sw', 'se']).optional(), heads: z.enum(['none', 'end', 'start', 'both']).optional(),
 }).strict().superRefine((data, context) => {

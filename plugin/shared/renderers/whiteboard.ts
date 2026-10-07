@@ -1,6 +1,6 @@
 import type { RendererSpec } from './spec';
 import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema, remapDrawAnchor } from '../whiteboard';
-const guidance = 'Usa wb-text para rótulos sueltos, wb-shape para cajas y flechas simples, wb-svg con iconos de la biblioteca para arquitectura. Para explicar relaciones usa links, no flechas dibujadas. No generes wb-draw salvo petición explícita. Todos llevan position y usan operaciones normales de bloque; wb-text usa data.width y no block.size. wb-svg acepta SVG estático local, nunca URLs; el servidor fija viewBox. wb-draw requiere size y extent, pares x,y y roles color/weight; un wb-draw creado por el asistente queda marcado author assistant y se pinta discontinuo y rotulado; anchor opcional es el id de la tarjeta que anota (mismo grupo) y entonces position es relativa a la esquina de esa tarjeta.';
+const guidance = 'Usa wb-text para rótulos sueltos, wb-shape para cajas y flechas simples, wb-svg con iconos de la biblioteca para arquitectura. Para explicar relaciones usa links, no flechas dibujadas. No generes wb-draw salvo petición explícita. Todos llevan position y usan operaciones normales de bloque; wb-text usa data.width y no block.size. En wb-shape, fillColor (opcional) colorea el interior aparte del contorno y weight fija a la vez el grosor del contorno y el tamaño del rótulo. wb-svg acepta SVG estático local, nunca URLs; el servidor fija viewBox. wb-draw requiere size y extent, pares x,y y roles color/weight; un wb-draw creado por el asistente queda marcado author assistant y se pinta discontinuo y rotulado; anchor opcional es el id de la tarjeta que anota (mismo grupo) y entonces position es relativa a la esquina de esa tarjeta.';
 const property = (key: string, kind: 'text' | 'number' | 'json', required = false) => ({ key, label: key, kind, required });
 export const whiteboardSpecs: RendererSpec[] = [
   {
@@ -11,7 +11,7 @@ export const whiteboardSpecs: RendererSpec[] = [
   {
     id: 'wb-shape', dataSchema: wbShapeDataSchema, interactive: false, minSize: { width: 24, height: 24 }, defaultSize: { width: 160, height: 104 }, guidance,
     blockType: { id: 'wb-shape', renderer: 'wb-shape', name: 'Forma', description: 'Forma o línea persistente con color, trazo y rótulo opcional.',
-      properties: ['shape', 'color', 'fill', 'stroke', 'weight', 'text', 'from', 'heads'].map(key => property(key, 'text')), defaults: { shape: 'rect' } },
+      properties: ['shape', 'color', 'fill', 'fillColor', 'stroke', 'weight', 'text', 'from', 'heads'].map(key => property(key, 'text')), defaults: { shape: 'rect' } },
   },
   {
     id: 'wb-svg', dataSchema: wbSvgDataSchema, interactive: false, minSize: { width: 24, height: 24 }, defaultSize: { width: 96, height: 96 }, guidance,

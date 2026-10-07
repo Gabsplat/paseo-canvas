@@ -6,8 +6,7 @@ import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema,
 import { Txt, useUI } from './ui';
 import { WebSvg, WebVectors, type CanvasPointer, type VectorPath } from './web';
 import { shapePath, strokePath, arrowPath, lineEnds } from './whiteboard-geometry';
-import { wbColor, wbWeight, wbFont } from './whiteboard-visuals';
-import { withAlpha } from './color';
+import { wbColor, wbWeight, wbFont, shapeLook } from './whiteboard-visuals';
 import { tokens } from './tokens';
 export function whiteboardLabel(block: CanvasBlock, kind: WbRenderer): string {
   if (block.title) return block.title;
@@ -16,8 +15,8 @@ export function whiteboardLabel(block: CanvasBlock, kind: WbRenderer): string {
   if (kind === 'wb-draw') return `Dibujo${block.data.author === 'assistant' ? ' del asistente' : block.data.author === 'learner' ? ' propio' : ''} (${Array.isArray(block.data.strokes) ? block.data.strokes.length : 0} trazos)`;
   return String(block.data.text || tokens.whiteboard.shapes.items.find(s => s.id === block.data.shape)?.label || 'Forma');
 }
-export type WhiteboardContentProps = { block: CanvasBlock; kind: WbRenderer; width: number; height: number; scale?: number; outline?: boolean; onSelect(event?: GestureResponderEvent): void; onHover?(inside: boolean): void; onMeasure?(height: number): void };
-export function WhiteboardContent({ block, kind, width, height, scale = 1, outline, onSelect, onHover, onMeasure }: WhiteboardContentProps) {
+export type WhiteboardContentProps = { block: CanvasBlock; kind: WbRenderer; width: number; height: number; scale?: number; outline?: boolean; editing?: boolean; onSelect(event?: GestureResponderEvent): void; onHover?(inside: boolean): void; onMeasure?(height: number): void };
+export function WhiteboardContent({ block, kind, width, height, scale = 1, outline, editing, onSelect, onHover, onMeasure }: WhiteboardContentProps) {
   const u = useUI(), label = whiteboardLabel(block,kind);
   const press = (p?: CanvasPointer) => onSelect(p ? { nativeEvent: {shiftKey:p.shift,metaKey:p.command},stopPropagation(){} } as unknown as GestureResponderEvent : undefined);
   if (outline) return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onSelect} style={{minHeight:36,flexDirection:'row',alignItems:'center',gap:8}}><Icon name={tokens.whiteboard.types[kind].icon} size={16} color={u.c.foregroundMuted}/><Txt numberOfLines={1}>{label}</Txt></Pressable>;
@@ -39,8 +38,7 @@ export function WhiteboardContent({ block, kind, width, height, scale = 1, outli
     if(u.layout.platform!=='web')return <Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:u.c.foregroundMuted}}><Txt kind="small">{label}; se ve en la versión web</Txt></Pressable>;
     return <>{assistant&&<View pointerEvents="none" style={{position:'absolute',left:0,bottom:'100%',marginBottom:2,paddingHorizontal:4,borderRadius:4,backgroundColor:u.c.surface1,borderWidth:1,borderColor:u.c.border}}><Txt kind="label" muted numberOfLines={1}>Asistente</Txt></View>}<WebVectors width={width} height={height} paths={paths} label={label} scale={scale} onPress={press} onHover={onHover}/></>;
   }
-  const parsed=wbShapeDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">Forma no válida</Txt>;const data=parsed.data,color=wbColor(data.color,u),weight=wbWeight(data.weight);
-  const fill=data.shape==='line'||data.fill==='none'?'none':data.fill==='wash'?withAlpha(color,.14):color;
+  const parsed=wbShapeDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">Forma no válida</Txt>;const data=parsed.data,look=shapeLook(data,u),color=look.stroke,weight=look.weight,fill=look.fill;
   const dash=data.stroke==='solid'?undefined:tokens.whiteboard.dash[data.stroke].map(n=>n*weight/2.5).join(' ');
   paths=[{d:shapePath(data,width,height),color,weight,fill,dash},{d:arrowPath(data,width,height,weight),color,weight,hit:false}];
   let visual:React.ReactNode;
@@ -48,5 +46,5 @@ export function WhiteboardContent({ block, kind, width, height, scale = 1, outli
   else if(['rect','rounded','ellipse','diamond'].includes(data.shape))visual=<Pressable onPress={onSelect} style={{width:'100%',height:'100%',borderWidth:weight,borderColor:color,borderStyle:data.stroke==='solid'?'solid':'dashed',borderRadius:data.shape==='ellipse'?Math.max(width,height):data.shape==='rounded'?16:0,backgroundColor:fill==='none'?'transparent':fill,transform:data.shape==='diamond'?[{rotate:'45deg'},{scale:.707}]:undefined}}/>;
   else if(data.shape==='line'){const [a,b]=lineEnds(data,width,height);visual=<Pressable onPress={onSelect} style={{width:'100%',height:'100%',justifyContent:'center'}}><View style={{position:'absolute',left:a.x,top:a.y,width:Math.hypot(b.x-a.x,b.y-a.y),height:weight,backgroundColor:color,transformOrigin:'top left',transform:[{rotate:`${Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI}deg`}]}}/></Pressable>;}
   else visual=<Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:color}}><Txt kind="small">{label}; se ve en la versión web</Txt></Pressable>;
-  return <View pointerEvents="box-none" style={{width:'100%',height:'100%'}}>{visual}{!!data.text&&data.shape!=='line'&&<Pressable onPress={onSelect} style={{position:'absolute',left:12,right:12,top:Math.max(0,height/2-10.5),alignItems:'center'}}><Txt style={{fontSize:15,lineHeight:21,fontWeight:'500',textAlign:'center',color:data.fill==='solid'?u.c.surface0:color}}>{data.text}</Txt></Pressable>}</View>;
+  return <View pointerEvents="box-none" style={{width:'100%',height:'100%'}}>{visual}{!!data.text&&!editing&&data.shape!=='line'&&<View pointerEvents="box-none" style={{position:'absolute',left:look.padding,right:look.padding,top:0,bottom:0,alignItems:'center',justifyContent:'center',overflow:'hidden'}}><Pressable onPress={onSelect}><Txt style={{fontSize:look.fontSize,lineHeight:look.lineHeight,fontWeight:'500',textAlign:'center',color:look.text}}>{data.text}</Txt></Pressable></View>}</View>;
 }

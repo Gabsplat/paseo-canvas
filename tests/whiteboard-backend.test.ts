@@ -306,3 +306,15 @@ test('MCP create/apply/read/group/history share canonical persistent whiteboard 
   assert.match(prompt, /"strokes":1,"extent":\{"width":100,"height":100\}/);
   assert.doesNotMatch(prompt, /"points"|<svg/);
 });
+
+test('a shape keeps a fill colour separate from its outline, through the real service', async t => {
+  assert.equal(wbShapeDataSchema.parse({}).fillColor, undefined);
+  assert.equal(wbShapeDataSchema.parse({ color: 'naranja', fill: 'solid', fillColor: 'azul' }).fillColor, 'azul');
+  assert.equal(wbShapeDataSchema.safeParse({ fillColor: '#ff0000' }).success, false);
+  const { service } = await setup(t);
+  await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'box', typeId: 'wb-shape', title: '', data: { shape: 'rect', color: 'naranja', text: 'Hola' }, position: { x: 0, y: 0 }, size: { width: 160, height: 104 } } }]));
+  const next = await service.mutate(mutation(1, [{ type: 'block.update', id: 'box', patch: { data: { fill: 'solid', fillColor: 'verde', weight: 'xl' } } }]));
+  const box = next.document.blocks.find(b => b.id === 'box')!;
+  assert.deepEqual({ color: box.data.color, fill: box.data.fill, fillColor: box.data.fillColor, weight: box.data.weight, text: box.data.text }, { color: 'naranja', fill: 'solid', fillColor: 'verde', weight: 'xl', text: 'Hola' });
+  await assert.rejects(service.mutate(mutation(2, [{ type: 'block.update', id: 'box', patch: { data: { fillColor: 'fucsia' } } }])));
+});

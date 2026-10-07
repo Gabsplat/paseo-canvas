@@ -347,7 +347,7 @@ The schemas are strict. Colors are the roles `tinta`, `gris`, `azul`, `turquesa`
 | Type | Data | Size semantics |
 | --- | --- | --- |
 | `wb-text` | `text` up to 4000 characters, `color`, `scale`, `font:sans\|serif\|mono`, `align:left\|center\|right`, optional `width:24..4096` | No block size object; absent/null is accepted. Text may be empty in the schema. |
-| `wb-shape` | `shape:rect\|rounded\|ellipse\|diamond\|triangle\|hexagon\|cylinder\|line`, `color`, `fill:none\|wash\|solid`, `stroke:solid\|dashed\|dotted`, `weight`, `text` up to 1000 characters | Minimum 24×24, or 8×8 for lines. `from:nw\|ne\|sw\|se` and `heads:none\|end\|start\|both` are allowed only on lines. |
+| `wb-shape` | `shape:rect\|rounded\|ellipse\|diamond\|triangle\|hexagon\|cylinder\|line`, `color`, `fill:none\|wash\|solid`, optional `fillColor` (same colour roles; interior colour, defaults to the outline colour), `stroke:solid\|dashed\|dotted`, `weight` (sets outline thickness and label size together), `text` up to 1000 characters | Minimum 24×24, or 8×8 for lines. `from:nw\|ne\|sw\|se` and `heads:none\|end\|start\|both` are allowed only on lines. |
 | `wb-svg` | `svg`, authoritative `viewBox:[x,y,width,height]`, `color`, `caption`, optional `source`, `license`. Metadata strings up to 200 characters. | Minimum 24×24. SVG and viewBox are rewritten by the server. A valid client viewBox is ignored; it can be omitted on creation. |
 | `wb-draw` | `extent:{width,height}` in 1..4096; `strokes:[{points:[x0,y0,x1,y1,…],color,weight}]` | Requires block size, minimum 8×8. Points lie inside extent. Render size scales coordinates, not line weight. |
 
