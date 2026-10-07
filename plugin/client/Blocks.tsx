@@ -8,7 +8,7 @@ import type { RpcInput } from '@getpaseo/plugin';
 import type { agentAction } from '../shared/rpc';
 import type { AgentEvent, BlockType, CanvasBlock, CanvasDocument } from '../shared/model';
 import type { CanvasController } from './useCanvas';
-import { connectionsOf, hasCommunication, newId, propertyValue, safeUrl } from './logic';
+import { connectionsOf, hasCommunication, newId, propertyValue, safeUrl, nodeDensity } from './logic';
 import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
 import { Modal, Button, CheckRow, Chip, Field, IconButton, OptionRow, Txt, useUI } from './ui';
@@ -138,7 +138,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
         style={{ flex: sized ? 1 : undefined, minHeight: G.node.minHeight, overflow: 'hidden', backgroundColor: u.c.surface1, borderRadius: G.node.radius, borderWidth: selected ? 2 : 1, borderColor: writeFailure ? u.c.statusDanger : selected || dragging ? u.c.accent : hovered ? withAlpha(u.c.foregroundMuted, .5) : u.c.border, paddingVertical: G.node.paddingV - (selected ? 1 : 0), paddingHorizontal: G.node.paddingH - (selected ? 1 : 0), gap: G.node.gap, ...grab }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 16 }}><Txt kind="label" muted numberOfLines={1} style={{ flex: 1 }}>{kind}</Txt>{hasCommunication(block.communication) && <Icon name="Compass" size={12} color={u.c.accent} />}{!!status && <View style={{ maxWidth: 96, minHeight: 16, paddingHorizontal: 6, borderRadius: tokens.radius.pill, backgroundColor: u.wash(tone), justifyContent: 'center' }}><Txt kind="label" numberOfLines={1} style={{ color: tone === 'neutro' ? u.c.foregroundMuted : u.tone(tone), textTransform: 'none', letterSpacing: 0, fontWeight: '600' }}>{status}</Txt></View>}</View>
         <Txt kind="heading" numberOfLines={outline ? undefined : G.node.titleLines}>{block.title || 'Sin título'}</Txt>
-        {!!summary && <Txt kind="small" muted numberOfLines={outline ? undefined : G.node.summaryLines}>{summary}</Txt>}
+        {!!summary && <Txt kind="small" muted numberOfLines={outline || sized ? undefined : c.view ? nodeDensity(c.view.document, block).summaryLines : G.node.summaryLines}>{summary}</Txt>}
         {outline && !!details && <Txt selectable style={{ marginTop: 4 }}>{details}</Txt>}
         {outline && connections}{state}
       </Pressable>

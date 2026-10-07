@@ -1338,3 +1338,7 @@ interaction mode, active tool, selection. None fire while an input has focus.
 
 Verified in RN-web (isolated omabox, light and dark): `design/whiteboard-harness/shape-label.cjs` (3 checks)
 and `dense.cjs`; captures in `design/qa-shapes-legibility-2026-10-06/`. Not verified in installed Paseo or native.
+- **Node cards follow their container.** `graph.node.density`: with up to 4 blocks in the same container a
+  node card is 304 wide and shows up to 6 summary lines; up to 9, 256 wide and 4 lines; beyond that the
+  compact card (224, 2 lines). Counted per container, so a crowded area does not shrink a quiet one. A card
+  with a stored size shows as much summary as fits. Verified with `design/whiteboard-harness/cards.cjs`.

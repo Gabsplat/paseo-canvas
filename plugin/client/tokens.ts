@@ -801,6 +801,10 @@ const baseTokens = {
       "gap": 4,
       "titleLines": 2,
       "summaryLines": 2,
+      "density": [
+        { "upTo": 4, "width": 304, "summaryLines": 6 },
+        { "upTo": 9, "width": 256, "summaryLines": 4 }
+      ],
       "details": {
         "width": 288,
         "offset": 8,

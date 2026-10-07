@@ -180,6 +180,17 @@ export type Direction = 'down' | 'right';
 const ROOT = '';
 type Edge = { from: string; to: string };
 /** Membership, the links lifted to the container whose direct children they join, and each container's effective mode. */
+const siblingCounts = new WeakMap<readonly CanvasBlock[], Map<string, number>>();
+/**
+ * A node card takes the room its container can spare: a handful of cards are wide and show their summary in
+ * full, a crowded container keeps the compact card. Counted per container, so one busy area does not shrink the rest.
+ */
+export function nodeDensity(doc: Pick<CanvasDocument, 'blocks'>, block: Pick<CanvasBlock, 'parentGroupId'>): { width: number; summaryLines: number } {
+  let counts = siblingCounts.get(doc.blocks);
+  if (!counts) { counts = new Map(); for (const b of doc.blocks) counts.set(b.parentGroupId ?? '', (counts.get(b.parentGroupId ?? '') ?? 0) + 1); siblingCounts.set(doc.blocks, counts); }
+  const n = counts.get(block.parentGroupId ?? '') ?? 1, node = tokens.graph.node, step = node.density.find(d => n <= d.upTo);
+  return step ? { width: step.width, summaryLines: step.summaryLines } : { width: node.width, summaryLines: node.summaryLines };
+}
 export function graphIndex(doc: CanvasDocument, catalog?: CanvasCatalog | null) {
   const groups = new Map(doc.groups.map(g => [g.id, g])), entities = new Map<string, Entity>([...doc.blocks, ...doc.groups].map(e => [e.id, e]));
   const parent = new Map<string, string>();
@@ -450,7 +461,7 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
         const r = { x: 0, y: 0, width, height, depth, hidden }; rects.set(id, r); return r;
       }
       const preferred = getRendererSpec(renderer)?.defaultSize;
-      const r = { x: 0, y: 0, width: block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? G.node.width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size?.height ?? heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
+      const r = { x: 0, y: 0, width: block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? nodeDensity(doc, block).width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size?.height ?? heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
       rects.set(id, r); return r;
     }
     const g = groups.get(id)!, children = [...g.blockIds, ...g.groupIds].filter(child => index.entities.has(child));

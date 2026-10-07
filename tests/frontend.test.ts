@@ -620,3 +620,15 @@ test('shipped example documents lay out tidily with their links', () => {
     for (const r of routes) assert.ok(Number.isFinite(r.labelPoint.x + r.labelPoint.y + r.badgePoint.x + r.end.x));
   }
 });
+
+test('node cards take the room their container can spare, counted per container', async () => {
+  const { nodeDensity } = await import('../plugin/client/logic');
+  const node = (id: string, parentGroupId: string | null = null) => ({ id, typeId: 'node', title: id, data: {}, parentGroupId });
+  const few = { blocks: [node('a', 'g'), node('b', 'g'), node('c', 'g')] };
+  assert.deepEqual(nodeDensity(few, few.blocks[0]), { width: 304, summaryLines: 6 });
+  const some = { blocks: Array.from({ length: 7 }, (_, i) => node(`n${i}`, 'g')) };
+  assert.deepEqual(nodeDensity(some, some.blocks[0]), { width: 256, summaryLines: 4 });
+  const mixed = { blocks: [...Array.from({ length: 12 }, (_, i) => node(`n${i}`, 'busy')), node('alone', 'calm')] };
+  assert.deepEqual(nodeDensity(mixed, mixed.blocks[0]), { width: 224, summaryLines: 2 });
+  assert.deepEqual(nodeDensity(mixed, mixed.blocks[12]), { width: 304, summaryLines: 6 });
+});
