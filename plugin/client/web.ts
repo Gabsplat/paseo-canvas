@@ -290,6 +290,8 @@ export function isEditingTarget(target: unknown): boolean {
 }
 export type EntityPointerHandlers = {
   enabled(): boolean;
+  /** A plain click on a part of the entity that is not itself a control: its text, its padding. */
+  press?(id: string, point: CanvasPointer): void;
   start(id: string, point: CanvasPointer): void;
   move(point: CanvasPointer): void;
   end(cancelled: boolean, velocity: { vx: number; vy: number }): void;
@@ -325,8 +327,10 @@ export function attachEntityDrag(element: unknown, handlers: EntityPointerHandle
   const cancel = () => finish(true);
   const key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && pending) { cancel(); e.preventDefault(); e.stopPropagation(); } };
   const edit = (e: Event) => { if (isEditingTarget(e.target)) return; const id = entity(e); if (id && handlers.edit) { handlers.edit(id); } };
+  const press = (e: Event) => { if (!handlers.press || !handlers.enabled() || isEditingTarget(e.target) || pointerElement(e.target)?.closest?.('[role="button"],[role="checkbox"],[role="menuitem"],[role="radio"],button,a,[id^="lienzo-interactive-"],[id^="lienzo-link-handle-"],[id^="lienzo-using-"]')) return; const id = entity(e); if (id) handlers.press(id, point(e)); };
+  node.addEventListener('click', press);
   node.addEventListener('pointerdown', down, true); node.addEventListener('dblclick', edit); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true);
-  return () => { cancel(); node.removeEventListener('pointerdown', down, true); node.removeEventListener('dblclick', edit); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
+  return () => { cancel(); node.removeEventListener('click', press); node.removeEventListener('pointerdown', down, true); node.removeEventListener('dblclick', edit); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
 }
 export function focusInput(element: unknown) {
   const node = element as BrowserElement | null;

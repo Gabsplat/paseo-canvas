@@ -786,3 +786,15 @@ export function edgeHint(view: { width: number; height: number }, target: Box, i
   const x = Math.max(left, Math.min(right, cx)), y = Math.max(top, Math.min(bottom, cy));
   return { x, y, angle: (Math.atan2(cx - mx, my - cy) * 180 / Math.PI + 360) % 360 };
 }
+/**
+ * What a selection box takes: every card it touches, and an area only when the box holds all of it, so drawing
+ * a box inside an area picks its cards and not the area around them. A card inside a taken area is not listed twice.
+ */
+export function marqueeSelection(doc: Pick<CanvasDocument, 'blocks' | 'groups'>, rects: ReadonlyMap<string, Rect>, box: Box): string[] {
+  const shown = (id: string) => { const r = rects.get(id); return r && !r.hidden ? r : null; };
+  const groups = new Set(doc.groups.filter(g => { const r = shown(g.id); return !!r && r.x >= box.x && r.y >= box.y && r.x + r.width <= box.x + box.width && r.y + r.height <= box.y + box.height; }).map(g => g.id));
+  const parent = new Map<string, string>(); for (const g of doc.groups) for (const id of [...g.blockIds, ...g.groupIds]) parent.set(id, g.id);
+  const covered = (id: string) => { for (let p = parent.get(id); p; p = parent.get(p)) if (groups.has(p)) return true; return false; };
+  const blocks = doc.blocks.filter(b => { const r = shown(b.id); return !!r && r.x < box.x + box.width && r.x + r.width > box.x && r.y < box.y + box.height && r.y + r.height > box.y && !covered(b.id); }).map(b => b.id);
+  return [...[...groups].filter(id => !covered(id)), ...blocks];
+}

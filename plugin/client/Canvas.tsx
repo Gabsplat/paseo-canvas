@@ -3,7 +3,7 @@ import { Animated, PanResponder, Pressable, View, type GestureResponderEvent, ty
 import { Icon, ScrollView } from '@getpaseo/plugin/client/react-native';
 import type { CanvasBlock, CanvasDocument, CanvasGroup } from '../shared/model';
 import type { CanvasController } from './useCanvas';
-import { alignmentGuides, anchorCard, boundsOf, connectOperations, descriptionKey, dropTarget, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
+import { alignmentGuides, anchorCard, boundsOf, connectOperations, descriptionKey, dropTarget, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows } from './Blocks';
@@ -96,6 +96,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   useReducedMotion();
   const motionSources = useMemo(() => c.catalog ? prepareLinkMotion(c.view!.document, c.catalog, getClientRenderer) : undefined, [c.view!.document, c.catalog]);
   const linkMotion = useCallback((epochMs: number) => motionSources?.(c.learning.getSnapshot(), epochMs, presentation?.hiddenBy ?? new Map()) ?? { tokens: [], playing: false }, [motionSources, c.learning, presentation?.hiddenBy]);
+  const marquee = useRef<{ x: number; y: number; origin: Point; add: boolean } | null>(null), marqueeOn = useRef(false), box = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), w: new Animated.Value(0), h: new Animated.Value(0), o: new Animated.Value(0) }).current;
+  marqueeOn.current = web && !u.compact;
   /** The entity last selected by pressing it on the canvas; a selection that is not this one came from elsewhere. */
   const pressed = useRef<string | null>(null);
   const viewport = useRef<View>(null), marks = useRef<View>(null), links = useRef<LinkLayerHandle>(null), vp = useRef<Point | null>(null);
@@ -182,10 +184,27 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     // after its Pressable has been reparented. A separate background Pressable handles taps below the world.
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_, g) => toolRef.current === 'select' && !textGesture.current && !gesture.current && !resize.current && !linkGesture.current && Math.abs(g.dx) + Math.abs(g.dy) > M.drag.threshold,
-    onPanResponderGrant: () => { panFrom.current = cam.current.offset; busyHands.current = true; },
-    onPanResponderMove: (_, g) => setCam({ scale: cam.current.scale, offset: { x: panFrom.current.x + g.dx, y: panFrom.current.y + g.dy } }),
-    onPanResponderTerminate: () => { busyHands.current = false; },
-    onPanResponderRelease: (_, g) => { busyHands.current = false; if (Math.abs(g.dx) + Math.abs(g.dy) < M.drag.threshold) { setMulti(false); latest.current.onLink(null); void latest.current.c.select([]); } else { swallowClick(); momentum(g.vx, g.vy); } },
+    // With a pointer, dragging over the canvas with the select tool draws a selection box, as on a desktop; the
+    // hand tool, Space, the middle button and the wheel move the view. Touch keeps one-finger panning.
+    onPanResponderGrant: (event, g) => {
+      busyHands.current = true; panFrom.current = cam.current.offset;
+      if (!marqueeOn.current) return;
+      measureViewport(); const origin = vp.current ?? { x: 0, y: 0 }, key = event.nativeEvent as unknown as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
+      marquee.current = { x: g.x0 - origin.x, y: g.y0 - origin.y, origin, add: !!(key.shiftKey || key.metaKey || key.ctrlKey) }; box.o.setValue(1);
+    },
+    onPanResponderMove: (_, g) => {
+      const m = marquee.current; if (!m) { setCam({ scale: cam.current.scale, offset: { x: panFrom.current.x + g.dx, y: panFrom.current.y + g.dy } }); return; }
+      const x = g.moveX - m.origin.x, y = g.moveY - m.origin.y; box.x.setValue(Math.min(m.x, x)); box.y.setValue(Math.min(m.y, y)); box.w.setValue(Math.abs(x - m.x)); box.h.setValue(Math.abs(y - m.y));
+    },
+    onPanResponderTerminate: () => { busyHands.current = false; marquee.current = null; box.o.setValue(0); },
+    onPanResponderRelease: (_, g) => { busyHands.current = false;
+      const m = marquee.current; marquee.current = null; box.o.setValue(0); box.w.setValue(0); box.h.setValue(0);
+      if (m && Math.abs(g.dx) + Math.abs(g.dy) >= M.drag.threshold) {
+        const a = toWorld({ x: m.x + m.origin.x, y: m.y + m.origin.y }, m.origin), b = toWorld({ x: g.moveX, y: g.moveY }, m.origin), { doc, rects, c } = latest.current;
+        const ids = marqueeSelection(doc, rects, { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) });
+        swallowClick(); pressed.current = null; latest.current.onLink(null); void c.select(m.add ? [...new Set([...c.selection, ...ids])] : ids); return;
+      }
+      if (Math.abs(g.dx) + Math.abs(g.dy) < M.drag.threshold) { setMulti(false); latest.current.onLink(null); void latest.current.c.select([]); } else { swallowClick(); momentum(g.vx, g.vy); } },
   }), []);
   const nativeTwoPan = useRef(false);
   const toolEvent = (event: GestureResponderEvent, g: PanResponderGestureState): CanvasPointer => { const page = event.nativeEvent as Page; return { x: page.pageX ?? g.moveX, y: page.pageY ?? g.moveY, pointerId: 0, shift: false, command: false }; };
@@ -355,6 +374,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       start: (id, p) => fns.current.dragStart(id, event(p), state), move: p => fns.current.dragMove(event(p), state),
       end: (cancelled, v) => fns.current.dragEnd(v.vx, v.vy, cancelled),
       edit: id => beginInteraction(id),
+      // The whole card selects, not only its title: text and padding count too. Areas keep selecting from their header.
+      press: (id, p) => { if (latest.current.doc.blocks.some(b => b.id === id) && !latest.current.c.selection.includes(id)) fns.current.select(id, { nativeEvent: { pageX: p.x, pageY: p.y, shiftKey: p.shift, metaKey: p.command }, stopPropagation() {} } as unknown as GestureResponderEvent); },
     });
   }, [web, mode, doc.id]);
   // One responder per frame for its whole life. It sits on a wrapper around the card, never on a Pressable: a Pressable
@@ -639,6 +660,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       const controller = latest.current.c; await controller.settle(); if (controller.current.current?.document.id !== linkLabel.documentId || !controller.current.current.document.links.some(l => l.id === linkLabel.linkId)) return false;
       const next = await controller.edit([{ type: 'link.update', id: linkLabel.linkId, patch: { label } }], 'Editar etiqueta del enlace'); if (next) setLinkLabel(null); return !!next;
     }} />; })()}
+    <Animated.View pointerEvents="none" nativeID="lienzo-marquee" style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, opacity: box.o, zIndex: 18, borderWidth: 1, borderRadius: 2, borderColor: u.c.accent, backgroundColor: withAlpha(u.c.accent, tokens.canvas.marquee.fill) }} />
     {wayfinding}
     <ZoomControl width={size.width} camera={cam} subscribe={listener => { camSubs.current.add(listener); return () => { camSubs.current.delete(listener); }; }} onStep={zoomStep} onReset={() => zoomTo(1)} onFit={() => fit()} />
   </View>;

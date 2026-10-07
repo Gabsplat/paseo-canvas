@@ -1398,3 +1398,13 @@ in `design/qa-shapes-legibility-2026-10-06/`.
 
 Verified with `design/whiteboard-harness/wayfinding.cjs` (RN-web, isolated omabox); captures
 `wayfinding-chip.png` and `wayfinding-map.png` in `design/qa-shapes-legibility-2026-10-06/`.
+
+## 26. Box selection (v13)
+
+With a pointer (web, non-compact) and the select tool, dragging over the canvas draws a selection box:
+1 px accent border, accent wash 0.1, radius 2. On release it selects every card it touches and only the
+areas it fully contains; a card inside a contained area is not selected separately. Shift, Ctrl or Cmd
+adds to the current selection; a box over nothing clears it. The view does not move: panning is the hand
+tool, Space + drag, the middle button, or the wheel/trackpad. Touch and compact keep one-finger panning.
+A plain click anywhere on a card (its text or padding, not only its title) selects it.
+Verified with `design/whiteboard-harness/marquee.cjs` and `basic.cjs`; capture `marquee.png`.

@@ -647,3 +647,15 @@ test('minimap fits the content and the edge hint points at what is out of sight'
   const corner = edgeHint(view, { x: -700, y: 1500, width: 100, height: 100 }, inset)!;
   assert.deepEqual([corner.x, corner.y], [60, 700]); assert.ok(corner.angle > 180 && corner.angle < 270);
 });
+
+test('a selection box takes the cards it touches and only the areas it fully holds', async () => {
+  const { marqueeSelection } = await import('../plugin/client/logic');
+  const rect = (x: number, y: number, width: number, height: number, hidden = false) => ({ x, y, width, height, depth: 0, hidden });
+  const doc = { blocks: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'out' }, { id: 'ghost' }], groups: [{ id: 'g', blockIds: ['a', 'b'], groupIds: ['inner'] }, { id: 'inner', blockIds: ['c'], groupIds: [] }] } as never;
+  const rects = new Map([['g', rect(0, 0, 600, 400)], ['a', rect(20, 40, 200, 80)], ['b', rect(300, 40, 200, 80)], ['inner', rect(20, 200, 300, 150)], ['c', rect(40, 240, 200, 80)], ['out', rect(800, 40, 200, 80)], ['ghost', rect(30, 50, 10, 10, true)]]);
+  assert.deepEqual(marqueeSelection(doc, rects, { x: 10, y: 30, width: 100, height: 40 }), ['a']);
+  assert.deepEqual(marqueeSelection(doc, rects, { x: 10, y: 30, width: 400, height: 60 }), ['a', 'b']);
+  assert.deepEqual(marqueeSelection(doc, rects, { x: 10, y: 30, width: 400, height: 340 }), ['inner', 'a', 'b'], 'inner area held whole; its card is not listed again');
+  assert.deepEqual(marqueeSelection(doc, rects, { x: -10, y: -10, width: 1100, height: 500 }), ['g', 'out']);
+  assert.deepEqual(marqueeSelection(doc, rects, { x: 650, y: 200, width: 50, height: 50 }), []);
+});
