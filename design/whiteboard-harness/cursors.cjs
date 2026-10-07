@@ -27,6 +27,14 @@ const assert=require('node:assert/strict');
  await click('Lápiz (D)');const dot=own(await at(V),'crosshair');assert.notEqual(dot,cross);
  await click('Goma (E)');own(await at(V),'cell');assert.equal(await under(),await at(V));
  await click('Seleccionar (V)');assert.equal(await at(V),arrow);assert.equal(await at(card),open);
+ // Sweep the whole canvas: areas, shapes, free text and cards must all show a Lienzo cursor. Only real buttons,
+ // links and the minimap may show the system pointer.
+ await ev(`__panelQA.seed([{type:'block.create',block:{id:'n1',typeId:'node',title:'Ejemplo uno',data:{summary:'Texto de ejemplo.'}}},{type:'group.create',group:{id:'g',title:'Ejemplo · área',description:'',blockIds:['n1'],groupIds:[],layout:{mode:'graph'}}},
+  {type:'block.create',block:{id:'shape',typeId:'wb-shape',title:'',position:{x:900,y:420},size:{width:200,height:120},data:{shape:'rect',color:'naranja',fill:'solid',text:'Ejemplo'}}},{type:'block.create',block:{id:'txt',typeId:'wb-text',title:'',position:{x:900,y:600},data:{text:'Texto libre de ejemplo'}}}])`);
+ await wait('!!document.querySelector("#lienzo-entity-txt")');await new Promise(r=>setTimeout(r,1200));
+ const sweep=()=>ev(`(()=>{const bad=new Set(),vp=document.querySelector('#lienzo-canvas-viewport');for(let y=70;y<innerHeight-10;y+=11)for(let x=70;x<innerWidth-10;x+=11){const e=document.elementFromPoint(x,y);if(!e||!vp.contains(e))continue;const c=getComputedStyle(e).cursor;if(!c.startsWith('url(')&&c!=='pointer')bad.add(c+' on '+(e.closest('[id^="lienzo-entity-"]')?.id||'fondo'));}return [...bad]})()`);
+ assert.deepEqual(await sweep(),[]);assert.equal(await ev(`getComputedStyle(document.elementFromPoint(...(()=>{const r=document.querySelector('#lienzo-entity-shape').getBoundingClientRect();return[r.x+20,r.y+20]})())).cursor`),open,'a shape shows the open hand');
+ await click('Mano (H)');assert.deepEqual(await sweep(),[]);await click('Seleccionar (V)');
  console.log('PASS cursor follows the tool');assert.deepEqual(uncaught,[]);
  }finally{ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});
