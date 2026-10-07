@@ -1332,6 +1332,8 @@ and `dense.cjs`; captures in `design/qa-shapes-legibility-2026-10-06/`. Not veri
   untitled block keeps icon + type name, because nothing else names it. A node shows its eyebrow row only
   when `kind`, `status` or an instruction exists; `kind` no longer falls back to "Nodo". Qualifiers that
   repeat the obvious (`text` as a code language, "Web") are dropped; a meaningful one sits right of the title.
+- **No card menu.** Cards carry no three-dot menu and never expand to show actions. Duplicate, delete,
+  move and details live in the selection toolbar, which appears for whatever is selected.
 - **Detail popover.** The selected card rises above its neighbours (z 3) and its detail note is an opaque
   popover with the `popover` elevation, so it never shows through other cards.
 - **Menu.** "Más acciones" opens a 288 wide dropdown under the title island on wide panels (a sheet on
