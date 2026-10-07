@@ -12,18 +12,20 @@ const assert=require('node:assert/strict');
  const mouse=(type,x,y,buttons=0)=>call('Input.dispatchMouseEvent',{type,x,y,button:'left',buttons,clickCount:1});
  const click=async label=>{const p=await ev(`(()=>{const r=document.querySelector('[aria-label=${JSON.stringify(label)}]').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);await mouse('mousePressed',p.x,p.y,1);await mouse('mouseReleased',p.x,p.y);await new Promise(r=>setTimeout(r,250));};
  const at=sel=>ev(`getComputedStyle(document.querySelector(${JSON.stringify(sel)})).cursor`);
+ // What the pointer really shows: the cursor of the element under an empty spot of the canvas, not of the container.
+ const under=()=>ev(`(()=>{for(const [x,y] of [[1400,700],[1300,820],[1500,300]]){const e=document.elementFromPoint(x,y);if(e&&!e.closest('[id^="lienzo-entity-"]')&&e.closest('#lienzo-canvas-viewport'))return getComputedStyle(e).cursor;}throw Error('no empty canvas spot')})()`);
  try{
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=oscuro'});await wait('!!document.querySelector("#lienzo-entity-note")');await new Promise(r=>setTimeout(r,700));
  const V='#lienzo-canvas-viewport',card='#lienzo-grab-note-header';
  const own=(value,fallback)=>{assert.ok(value.startsWith('url("data:image/svg+xml')&&value.endsWith(', '+fallback),fallback+' <- '+value.slice(0,40)+'…'+value.slice(-20));return value;};
- const arrow=own(await at(V),'default'),open=own(await at(card),'grab');assert.notEqual(arrow,open);
- await click('Mano (H)');assert.equal(await at(V),open);assert.equal(await at(card),open,'the hand shows through cards');
+ const arrow=own(await at(V),'default');assert.equal(await under(),arrow,'empty canvas shows the arrow');const open=own(await at(card),'grab');assert.notEqual(arrow,open);
+ await click('Mano (H)');assert.equal(await at(V),open);assert.equal(await under(),open);assert.equal(await at(card),open,'the hand shows through cards');
  await mouse('mousePressed',1400,700,1);const closed=own(await at(V),'grabbing');await mouse('mouseReleased',1400,700);assert.equal(await at(V),open);assert.notEqual(closed,open);
  await click('Texto (T)');const text=own(await at(V),'text');assert.equal(await at(card),text);
- await click('Forma (R)');const cross=own(await at(V),'crosshair');
+ await click('Forma (R)');const cross=own(await at(V),'crosshair');assert.equal(await under(),cross);
  await click('Lápiz (D)');const dot=own(await at(V),'crosshair');assert.notEqual(dot,cross);
- await click('Goma (E)');own(await at(V),'cell');
+ await click('Goma (E)');own(await at(V),'cell');assert.equal(await under(),await at(V));
  await click('Seleccionar (V)');assert.equal(await at(V),arrow);assert.equal(await at(card),open);
  console.log('PASS cursor follows the tool');assert.deepEqual(uncaught,[]);
  }finally{ws.close();}
