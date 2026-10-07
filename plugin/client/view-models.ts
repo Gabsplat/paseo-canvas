@@ -57,16 +57,6 @@ export function matrixOf(doc: Doc): { order: Entity[]; cells: MatrixCell[]; area
   const cells = (doc.links ?? []).flatMap((l): MatrixCell[] => index.has(l.from) && index.has(l.to) ? [{ row: index.get(l.from)!, col: index.get(l.to)!, kind: l.kind, label: l.label ?? '', linkId: l.id }] : []);
   return { order, cells, areas };
 }
-export type StreamItem = { key: string; at: string; who: 'user' | 'agent'; what: 'change' | 'undo' | 'redo' | 'request'; label: string; revision?: number; ids: string[]; state?: AgentEvent['status'] };
-/** History and requests as one river, newest first, with what is still waiting pulled out ahead of it. */
-export function streamOf(doc: Pick<CanvasDocument, 'blocks' | 'groups'>, changes: readonly Change[], events: readonly Pick<AgentEvent, 'id' | 'createdAt' | 'status' | 'action' | 'revision'>[]): { waiting: StreamItem[]; items: StreamItem[] } {
-  const known = new Set([...doc.blocks, ...doc.groups].map(e => e.id));
-  const items: StreamItem[] = [
-    ...changes.map((c): StreamItem => ({ key: `r${c.revision}`, at: c.at, who: c.actor === 'agent' ? 'agent' : 'user', what: c.kind === 'edit' ? 'change' : c.kind, label: c.label || 'Cambio', revision: c.revision, ids: c.changed.filter(id => known.has(id)) })),
-    ...events.map((e): StreamItem => ({ key: `e${e.id}`, at: e.createdAt, who: 'user', what: 'request', label: e.action.label || e.action.kind, revision: e.revision, ids: (e.action.targetIds ?? []).filter(id => known.has(id)), state: e.status })),
-  ].sort((a, b) => a.at < b.at ? 1 : a.at > b.at ? -1 : (b.revision ?? 0) - (a.revision ?? 0));
-  return { waiting: items.filter(item => item.what === 'request' && item.state !== 'acked'), items };
-}
 /**
  * What the assistant holds of each block, as far as the stored record shows. It is up to date with a block it
  * changed last, or whose current state it acknowledged in a request. It is behind on a block the person changed

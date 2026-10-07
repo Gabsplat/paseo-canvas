@@ -1387,9 +1387,9 @@ cursor shows through them. Buttons keep the system pointer. Verified with
 Verified with `design/whiteboard-harness/windows.cjs` (RN-web, isolated omabox); capture
 `design/qa-shapes-legibility-2026-10-06/windows.png`.
 
-## 29. Lenses and Anillos (v16)
+## 29. Lenses (v16)
 
-Both read the history the server stores, which is the 50 most recent changes; each view says so.
+The lenses that use history read what the server stores, the 50 most recent changes, and say so.
 
 - **Lenses** (`lens`). A control above the minimap names the lens in use; each press moves to the next:
   none, Autoría, Antigüedad, Conversación. A lens keeps every card in place and lays a mark over it (2 px
@@ -1398,23 +1398,14 @@ Both read the history the server stores, which is the 50 most recent changes; ea
   changed within 2 revisions (risk tone), within 10 (warning), earlier (turquoise), not in the stored history
   (neutral). Conversación: requests waiting (warning), not delivered (risk), attended (success), never taken
   up (neutral). The legend counts the cards in each state. Marks hide while cards are being dragged.
-- **Anillos** (`rings`). A third view beside canvas and list, opened from the title island or the menu.
-  Angle is identity: each block has a bearing, ordered so that a top-level area is a sector, with blocks
-  outside any area in a last sector. Radius is time: the innermost ring is the oldest stored change and the
-  rim is the newest. Each change is an arc on the bearings it touched, accent for the person, violet for
-  the assistant, thin and dashed for an undo; arc thickness is 0.62 of the ring band, between 1.5 and 9.
-  Requests to the assistant are dots outside the rim: filled when attended, hollow while waiting. Hovering
-  or pressing a slice washes it (0.14) and the side panel reads that block: stored changes by author, how
-  long it has been still, and the changes themselves. "Ver en el lienzo" returns with it selected. Changes
-  to links, areas and deleted entities have no bearing and are counted, not drawn. Web only for the figure.
 
 Verified with `design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history served by
-the QA host); captures `lens-author.png` and `rings.png` in `design/qa-shapes-legibility-2026-10-06/`.
+the QA host); capture `lens-author.png` in `design/qa-shapes-legibility-2026-10-06/`.
 
 ## 30. More readings of the same document (v17)
 
 A "Cambiar vista" button in the title island (and the menu) lists the views: Lienzo, Lista, Foco, Lecturas,
-Matriz, Corriente, Anillos. Only the canvas and the list edit; the rest are for looking, never write, and
+Matriz. Only the canvas and the list edit; the rest are for looking, never write, and
 return to the canvas with "Ver en el lienzo". The tool column hides in them. Each view states the question
 it answers under its title.
 
@@ -1428,8 +1419,6 @@ it answers under its title.
 - **Matriz.** Rows and columns are the entities in reading order (area by area, then areas that end a
   link); a link is a 22 px cell at (from, to) in its kind's tone. Area bands are shaded, so cells outside a
   band are coupling between areas. Hovering a cell says the relation in words; pressing selects both ends.
-- **Corriente.** The stored changes and the requests to the assistant as one list, newest first: who, what,
-  revision, time, and the cards touched as chips. Requests not yet attended are pulled out on top.
 - **Lens "Lo que ve el asistente".** A fifth lens. Up to date: the assistant changed the card last, or
   attended a request about it since its last change. Behind: you changed it afterwards. No record:
   nothing is claimed. This is derived from the stored changes and requests; the assistant's actual reading

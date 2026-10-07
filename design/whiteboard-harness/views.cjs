@@ -1,4 +1,4 @@
-// Lenses and Anillos (example data, with a stand-in history served by the QA host).
+// Lenses and the structural views (example data, with a stand-in history served by the QA host).
 const assert=require('node:assert/strict');const fs=require('node:fs');
 (async()=>{
  const pages=await(await fetch('http://127.0.0.1:9222/json/list')).json();
@@ -31,7 +31,6 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await click('[aria-label^="Lente: Antigüedad"]');await wait('!!document.querySelector("[aria-label^=\\"Lente: Conversación\\"]")');assert.ok(/Nunca conversado/.test(await ev('document.querySelector("#lienzo-interactive-lens").innerText')));
  await click('[aria-label^="Lente: Conversación"]');await wait('!!document.querySelector("[aria-label^=\\"Lente: Lo que ve el asistente\\"]")');assert.ok(/Lo cambiaste después/.test(await ev('document.querySelector("#lienzo-interactive-lens").innerText')));await shot('lens-agent');
  await click('[aria-label^="Lente: Lo que ve el asistente"]');await wait('!!document.querySelector("[aria-label^=\\"Lente: Sin lente\\"]")');
- // Anillos: one figure, one slice per block; pointing at a slice reads that block's life; back to the canvas selected.
  const view=async name=>{await click('[aria-label="Cambiar vista"]');await wait('!!document.querySelector("#lienzo-interactive-views")');await click('#lienzo-interactive-views [aria-label="'+name+'"]');await new Promise(r=>setTimeout(r,500));};const body=()=>ev('document.body.innerText');
  // Foco: the selected card in the middle, neighbours by link meaning; pressing one recentres.
  await click('#lienzo-entity-a1');await wait('__panelQA.doc().selectedIds.includes("a1")');await view('Foco');await wait('!!document.querySelector("#lienzo-focus-centre")');
@@ -42,19 +41,10 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await click('[aria-label="Lectura de Ejemplo a0 a Ejemplo c0"]');await click('[aria-label="Siguiente"]');assert.ok(/pide/.test(await ev('document.querySelector("#lienzo-reading-step").innerText')));assert.ok(/Cruce/.test(await ev('document.querySelector("#lienzo-reading-step").innerText')),'a shared card is a crossing');await shot('readings');
  // Matriz: one cell per link, described on hover.
  await view('Matriz');await wait('!!document.querySelector("#lienzo-matrix")');assert.equal(await ev('document.querySelectorAll("#lienzo-matrix [aria-label*=\\" sigue o envía a \\"],#lienzo-matrix [aria-label*=\\" necesita a \\"],#lienzo-matrix [aria-label*=\\" menciona a \\"]").length'),8);await shot('matrix');
- // Corriente: stored changes newest first.
- await view('Corriente');await wait('document.querySelector("#lienzo-stream")?.innerText.includes("Ejemplo de cambio 39")');t=await ev('document.querySelector("#lienzo-stream").innerText');assert.ok(t.indexOf('Ejemplo de cambio 39')<t.indexOf('Ejemplo de cambio 2\n')||t.indexOf('Ejemplo de cambio 39')<t.indexOf('Ejemplo de cambio 10'),'newest first');assert.ok(/El asistente/.test(t)&&/deshiciste/.test(t));await shot('stream');
  // Lista and back: switching between the canvas and the list must not break rendering (React hook order).
  await view('Lista');await wait('!document.querySelector("#lienzo-canvas-viewport")');assert.ok(/Ejemplo a0/.test(await body()),'the list renders');assert.ok(!/Plugin failed|Minified React/.test(await body()));
  await view('Lienzo');await wait('!!document.querySelector("#lienzo-canvas-viewport")');assert.ok(/Ejemplo a0/.test(await body()));await ev('__panelQA.doc()');
- await view('Anillos');await wait('!!document.querySelector("#lienzo-rings svg")');await new Promise(r=>setTimeout(r,500));
- const text=await ev('document.querySelector("#lienzo-rings").innerText');assert.ok(/Se muestran 40 cambios/.test(text)&&/no tienen? dirección/.test(text),text.slice(0,400));
- const slices=await ev(`[...document.querySelectorAll('#lienzo-rings svg path')].filter(p=>getComputedStyle(p).pointerEvents==='all').length`);assert.equal(slices,await ev('__panelQA.doc().blocks.length'));await shot('rings');
- const p=await ev(`(()=>{const s=[...document.querySelectorAll('#lienzo-rings svg path')].filter(p=>getComputedStyle(p).pointerEvents==='all')[7].getBoundingClientRect();return{x:s.x+s.width/2,y:s.y+s.height/2}})()`);
- await mouse('mouseMoved',p.x,p.y);await new Promise(r=>setTimeout(r,300));assert.ok(/cambios? guardados?|Sin cambios en el historial/.test(await ev('document.querySelector("#lienzo-rings").innerText')),'hover reads a life');
- await mouse('mousePressed',p.x,p.y,1);await mouse('mouseReleased',p.x,p.y);await wait('__panelQA.doc().selectedIds.length===1');const picked=await ev('__panelQA.doc().selectedIds[0]');await shot('rings-selected');
- await click('[aria-label="Ver en el lienzo"]');await wait('!!document.querySelector("#lienzo-canvas-viewport")');assert.deepEqual(await ev('__panelQA.doc().selectedIds'),[picked]);
  assert.equal(await ev('__panelQA.doc().revision'),rev);assert.equal(await ev('__panelQA.log.length'),log);
- console.log('PASS lenses, focus, readings, matrix, stream and rings read the same document and write nothing');assert.deepEqual(uncaught,[]);
+ console.log('PASS lenses, focus, readings and matrix read the same document and write nothing');assert.deepEqual(uncaught,[]);
  }finally{ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, ScrollView } from '@getpaseo/plugin/client/react-native';
+import { ScrollView } from '@getpaseo/plugin/client/react-native';
 import type { CanvasLink } from '../shared/model';
 import { withAlpha, type Tone } from './color';
 import { tokens } from './tokens';
 import { Button, Txt, useUI } from './ui';
 import type { CanvasController } from './useCanvas';
-import { useHistory } from './useHistory';
-import { focusOf, matrixOf, readings, streamOf, type Neighbour } from './view-models';
+import { focusOf, matrixOf, readings, type Neighbour } from './view-models';
 
 type ViewProps = { controller: CanvasController; onOpen(id: string): void };
 const V = tokens.views, kindTone = (kind: CanvasLink['kind']): Tone => tokens.graph.link.defaultTone[kind] as Tone, kindName = (kind: CanvasLink['kind']) => tokens.graph.kinds[kind];
@@ -102,30 +101,5 @@ export function MatrixView({ controller: c, onOpen }: ViewProps) {
             style={{ position: 'absolute', left: k.col * cell + 2, top: k.row * cell + 2, width: cell - 4, height: cell - 4, borderRadius: 3, backgroundColor: u.tone(kindTone(k.kind)), opacity: hover === null || hover === i ? 1 : .55, borderWidth: hover === i ? 2 : 0, borderColor: u.c.foreground }} />)}
         </View></View>
     </View></ScrollView></ScrollView>
-  </Frame>;
-}
-
-// ---- Corriente ----------------------------------------------------------------------------------------------------
-/** What happened, newest first: your changes, the assistant's, the requests between you, and what still waits. */
-export function StreamView({ controller: c, onOpen }: ViewProps) {
-  const u = useUI(), doc = c.view!.document, { changes, failed } = useHistory(c, true), s = useMemo(() => streamOf(doc, changes ?? [], c.events), [doc.blocks, doc.groups, changes, c.events]);
-  const title = (id: string) => [...doc.blocks, ...doc.groups].find(e => e.id === id)?.title || 'Sin título', user = u.c.accent, agent = u.tone('violeta');
-  const when = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  const state: Record<string, [string, Tone]> = { pending: ['En cola', 'aviso'], sent: ['Enviado, sin respuesta', 'aviso'], failed: ['No se entregó', 'riesgo'], acked: ['Atendido', 'exito'] };
-  const row = (item: typeof s.items[number]) => <View key={item.key} style={{ flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderColor: u.c.border }}>
-    <View style={{ width: 44, alignItems: 'flex-end', gap: 2 }}><Txt kind="label" muted>{when(item.at)}</Txt>{item.revision !== undefined && <Txt kind="label" muted>r{item.revision}</Txt>}</View>
-    <View style={{ width: 10, alignItems: 'center', paddingTop: 5 }}><View style={{ width: 10, height: 10, borderRadius: item.what === 'request' ? 2 : 5, backgroundColor: item.what === 'undo' || item.what === 'redo' ? 'transparent' : item.who === 'agent' ? agent : user, borderWidth: item.what === 'undo' || item.what === 'redo' ? 1.5 : 0, borderColor: u.c.foregroundMuted }} /></View>
-    <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-      <Txt numberOfLines={2}><Txt style={{ fontWeight: '600' }}>{item.what === 'request' ? 'Pediste' : item.who === 'agent' ? 'El asistente' : 'Tú'}</Txt>{item.what === 'request' ? ': ' : item.what === 'undo' ? ' deshiciste: ' : item.what === 'redo' ? ' rehiciste: ' : ': '}{item.label}</Txt>
-      {!!item.state && <Txt kind="small" style={{ color: u.tone(state[item.state][1]) }}>{state[item.state][0]}</Txt>}
-      {!!item.ids.length && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>{item.ids.slice(0, V.streamChips).map(id => <Pressable key={id} accessibilityRole="button" accessibilityLabel={`Ver ${title(id)} en el lienzo`} onPress={() => onOpen(id)} style={({ pressed, ...st }) => ({ maxWidth: 200, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: pressed || (st as { hovered?: boolean }).hovered ? u.c.surface2 : u.c.surface1, borderWidth: 1, borderColor: u.c.border })}><Txt kind="small" numberOfLines={1}>{title(id)}</Txt></Pressable>)}{item.ids.length > V.streamChips && <Txt kind="small" muted>+{item.ids.length - V.streamChips}</Txt>}</View>}
-    </View></View>;
-  return <Frame title="Corriente" question="¿Qué pasó y por qué está esto acá? Lo más reciente arriba.">
-    <View nativeID="lienzo-stream" style={{ maxWidth: V.streamMax, alignSelf: 'center', width: '100%' }}>
-      {failed && !changes ? <Empty text="No se pudo leer el historial." /> : !changes ? <Empty text="Leyendo el historial…" /> : <>
-        {!!s.waiting.length && <View style={{ borderRadius: 12, borderWidth: 1, borderColor: u.tone('aviso'), backgroundColor: u.wash('aviso'), paddingHorizontal: 14, paddingTop: 10, marginBottom: 16 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Icon name="Hourglass" size={14} color={u.tone('aviso')} /><Txt kind="label">Esperando al asistente · {s.waiting.length}</Txt></View>{s.waiting.map(row)}</View>}
-        {!s.items.length ? <Empty text="Todavía no hay cambios ni pedidos guardados." /> : s.items.map(row)}
-        <Txt kind="small" muted style={{ paddingTop: 12 }}>El historial guarda los 50 cambios más recientes.</Txt></>}
-    </View>
   </Frame>;
 }

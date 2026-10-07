@@ -21,10 +21,9 @@ import { tokens } from './tokens';
 import { withAlpha } from './color';
 import { usePresentation } from './usePresentation';
 import { BlockPalette } from './BlockPalette';
-import { Rings } from './Rings';
-import { FocusView, MatrixView, ReadingsView, StreamView } from './Views';
-type ViewMode = 'canvas' | 'outline' | 'focus' | 'readings' | 'matrix' | 'stream' | 'rings';
-const VIEWS: { id: ViewMode; label: string; icon: string }[] = [{ id: 'canvas', label: 'Lienzo', icon: 'Frame' }, { id: 'outline', label: 'Lista', icon: 'ListTree' }, { id: 'focus', label: 'Foco', icon: 'Crosshair' }, { id: 'readings', label: 'Lecturas', icon: 'Route' }, { id: 'matrix', label: 'Matriz', icon: 'Grid3x3' }, { id: 'stream', label: 'Corriente', icon: 'Waves' }, { id: 'rings', label: 'Anillos', icon: 'Target' }];
+import { FocusView, MatrixView, ReadingsView } from './Views';
+type ViewMode = 'canvas' | 'outline' | 'focus' | 'readings' | 'matrix';
+const VIEWS: { id: ViewMode; label: string; icon: string }[] = [{ id: 'canvas', label: 'Lienzo', icon: 'Frame' }, { id: 'outline', label: 'Lista', icon: 'ListTree' }, { id: 'focus', label: 'Foco', icon: 'Crosshair' }, { id: 'readings', label: 'Lecturas', icon: 'Route' }, { id: 'matrix', label: 'Matriz', icon: 'Grid3x3' }];
 import { ToolIsland, StyleIsland, ShapePopover, LibraryPopover, SvgImportDialog } from './FloatingTools';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
@@ -513,7 +512,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
         <MenuRow icon="Trash2" label="Eliminar selección" danger disabled={disabled} onPress={() => { setOverflow(false); removeSelection(); }} /></>}
       <MenuDivider />
       <MenuRow icon={mode === 'canvas' ? 'ListTree' : 'Frame'} label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} hint="⇧L" onPress={() => { setOverflow(false); setMode(mode === 'canvas' ? 'outline' : 'canvas'); }} />
-      {viewRows(() => setOverflow(false), ['focus', 'readings', 'matrix', 'stream', 'rings'])}
+      {viewRows(() => setOverflow(false), ['focus', 'readings', 'matrix'])}
       <MenuRow icon="Maximize2" label="Solo lienzo" hint="F" disabled={!doc} onPress={() => { setOverflow(false); setOverlay(null); setImmersive(true); }} />
       {u.compact && <MenuRow icon="PenTool" label="Herramientas" disabled={!doc} onPress={() => { setOverflow(false); setMode('canvas'); setToolsOpen(true); }} />}
       <MenuDivider />
@@ -548,7 +547,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="No se pudo abrir el lienzo" error={c.failure.message}><Button label="Reintentar" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo">
         <Button label="Nuevo lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Ejemplos</Txt>
         {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-      </EmptyState> : mode === 'rings' ? <Rings controller={c} onOpen={openOnCanvas} /> : mode === 'focus' ? <FocusView controller={c} onOpen={openOnCanvas} /> : mode === 'readings' ? <ReadingsView controller={c} onOpen={openOnCanvas} /> : mode === 'matrix' ? <MatrixView controller={c} onOpen={openOnCanvas} /> : mode === 'stream' ? <StreamView controller={c} onOpen={openOnCanvas} /> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode === 'outline' ? 'outline' : 'canvas'} linkId={linkId} onLink={id => { if (id === null) setToolPopover(null); selectLink(id); }} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
+      </EmptyState> : mode === 'focus' ? <FocusView controller={c} onOpen={openOnCanvas} /> : mode === 'readings' ? <ReadingsView controller={c} onOpen={openOnCanvas} /> : mode === 'matrix' ? <MatrixView controller={c} onOpen={openOnCanvas} /> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode === 'outline' ? 'outline' : 'canvas'} linkId={linkId} onLink={id => { if (id === null) setToolPopover(null); selectLink(id); }} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!u.compact && !c.selection.length && !linkId && actionPopup && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, width: tokens.popover.width.medium }}>{selectionToolbar}</View>}

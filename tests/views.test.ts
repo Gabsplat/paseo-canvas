@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agentView, entityOrder, focusOf, matrixOf, readings, streamOf } from '../plugin/client/view-models';
+import { agentView, entityOrder, focusOf, matrixOf, readings } from '../plugin/client/view-models';
 import type { Change } from '../plugin/client/lenses';
 
 const b = (id: string) => ({ id, title: id.toUpperCase(), typeId: 'node', data: {} });
@@ -32,11 +32,6 @@ test('the matrix puts each link at from-row, to-column and marks the area bands'
   const m = matrixOf(doc), at = (id: string) => m.order.findIndex(e => e.id === id);
   assert.equal(m.cells.length, 7); assert.deepEqual(m.cells.find(c => c.linkId === 'f3'), { row: at('b'), col: at('d'), kind: 'flow', label: 'avisa', linkId: 'f3' });
   assert.deepEqual(m.areas, [{ title: 'Uno', from: 0, to: 3 }, { title: 'Dos', from: 3, to: 5 }, { title: '', from: 5, to: 6 }, { title: 'Áreas', from: 6, to: 8 }]);
-});
-test('the stream is newest first and pulls out what still waits', () => {
-  const s = streamOf(doc, [change(3, 'agent', ['a', 'link-1']), change(5, 'user', ['b'], 'undo')], [event('e1', 'pending', ['c'], 4, 4), event('e2', 'acked', ['zz'], 2, 2)]);
-  assert.deepEqual(s.items.map(i => [i.key, i.who, i.what]), [['r5', 'user', 'undo'], ['ee1', 'user', 'request'], ['r3', 'agent', 'change'], ['ee2', 'user', 'request']]);
-  assert.deepEqual(s.items.find(i => i.key === 'r3')!.ids, ['a']); assert.deepEqual(s.waiting.map(i => i.key), ['ee1']); assert.deepEqual(s.items.at(-1)!.ids, []);
 });
 test('what the assistant holds: current where it wrote last or acknowledged since, behind where you changed after', () => {
   const view = agentView(doc, [change(2, 'agent', ['a', 'b']), change(4, 'user', ['b', 'c', 'd']), change(6, 'agent', ['d'])], [event('1', 'acked', ['c'], 5, 5), event('2', 'pending', ['b'], 5, 5), event('3', 'acked', ['e'], 1, 1), event('4', 'acked', ['b'], 3, 3)]);
