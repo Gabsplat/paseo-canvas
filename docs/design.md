@@ -1344,3 +1344,12 @@ and `dense.cjs`; captures in `design/qa-shapes-legibility-2026-10-06/`. Not veri
 
 Verified in RN-web (isolated omabox): `design/whiteboard-harness/chrome.cjs`; captures `chrome-*.png` in
 `design/qa-shapes-legibility-2026-10-06/`. Not verified in installed Paseo or native.
+
+## 23. File tree block (v10)
+
+`fileTree` tokens: rows 26 (36 compact), 16 per level with a 1 px guide in `border`, chevron 12, icon 14,
+gap 6. Names in the code face, 600 for directories and highlighted entries; the note follows the name in
+`small` muted on the same line, truncated. A highlighted row has an accent wash (0.14) and accent name; a
+muted entry and everything under it is at 0.5. A closed directory shows its child count on the right.
+Only directories with children are pressable. Verified with `design/whiteboard-harness/tree.cjs`
+(RN-web, isolated omabox); capture `design/qa-shapes-legibility-2026-10-06/file-tree.png`.

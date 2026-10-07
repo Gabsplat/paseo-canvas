@@ -15,6 +15,7 @@ import { annotatedContentRenderer } from './annotated-content'; registerClientRe
 import { stepFigureRenderer } from './step-figure'; registerClientRenderer(stepFigureRenderer);
 import { glslShaderRenderer } from './glsl-shader'; registerClientRenderer(glslShaderRenderer);
 import { stepSequencerRenderer } from './step-sequencer'; registerClientRenderer(stepSequencerRenderer);
+import { fileTreeRenderer } from './file-tree'; registerClientRenderer(fileTreeRenderer);
 import { simulateAnimatedFlow, tokensAt, flowTimeAt } from '../../shared/renderers/animated-flow';
 registerClientRenderer({ ...animatedFlowRenderer, prepareLinkMotion(data, document) {
   const simulation = simulateAnimatedFlow(data, document);

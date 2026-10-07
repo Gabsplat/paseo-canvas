@@ -14,6 +14,7 @@ import { stepFigureSpec } from './step-figure'; registerRenderer(stepFigureSpec)
 import { glslShaderSpec } from './glsl-shader'; registerRenderer(glslShaderSpec);
 import { whiteboardSpecs } from './whiteboard'; whiteboardSpecs.forEach(registerRenderer);
 import { stepSequencerSpec } from './step-sequencer'; registerRenderer(stepSequencerSpec);
+import { fileTreeSpec } from './file-tree'; registerRenderer(fileTreeSpec);
 export const rendererSpecs: readonly RendererSpec[] = entries;
 export const legacyRendererNames = ['text', 'note', 'code', 'checklist', 'choice', 'form', 'metric', 'image-ref', 'step', 'callout', 'preview-frame', 'quiz', 'progress', 'diagram', 'node'] as const;
 export const rendererNames: [string, ...string[]] = [...new Set([...legacyRendererNames, ...entries.map(s => s.id)])] as [string, ...string[]];

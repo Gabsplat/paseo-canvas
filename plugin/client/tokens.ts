@@ -1557,6 +1557,7 @@ const baseTokens = {
     "recommendedMax": 4,
     "neutral": "foreground: parámetros locales no compartidos y la serie de referencia"
   },
+  "fileTree": { "row": 26, "rowCompact": 36, "indent": 16, "chevron": 12, "icon": 14, "gap": 6, "bleed": 4, "radius": 6, "highlightFill": 0.14, "mutedAlpha": 0.5 },
   "whiteboard": {
     "$doc": "Pizarra libre (design/whiteboard-spec.md, docs/design.md §20). Unidades de mundo salvo donde dice pantalla. Los colores son roles guardados en el documento; el valor sale del tema.",
     "types": {

@@ -440,3 +440,13 @@ block-to-block links between different areas, an area with more than 9 items, a 
 links, more than 16 labelled links, and numbered areas linked high-to-low (the canvas then shows the last
 area first, because the `from` end of a link is always drawn before the `to` end). Each warning names the
 restructuring: link whole areas with group IDs, split the area, or link in reading order.
+
+## File tree block
+
+`file-tree` shows a folder structure; use it instead of ASCII trees inside `code` blocks.
+`data: { root?, entries: [{ path, note?, highlight?, muted? }], collapsed?: [path] }`. `entries` is a flat
+list of relative paths (1..200, at most 8 levels, no `..` or leading `/`) in reading order; a trailing
+slash marks a directory and unlisted parents are implied. `note` (≤120 characters) says what the entry is
+for, `highlight` marks the few entries the explanation is about, `muted` marks generated or vendored ones
+(children inherit it), and `collapsed` lists directories that start closed. Opening and closing is local to
+the reader and never written to the document.

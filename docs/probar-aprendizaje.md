@@ -93,7 +93,7 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-El conjunto integrado pasa typecheck y 285 pruebas headless. Cubren persistencia,
+El conjunto integrado pasa typecheck y 289 pruebas headless. Cubren persistencia,
 conflictos, packs, runtime, protección de resultados y validación de los cuatro tipos de
 pizarra. Pasan 24 casos de navegador con el Panel, useCanvas, reducer y esquemas RPC reales
 bajo RN-web en omabox aislado. El host y el transporte son sustitutos. Se probaron texto,
