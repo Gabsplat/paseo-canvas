@@ -1357,12 +1357,24 @@ alone opens and closes it. While its card is selected the row has a stronger acc
 accent name. Unpaired rows are pressable only when they are directories with children. Verified with `design/whiteboard-harness/tree.cjs`
 (RN-web, isolated omabox); capture `design/qa-shapes-legibility-2026-10-06/file-tree.png`.
 
-## 24. Docked tools and block flyout (v11)
+## 24. Docked tools and block palette (v11)
 
 On a non-compact panel at least 520 tall (`island.dock`), the tool island is a floating column on the
 left edge, vertically centred (never above `bannerTop`), with horizontal dividers. Its popovers (shapes,
-library) and the block picker open to its right, 8 from the column. The block picker is a 280 wide
-floating flyout from `bannerTop` (up to 640 tall): search, tabs, one-column rows of 34 with a 24 icon
-tile, and the hovered block's description in the footer. It closes with Escape, a click outside, or the
-"+" tool again. Shorter panels keep the top row of tools; compact keeps the sheet. Verified with
-`design/whiteboard-harness/chrome.cjs`; capture `design/qa-shapes-legibility-2026-10-06/tools-dock.png`.
+library) open to its right, 8 from the column.
+
+The "+" tool opens the block palette (`island.palette`): icon-only columns beside the dock, sharing its
+vertical centre, 6 apart. Column one holds the basic blocks plus group, media by URL and SVG import;
+column two the interactive blocks and, last, "Catálogo completo" (search, templates, collections, custom
+types, as the dialog). Whiteboard types are not repeated: the tools draw them. Buttons are 40 with a 20
+icon in the block's tone. Each column slides out from under the dock: translateX from -16 × (index + 1)
+to 0 with opacity 0 → 1, 180 ms on the `out` curve, each column 40 ms after the previous; instant with
+reduced motion. Pointing at or focusing an icon shows a 232 wide hint to the right of the last column,
+level with that icon: name, then up to three lines of description. Columns never exceed the rows that fit
+between the top and bottom banners; what does not fit stays in the full catalog. Escape, a click outside
+or "+" again closes it. Shorter panels keep the top row of tools and the dialog; compact keeps the sheet.
+
+A click on the canvas (background or a card) closes the shapes and library popovers.
+
+Verified with `design/whiteboard-harness/chrome.cjs`; captures `tools-dock.png` and `block-palette.png`
+in `design/qa-shapes-legibility-2026-10-06/`.

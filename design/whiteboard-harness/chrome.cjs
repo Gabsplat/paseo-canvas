@@ -37,8 +37,10 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await key('Escape');await click('[aria-label="Añadir bloque"]');await wait('!!document.querySelector("[aria-label=\\"Añadir Nota\\"]")');
  const tiles=await ev(`['Añadir Nota','Añadir Nodo','Grupo','Multimedia por URL…','Importar SVG…'].map(l=>!!document.querySelector('[aria-label="'+l+'"]'))`);assert.deepEqual(tiles,[true,true,true,true,true]);
  assert.ok(!(await ev('document.body.innerText')).includes('Apuesta')||true);
- const p=await centre('[aria-label="Añadir Nodo"]');await mouse('mouseMoved',p.x,p.y);await new Promise(r=>setTimeout(r,300));await shot('picker');
+ const p=await centre('[aria-label="Añadir Nodo"]');await mouse('mouseMoved',p.x,p.y);await new Promise(r=>setTimeout(r,500));assert.ok(await ev('document.body.innerText.includes("Tarjeta con título")'),'hovering an icon names and describes it');assert.equal(await ev('document.querySelectorAll("[role=dialog]").length'),0);await shot('picker');
  const before=await ev('__panelQA.doc().blocks.length');await click('[aria-label="Añadir Nota"]');await wait('__panelQA.doc().blocks.length==='+(before+1));
+ await click('[aria-label="Biblioteca"]');await wait('document.body.innerText.includes("Arquitectura")');await mouse('mousePressed',1560,620,'left',1);await mouse('mouseReleased',1560,620);
+ await wait('!document.body.innerText.includes("Arquitectura")');
  console.log('PASS clean chrome, detail above neighbours, aligned menu, sectioned picker');assert.deepEqual(uncaught,[]);
  }finally{ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

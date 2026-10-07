@@ -20,6 +20,7 @@ import { canvasPreferences } from '../shared/preferences';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
 import { usePresentation } from './usePresentation';
+import { BlockPalette } from './BlockPalette';
 import { ToolIsland, StyleIsland, ShapePopover, LibraryPopover, SvgImportDialog } from './FloatingTools';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
@@ -146,7 +147,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   }), [raw]);
   const doc = c.view?.document;
   const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [islandWidth, setIslandWidth] = useState(0), [composerHeight, setComposerHeight] = useState(44), [styleHeight, setStyleHeight] = useState(0);
-  const [mode, setMode] = useState<'canvas' | 'outline'>(u.compact ? 'outline' : 'canvas'), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null);
+  const [mode, setMode] = useState<'canvas' | 'outline'>(u.compact ? 'outline' : 'canvas'), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null), [catalogFull, setCatalogFull] = useState(true);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('types'), [catalogKey, setCatalogKey] = useState(0);
   const [inspectorSection, setInspectorSection] = useState<InspectorSection>('document'), [inspectorKey, setInspectorKey] = useState(0);
   const [docsError, setDocsError] = useState(''), [docsLoading, setDocsLoading] = useState(false);
@@ -203,7 +204,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     if (section !== 'document' || (!c.selection.length && !linkId)) { void c.select([]); setLinkId(null); setOverlay(null); setDocumentSettingsOpen(true); }
     else { setOverlay(null); setActionPopup({ kind: linkId ? 'link-type' : 'data' }); }
   };
-  const openCatalog = (tab: CatalogTab = 'types') => { setActionPopup(null); setDocumentSettingsOpen(false); setImmersive(false); setCatalogTab(tab); setCatalogKey(key => key + 1); setToolPopover(null); setOverlay('catalog'); };
+  const openCatalog = (tab: CatalogTab = 'types', full = true) => { setCatalogFull(full); setActionPopup(null); setDocumentSettingsOpen(false); setImmersive(false); setCatalogTab(tab); setCatalogKey(key => key + 1); setToolPopover(null); setOverlay('catalog'); };
   async function refreshDocuments() {
     setDocsLoading(true); setDocsError('');
     try { await c.refreshList(); } catch (e) { setDocsError(friendlyError(e)); }
@@ -374,6 +375,8 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   const toolsLeft = Math.min(Math.max((width - toolWidth) / 2, tokens.island.inset + islandWidth + 8), Math.max(tokens.island.inset, width - toolWidth - tokens.island.inset));
   // On a panel tall enough the tools dock on the left edge as a floating column; otherwise they stay in the top row.
   const dock = !u.compact && panelHeight >= tokens.island.dock.minPanelHeight, dockTop = Math.max(tokens.island.bannerTop, (panelHeight - tokens.island.dock.height) / 2), dockFlyoutLeft = tokens.island.inset + tokens.island.dock.width + 8;
+  // The "+" tool opens blocks as icon columns beside the dock; search, templates and collections are the full catalog.
+  const palette = dock && overlay === 'catalog' && !catalogFull && !immersive;
   const toolsTop = dock ? tokens.island.inset : tokens.island.inset + islandWidth + 8 + toolWidth > width - tokens.island.inset ? tokens.island.bannerTop : tokens.island.inset;
   const composerWidth = width < 560 ? Math.max(0, width - 24 - 88) : Math.min(tokens.composer.width.max, Math.max(0, width - 2 * (width < 880 ? 100 : 180)));
   function chooseTool(next: CanvasTool) {
@@ -442,7 +445,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       if (guideOpen) return false;
       if (e.key === 'Escape' && actionPopup) { setActionPopup(null); return true; }
       if (e.key === 'Escape' && overflow && !u.compact) { setOverflow(false); return true; }
-      if (e.key === 'Escape' && overlay === 'catalog' && dock) { setOverlay(null); return true; }
+      if (e.key === 'Escape' && palette) { setOverlay(null); return true; }
       if (actionPopup || overlay || toolsOpen || documentSettingsOpen || docsOpen || agentsOpen || overflow || template || mediaOpen || svgOpen) return false;
       if (e.key === 'Escape' && immersive) { setImmersive(false); return true; }
       if (e.key === 'Escape' && (toolPopover || toolsOpen)) { setToolPopover(null); setToolsOpen(false); return true; }
@@ -516,10 +519,11 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       <MenuRow icon="Settings" label="Ajustes del lienzo" disabled={!doc} onPress={() => { setOverflow(false); void c.select([]); setLinkId(null); setOverlay(null); setInspectorSection('document'); setInspectorKey(key => key + 1); setDocumentSettingsOpen(true); }} />
       <MenuRow icon="BookOpen" label="Guía de Lienzo" onPress={() => { setOverflow(false); setGuideOpen(true); }} />
   </>;
-  const catalog = <Catalog key={catalogKey} initialTab={catalogTab} single={dock} controller={c} insert={insert} insertTemplate={insertTemplate} extras={[{ label: 'Grupo', icon: 'Group', onPress: createGroup }, { label: 'Multimedia por URL…', icon: 'Image', onPress: () => { setOverlay(null); setMediaError(''); setMediaOpen(true); } }, { label: 'Importar SVG…', icon: 'Upload', onPress: () => { setOverlay(null); setMode('canvas'); setSvgOpen(true); } }]} onImport={() => setImportOpen(true)} onExport={setExported} searchRef={searchRef} />;
+  const paletteExtras = [{ label: 'Grupo', icon: 'Group', description: 'Un área que contiene y ordena otros bloques.', onPress: createGroup }, { label: 'Multimedia por URL…', icon: 'Image', description: 'Imagen, video o audio desde un enlace.', onPress: () => { setOverlay(null); setMediaError(''); setMediaOpen(true); } }, { label: 'Importar SVG…', icon: 'Upload', description: 'Un dibujo vectorial desde archivo, texto o enlace.', onPress: () => { setOverlay(null); setMode('canvas'); setSvgOpen(true); } }];
+  const catalog = <Catalog key={catalogKey} initialTab={catalogTab} controller={c} insert={insert} insertTemplate={insertTemplate} extras={paletteExtras} onImport={() => setImportOpen(true)} onExport={setExported} searchRef={searchRef} />;
   const inspector = doc ? <DocumentActions controller={c} section={inspectorSection} rects={rectsNow} release={release} /> : null;
   const selectionToolbar = !immersive && (c.selection.length || linkId || actionPopup?.kind === 'instruction') ? <SelectionActions controller={c} panelRoot={root} availableWidth={width} availableHeight={panelHeight} disabled={disabled} popup={actionPopup} onPopup={value => { setActionPopup(value); if (value) { setToolPopover(null); setOverlay(null); setOverflow(false); } }} linkId={linkId} onLink={selectLink} ask={focusComposer} add={() => { setActionPopup(null); openCatalog(); }} duplicate={duplicateSelection} remove={() => { if (linkId && !c.selection.length) void c.edit([{ type: 'link.delete', id: linkId }], 'Eliminar enlace').then(next => { if (next) { setLinkId(null); noticeUndo('Eliminado'); } }); else removeSelection(); }} groupSelection={groupSelection} connectSelection={connectSelection} release={release} template={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} exportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} rects={rectsNow} editText={editSelectedText} interact={() => canvas.current?.beginInteraction()} editLinkLabel={() => canvas.current?.editLinkLabel()} undoNotice={noticeUndo} /> : undefined;
-  const toolIsland = <ToolIsland tool={tool} onToolChange={chooseTool} locked={toolLocked} onLockChange={setToolLocked} shape={toolStyle.shape} onOpenShapes={() => { setOverlay(null); setToolPopover('shapes'); }} onOpenLibrary={() => { setOverlay(null); setLibraryError(''); setToolPopover('library'); setMode('canvas'); }} onOpenPicker={() => { if (overlay === 'catalog') setOverlay(null); else openCatalog(); }} width={width} touch={u.compact} disabled={!doc || disabled} vertical={dock} />;
+  const toolIsland = <ToolIsland tool={tool} onToolChange={chooseTool} locked={toolLocked} onLockChange={setToolLocked} shape={toolStyle.shape} onOpenShapes={() => { setOverlay(null); setToolPopover('shapes'); }} onOpenLibrary={() => { setOverlay(null); setLibraryError(''); setToolPopover('library'); setMode('canvas'); }} onOpenPicker={() => { if (overlay === 'catalog') setOverlay(null); else openCatalog('types', false); }} width={width} touch={u.compact} disabled={!doc || disabled} vertical={dock} />;
   const styleIsland = <StyleIsland tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation={u.compact || width < 880 ? 'horizontal' : 'vertical'} touch={u.compact} disabled={disabled} myStrokes={myLayers.reduce((sum, layer) => sum + layer.strokes, 0)} onClearMyStrokes={clearMyStrokes} />;
   const title = doc ? rename ? <Field key={doc.id} hideLabel label="Título del lienzo" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
     if (!value.trim() || value.trim().length > 300) throw new Error('Escribe un título de hasta 300 caracteres.');
@@ -535,7 +539,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="No se pudo abrir el lienzo" error={c.failure.message}><Button label="Reintentar" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo">
         <Button label="Nuevo lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Ejemplos</Txt>
         {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-      </EmptyState> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={selectLink} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setToolPopover(null); selectLink(id); }} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!u.compact && !c.selection.length && !linkId && actionPopup && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, width: tokens.popover.width.medium }}>{selectionToolbar}</View>}
@@ -568,7 +572,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     </View>
     {u.compact && doc && !immersive && selectionToolbar}
     {u.compact && doc && !immersive && <ContextTray composerRef={composerRef} controller={c} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} />}
-    <Modal title={overlay === 'catalog' ? 'Añadir un bloque' : 'Detalles'} open={!!overlay && !immersive && !(dock && overlay === 'catalog')} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>
+    <Modal title={overlay === 'catalog' ? 'Añadir un bloque' : 'Detalles'} open={!!overlay && !immersive && !palette} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>
       {overlay === 'catalog' && width < 560 && <View style={{ padding: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Button label="Forma" icon="Shapes" disabled={disabled} onPress={() => { setOverlay(null); setToolsOpen(true); setToolPopover('shapes'); setMode('canvas'); }} /><Button label="Goma" icon="Eraser" disabled={disabled} onPress={() => { setOverlay(null); chooseTool('eraser'); }} /><Button label="Biblioteca" icon="Library" disabled={disabled} onPress={() => { setOverlay(null); setToolsOpen(true); setToolPopover('library'); setMode('canvas'); }} /></View>}
       <View style={{ minHeight: 320, maxHeight: Math.max(320, panelHeight - 120), flex: 1 }}>{overlay === 'catalog' ? catalog : inspector}</View>
     </Modal.Content></Modal>
@@ -599,9 +603,8 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       {c.documents.filter(d => d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy || sending} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
       {c.catalog?.packs.filter(p => ['frontend', 'learn'].includes(p.id)).flatMap(p => p.documents.map((d, i) => <View key={p.id + ':' + i} style={{ gap: 4 }}><Chip label="Ejemplo" tone="aviso" icon="FlaskConical" /><Button label={'Crear ' + d.title} variant="ghost" disabled={disabled} onPress={() => { void c.example(p.id, i).then(next => { if (next) setDocsOpen(false); }); }} /></View>))}
     </Modal.Content></Modal>
-    {/* Adding a block opens beside the docked tools, floating over the canvas, not as a dialog in front of it. */}
-    {dock && overlay === 'catalog' && !immersive && <><Pressable accessibilityLabel="Cerrar bloques" onPress={() => setOverlay(null)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
-      <View nativeID="lienzo-interactive-blocks" style={{ position: 'absolute', left: dockFlyoutLeft, top: tokens.island.bannerTop, width: tokens.island.dock.flyoutWidth, height: Math.min(tokens.island.dock.flyoutMaxHeight, panelHeight - tokens.island.bannerTop - tokens.island.inset), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}>{catalog}</View></>}
+    {palette && <><Pressable accessibilityLabel="Cerrar bloques" onPress={() => setOverlay(null)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
+      <View pointerEvents="box-none" style={{ position: 'absolute', left: dockFlyoutLeft, top: 0, bottom: 0, justifyContent: 'center', zIndex: 41 }}><BlockPalette types={c.catalog?.blockTypes ?? []} extras={paletteExtras} insert={insert} onMore={() => setCatalogFull(true)} disabled={disabled} maxRows={Math.floor((panelHeight - 2 * tokens.island.bannerTop) / tokens.island.palette.button)} /></View></>}
     {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
     {overflow && !u.compact && <><Pressable accessibilityLabel="Cerrar menú" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
       <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + 48, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
