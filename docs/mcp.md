@@ -51,7 +51,7 @@ block/kind, except events already in an immutable outbound batch. Its context ke
 the target block and ancestor groups; ordinary feedback still stores the full snapshot.
 Settled actions capture current server revision without rejecting a stale supplied revision.
 They do not change content revision. Runtime settled helpers flush writes before reporting
-final value, visited range or prediction/outcome. The existing explicit feedback flush
+final value or visited range. The existing explicit feedback flush
 mechanism delivers batched-only events.
 
 ## Graph canvas

@@ -4,7 +4,7 @@ import { type PluginWorkspacePanelProps, useAgent, useSettings } from '@getpaseo
 import { Icon, ScrollView, useToast } from '@getpaseo/plugin/client/react-native';
 import type { BlockType, CanvasGroup, CanvasOperation, CanvasPack } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
-import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Segments, Txt, UIProvider, useUI } from './ui';
+import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Segments, Txt, UIProvider, useUI, MenuRow, MenuDivider } from './ui';
 import { Canvas, type CanvasApi } from './Canvas';
 import { Catalog, PackExport, PackImport } from './Catalog';
 import { DocumentActions } from './DocumentActions';
@@ -439,6 +439,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     return keyboard(root.current, e => {
       if (guideOpen) return false;
       if (e.key === 'Escape' && actionPopup) { setActionPopup(null); return true; }
+      if (e.key === 'Escape' && overflow && !u.compact) { setOverflow(false); return true; }
       if (actionPopup || overlay || toolsOpen || documentSettingsOpen || docsOpen || agentsOpen || overflow || template || mediaOpen || svgOpen) return false;
       if (e.key === 'Escape' && immersive) { setImmersive(false); return true; }
       if (e.key === 'Escape' && (toolPopover || toolsOpen)) { setToolPopover(null); setToolsOpen(false); return true; }
@@ -481,7 +482,38 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       return false;
     });
   }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, note, overlay, sending, immersive, linkId, mode, guideOpen, tool, toolPopover, toolsOpen, interactionId, actionPopup, documentSettingsOpen, docsOpen, agentsOpen, overflow, template, mediaOpen, svgOpen]);
-  const catalog = <Catalog key={catalogKey} initialTab={catalogTab} controller={c} insert={insert} insertTemplate={insertTemplate} onImport={() => setImportOpen(true)} onExport={setExported} searchRef={searchRef} />;
+  const menuRows = <>
+      {/* Grouped by what the action is about; one left edge, dividers instead of headings. */}
+      <MenuRow icon="Plus" label="Nuevo lienzo" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
+      <MenuRow icon="Frame" label="Documentos" onPress={() => { setOverflow(false); openDocuments(); }} />
+      <MenuRow icon="Pencil" label="Renombrar lienzo" hint="F2" disabled={!doc || disabled} onPress={() => { setOverflow(false); setRename(true); }} />
+      {doc && <MenuRow icon="CopyPlus" label="Duplicar como documento propio" disabled={disabled} onPress={() => { setOverflow(false); const content = documentContent(doc, true); content.title = content.title.slice(0, 300); content.selectedIds = []; void c.create(content); }} />}
+      <MenuDivider />
+      <MenuRow icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />
+      <MenuRow icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />
+      {doc && <MenuRow icon="History" label="Historial" onPress={() => { setOverflow(false); inspectorOpen('history'); }} />}
+      {!!c.selection.length && <><MenuDivider />
+        {c.selection.length === 2 && <MenuRow icon="Spline" label="Conectar los dos seleccionados" disabled={disabled} onPress={() => { setOverflow(false); connectSelection(); }} />}
+        <MenuRow icon="Group" label="Agrupar selección" disabled={disabled} onPress={() => { setOverflow(false); groupSelection(); }} />
+        <MenuRow icon="CopyPlus" label="Duplicar selección" disabled={disabled} onPress={() => { setOverflow(false); duplicateSelection(); }} />
+        <MenuRow icon="Trash2" label="Eliminar selección" danger disabled={disabled} onPress={() => { setOverflow(false); removeSelection(); }} /></>}
+      <MenuDivider />
+      <MenuRow icon={mode === 'canvas' ? 'ListTree' : 'Frame'} label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} hint="⇧L" onPress={() => { setOverflow(false); setMode(mode === 'canvas' ? 'outline' : 'canvas'); }} />
+      <MenuRow icon="Maximize2" label="Solo lienzo" hint="F" disabled={!doc} onPress={() => { setOverflow(false); setOverlay(null); setImmersive(true); }} />
+      {u.compact && <MenuRow icon="PenTool" label="Herramientas" disabled={!doc} onPress={() => { setOverflow(false); setMode('canvas'); setToolsOpen(true); }} />}
+      <MenuDivider />
+      <MenuRow icon="Plug" label="Asistente" disabled={!doc} trailing={<Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />} onPress={() => { setOverflow(false); setAgentsOpen(true); }} />
+      <MenuRow icon="Compass" label="Indicaciones para el asistente" disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
+      <MenuRow icon="Clock" label="Actividad" disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('activity'); }} />
+      <MenuDivider />
+      <MenuRow icon="LibraryBig" label="Catálogo" hint="⌘K" onPress={() => { setOverflow(false); openCatalog(); }} />
+      <MenuRow icon="FileInput" label="Importar colección" disabled={c.offline} onPress={() => { setOverflow(false); setImportOpen(true); }} />
+      {doc && <MenuRow icon="FileOutput" label="Exportar documento como colección" disabled={!c.catalog} onPress={() => { setOverflow(false); exportDocument(); }} />}
+      <MenuDivider />
+      <MenuRow icon="Settings" label="Ajustes del lienzo" disabled={!doc} onPress={() => { setOverflow(false); void c.select([]); setLinkId(null); setOverlay(null); setInspectorSection('document'); setInspectorKey(key => key + 1); setDocumentSettingsOpen(true); }} />
+      <MenuRow icon="BookOpen" label="Guía de Lienzo" onPress={() => { setOverflow(false); setGuideOpen(true); }} />
+  </>;
+  const catalog = <Catalog key={catalogKey} initialTab={catalogTab} controller={c} insert={insert} insertTemplate={insertTemplate} extras={[{ label: 'Grupo', icon: 'Group', onPress: createGroup }, { label: 'Multimedia por URL…', icon: 'Image', onPress: () => { setOverlay(null); setMediaError(''); setMediaOpen(true); } }, { label: 'Importar SVG…', icon: 'Upload', onPress: () => { setOverlay(null); setMode('canvas'); setSvgOpen(true); } }]} onImport={() => setImportOpen(true)} onExport={setExported} searchRef={searchRef} />;
   const inspector = doc ? <DocumentActions controller={c} section={inspectorSection} rects={rectsNow} release={release} /> : null;
   const selectionToolbar = !immersive && (c.selection.length || linkId || actionPopup?.kind === 'instruction') ? <SelectionActions controller={c} panelRoot={root} availableWidth={width} availableHeight={panelHeight} disabled={disabled} popup={actionPopup} onPopup={value => { setActionPopup(value); if (value) { setToolPopover(null); setOverlay(null); setOverflow(false); } }} linkId={linkId} onLink={selectLink} ask={focusComposer} add={() => { setActionPopup(null); openCatalog(); }} duplicate={duplicateSelection} remove={() => { if (linkId && !c.selection.length) void c.edit([{ type: 'link.delete', id: linkId }], 'Eliminar enlace').then(next => { if (next) { setLinkId(null); noticeUndo('Eliminado'); } }); else removeSelection(); }} groupSelection={groupSelection} connectSelection={connectSelection} release={release} template={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} exportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} rects={rectsNow} editText={editSelectedText} interact={() => canvas.current?.beginInteraction()} editLinkLabel={() => canvas.current?.editLinkLabel()} undoNotice={noticeUndo} /> : undefined;
   const toolIsland = <ToolIsland tool={tool} onToolChange={chooseTool} locked={toolLocked} onLockChange={setToolLocked} shape={toolStyle.shape} onOpenShapes={() => { setOverlay(null); setToolPopover('shapes'); }} onOpenLibrary={() => { setOverlay(null); setLibraryError(''); setToolPopover('library'); setMode('canvas'); }} onOpenPicker={() => openCatalog()} width={width} touch={u.compact} disabled={!doc || disabled} />;
@@ -534,13 +566,6 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     {u.compact && doc && !immersive && selectionToolbar}
     {u.compact && doc && !immersive && <ContextTray composerRef={composerRef} controller={c} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} />}
     <Modal title={overlay === 'catalog' ? 'Añadir un bloque' : 'Detalles'} open={!!overlay && !immersive} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>
-      {overlay === 'catalog' && <View style={{ padding: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <Button label="Nota" icon="StickyNote" small disabled={disabled || !c.catalog?.blockTypes.some(type => type.id === 'note')} onPress={() => { const type = c.catalog?.blockTypes.find(type => type.id === 'note'); if (type) insert(type); }} />
-        <Button label="Nodo" icon="Box" small disabled={disabled || !c.catalog?.blockTypes.some(type => type.id === 'node')} onPress={() => { const type = c.catalog?.blockTypes.find(type => type.id === 'node'); if (type) insert(type); }} />
-        <Button label="Grupo" icon="Group" small disabled={disabled} onPress={createGroup} />
-        <Button label="Multimedia por URL…" icon="Image" small disabled={disabled} onPress={() => { setOverlay(null); setMediaError(''); setMediaOpen(true); }} />
-        <Button label="Importar SVG…" icon="Upload" small disabled={disabled} onPress={() => { setOverlay(null); setMode('canvas'); setSvgOpen(true); }} />
-      </View>}
       {overlay === 'catalog' && width < 560 && <View style={{ padding: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Button label="Forma" icon="Shapes" disabled={disabled} onPress={() => { setOverlay(null); setToolsOpen(true); setToolPopover('shapes'); setMode('canvas'); }} /><Button label="Goma" icon="Eraser" disabled={disabled} onPress={() => { setOverlay(null); chooseTool('eraser'); }} /><Button label="Biblioteca" icon="Library" disabled={disabled} onPress={() => { setOverlay(null); setToolsOpen(true); setToolPopover('library'); setMode('canvas'); }} /></View>}
       <View style={{ minHeight: 320, maxHeight: Math.max(320, panelHeight - 120), flex: 1 }}>{overlay === 'catalog' ? catalog : inspector}</View>
     </Modal.Content></Modal>
@@ -571,28 +596,10 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       {c.documents.filter(d => d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy || sending} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
       {c.catalog?.packs.filter(p => ['frontend', 'learn'].includes(p.id)).flatMap(p => p.documents.map((d, i) => <View key={p.id + ':' + i} style={{ gap: 4 }}><Chip label="Ejemplo" tone="aviso" icon="FlaskConical" /><Button label={'Crear ' + d.title} variant="ghost" disabled={disabled} onPress={() => { void c.example(p.id, i).then(next => { if (next) setDocsOpen(false); }); }} /></View>))}
     </Modal.Content></Modal>
-    <Modal title="Más acciones" open={overflow} onOpenChange={setOverflow}><Modal.Content>
-      <Button label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} icon={mode === 'canvas' ? 'ListTree' : 'Frame'} variant="ghost" onPress={() => { setOverflow(false); setMode(mode === 'canvas' ? 'outline' : 'canvas'); }} />
-      <Button label="Renombrar lienzo" icon="Pencil" variant="ghost" disabled={!doc || disabled} onPress={() => { setOverflow(false); setRename(true); }} />
-      <Button label="Nuevo lienzo" icon="Plus" variant="ghost" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
-      <Button label="Herramientas" icon="PenTool" variant="ghost" disabled={!doc} onPress={() => { setOverflow(false); setMode('canvas'); setToolsOpen(true); }} />
-      <Button label="Importar SVG…" icon="Upload" variant="ghost" disabled={!doc || disabled} onPress={() => { setOverflow(false); setMode('canvas'); setSvgOpen(true); }} />
-      <Button label="Solo lienzo" icon="Maximize2" variant="ghost" disabled={!doc} onPress={() => { setOverflow(false); setOverlay(null); setImmersive(true); }} />
-      <Button label="Guía de Lienzo" icon="BookOpen" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); setGuideOpen(true); }} />
-      <Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />
-      {doc && <Button label="Historial" icon="History" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); inspectorOpen('history'); }} />}
-      <Button label="Deshacer" icon="Undo2" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />
-      <Button label="Rehacer" icon="Redo2" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />
-      <Button label="Documentos" icon="Frame" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); openDocuments(); }} />
-      <Button label="Catálogo" icon="LibraryBig" variant="ghost" style={{ justifyContent: 'flex-start' }} onPress={() => { setOverflow(false); openCatalog(); }} />
-      <Button label="Ajustes del lienzo" icon="Settings" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); void c.select([]); setLinkId(null); setOverlay(null); setInspectorSection('document'); setInspectorKey(key => key + 1); setDocumentSettingsOpen(true); }} />
-      <Button label="Indicaciones para el asistente" icon="Compass" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
-      <Button label="Asistente conectado" icon="Plug" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); setAgentsOpen(true); }} />
-      <Button label="Actividad" icon="Clock" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('activity'); }} />
-      {c.selection.length === 2 && <Button label="Conectar los dos seleccionados" icon="Spline" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled} onPress={() => { setOverflow(false); connectSelection(); }} />}{!!c.selection.length && <><Button label="Agrupar selección" icon="Group" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled} onPress={() => { setOverflow(false); groupSelection(); }} /><Button label="Duplicar selección" icon="CopyPlus" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={disabled} onPress={() => { setOverflow(false); duplicateSelection(); }} /><Button label="Eliminar selección" icon="Trash2" variant="danger" disabled={disabled} onPress={() => { setOverflow(false); removeSelection(); }} /></>}
-      {doc && <><Button label="Duplicar como documento propio" icon="CopyPlus" variant="ghost" disabled={disabled} onPress={() => { setOverflow(false); const content = documentContent(doc, true); content.title = content.title.slice(0, 300); content.selectedIds = []; void c.create(content); }} /><Button label="Exportar documento como colección" icon="FileOutput" variant="ghost" disabled={!c.catalog} onPress={() => { setOverflow(false); exportDocument(); }} /></>}
-      <Button label="Importar colección" icon="FileInput" variant="ghost" style={{ justifyContent: 'flex-start' }} disabled={c.offline} onPress={() => { setOverflow(false); setImportOpen(true); }} />
-    </Modal.Content></Modal>
+    {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
+    {overflow && !u.compact && <><Pressable accessibilityLabel="Cerrar menú" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
+      <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + 48, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
+    <Modal title="Menú" open={overflow && u.compact} onOpenChange={setOverflow}><Modal.Content><View>{menuRows}</View></Modal.Content></Modal>
 
     <Modal title={inspectorSection === 'history' ? 'Historial' : inspectorSection === 'activity' ? 'Actividad' : inspectorSection === 'communication' ? 'Instrucciones para el asistente' : 'Ajustes del lienzo'} open={documentSettingsOpen && !!doc} onOpenChange={setDocumentSettingsOpen}><Modal.Content>{documentSettingsOpen && doc && inspector}</Modal.Content></Modal>
     {settings.saveError && <View style={{ position: 'absolute', top: toolsTop + 64, left: 12, right: 12, padding: 8, backgroundColor: u.c.surface1 }}><Txt kind="small" muted>No se pudo recordar que ya viste la guía.</Txt><Button label="Reintentar" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}

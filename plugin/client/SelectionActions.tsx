@@ -56,7 +56,7 @@ export function SelectionActions({ controller: c, panelRoot, disabled, popup, on
   const layoutGroup = popup?.targetId === null ? undefined : group, layout = layoutGroup?.layout ?? (!layoutGroup ? doc.layout : undefined), layoutId = layoutGroup?.id ?? null;
   const layoutMode = containerMode(doc, layoutId, c.catalog);
   const saveLayout = (next: NonNullable<CanvasGroup['layout']>) => { try { void apply(layoutOperations(doc, layoutId, next, rects(), c.catalog), layoutGroup ? 'Cambiar disposición del grupo' : 'Cambiar disposición del lienzo'); } catch (error) { c.fail(error); } };
-  const resetUnavailable = u.layout.platform !== 'web' && !['controls', 'prediction-gate'].includes(type?.renderer ?? '');
+  const resetUnavailable = u.layout.platform !== 'web' && type?.renderer !== 'controls';
   const reset = async () => {
     if (!block || disabled || resetUnavailable) return;
     const documentId = doc.id, blockId = block.id, root = panelRoot.current; await c.settle();

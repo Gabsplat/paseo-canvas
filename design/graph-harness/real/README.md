@@ -18,7 +18,7 @@ up uses DOM stand-in cards; its results should be distinguished from these resul
 
 ### Learning interaction QA
 
-`?lesson=controls|prediction|figure|flow|shader|annotations` adds authored local
+`?lesson=controls|figure|flow|shader|annotations` adds authored local
 examples for the learning renderers. `runtimeLatency=2000` delays the stand-in
 acknowledgement so optimistic scope updates can be checked separately. The harness
 uses the production `LearningRuntimeStore`, `useLearning`, registered dispatcher,

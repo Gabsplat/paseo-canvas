@@ -135,7 +135,7 @@ const settled = (eventId: string, kind = 'slider', target = 'b', value = 1) => a
 test('settled events coalesce by block/kind beyond 100 drags with compact inherited feedback context', async t => {
   const { service } = await setup(t); await withScopes(service);
   for (let i = 0; i < 105; i++) await service.action(settled(`evt${i}`, 'slider', 'b', i));
-  await service.action(settled('other-kind', 'prediction')); await service.action(settled('other-block', 'slider', 'c'));
+  await service.action(settled('other-kind', 'transport')); await service.action(settled('other-block', 'slider', 'c'));
   const events = (await service.events(reference)).events; assert.equal(events.length, 3); assert.equal(events[0].action.payload.value, 104);
   assert.equal(events[0].context.blocks.length, 1); assert.equal(events[0].context.groups.length, 2); assert.deepEqual(events[0].context.links, []);
   assert.ok(feedbackPrompt(events).includes('Explain plainly.')); assert.equal((await service.read(reference)).document.revision, 1);

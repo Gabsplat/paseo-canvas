@@ -7,7 +7,6 @@ export function learningFixture(base: CanvasDocument, lesson: string): CanvasDoc
     id, typeId, title, position: { x, y }, size: { width, height },
     data: { ...builtinTypes.find(type => type.id === typeId)?.defaults, ...data },
   });
-  const result = block('resultado', 'note', 'Resultado de ejemplo', 500, 0, { text: 'SOLUCIÓN DE EJEMPLO: aumenta.' });
   const sourceUrl = 'http://127.0.0.1:8765/image-fixture.svg';
   const passageText = 'La amplitud cambia la altura de la onda.';
   const annotations = (image: boolean) => ({
@@ -23,7 +22,6 @@ export function learningFixture(base: CanvasDocument, lesson: string): CanvasDoc
   const cases: Record<string, CanvasBlock[]> = {
     controls: [block('controls', 'controls', 'Controles de ejemplo', 0, 0, { variables: ['amplitude'] }, 320, 240),
       block('plot', 'function-plot', 'Gráfica de ejemplo', 370, 0, { expressions: [{ expression: 'amplitude*sin(x)', label: 'Onda de ejemplo' }], yRange: [-3, 3] })],
-    prediction: [block('gate', 'prediction-gate', 'Apuesta de ejemplo', 0, 0), result],
     figure: [block('figure', 'step-figure', 'Figura de ejemplo', 0, 0, { playback: { intervalMs: 700 } })],
     flow: [block('flow', 'animated-flow', 'Flujo de ejemplo', 0, 0, { duration: 4000, travelMs: 2000,
       events: [{ t: 0, from: 'sender', to: 'receiver', linkId: 'ruta', payload: 'Ejemplo', kind: 'message' }] }),

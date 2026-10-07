@@ -4,22 +4,31 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { URL } from 'node:url';
 import ts from 'typescript';
+import { z } from 'zod';
 import { builtinTypes } from '../plugin/shared/builtins';
 import { getRendererSpec } from '../plugin/shared/renderers';
 import { canvasPresentation } from '../plugin/client/presentation';
 import { LearningRuntimeStore } from '../plugin/client/learning-state';
-import { predictionGateDataSchema, createPredictionAttempt, editPrediction, commitPrediction, revealPrediction } from '../plugin/shared/renderers/prediction-gate';
+import { controlsSpec } from '../plugin/shared/renderers/controls';
+import type { RendererSpec } from '../plugin/shared/renderers';
 import type { CanvasDocument, CanvasCatalog } from '../plugin/shared/model';
 import type { RuntimeState } from '../plugin/shared/learning';
 
 type Element = { type: unknown; props: Record<string, any> };
+// No shipped renderer hides other blocks, so the dispatcher's protection is exercised
+// with a test-only renderer that hides data.target until its runtime says revealed.
+const gateSpec: RendererSpec = { id: 'test-gate', dataSchema: z.object({ target: z.string() }).strict(), interactive: true, guidance: '',
+  blockType: { ...controlsSpec.blockType, id: 'gate', renderer: 'test-gate' },
+  hiddenTargets: (data, state) => state.revealed ? [] : [(data as { target: string }).target] };
+const lookup = (id?: string) => id === 'test-gate' ? gateSpec : getRendererSpec(id);
+const Probe = 'Probe';
 function nodes(tree: any): Element[] {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return tree?.props ? [tree, ...nodes(tree.props.children)] : [];
 }
 
 // Preserve hooks across renders and deliberately defer effects. A protected result
-// must never appear in the first committed tree while an effect is still pending.
+// must never reach the first committed tree while an effect is still pending.
 function host(flush: () => Promise<void> = async () => {}) {
   let slots: any[] = [], cursor = 0;
   const react = {
@@ -34,11 +43,9 @@ function host(flush: () => Promise<void> = async () => {}) {
   const controller: any = { current: { current: null } };
   const modules: Record<string, any> = {
     react, 'react-native': { View: 'View' },
-    '../../shared/renderers': { getRendererSpec },
-    '../../shared/renderers/prediction-gate': require('../plugin/shared/renderers/prediction-gate'),
-    '../ui': { useUI: () => ui, Txt: 'Txt', Button: 'Button', Chip: 'Chip', OptionRow: 'OptionRow' },
-    '../Surfaces': { CanvasSurface: 'CanvasSurface', NativeLearningFallback: 'NativeLearningFallback' },
-    '../web': { WebRange: 'WebRange' },
+    '../../shared/renderers': { getRendererSpec: lookup },
+    '../ui': { useUI: () => ui, Txt: 'Txt' },
+    './index': { getClientRenderer: () => ({ Component: Probe }) },
     '../HiddenResult': { HiddenResult: 'HiddenResult' },
     '../usePresentation': { usePresentation: () => presentation },
     '../useLearning': { useLearning: (block: { id: string }) => ({ runtime: { state: runtime.blocks[block.id] ?? {}, set: (...args: unknown[]) => writes.push(args), flush, settle: async (...args: unknown[]) => { events.push(args); } }, scope: { set: (...args: unknown[]) => writes.push(args) } }) },
@@ -50,51 +57,43 @@ function host(flush: () => Promise<void> = async () => {}) {
     runInNewContext(code, { exports, require: (id: string) => { assert.ok(id in modules, `Unhandled module ${id}`); return modules[id]; } });
     return exports;
   }
-  const { PredictionGate } = load('prediction-gate');
-  modules['./index'] = { getClientRenderer: () => ({ Component: PredictionGate }) };
   const { RegisteredRenderer } = load('RegisteredRenderer');
-  const dispatcher: any[] = []; let previousKey: unknown, child: any[] = [];
+  const dispatcher: any[] = [];
   return {
     writes, events,
     render(document: CanvasDocument, catalog: CanvasCatalog, nextRuntime: RuntimeState, blockId = 'gate') {
-      runtime = nextRuntime; presentation = canvasPresentation(document, catalog, runtime);
+      runtime = nextRuntime; presentation = canvasPresentation(document, catalog, runtime, lookup);
       controller.view = { document }; controller.current.current = controller.view; controller.catalog = catalog;
       slots = dispatcher; cursor = 0;
-      const tree = RegisteredRenderer({ block: document.blocks.find(b => b.id === blockId), id: 'prediction-gate', controller, readOnly: false, send: async () => {} });
-      const element = nodes(tree).find(n => n.type === PredictionGate);
-      if (!element) return { tree, element };
-      if (element.props.key !== previousKey) child = [];
-      previousKey = element.props.key; slots = child; cursor = 0;
-      return { tree: PredictionGate(element.props), element };
+      const tree = RegisteredRenderer({ block: document.blocks.find(b => b.id === blockId), id: 'test-gate', controller, readOnly: false, send: async () => {} });
+      return { tree, element: nodes(tree).find(n => n.type === Probe) };
     },
   };
 }
 function fixture() {
-  const data = predictionGateDataSchema.parse({ question: '¿Qué valor?', mode: 'numeric', min: 0, max: 10, targetBlockId: 'result', outcome: { value: 7, description: 'SECRET OUTCOME' } });
   const document: CanvasDocument = { id: 'one', workspaceId: 'w', title: 'Example', description: '', example: true, revision: 0, createdAt: '', updatedAt: '', selectedIds: [], communication: { intent: '', audience: '', instructions: '' }, groups: [],
-    blocks: [{ id: 'gate', typeId: 'prediction-gate', title: 'Gate', data }, { id: 'result', typeId: 'node', title: 'SECRET TITLE', data: { summary: 'SECRET DATA' } }],
+    blocks: [{ id: 'gate', typeId: 'gate', title: 'Gate', data: { target: 'result' } }, { id: 'result', typeId: 'node', title: 'SECRET TITLE', data: { summary: 'SECRET DATA' } }],
     links: [{ id: 'link', from: 'gate', to: 'result', label: 'SECRET LINK', kind: 'flow' }],
   };
-  const draft = createPredictionAttempt(data, 'evt_pg_review');
-  const revealed = revealPrediction(data, commitPrediction(data, editPrediction(data, draft, { mode: 'numeric', value: 3 })), document, 'gate');
-  const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, templates: [], packs: [] };
-  return { document, catalog, runtime: { blocks: { gate: revealed }, scopes: {} } satisfies RuntimeState };
+  const catalog: CanvasCatalog = { revision: 0, blockTypes: [...builtinTypes, gateSpec.blockType], templates: [], packs: [] };
+  return { document, catalog, runtime: { blocks: { gate: { revealed: true } }, scopes: {} } satisfies RuntimeState };
 }
 
-test('runtime reset conceals a previously revealed gate before effects run', () => {
+test('runtime reset remounts an open gate with the masked document before effects run', () => {
   const f = fixture(), h = host();
-  assert.match(JSON.stringify(h.render(f.document, f.catalog, f.runtime).tree), /SECRET OUTCOME/);
-  const reset = h.render(f.document, f.catalog, { blocks: {}, scopes: {} });
-  assert.doesNotMatch(JSON.stringify(reset.tree), /SECRET OUTCOME/);
-  assert.doesNotMatch(JSON.stringify(reset.element?.props.document), /SECRET TITLE|SECRET DATA|SECRET LINK/);
+  const open = h.render(f.document, f.catalog, f.runtime).element!;
+  assert.match(JSON.stringify(open.props.document), /SECRET TITLE/);
+  const reset = h.render(f.document, f.catalog, { blocks: {}, scopes: {} }).element!;
+  assert.notEqual(reset.props.key, open.props.key);
+  assert.doesNotMatch(JSON.stringify(reset.props.document), /SECRET TITLE|SECRET DATA|SECRET LINK/);
 });
 
-test('same block IDs in another document or workspace cannot inherit a revealed local attempt', () => {
+test('same block IDs in another document or workspace cannot inherit local renderer state', () => {
   for (const change of [{ id: 'two' }, { workspaceId: 'another' }]) {
     const f = fixture(), h = host();
-    h.render(f.document, f.catalog, f.runtime);
-    const switched = h.render({ ...f.document, ...change }, f.catalog, { blocks: {}, scopes: {} });
-    assert.doesNotMatch(JSON.stringify(switched.tree), /SECRET OUTCOME/);
+    const first = h.render(f.document, f.catalog, f.runtime).element!;
+    const switched = h.render({ ...f.document, ...change }, f.catalog, f.runtime).element!;
+    assert.notEqual(switched.props.key, first.props.key);
   }
 });
 
@@ -110,7 +109,7 @@ test('callbacks pending during reset or document switch cannot restore old runti
     let release!: () => void;
     const f = fixture(), h = host(() => new Promise<void>(resolve => { release = resolve; }));
     const old = h.render(f.document, f.catalog, f.runtime).element!;
-    const pending = old.props.runtime.settle('prediction.old', {}, 'Comparar');
+    const pending = old.props.runtime.settle('gate.old', {}, 'Comparar');
     h.render(switched ? { ...f.document, id: 'two' } : f.document, f.catalog, { blocks: {}, scopes: {} });
     old.props.runtime.set(f.runtime.blocks.gate);
     old.props.scope.set('x', 7);
@@ -144,7 +143,7 @@ test('late block and scope acknowledgements stay in their original document', as
   responses[0]({ runtimeVersion: 99, runtime: { ...f.runtime, scopes: { '$document': { x: 7 } } } });
   await oldFlush;
   assert.deepEqual(local.getSnapshot(), { blocks: {}, scopes: { '$document': { x: 2 } } });
-  assert.ok(canvasPresentation(next, f.catalog, local.getSnapshot()).hiddenBy.has('result'));
+  assert.ok(canvasPresentation(next, f.catalog, local.getSnapshot(), lookup).hiddenBy.has('result'));
   responses[1]({ runtimeVersion: 1, runtime: { blocks: {}, scopes: { '$document': { x: 2 } } } });
   await nextFlush;
   assert.deepEqual(local.getSnapshot(), { blocks: {}, scopes: { '$document': { x: 2 } } });

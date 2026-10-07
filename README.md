@@ -19,7 +19,7 @@ También se puede pegar `Gabsplat/paseo-canvas:plugin` en **Settings → Plugins
 Los plugins de Paseo son código de confianza sin sandbox: instálalo solo si confías en este repositorio.
 
 La rama `aprendizaje` incorpora arrastre libre, resize guardado, medios interactivos,
-siete bloques de aprendizaje y una pizarra con texto, formas, trazos anclados y SVG.
+seis bloques de aprendizaje y una pizarra con texto, formas, trazos anclados y SVG.
 Los pasos para probarla y el alcance de las comprobaciones están en
 [`docs/probar-aprendizaje.md`](docs/probar-aprendizaje.md).
 

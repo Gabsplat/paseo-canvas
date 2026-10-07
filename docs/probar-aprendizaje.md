@@ -1,7 +1,7 @@
 # Probar aprendizaje
 
 La rama `aprendizaje` incluye el arrastre libre, resize guardado, onboarding, medios
-interactivos y la pizarra con herramientas flotantes. También incluye Apuesta, Gráfica,
+interactivos y la pizarra con herramientas flotantes. También incluye Gráfica,
 Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto anotado, además del
 Secuenciador y las anotaciones con Trazos. Es una rama de
 desarrollo para probar el progreso.
@@ -70,13 +70,12 @@ de herramientas son V para seleccionar, H para mano, T para texto, R para forma,
 lápiz y E para goma. Los controles enfocados conservan sus teclas. La ayuda del onboarding
 reúne los controles de cámara, selección, enlaces, medios y posiciones automáticas.
 
-Los siete bloques nuevos están en el catálogo. Para armar un ejemplo con variables,
+Los seis bloques nuevos están en el catálogo. Para armar un ejemplo con variables,
 enlaces y resultados referenciados, crea un agente nuevo después de cargar esta versión
 y pídele:
 
 > Crea un lienzo de ejemplo de aprendizaje. Consulta canvas_catalog y arma una Gráfica
-> con una variable y un bloque Controles para moverla. Agrega una Apuesta que oculte el
-> resultado hasta que confirme mi respuesta. Incluye Figura por pasos, un Flujo animado
+> con una variable y un bloque Controles para moverla. Incluye Figura por pasos, un Flujo animado
 > sobre enlaces reales, un Shader GLSL sencillo e Imagen/texto anotado con texto de
 > ejemplo. Añade un Secuenciador en La menor con seis filas y ocho pasos para experimentar
 > con notas y tempo. Etiqueta el documento como ejemplo y crea todo con transacciones confirmadas.
@@ -94,7 +93,7 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-El conjunto integrado pasa typecheck y 302 pruebas headless. Cubren persistencia,
+El conjunto integrado pasa typecheck y 285 pruebas headless. Cubren persistencia,
 conflictos, packs, runtime, protección de resultados y validación de los cuatro tipos de
 pizarra. Pasan 24 casos de navegador con el Panel, useCanvas, reducer y esquemas RPC reales
 bajo RN-web en omabox aislado. El host y el transporte son sustitutos. Se probaron texto,
@@ -102,7 +101,7 @@ formas, resize, lápiz/goma, SVG, iframes, compacto claro/oscuro y arrastre de 1
 [Informe de pizarra y capturas](../design/qa-whiteboard-2026-10-06/report.md).
 
 Los bloques de aprendizaje conservan la QA anterior de siete escenarios RN-web, incluidos
-controles compartidos, reinicio de Apuesta, enlaces en movimiento y hotspots. Shader se
+controles compartidos, enlaces en movimiento y hotspots. Shader se
 comprobó con WebGL real del navegador.
 [Informe de aprendizaje y capturas](../design/qa-learning-2026-10-06/report.md).
 

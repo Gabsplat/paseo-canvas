@@ -785,7 +785,6 @@ Existing actions use `agentAction`; learning summaries use `runtime.settle` from
 | Form "Enviar" | `block.submit` | `[blockId]` | `{ values }` | `immediate` |
 | Diagram "Preguntar por este paso" | `diagram.step` | `[blockId]` | `{ nodeId, label }` | `immediate` |
 | Quiz "Ver pista" | `block.hint` | `[blockId]` | `{}` | `batched` |
-| Prediction gate completed reveal (§18.6) | renderer-defined settled kind | `[blockId]` | prediction and outcome summary | `batched`, `settled: true` |
 | Learning block "Pedir arreglo" (§18.10) | `block.error` | `[blockId]` | `{ message }` | `immediate` |
 
 Not sent: moving, editing, checklist toggles, collapsing, selecting, per-frame slider updates. Learning renderers emit only the settled summaries described in §18.2.
@@ -988,7 +987,7 @@ unless the block explicitly represents the shared controls of that scope.
 Renderers update their own stage and sibling scope subscribers on every pointer/input frame.
 Transport may debounce; visible feedback must not wait for pointer release or a server reply.
 The assistant receives only settled events after the runtime flush succeeds. Summaries include
-final value and explored range, or committed prediction versus outcome. Never send animation
+final value and explored range. Never send animation
 frames, hover coordinates, pointer moves, audio ticks or intermediate slider values. Coalescing
 must preserve the range explored, and must not replace a batch already being delivered.
 
@@ -1027,25 +1026,9 @@ renderer file, one client renderer file and its tests; the coordinator adds regi
 any required core integration after review. No engineer modifies another renderer or the core.
 Use only web/desktop interactive adapters, plus an honest static native fallback.
 
-The eight renderer briefs below are future work. Their names do not imply that a registered
+The seven renderer briefs below are future work. Their names do not imply that a registered
 renderer or persisted data schema already exists. The implementation must publish schemas before
 examples claim to use them.
-
-### 18.6 Prediction gate, "Apuesta"
-
-A gate precedes any result block or wraps its stage. Its question is the prediction prompt.
-Before commitment, hide the result and its value labels in the learner view. Show a violet dashed
-frame, Lock icon, one input and the action "Guardar mi apuesta". A choice gate offers a few options;
-a numeric gate uses bounded estimate and unit; a curve gate offers a drawing area with labelled axes.
-"Reiniciar" remains visible. Do not blur the outcome underneath, as that can leak the answer.
-
-After commitment, freeze the prediction and offer "Ver resultado". Reveal then compares "Mi apuesta"
-with "Resultado" using a dashed prediction curve/marker and a solid outcome. A text description
-explains the difference without grading by colour alone. Emit one settled prediction/outcome event
-per attempt after the reveal. A retry creates a fresh attempt, not a second event for the same one.
-The gate is pedagogical hiding, not a security boundary; authored specs can contain the outcome.
-Target references must resolve to real blocks. Missing or deleted targets show a clear error and
-never pretend to have revealed a result. Any visibility integration belongs to the coordinator.
 
 ### 18.7 Function plot
 
@@ -1150,7 +1133,7 @@ IDs, revision numbers or schema names. Technical documentation may use API names
 | Connection | Etiqueta; Tipo; Color; Flujo; Depende; Referencia; Invertir; Conectar con |
 | Assistant | Asistente; Sin asistente. Se guarda en cola.; Preguntar sobre la selección |
 | Collections | Colecciones; Importar colección; Exportar; Quitar; Copia portable |
-| Learning | Mi apuesta; Guardar mi apuesta; Ver resultado; Resultado; Pedir una pista |
+| Learning | Pedir una pista |
 | Playback | Paso {n} de {total}; Reproducir; Pausar; Reiniciar; Activar sonido |
 | Persistence | Guardando; No se guardó; Reintentar; Reaplicar el cambio; Descartar |
 | Delivery | Enviando; En cola; Enviado; Recibido por el asistente; No se envió |
@@ -1342,3 +1325,22 @@ and `dense.cjs`; captures in `design/qa-shapes-legibility-2026-10-06/`. Not veri
   node card is 304 wide and shows up to 6 summary lines; up to 9, 256 wide and 4 lines; beyond that the
   compact card (224, 2 lines). Counted per container, so a crowded area does not shrink a quiet one. A card
   with a stored size shows as much summary as fits. Verified with `design/whiteboard-harness/cards.cjs`.
+
+## 22. Clean block chrome, menu and picker (v9)
+
+- **No obligatory labels.** A titled block shows no type eyebrow; its content says what it is. Only an
+  untitled block keeps icon + type name, because nothing else names it. A node shows its eyebrow row only
+  when `kind`, `status` or an instruction exists; `kind` no longer falls back to "Nodo". Qualifiers that
+  repeat the obvious (`text` as a code language, "Web") are dropped; a meaningful one sits right of the title.
+- **Detail popover.** The selected card rises above its neighbours (z 3) and its detail note is an opaque
+  popover with the `popover` elevation, so it never shows through other cards.
+- **Menu.** "Más acciones" opens a 288 wide dropdown under the title island on wide panels (a sheet on
+  compact). Rows are 34 high (44 compact), icon 16 + name on one left edge, shortcut right-aligned, groups
+  separated by 1 px dividers without headings: document · history · selection (only with a selection) ·
+  view · assistant · catalog · settings. Escape or a click outside closes it.
+- **Add a block.** Search, then sections "Básicos", "Interactivos", "Pizarra" as a two-column list of
+  icon 28 + name rows (one column on compact). Descriptions are not in the rows: the hovered block's
+  description shows in a fixed footer. Group, media by URL and SVG import are rows of "Básicos".
+
+Verified in RN-web (isolated omabox): `design/whiteboard-harness/chrome.cjs`; captures `chrome-*.png` in
+`design/qa-shapes-legibility-2026-10-06/`. Not verified in installed Paseo or native.

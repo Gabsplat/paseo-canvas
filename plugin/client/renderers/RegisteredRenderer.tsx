@@ -43,7 +43,7 @@ export function RegisteredRenderer({ block, id, controller, readOnly, send }: {
     set: (...args: Parameters<typeof runtime.set>) => { if (active()) runtime.set(...args); },
     async settle(...args: Parameters<typeof runtime.settle>) {
       await runtime.flush();
-      if (!active()) throw new Error('El documento o la apuesta cambió antes de completar la interacción.');
+      if (!active()) throw new Error('El documento o el bloque cambió antes de completar la interacción.');
       return runtime.settle(...args);
     },
   };

@@ -56,18 +56,18 @@ valid. Diagram uses the registry; the remaining legacy renderers still work.
 Creation merges type defaults with supplied data. Updates use JSON merge patch, with null
 removing a key. For a schema with variants, a complete valid data object replaces the
 defaults or previous data when the merged object would be invalid. This allows changing
-from choice to numeric without retaining choice-only properties. Incomplete invalid data
+variant without retaining properties of the previous one. Incomplete invalid data
 still rejects the transaction; ordinary partial updates keep their merge semantics.
 
-`hiddenTargets` is an optional pure presentation hook for a prediction gate. Return
-existing target block IDs while their result must stay hidden; validate raw runtime
-against the current data before accepting a revealed state. The coordinator connects
-the hook to canvas, list and details. It does not change the stored document, export,
-MCP access or permissions. Several gates on one target require all gates to open.
-While a gate is closed, its target card is replaced before renderer dispatch, including
+`hiddenTargets` is an optional pure presentation hook; no built-in renderer declares
+it. Return existing target block IDs while those blocks must stay hidden; validate raw
+runtime against the current data before accepting an open state. The hook is connected
+to canvas, list and details. It does not change the stored document, export, MCP access
+or permissions. Several hiding blocks on one target require all of them to open.
+While one is closed, its target card is replaced before renderer dispatch, including
 compact graph nodes and native/list views. The presentation masks target titles, data,
-instructions and adjacent link labels. Details shows the gate controls instead of raw
-outcome fields, and replaces a hidden target's editor with a link back to its gate.
+instructions and adjacent link labels. Details shows the hiding block's controls instead
+of its raw data fields, and replaces a hidden target's editor with a link back to it.
 The authored document remains available to MCP and exports; this is a learning sequence,
 not a security boundary.
 
@@ -110,15 +110,13 @@ in `lienzo-interactive-renderer-<blockId>` to isolate gestures. Honor `readOnly`
 control and give nested interactive elements the same `lienzo-interactive-` ID prefix.
 Do not mutate any prop or cached snapshot.
 
-Flow/gate renderers can read `document.blocks`, `document.groups` and `document.links`.
-Store node/link/result references as IDs in parsed declarative data; handle missing IDs
+Renderers can read `document.blocks`, `document.groups` and `document.links`.
+Store node/link references as IDs in parsed declarative data; handle missing IDs
 with useful Spanish text. A flow can resolve endpoints from this readonly document.
-A gate can resolve a result block by ID and render a local reveal, or set a declared
-numeric scope flag so a cooperating result renderer also updates. There is no prop for
-arbitrary block mutation or changing the outer link layer. Persist an explicit step in
-own runtime; report a prediction/outcome with `runtime.settle`. Use `send` to ask the
-connected agent for a revisioned document change. Referencing a result is not proof that
-it has been generated or that an agent finished work.
+There is no prop for arbitrary block mutation or changing the outer link layer. Persist
+an explicit step in own runtime; report a settled result with `runtime.settle`. Use
+`send` to ask the connected agent for a revisioned document change. Referencing a block
+is not proof that it has been generated or that an agent finished work.
 
 ## Runtime and scope
 
@@ -141,7 +139,7 @@ type RendererScope = {
 immediately, debounce network writes for 80 ms, and send immediately with `settled:true`.
 `flush()` waits for network acknowledgement, not disk durability. `runtime.settle` first
 flushes runtime writes, then sends one batched settled event for this block. Include final
-value, visited range, or prediction/outcome in the payload, up to 4 KiB. Use a stable kind
+value or visited range in the payload, up to 4 KiB. Use a stable kind
 per interaction, such as `controls.amplitude`, so a newer pending event replaces the older
 one for the same block/kind. Events already prepared for delivery remain immutable.
 Settled context retains the target and ancestor groups, rather than the entire document.
@@ -152,8 +150,8 @@ The optional `eventId` lets an attempt retry the same event after an ambiguous n
 response. Keep kind, payload, label and target identical on every retry: the server
 deduplicates a retained event by ID and rejects reuse with a different action. This
 is bounded by event retention (pending events and the most recent 100 sent/acknowledged
-events); it is not a permanent delivery ledger. Use a distinct kind per prediction
-attempt to prevent pending coalescing from replacing an earlier attempt.
+events); it is not a permanent delivery ledger. Use a distinct kind per attempt to
+prevent pending coalescing from replacing an earlier attempt.
 
 Declare `variables` on the document or a group through revisioned `document.update` or
 `group.update`. Each declaration is `{name, value, min, max, label?, step?, unit?}`. Names

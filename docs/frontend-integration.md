@@ -118,7 +118,7 @@ before saving, JSON validates on blur, failed edits retain their draft, and
 missing collections show the unknown-type message. Instruction edits preserve
 intent and audience; Vaciar clears all three local fields. Ancestor instruction
 rows reopen this same form at the group or document level. Hidden results and
-active prediction gates retain their presentation restrictions.
+the blocks that hide them retain their presentation restrictions.
 
 Layout changes to Libre freeze drawn child positions in the same transaction.
 Leaving a group preserves world positions. Connection controls edit labels,
@@ -134,7 +134,7 @@ then activates the renderer's existing handler. It does not add a generic reset
 transaction or event. This preserves renderer-local cleanup, pending edits,
 audio shutdown and its own event payload. Missing, disabled or stale targets
 produce a visible failure. Native supports an explicit runtime fallback for
-controls and prediction gates; other learning resets remain disabled there.
+controls; other learning resets remain disabled there.
 
 Enter/F2 opens scoped ordinary text fields or delegates whiteboard editing to
 Canvas. Interactuar remains reachable through Más where content interaction is

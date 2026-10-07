@@ -10,7 +10,10 @@ import type { CanvasController } from '../plugin/client/useCanvas';
 import type { RuntimeState } from '../plugin/shared/learning';
 import type { LinkDraw, LinkScene } from '../plugin/client/web';
 import type { LinkMotionSample } from '../plugin/client/renderers/types';
-import { predictionGateDataSchema, createPredictionAttempt, editPrediction, commitPrediction, revealPrediction } from '../plugin/shared/renderers/prediction-gate';
+import { z } from 'zod';
+import { rendererSpecs, getRendererSpec, type RendererSpec } from '../plugin/shared/renderers';
+import { controlsSpec } from '../plugin/shared/renderers/controls';
+import type { CanvasCatalog, CanvasDocument } from '../plugin/shared/model';
 import { LearningRuntimeStore } from '../plugin/client/learning-state';
 import type { Element } from './fixtures/react-headless';
 
@@ -28,19 +31,29 @@ const { usePresentation } = require('../plugin/client/usePresentation');
 const { RegisteredRenderer } = require('../plugin/client/renderers/RegisteredRenderer');
 const { HiddenResult } = require('../plugin/client/HiddenResult');
 const reference = { documentId: 'd', workspaceId };
+// No shipped renderer hides other blocks. The real dispatcher and usePresentation read the
+// shared registry, so a test-only renderer that hides data.target until revealed is added to it.
+const gateSpec: RendererSpec = { id: 'test-gate', dataSchema: z.object({ target: z.string() }).strict(), interactive: true, guidance: '',
+  blockType: { ...controlsSpec.blockType, id: 'gate', renderer: 'test-gate' },
+  hiddenTargets: (data, state) => state.revealed ? [] : [(data as { target: string }).target] };
+(rendererSpecs as RendererSpec[]).push(gateSpec);
+assert.equal(getRendererSpec('test-gate'), gateSpec);
+function gated<View extends { document: CanvasDocument }>(view: View, catalog: CanvasCatalog, target = 'c') {
+  return { view: { ...view, document: { ...view.document, blocks: [...view.document.blocks, { id: 'gate', typeId: 'gate', title: 'Gate', data: { target } }] } },
+    catalog: { ...catalog, blockTypes: [...catalog.blockTypes, gateSpec.blockType] } };
+}
 const flow = { question: '¿Cuándo llega?', events: [{ t: 100, from: 'b', to: 'c', kind: 'signal', payload: 2 }], duration: 2000, travelMs: 1000, links: { bc: { sign: -1, delay: 50 } } };
 
 test('real dispatcher passes a protected document to neighboring renderers and cannot mount a gated renderer directly', async t => {
   const { service } = await setup(t);
-  const view = await service.mutate(mutation(0, [
+  const { view, catalog } = gated(await service.mutate(mutation(0, [
     { type: 'block.update', id: 'c', patch: { title: 'SECRET RESULT', data: { text: 'SECRET DATA' } } },
     { type: 'link.create', link: { id: 'bc', from: 'b', to: 'c', kind: 'flow' } },
     { type: 'block.create', block: { id: 'flow', typeId: 'animated-flow', title: 'Flujo', data: flow } },
-    { type: 'block.create', block: { id: 'gate', typeId: 'prediction-gate', title: 'Apuesta', data: { question: 'Pregunta', targetBlockId: 'c' } } },
-  ]));
+  ])), await service.catalog());
   const learning = new LearningRuntimeStore(async () => { throw new Error('Read only probe'); }, () => {}); t.after(() => learning.reset());
   learning.sync(view.document, 0, { blocks: { flow: { playhead: 625 } }, scopes: {} });
-  const controller = { view, current: { current: view }, catalog: await service.catalog(), learning } as unknown as CanvasController;
+  const controller = { view, current: { current: view }, catalog, learning } as unknown as CanvasController;
   const block = view.document.blocks.find(b => b.id === 'flow')!;
   const wrapper = RegisteredRenderer({ block, id: 'animated-flow', controller, readOnly: false, send: async () => {} }) as Element;
   const child = wrapper.props.children as Element;
@@ -59,13 +72,13 @@ test('registered bridge reads optimistic runtime, filters gated endpoints/source
   const view = await service.mutate(mutation(0, [
     { type: 'link.create', link: { id: 'bc', from: 'b', to: 'c', kind: 'flow' } },
     { type: 'block.create', block: { id: 'flow', typeId: 'animated-flow', title: 'Flujo', data: flow } },
-    { type: 'block.create', block: { id: 'gate', typeId: 'prediction-gate', title: 'Apuesta', data: { question: '¿Qué llegará?', targetBlockId: 'c' } } },
   ]));
   const catalog = await service.catalog(), original = JSON.stringify(view.document), epoch = 1_800_000_000_000;
   const sample = prepareLinkMotion(view.document, catalog, getClientRenderer);
   const runtime: RuntimeState = { blocks: { flow: { playhead: 0, playing: true, anchorMs: epoch, visited: [0, 0] } }, scopes: {} };
   assert.equal(sample(runtime, epoch, new Map()).playing, true, 'future events still schedule a frame');
-  const hidden = canvasPresentation(view.document, catalog, runtime).hiddenBy;
+  const withGate = gated(view, catalog), hidden = canvasPresentation(withGate.view.document, withGate.catalog, runtime).hiddenBy;
+  assert.deepEqual([...hidden.keys()], ['c']);
   assert.deepEqual(sample(runtime, epoch + 625, hidden).tokens, []);
   const visible = sample(runtime, epoch + 625, new Map());
   assert.deepEqual(visible.tokens, [{ linkId: 'bc', progress: .5, kind: 'signal', label: '2', sign: -1, delay: 50 }]);
@@ -91,22 +104,19 @@ test('registered bridge reads optimistic runtime, filters gated endpoints/source
 
 test('scope frames reuse masked document identity; opening a gate invalidates it', async t => {
   const { service } = await setup(t);
-  const view = await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'gate', typeId: 'prediction-gate', title: 'Apuesta', data: { question: 'Pregunta', targetBlockId: 'c' } } }]));
+  const { view, catalog } = gated(await service.read(reference), await service.catalog());
   let runtime: RuntimeState = { blocks: {}, scopes: {} };
-  const controller = { view, catalog: await service.catalog(), learning: { subscribe() { return () => {}; }, getSnapshot: () => runtime } } as unknown as CanvasController;
+  const controller = { view, catalog, learning: { subscribe() { return () => {}; }, getSnapshot: () => runtime } } as unknown as CanvasController;
   const first = usePresentation(controller);
   for (const value of [2, -3, .5, 3]) {
     runtime = { blocks: {}, scopes: { '$document': { a: value } } };
     assert.equal(usePresentation(controller).document, first.document);
   }
-  const gate = view.document.blocks.find(b => b.id === 'gate')!, data = predictionGateDataSchema.parse(gate.data);
-  if (data.mode !== 'choice') throw new Error('Expected choice fixture');
-  const committed = commitPrediction(data, editPrediction(data, createPredictionAttempt(data, 'evt_pg_motion'), { mode: 'choice', choiceId: data.options[0].id }));
-  runtime = { blocks: { gate: revealPrediction(data, committed, view.document, 'gate') }, scopes: {} };
+  runtime = { blocks: { gate: { revealed: true } }, scopes: {} };
   assert.equal(usePresentation(controller).document, view.document);
   runtime = { blocks: {}, scopes: {} };
   // A different authored target must invalidate the projection even at the same revision.
-  controller.view = { ...view, document: { ...view.document, blocks: view.document.blocks.map(b => b.id === 'gate' ? { ...b, data: { ...b.data, targetBlockId: 'b' } } : b) } };
+  controller.view = { ...view, document: { ...view.document, blocks: view.document.blocks.map(b => b.id === 'gate' ? { ...b, data: { ...b.data, target: 'b' } } : b) } };
   assert.notEqual(usePresentation(controller).document, first.document);
   assert.equal(usePresentation(controller).document.blocks.find((b: any) => b.id === 'b').title, 'Resultado oculto');
 });

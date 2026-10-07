@@ -51,35 +51,6 @@ const root = 'http://127.0.0.1:8765/';
       await open('controls','tinta'); await shot('controls-dark');
       assert.equal(await ev('document.querySelectorAll("canvas").length'),1);
     });
-    await check('Prediction hides target, commits choice, reveals once, resets to hidden',async()=>{
-      await open('prediction');
-      assert.equal(await ev('document.body.innerText.includes("SOLUCIÓN DE EJEMPLO")'),false);
-      await click(label('Aumenta'));await click(label('Guardar mi apuesta'));
-      assert.equal(await ev('window.__lienzo.runtime().blocks.gate.phase'),'committed');
-      assert.equal(await ev('document.body.innerText.includes("SOLUCIÓN DE EJEMPLO")'),false);await shot('prediction-committed');
-      await click(label('Ver resultado'));await wait('window.__lienzo.runtime().blocks.gate.notification === "sent"');
-      assert.equal(await ev('document.body.innerText.includes("SOLUCIÓN DE EJEMPLO")'),true);
-      assert.equal(await ev('window.__lienzo.events.filter(e=>e.action.kind.startsWith("prediction-gate.reveal")).length'),1);await shot('prediction-revealed');
-      await click('#lienzo-interactive-renderer-gate '+label('Reiniciar'));
-      assert.equal(await ev('document.body.innerText.includes("SOLUCIÓN DE EJEMPLO")'),false);
-      assert.equal(await ev('window.__lienzo.runtime().blocks.gate.phase'),'draft');assert.equal(await ev('window.__lienzo.log.length'),0);await shot('prediction-reset');
-    });
-    await check('Prediction remote reset and document switch invalidate late comparison callbacks',async()=>{
-      for (const transition of ['reset', 'document']) {
-        await open('prediction','papel','&sendLatency=1200');
-        await click(label('Aumenta'));await click(label('Guardar mi apuesta'));await click(label('Ver resultado'));
-        await wait('window.__lienzo.events.some(e=>e.action.kind.startsWith("prediction-gate.reveal"))');
-        assert.equal(await ev('window.__lienzo.runtime().blocks.gate.notification'),'attempted');
-        await ev(transition === 'reset' ? 'window.__lienzo.resetRuntime("gate")' : 'window.__lienzo.switchExample()');
-        await wait(`!document.body.innerText.includes('SOLUCIÓN DE EJEMPLO') && !!document.querySelector('[aria-label="Guardar mi apuesta"]')`);
-        assert.equal(await ev('window.__lienzo.runtime().blocks.gate ?? null'),null);
-        await pause(1400);
-        assert.equal(await ev('window.__lienzo.runtime().blocks.gate ?? null'),null,'late notification must not restore old runtime');
-        assert.equal(await ev('document.body.innerText.includes("SOLUCIÓN DE EJEMPLO")'),false);
-        if(transition === 'document')assert.equal(await ev('window.__lienzo.doc().id'),'second-example');
-        await shot('prediction-'+transition+'-late');
-      }
-    });
     await check('Figure next/back/play reaches declared step and reset',async()=>{
       await open('figure');await click(label('Siguiente'));assert.equal(await ev('window.__lienzo.runtime().blocks.figure.step'),1);
       await click(label('Anterior'));assert.equal(await ev('window.__lienzo.runtime().blocks.figure.step'),0);

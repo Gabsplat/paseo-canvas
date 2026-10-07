@@ -9,7 +9,6 @@ function registerClientRenderer<Data>(renderer: ClientRenderer<Data>) {
 // Add one import/register line here. RegisteredRenderer parses data before dispatch.
 import { diagramRenderer } from './diagram'; registerClientRenderer(diagramRenderer);
 import { controlsRenderer } from './controls'; registerClientRenderer(controlsRenderer);
-import { predictionGateRenderer } from './prediction-gate'; registerClientRenderer(predictionGateRenderer);
 import { functionPlotRenderer } from './function-plot'; registerClientRenderer(functionPlotRenderer);
 import { animatedFlowRenderer } from './animated-flow';
 import { annotatedContentRenderer } from './annotated-content'; registerClientRenderer(annotatedContentRenderer);

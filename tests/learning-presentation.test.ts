@@ -15,8 +15,8 @@ type Element = { type: unknown; props: Record<string, any> };
 function fixture() {
   const document: CanvasDocument = { id: 'd', workspaceId: 'w', title: 'Ejemplo', description: '', example: true, revision: 3, createdAt: '', updatedAt: '', selectedIds: [], communication: { intent: '', audience: '', instructions: '' }, groups: [],
     blocks: [
-      { id: 'g1', typeId: 'gate', title: 'Mi apuesta', data: { target: 'result' } },
-      { id: 'g2', typeId: 'gate', title: 'Segunda apuesta', data: { target: 'result' } },
+      { id: 'g1', typeId: 'gate', title: 'Primer cierre', data: { target: 'result' } },
+      { id: 'g2', typeId: 'gate', title: 'Segundo cierre', data: { target: 'result' } },
       { id: 'result', typeId: 'node', title: 'SECRET TITLE', data: { summary: 'SECRET SUMMARY', details: 'SECRET DETAILS', status: 'SECRET STATUS' }, communication: { intent: '', audience: '', instructions: 'SECRET HINT' } },
     ], links: [{ id: 'link', from: 'g1', to: 'result', label: 'SECRET LINK', kind: 'flow' }],
   };
@@ -63,7 +63,7 @@ function headless(presentation: ReturnType<typeof canvasPresentation>, document:
     './logic': {}, './color': {}, './web': {}, './media': {}, './ImageViewer': {},
     './renderers': { getClientRenderer: () => undefined },
     './renderers/RegisteredRenderer': { RegisteredRenderer: 'RegisteredRenderer' },
-    './HiddenResult': { HiddenResult: 'HiddenResult' }, './Blocks': {}, './Links': {}, './WhiteboardContent': { WhiteboardContent: 'WhiteboardContent' }, '../shared/whiteboard': { isWhiteboardRenderer: (id?:string) => id?.startsWith('wb-') },
+    './HiddenResult': { HiddenResult: 'HiddenResult' }, './Blocks': {}, './Links': {}, './WhiteboardContent': { WhiteboardContent: 'WhiteboardContent' }, './whiteboard-visuals': { islandStyle: () => ({}) }, '../shared/whiteboard': { isWhiteboardRenderer: (id?:string) => id?.startsWith('wb-') },
   };
   function load(name: string) {
     const source = readFileSync(new URL(`../plugin/client/${name}.tsx`, import.meta.url), 'utf8');

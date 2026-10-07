@@ -99,7 +99,7 @@ function App() {
   window.__lienzo = {
     // Simulated remote changes exercise production subscription/reset paths, not host RPC.
     resetRuntime: (blockId: string) => { delete runtimeServer.current.blocks[blockId]; learning.sync(current.current.document, ++runtimeVersion.current, structuredClone(runtimeServer.current)); },
-    switchExample: () => { const next = { ...learningFixture(initial, 'prediction'), id: 'second-example' }; runtimeServer.current = { blocks: {}, scopes: {} }; current.current = { ...current.current, document: next }; learning.sync(next, 0, runtimeServer.current); runtimeVersion.current = 0; setDoc(next); },
+    switchExample: () => { const next = { ...learningFixture(initial, 'controls'), id: 'second-example' }; runtimeServer.current = { blocks: {}, scopes: {} }; current.current = { ...current.current, document: next }; learning.sync(next, 0, runtimeServer.current); runtimeVersion.current = 0; setDoc(next); },
     runtime: () => learning.getSnapshot(), runtimeServer: () => runtimeServer.current, runtimeLog: runtimeLog.current, events: events.current, flushRuntime: () => learning.flush(), doc: () => current.current.document, log: log.current, selection, reducedMotion: () => reducedMotion.current, fit: () => api.current?.fit(), edit };
   const button = (label: string, onPress: () => void) => <Pressable accessibilityLabel={label} onPress={onPress} style={{ paddingHorizontal: 8, height: 24, justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 6 }}><Text style={{ color: theme.colors.foreground, fontSize: 12 }}>{label}</Text></Pressable>;
   return <View style={{ position: 'absolute', inset: 0, backgroundColor: theme.colors.surface0 }}>

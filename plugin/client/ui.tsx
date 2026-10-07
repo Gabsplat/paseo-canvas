@@ -70,6 +70,15 @@ export function Button({ label, icon, onPress, disabled = false, variant = 'seco
     {icon && <Icon name={icon} size={14} color={color} />}<Txt kind={small ? 'small' : 'button'} style={{ color, fontWeight: '600' }}>{label}</Txt>
   </Pressable>;
 }
+/** One action of a menu: icon, name, and an optional shortcut or state on the right. Rows share one left edge. */
+export function MenuRow({ icon, label, hint, trailing, onPress, disabled = false, danger = false }: { icon: string; label: string; hint?: string; trailing?: React.ReactNode; onPress: () => void; disabled?: boolean; danger?: boolean }) {
+  const u = useUI(), color = danger ? u.c.statusDanger : u.c.foreground;
+  return <Pressable accessibilityRole="menuitem" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }}
+    style={({ pressed, ...state }) => ({ minHeight: u.compact ? 44 : 34, paddingHorizontal: 10, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 10, opacity: disabled ? .4 : 1, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>
+    <Icon name={icon} size={16} color={danger ? color : u.c.foregroundMuted} /><Txt numberOfLines={1} style={{ flex: 1, color }}>{label}</Txt>{trailing}{!!hint && <Txt kind="label" muted style={{ textTransform: 'none', letterSpacing: 0 }}>{hint}</Txt>}
+  </Pressable>;
+}
+export function MenuDivider() { const u = useUI(); return <View style={{ height: 1, marginVertical: 4, marginHorizontal: 10, backgroundColor: u.c.border }} />; }
 export function IconButton({ icon, label, onPress, active, disabled }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
   const u = useUI(), [focused, setFocus] = useState(false), [hovered, setHovered] = useState(false), [pressed, setPressed] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus, feedback = usePressScale();
   // The hit area stays put; the visual inside it scales on press (tokens.motion.press).

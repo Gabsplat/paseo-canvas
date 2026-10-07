@@ -46,7 +46,7 @@ function runtime(controller: any) {
     './usePresentation': { usePresentation: () => ({ document: controller.view?.document, hiddenBy: new Map(), activeGates: new Set() }) },
     './HiddenResult': { HiddenResult: control('HiddenResult') },
     './FloatingTools': Object.fromEntries(['ToolIsland','StyleIsland','ShapePopover','LibraryPopover','SvgImportDialog'].map(name=>[name,control(name)])), './whiteboard-tools': { DEFAULT_TOOL_STYLE }, './interaction': { needsContentInteraction:()=>true }, '../shared/whiteboard': whiteboard, './whiteboard-visuals': { islandStyle: () => ({}) }, './media': { mediaSource: () => null },
-    './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') },
+    './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined },
   };
   const load = (name: string) => {
     const source = readFileSync(new URL(`../plugin/client/${name}.tsx`, import.meta.url), 'utf8');
@@ -56,7 +56,7 @@ function runtime(controller: any) {
     return exports;
   };
   const realUI = load('ui');
-  modules['./ui'] = Object.fromEntries(['Button', 'Chip', 'Field', 'Input', 'IconButton', 'Segments', 'Txt', 'UIProvider', 'Section', 'CheckRow'].map(name => [name, control(name)]));
+  modules['./ui'] = Object.fromEntries(['Button', 'Chip', 'Field', 'Input', 'IconButton', 'Segments', 'Txt', 'UIProvider', 'Section', 'CheckRow', 'MenuRow', 'MenuDivider'].map(name => [name, control(name)]));
   Object.assign(modules['./ui'], { Modal: modal, friendlyError: realUI.friendlyError, useUI: () => ({ compact: false, host: { id: 'host' }, layout: { platform: 'web' }, font: () => ({}), c: {}, wash: () => '', tone: () => '' }) });
   modules['./Catalog'] = { Catalog: control('Catalog'), PackImport: control('PackImport'), PackExport: control('PackExport') };
   modules['./Inspector'] = { Inspector: control('Inspector') };
@@ -96,10 +96,10 @@ test('new canvas is one click with no fields; title saves in place and document 
   assert.equal(createInputSchema.safeParse({ workspaceId: 'workspace', content: f.creates[0] }).success, true);
   const documents = nodes(tree).find(node => node.type?.name === 'Modal' && node.props.title === 'Documentos')!;
   assert.equal(nodes(documents).some(node => ['Input', 'Field'].includes(node.type?.name)), false);
-  find(tree, 'Button', 'Renombrar lienzo').props.onPress(); tree = r.render();
+  find(tree, 'MenuRow', 'Renombrar lienzo').props.onPress(); tree = r.render();
   await find(tree, 'Field', 'Título del lienzo').props.onSave('Título nuevo');
   assert.equal(f.edits[0][0][0].title, 'Título nuevo');
-  find(tree, 'Button', 'Ajustes del lienzo').props.onPress();
+  find(tree, 'MenuRow', 'Ajustes del lienzo').props.onPress();
   tree = r.render();
   assert.ok(nodes(tree, true).some(node => node.type?.name === 'Modal' && node.props.title === 'Ajustes del lienzo'));
 });

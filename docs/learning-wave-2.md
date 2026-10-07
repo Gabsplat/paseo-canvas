@@ -1,12 +1,11 @@
 # Aprendizaje interactivo
 
-La rama `aprendizaje` integra siete tarjetas de aprendizaje y Trazos sobre las capas
-`wb-draw` de la pizarra. El conjunto pasa 302 pruebas headless y typecheck. Las acciones
+La rama `aprendizaje` integra seis tarjetas de aprendizaje y Trazos sobre las capas
+`wb-draw` de la pizarra. El conjunto pasa 285 pruebas headless y typecheck. Las acciones
 contextuales y los popovers de la interfaz flotante están implementados e integrados.
 
 | Función | Comportamiento implementado |
 | --- | --- |
-| Apuesta | Compromiso previo de elección, estimación o curva; resultado oculto hasta confirmar; Reiniciar lo oculta desde el primer render. |
 | Gráfica de funciones | Variables compartidas, respuesta durante el arrastre, huecos de dominio y lectura de traza. |
 | Figura por pasos | Parches declarativos validados, avance y retroceso, descripción y reproducción opcional. |
 | Flujo animado | Eventos sobre nodos y conexiones reales, referencias ausentes visibles y pausa fuera de vista. |

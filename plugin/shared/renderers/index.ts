@@ -7,7 +7,6 @@ function registerRenderer(spec: RendererSpec) {
 // Add one import/register line here, before rendererNames is built.
 import { diagramSpec } from './diagram'; registerRenderer(diagramSpec);
 import { controlsSpec } from './controls'; registerRenderer(controlsSpec);
-import { predictionGateSpec, remapPredictionGateReferences } from './prediction-gate'; registerRenderer({ ...predictionGateSpec, remapReferences: remapPredictionGateReferences });
 import { functionPlotSpec } from './function-plot'; registerRenderer(functionPlotSpec);
 import { animatedFlowSpec } from './animated-flow'; registerRenderer(animatedFlowSpec);
 import { annotatedContentSpec } from './annotated-content'; registerRenderer(annotatedContentSpec);

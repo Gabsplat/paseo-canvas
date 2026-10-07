@@ -29,13 +29,13 @@ test('a settled attempt retries a lost response with the same event ID and creat
     },
   } as unknown as CanvasController;
   const { runtime } = useLearning(block, controller);
-  const payload = { attemptId: 'attempt-one', prediction: 2, outcome: 3 };
-  await assert.rejects(runtime.settle('prediction.attempt-one', payload, 'Comparar apuesta', 'evt_attempt-one'), /No se guardó/);
-  await runtime.settle('prediction.attempt-one', payload, 'Comparar apuesta', 'evt_attempt-one');
+  const payload = { attemptId: 'attempt-one', guess: 2, outcome: 3 };
+  await assert.rejects(runtime.settle('attempt.attempt-one', payload, 'Comparar intento', 'evt_attempt-one'), /No se guardó/);
+  await runtime.settle('attempt.attempt-one', payload, 'Comparar intento', 'evt_attempt-one');
   assert.deepEqual(ids, ['evt_attempt-one', 'evt_attempt-one']);
   assert.equal(flushes, 2);
   assert.equal((await service.events(reference)).events.length, 1);
-  await assert.rejects(runtime.settle('prediction.attempt-one', { ...payload, prediction: 9 }, 'Comparar apuesta', 'evt_attempt-one'), /different action/);
+  await assert.rejects(runtime.settle('attempt.attempt-one', { ...payload, guess: 9 }, 'Comparar intento', 'evt_attempt-one'), /different action/);
 });
 
 test('settled delivery waits for runtime flush and stops if the learner switched documents', async t => {
@@ -53,9 +53,9 @@ test('settled delivery waits for runtime flush and stops if the learner switched
     send: async () => { sends++; },
   } as unknown as CanvasController;
   const { runtime } = useLearning(view.document.blocks[0], controller);
-  await assert.rejects(runtime.settle('prediction.one', {}, 'Comparar', 'evt_one'), /offline runtime/);
+  await assert.rejects(runtime.settle('attempt.one', {}, 'Comparar', 'evt_one'), /offline runtime/);
   assert.equal(sends, 0);
   failFlush = false;
-  await runtime.settle('prediction.one', {}, 'Comparar', 'evt_one');
+  await runtime.settle('attempt.one', {}, 'Comparar', 'evt_one');
   assert.equal(sends, 0);
 });

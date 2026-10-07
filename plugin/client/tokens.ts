@@ -1440,20 +1440,6 @@ const baseTokens = {
       ],
       "stepMs": 240
     },
-    "gate": {
-      "tone": "violeta",
-      "border": {
-        "width": 1.5,
-        "style": "dashed"
-      },
-      "icon": "Lock",
-      "iconOpen": "LockOpen",
-      "revealMs": 180,
-      "ghost": {
-        "style": "dashed",
-        "alpha": 0.7
-      }
-    },
     "variableToken": {
       "height": 20,
       "radius": 6,

@@ -198,7 +198,7 @@ tarjeta solo se mueve por su fila de título. Se sale con `Esc`, clic fuera o al
 cosa. No es estado del documento. `Esc` dentro de un iframe enfocado no llega: por eso el chip es
 también botón.
 
-Los controles de aprendizaje de un clic (apuesta, opción, transporte, capas) no necesitan modo
+Los controles de aprendizaje de un clic (opción, transporte, capas) no necesitan modo
 interacción: clic corto los activa siempre.
 
 ### 3.4 Texto libre: editar
