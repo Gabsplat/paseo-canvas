@@ -150,7 +150,7 @@ export function diagramLayout(data: DiagramData, innerWidth = 565) {
   return { nodes, edges, width: Math.max(innerWidth, right + (hasRight ? railSpace : d.padding)), height: Math.max(96, ...nodes.map(n => n.y + h + d.padding)), list: innerWidth < d.listFallback.whenInnerWidthBelow || nodes.length > d.listFallback.whenNodesAbove };
 }
 export const descriptionKey = (groupId: string) => `${groupId}#description`;
-type Box = Pick<Rect, 'x' | 'y' | 'width' | 'height'>;
+export type Box = Pick<Rect, 'x' | 'y' | 'width' | 'height'>;
 // Stored positions carry no size, so whoever wrote them (a person, an agent, a template) could not know how large the
 // neighbours would measure. Once real sizes are known, siblings that intersect are pushed apart: the one nearer the
 // origin keeps its place and the other moves right or down, whichever is shorter. Siblings that do not touch are never
@@ -767,4 +767,22 @@ export function groupOperations(doc: CanvasDocument, rects: Map<string, Rect>, i
   const position = manual(index.mode(parent)) ? { x: Math.round(left - pad - (origin?.x ?? 0)), y: Math.round(top - head - pad - (origin?.y ?? 0)) } : undefined;
   return [{ type: 'group.create', group: { id, title: 'Nuevo grupo', description: '', blockIds: [], groupIds: [], parentGroupId: parent, ...(position ? { position } : {}) } },
     ...items.map((e): CanvasOperation => { const r = rects.get(e.id)!; return { type: 'entity.move', id: e.id, parentGroupId: id, position: { x: Math.round(r.x - left) + pad, y: Math.round(r.y - top) + head + pad } }; })];
+}
+/** How world coordinates land inside a minimap of the given size: the content box fitted and centred. */
+export function minimapFit(content: Box, size: { width: number; height: number }): { k: number; x: number; y: number } {
+  const k = Math.min(size.width / Math.max(1, content.width), size.height / Math.max(1, content.height));
+  return { k, x: (size.width - content.width * k) / 2 - content.x * k, y: (size.height - content.height * k) / 2 - content.y * k };
+}
+/**
+ * Where to point when something is out of sight. `target` is in screen coordinates of the viewport. Returns
+ * null while any part of it shows inside the safe area; otherwise the spot on the safe area's edge nearest to
+ * it and the direction to it in degrees (0 = up, clockwise).
+ */
+export function edgeHint(view: { width: number; height: number }, target: Box, inset: { top: number; right: number; bottom: number; left: number }): { x: number; y: number; angle: number } | null {
+  const left = inset.left, top = inset.top, right = view.width - inset.right, bottom = view.height - inset.bottom;
+  if (right <= left || bottom <= top) return null;
+  if (target.x < right && target.x + target.width > left && target.y < bottom && target.y + target.height > top) return null;
+  const cx = target.x + target.width / 2, cy = target.y + target.height / 2, mx = (left + right) / 2, my = (top + bottom) / 2;
+  const x = Math.max(left, Math.min(right, cx)), y = Math.max(top, Math.min(bottom, cy));
+  return { x, y, angle: (Math.atan2(cx - mx, my - cy) * 180 / Math.PI + 360) % 360 };
 }

@@ -1380,3 +1380,21 @@ A click on the canvas (background or a card) closes the shapes and library popov
 
 Verified with `design/whiteboard-harness/chrome.cjs`; captures `tools-dock.png` and `block-palette.png`
 in `design/qa-shapes-legibility-2026-10-06/`.
+
+## 25. Wayfinding: minimap and selection beacon (v12)
+
+- **Minimap** (`canvas.minimap`). Bottom-left island, 184 × 116, on non-compact panels at least 720 wide
+  with four or more visible entities. Areas are 1 px outlines, cards are filled marks in muted ink,
+  selected entities are accent. The part on screen is an accent frame with a 0.1 wash that follows the
+  camera every frame. Pressing a point flies the view there (the zoom step duration); dragging moves it
+  directly. It never changes the document.
+- **Selection beacon** (`canvas.beacon`), for a single selection.
+  - Out of sight: a chip sits on the edge of the safe area (insets 72 top and right, 148 bottom, 76 left,
+    clear of the islands) on the side the entity lies: accent border, a 20 px arrow badge rotated towards
+    it, its title. Pressing it frames the entity. It enters in 160 ms from 0.92 scale and leaves in 100 ms.
+  - In sight but selected from elsewhere (a file tree row, a list, not by pressing the card): one accent
+    ring opens around the card from 1 to 1.12 and fades over 700 ms. Pressing the card itself gives no
+    ring. No ring with reduced motion.
+
+Verified with `design/whiteboard-harness/wayfinding.cjs` (RN-web, isolated omabox); captures
+`wayfinding-chip.png` and `wayfinding-map.png` in `design/qa-shapes-legibility-2026-10-06/`.

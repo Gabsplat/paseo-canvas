@@ -19,6 +19,7 @@ import { DEFAULT_TOOL_STYLE, type CanvasTool, type CanvasToolProps, type SvgInse
 import { isWhiteboardRenderer, whiteboardMinSize, type WbRenderer } from '../shared/whiteboard';
 import { useWhiteboard } from './useWhiteboard';
 import { WhiteboardContent } from './WhiteboardContent';
+import { Minimap, SelectionBeacon } from './Wayfinding';
 import { WhiteboardEditor, WhiteboardPreview } from './WhiteboardOverlay';
 import { LinkLabelEditor, SelectionOverlay, type LinkLabelSession } from './SelectionOverlay';
 import { ZoomControl } from './ZoomControl';
@@ -95,6 +96,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   useReducedMotion();
   const motionSources = useMemo(() => c.catalog ? prepareLinkMotion(c.view!.document, c.catalog, getClientRenderer) : undefined, [c.view!.document, c.catalog]);
   const linkMotion = useCallback((epochMs: number) => motionSources?.(c.learning.getSnapshot(), epochMs, presentation?.hiddenBy ?? new Map()) ?? { tokens: [], playing: false }, [motionSources, c.learning, presentation?.hiddenBy]);
+  /** The entity last selected by pressing it on the canvas; a selection that is not this one came from elsewhere. */
+  const pressed = useRef<string | null>(null);
   const viewport = useRef<View>(null), marks = useRef<View>(null), links = useRef<LinkLayerHandle>(null), vp = useRef<Point | null>(null);
   const layout = useMemo(() => layoutCanvas(doc, heights, c.catalog, size.width || undefined), [doc, heights, c.catalog, size.width]), rects = layout.rects, index = layout.index;
   const roots = [...doc.groups, ...doc.blocks].filter(e => !e.parentGroupId).map(e => rects.get(e.id)!);
@@ -203,7 +206,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     const page = event?.nativeEvent as Page | undefined; selectionPointer.current = page?.pageX !== undefined && page.pageY !== undefined ? { x: page.pageX - (vp.current?.x ?? 0), y: page.pageY - (vp.current?.y ?? 0) } : null;
     const ev = event?.nativeEvent as unknown as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } | undefined;
     if (long) setMulti(true);
-    onLink(null);
+    pressed.current = id; onLink(null);
     if (interactionRef.current && interactionRef.current !== id) setInteractionMode(null);
     const add = long || multi || ev?.shiftKey || ev?.metaKey || ev?.ctrlKey;
     void c.select(add ? c.selection.includes(id) ? c.selection.filter(x => x !== id) : [...c.selection, id] : [id]);
@@ -581,8 +584,18 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       </Animated.View>;
     });
   }
+  // Wayfinding: the minimap in the corner, and a beacon for a selection that is out of sight or was chosen from elsewhere.
+  const goTo = (world: Point, animate: boolean) => { const from = goal.current ?? cam.current, to = { scale: from.scale, offset: { x: size.width / 2 - world.x * from.scale, y: size.height / 2 - world.y * from.scale } }; if (animate) flyTo(to, C.stepMs); else { halt(); setCam(to); } };
   const subscribeCamera = useCallback((listener: () => void) => { camSubs.current.add(listener); return () => { camSubs.current.delete(listener); }; }, []);
   const selectedBounds = boundsOf(c.selection.map(id => rects.get(id)).filter((r): r is Rect => !!r && !r.hidden));
+  const cameraSource = useMemo(() => ({ camera: () => cam.current, subscribe: subscribeCamera }), [subscribeCamera]);
+  const mapItems = useMemo(() => [...doc.groups.map(g => ({ id: g.id, group: true })), ...doc.blocks.map(b => ({ id: b.id, group: false }))].flatMap(e => { const r = rects.get(e.id); return r && !r.hidden ? [{ id: e.id, group: e.group, box: r, lit: c.selection.includes(e.id) }] : []; }), [doc.groups, doc.blocks, rects, c.selection]);
+  const mapMargin = Math.max(maxX - minX, maxY - minY) * tokens.canvas.minimap.margin, mapContent = { x: minX - mapMargin, y: minY - mapMargin, width: maxX - minX + 2 * mapMargin, height: maxY - minY + 2 * mapMargin };
+  const beaconId = c.selection.length === 1 && !drag && !wb.editor ? c.selection[0] : null, beaconBox = beaconId ? rects.get(beaconId) : undefined;
+  const wayfinding = mode === 'canvas' && size.width > 0 ? <>
+    {beaconId && beaconBox && !beaconBox.hidden && <SelectionBeacon id={beaconId} title={title(beaconId)} box={beaconBox} remote={pressed.current !== beaconId} view={size} source={cameraSource} inset={tokens.canvas.beacon.inset} onGo={() => fit([beaconId])} />}
+    {!u.compact && size.width >= tokens.canvas.minimap.minPanelWidth && mapItems.length >= tokens.canvas.minimap.minItems && <Minimap items={mapItems} content={mapContent} view={size} source={cameraSource} onNavigate={goTo} />}
+  </> : null;
   const guideLine = (line: typeof guideV, vertical: boolean) => <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, zIndex: 6, backgroundColor: u.c.accent, opacity: line.opacity, transformOrigin: 'top left', transform: [{ translateX: line.x }, { translateY: line.y }, { scaleX: vertical ? line.thickness : line.length }, { scaleY: vertical ? line.length : line.thickness }] }} />;
   return <View ref={viewport} nativeID="lienzo-canvas-viewport" onLayout={e => { setSize(e.nativeEvent.layout); measureViewport(); }} style={{ flex: 1, overflow: 'hidden', backgroundColor: u.c.surface0 }}>
     <View {...(web || toolRef.current === 'select' ? pan.panHandlers : nativeTools.panHandlers)} style={{ position: 'absolute', inset: 0 }}>
@@ -626,6 +639,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       const controller = latest.current.c; await controller.settle(); if (controller.current.current?.document.id !== linkLabel.documentId || !controller.current.current.document.links.some(l => l.id === linkLabel.linkId)) return false;
       const next = await controller.edit([{ type: 'link.update', id: linkLabel.linkId, patch: { label } }], 'Editar etiqueta del enlace'); if (next) setLinkLabel(null); return !!next;
     }} />; })()}
+    {wayfinding}
     <ZoomControl width={size.width} camera={cam} subscribe={listener => { camSubs.current.add(listener); return () => { camSubs.current.delete(listener); }; }} onStep={zoomStep} onReset={() => zoomTo(1)} onFit={() => fit()} />
   </View>;
 }

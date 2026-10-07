@@ -632,3 +632,18 @@ test('node cards take the room their container can spare, counted per container'
   assert.deepEqual(nodeDensity(mixed, mixed.blocks[0]), { width: 224, summaryLines: 2 });
   assert.deepEqual(nodeDensity(mixed, mixed.blocks[12]), { width: 304, summaryLines: 6 });
 });
+
+test('minimap fits the content and the edge hint points at what is out of sight', async () => {
+  const { minimapFit, edgeHint } = await import('../plugin/client/logic');
+  const fit = minimapFit({ x: -100, y: 50, width: 2000, height: 500 }, { width: 200, height: 100 });
+  assert.equal(fit.k, .1); assert.deepEqual([-100 * fit.k + fit.x, 50 * fit.k + fit.y], [0, 25]);
+  const view = { width: 1000, height: 800 }, inset = { top: 60, right: 60, bottom: 100, left: 60 };
+  assert.equal(edgeHint(view, { x: 400, y: 300, width: 200, height: 80 }, inset), null);
+  assert.equal(edgeHint(view, { x: 930, y: 300, width: 200, height: 80 }, inset), null, 'still partly inside the safe area');
+  const right = edgeHint(view, { x: 1500, y: 360, width: 200, height: 80 }, inset)!;
+  assert.deepEqual([right.x, right.y], [940, 400]); assert.ok(Math.abs(right.angle - 91) < 1);
+  const above = edgeHint(view, { x: 400, y: -900, width: 200, height: 80 }, inset)!;
+  assert.deepEqual([above.x, above.y], [500, 60]); assert.ok(above.angle < 1 || above.angle > 359);
+  const corner = edgeHint(view, { x: -700, y: 1500, width: 100, height: 100 }, inset)!;
+  assert.deepEqual([corner.x, corner.y], [60, 700]); assert.ok(corner.angle > 180 && corner.angle < 270);
+});
