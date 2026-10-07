@@ -1,5 +1,5 @@
 import type { CanvasCatalog, CanvasDocument, CanvasLink } from '../../shared/model';
-import { isDark, withAlpha } from '../color';
+import { isDark, parseColor, withAlpha } from '../color';
 import { layoutCanvas } from '../logic';
 import type { CanvasController } from '../useCanvas';
 import type { useUI } from '../ui';
@@ -69,4 +69,22 @@ export function fit(ctx: { measureText(text: string): { width: number } }, text:
   if (ctx.measureText(text).width <= max) return text; let lo = 0, hi = text.length;
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (ctx.measureText(text.slice(0, mid) + '…').width <= max) lo = mid; else hi = mid - 1; }
   return lo ? text.slice(0, lo).trimEnd() + '…' : '';
+}
+export type Ground = { at: Map<string, { x: number; y: number }>; areas: { id: string; title: string; index: number; x: number; y: number; width: number; height: number }[]; bounds: { x: number; y: number; width: number; height: number } };
+/**
+ * The arrangement of the canvas itself, drawn closer together: where each thing stands and the outline of each
+ * top-level area. Worlds that keep the canvas' geography start here, so what you placed stays where you placed it.
+ */
+export function ground(doc: CanvasDocument, catalog: CanvasCatalog | null | undefined, all: readonly Thing[], k = .8, margin = 150): Ground {
+  const rects = placed(doc, catalog), at = new Map<string, { x: number; y: number }>(), nested = new Set(doc.groups.flatMap(g => g.groupIds));
+  for (const t of all) { const r = rects.get(t.id); if (r) at.set(t.id, t.group ? { x: (r.x - r.width / 2) * k + 110, y: (r.y - r.height / 2) * k - 44 } : { x: r.x * k, y: r.y * k }); }
+  const areas = doc.groups.filter(g => !nested.has(g.id)).flatMap((g, index) => { const r = rects.get(g.id); return r ? [{ id: g.id, title: g.title || 'Área', index, x: (r.x - r.width / 2) * k, y: (r.y - r.height / 2) * k, width: r.width * k, height: r.height * k }] : []; });
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; const grow = (x: number, y: number) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const point of at.values()) { grow(point.x - margin, point.y - margin * .7); grow(point.x + margin, point.y + margin * .7); } for (const a of areas) { grow(a.x - 30, a.y - 50); grow(a.x + a.width + 30, a.y + a.height + 30); }
+  return { at, areas, bounds: at.size ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : { x: 0, y: 0, width: 0, height: 0 } };
+}
+/** One opaque colour a fraction of the way from `a` to `b`. Opaque, so shapes that overlap by a hair leave no seam. */
+export function mix(a: string, b: string, t: number): string {
+  const x = parseColor(a), y = parseColor(b); if (!x || !y) return t < .5 ? a : b; const k = clamp(t, 0, 1), c = (m: number, n: number) => Math.round(m + (n - m) * k);
+  return `rgb(${c(x.r, y.r)},${c(x.g, y.g)},${c(x.b, y.b)})`;
 }

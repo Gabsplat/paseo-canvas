@@ -1,475 +1,96 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import {
-  things, edges, palette, kindColor, FONT, fit, easeOut, lerp, clamp,
-  type WorldProps, type Thing, type Edge,
-} from './shared';
-import { Stage, STAGE_INSET } from './Stage';
-import { Button, Txt, useUI } from '../ui';
-import { orbitModel, pickCentre, polar, type Body } from './orbit';
 import { reducedMotion } from '../motion';
-import type { Canvas2DContext, SurfaceFrame, SurfacePointer } from '../Surfaces';
+import type { Canvas2DContext } from '../Surfaces';
+import { Button, Txt, useUI } from '../ui';
+import { along, areaColor, arrow, bend, Drift, legible, plate, tag, tooltip, type Point } from './kit';
+import { orbitModel, pickCentre, polar } from './orbit';
+import { adjacency, edges, FONT, kindColor, palette, seeded, things, type Edge, type WorldProps } from './shared';
+import { Stage, type Sight } from './Stage';
 
+const RING = ['', 'a 1 enlace', 'a 2 enlaces', 'a 3 o más', 'sin camino'], SUN = { w: 224, h: 72 };
+/**
+ * A system around one thing. Whatever is selected is the sun; everything else sits on the orbit of how many links
+ * away it is, in the slice of sky that belongs to its area. A line back towards the sun says through what it is
+ * reached. Press a body and the whole system rearranges around it.
+ */
 export function OrbitView({ controller: c, onOpen }: WorldProps) {
-  const u = useUI();
-  const doc = c.view!.document;
-  const all = things(doc);
-  const links = edges(doc, all);
-  const p = palette(u);
+  const u = useUI(), p = palette(u), doc = c.view!.document, [hover, setHover] = useState<string | null>(null);
+  const base = useMemo(() => { const all = things(doc), links = edges(doc, all), degree = new Map<string, number>(); for (const l of links) { degree.set(l.from, (degree.get(l.from) ?? 0) + 1); degree.set(l.to, (degree.get(l.to) ?? 0) + 1); } return { all, links, degree, byId: new Map(all.map(t => [t.id, t])) }; }, [doc.blocks, doc.groups, doc.links]);
+  const centre = pickCentre(base.all, base.links, c.selection);
+  const model = useMemo(() => {
+    if (!centre) return null;
+    const m = orbitModel(base.all, base.links, centre), near = adjacency(base.links), parent = new Map<string, { id: string; edge: Edge; outward: boolean }>(), seen = new Set([centre]), queue = [centre];
+    for (let i = 0; i < queue.length; i++) for (const n of near.get(queue[i]) ?? []) if (!seen.has(n.id)) { seen.add(n.id); parent.set(n.id, { id: queue[i], edge: n.edge, outward: n.out }); queue.push(n.id); }
+    const n = m.counts, r1 = Math.max(235, n[1] * 60 / 6.283), r2 = Math.max(r1 + 135, n[2] * 54 / 6.283), r3 = Math.max(r2 + 115, n[3] * 48 / 6.283), r4 = Math.max(r3 + 105, n[4] * 40 / 6.283), radius = [0, r1, r2, r3, r4];
+    const outer = radius[[4, 3, 2, 1].find(k => n[k] > 0) ?? 1], targets = new Map<string, Point>(m.bodies.map(b => [b.id, b.ring === 0 ? { x: 0, y: 0 } : polar(0, 0, radius[b.ring], b.angle)]));
+    return { ...m, parent, radius, outer, targets, ring: new Map(m.bodies.map(b => [b.id, b.ring])) };
+  }, [base, centre]);
+  const drift = useRef(new Drift()), now = useRef(new Map<string, Point>());
+  const chain = (id: string) => { const out = [id]; for (let at = model?.parent.get(id); at && out.length < 40; at = model?.parent.get(at.id)) out.push(at.id); return out; };
+  const size = (id: string) => Math.min(20, 7 + 2.4 * Math.sqrt(base.degree.get(id) ?? 0));
 
-  // Empty document check
-  if (all.length === 0) {
-    return (
-      <Stage
-        id="orbit"
-        title="Órbita"
-        question="¿Qué tan cerca está todo de esto? Toca un cuerpo para ponerlo en el centro; arrastra para girar."
-        summary="Todavía no hay nada en este lienzo."
-        draw={(ctx, frame) => ctx.clearRect(0, 0, frame.width, frame.height)}
-      >
-        <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
-          <Txt kind="small" muted>Todavía no hay nada en este lienzo.</Txt>
-        </View>
-      </Stage>
-    );
-  }
-
-  // Pick centre
-  const centreId = pickCentre(all, links, c.selection);
-  const centreThing = all.find(t => t.id === centreId);
-  if (!centreId || !centreThing) {
-    return (
-      <Stage
-        id="orbit"
-        title="Órbita"
-        question="¿Qué tan cerca está todo de esto?"
-        summary="Todavía no hay nada en este lienzo."
-        draw={(ctx, frame) => ctx.clearRect(0, 0, frame.width, frame.height)}
-      >
-        <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
-          <Txt kind="small" muted>Todavía no hay nada en este lienzo.</Txt>
-        </View>
-      </Stage>
-    );
-  }
-
-  // Build model
-  const model = useMemo(() => orbitModel(all, links, centreId), [all, links, centreId]);
-
-  // Animation state
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [rotating, setRotating] = useState(false);
-  const [recentring, setRecentring] = useState(false);
-
-  // Pointer tracking for dragging
-  const pointerRef = useRef<{ x: number; y: number } | null>(null);
-  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
-  const rotationRef = useRef(0);
-  const rotationVelRef = useRef(0);
-  const frameRef = useRef<SurfaceFrame | null>(null);
-
-  // Track previous body positions for re-centering animation
-  const prevPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const animTimeRef = useRef(0);
-  const rippleTimeRef = useRef(0);
-
-  // Animation frame handler
-  useEffect(() => {
-    if (!rotating && !recentring && rotationVelRef.current === 0) return;
-
-    let animId: number;
-    const animate = () => {
-      if (rotating || recentring) {
-        const vel = rotationVelRef.current;
-        if (Math.abs(vel) > 0.0005) {
-          rotationVelRef.current = vel * 0.92;
-          if (!recentring) {
-            setRotating(true);
-          }
-        } else {
-          rotationVelRef.current = 0;
-          if (!recentring) {
-            setRotating(false);
-          }
-        }
-      }
-
-      if (recentring) {
-        animTimeRef.current += 16;
-        if (animTimeRef.current > 520) {
-          animTimeRef.current = 520;
-          setRecentring(false);
-        }
-        rippleTimeRef.current += 16;
-      }
-
-      animId = requestAnimationFrame(animate);
-    };
-
-    animId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animId);
-  }, [rotating, recentring]);
-
-  // Geometry
-  const draw = (ctx: Canvas2DContext, frame: SurfaceFrame) => {
-    frameRef.current = frame;
-    ctx.clearRect(0, 0, frame.width, frame.height);
-
-    const cx = STAGE_INSET.left + (frame.width - STAGE_INSET.left - STAGE_INSET.right) / 2;
-    const cy = STAGE_INSET.top + (frame.height - STAGE_INSET.top - STAGE_INSET.bottom) / 2;
-    const safeWidth = frame.width - STAGE_INSET.left - STAGE_INSET.right;
-    const safeHeight = frame.height - STAGE_INSET.top - STAGE_INSET.bottom;
-    const R = Math.min(safeWidth, safeHeight) / 2;
-
-    const ringRadii = [0, 0.3, 0.55, 0.76, 0.94].map(r => r * R);
-
-    // Compute body screen positions
-    const bodyPos = new Map<string, { x: number; y: number }>();
-    for (const body of model.bodies) {
-      const radius = ringRadii[body.ring];
-      const pos = polar(cx, cy, radius, body.angle + rotationRef.current);
-      bodyPos.set(body.id, pos);
+  const draw = (ctx: Canvas2DContext, sight: Sight) => {
+    if (!model) return; const still = reducedMotion.current, t = sight.time, R = model.radius, span = model.outer + 420, k = legible(sight);
+    for (let i = 0; i < 130; i++) { const x = (seeded('sx', i) * 2 - 1) * span, y = (seeded('sy', i) * 2 - 1) * span; ctx.fillStyle = p.a(p.ink, .05 + .12 * seeded('sa', i) * (still ? 1 : .6 + .4 * Math.sin(t / 900 + i))); ctx.fillRect(x, y, 2, 2); }
+    // Each area owns a slice of the sky, so an area is a direction you can point at.
+    if (model.sectors.length > 1) for (const s of model.sectors) {
+      const color = areaColor(p, s.areaIndex), inner = R[1] - 70, rim = model.outer + 50; ctx.beginPath(); ctx.arc(0, 0, rim, s.a0, s.a1); ctx.arc(0, 0, inner, s.a1, s.a0, true); ctx.closePath(); ctx.fillStyle = p.a(color, .05); ctx.fill();
+      const edge = polar(0, 0, inner, s.a0), far = polar(0, 0, rim, s.a0); ctx.beginPath(); ctx.moveTo(edge.x, edge.y); ctx.lineTo(far.x, far.y); ctx.lineWidth = 1; ctx.strokeStyle = p.a(p.ink, .1); ctx.stroke();
+      const at = polar(0, 0, rim + 62 * k, (s.a0 + s.a1) / 2); tag(ctx, p, s.area || 'Sin área', at.x, at.y, { size: 13, weight: 700, color, align: 'center', k });
     }
-
-    // Handle re-centering animation
-    if (recentring && animTimeRef.current > 0 && animTimeRef.current <= 520) {
-      const t = easeOut(animTimeRef.current / 520);
-      const animBodies = new Map<string, { x: number; y: number; start: { x: number; y: number } }>();
-      for (const body of model.bodies) {
-        const newPos = bodyPos.get(body.id)!;
-        const oldPos = prevPositionsRef.current.get(body.id) ?? { x: cx, y: cy };
-        animBodies.set(body.id, { x: lerp(oldPos.x, newPos.x, t), y: lerp(oldPos.y, newPos.y, t), start: oldPos });
-      }
-
-      // Draw animated bodies and ripple
-      drawOrbits(ctx, ringRadii, cx, cy, p);
-      drawTicks(ctx, cx, cy, R, model, p, FONT, frame);
-      drawSpokes(ctx, cx, cy, model, animBodies, p);
-      drawBodies(ctx, model, animBodies, p);
-      drawLabels(ctx, model, animBodies, hovered, p, FONT, frame, all);
-
-      // Ripple
-      if (rippleTimeRef.current < 700) {
-        const rt = rippleTimeRef.current / 700;
-        const rippleRadius = lerp(ringRadii[0], R, rt);
-        ctx.strokeStyle = p.a(p.accent, 0.5 * (1 - rt));
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, rippleRadius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    } else {
-      // Normal draw
-      drawOrbits(ctx, ringRadii, cx, cy, p);
-      drawTicks(ctx, cx, cy, R, model, p, FONT, frame);
-      drawSpokes(ctx, cx, cy, model, bodyPos, p);
-      drawBodies(ctx, model, bodyPos, p);
-      drawLabels(ctx, model, bodyPos, hovered, p, FONT, frame, all);
+    for (const ring of [1, 2, 3, 4]) { if (!model.counts[ring]) continue; ctx.beginPath(); ctx.arc(0, 0, R[ring], 0, 6.2832); ctx.lineWidth = 1.25 * k; ctx.strokeStyle = p.a(p.ink, ring === 4 ? .16 : .22); ctx.setLineDash(ring === 4 ? [3, 9] : []); ctx.stroke(); ctx.setLineDash([]); tag(ctx, p, RING[ring], 0, -R[ring], { size: 11, weight: 600, align: 'center', alpha: 1, k }); }
+    const targets = model.targets, bobbed = new Map<string, Point>();
+    for (const [id, to] of targets) { const ring = model.ring.get(id) ?? 0, wob = still || !ring ? 0 : 3.5 * Math.sin(t / 1500 + 6.283 * seeded(id)), len = Math.hypot(to.x, to.y) || 1; bobbed.set(id, { x: to.x + to.x / len * wob, y: to.y + to.y / len * wob }); }
+    const at = drift.current.step(bobbed, sight.dt, still, { x: 0, y: 0 }); now.current = at;
+    const lit = new Set(hover ? chain(hover) : []), origin = at.get(model.centre) ?? { x: 0, y: 0 };
+    // How each body is reached: a thread to the one before it on the way to the sun.
+    for (const [id, via] of model.parent) {
+      const a = at.get(via.id), b = at.get(id); if (!a || !b) continue; const first = via.id === model.centre, on = lit.has(id), color = kindColor(p, via.edge.kind), mid = bend(a, b, first ? .1 : .06);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(mid.x, mid.y, b.x, b.y); ctx.lineWidth = (on ? 2.75 : first ? 1.9 : 1) * k; ctx.strokeStyle = on ? p.accent : p.a(first ? color : p.ink, hover ? (first ? .3 : .08) : first ? .75 : .17); ctx.stroke();
+      if (first || on) { const tip = along(a, mid, b, .78), head = via.outward ? tip : along(a, mid, b, .3), tail = via.outward ? along(a, mid, b, .7) : along(a, mid, b, .38); ctx.fillStyle = on ? p.accent : p.a(color, hover ? .35 : .9); arrow(ctx, tail, head, 9 * k);
+        if (!still && first) { const f = (t / 2600 + seeded(id)) % 1, dot = along(a, mid, b, via.outward ? f : 1 - f); ctx.beginPath(); ctx.arc(dot.x, dot.y, 2.8 * k, 0, 6.2832); ctx.fillStyle = p.a(color, .9 * Math.sin(f * 3.1416)); ctx.fill(); }
+        if (via.edge.label && sight.scale >= .9 && (first || on)) { const m = along(a, mid, b, .52); tag(ctx, p, via.edge.label, m.x, m.y, { size: 10, align: 'center', color: on ? p.accent : p.muted, k }); } }
     }
-
-    // Hover indicator
-    if (hovered) {
-      const hoveredBody = model.bodies.find(b => b.id === hovered);
-      if (hoveredBody) {
-        const pos = bodyPos.get(hovered)!;
-        const radius = ringRadii[hoveredBody.ring];
-        ctx.strokeStyle = p.accent;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, radius + 5, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // Hover label
-        const title = all.find(t => t.id === hovered)?.title ?? 'Sin título';
-        const hopsCount = hoveredBody.ring === 4 ? 'sin camino' : `a ${hoveredBody.ring} enlace${hoveredBody.ring > 1 ? 's' : ''}`;
-        ctx.fillStyle = p.ink;
-        ctx.font = `500 13px ${FONT}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        const fitted = fit(ctx, title, 180);
-        ctx.fillText(fitted, pos.x, pos.y - radius - 14);
-
-        ctx.font = `11px ${FONT}`;
-        ctx.fillStyle = p.muted;
-        ctx.textBaseline = 'top';
-        ctx.fillText(hopsCount, pos.x, pos.y - radius - 8);
+    const glow = ctx.createRadialGradient(origin.x, origin.y, 20, origin.x, origin.y, 150 * k * (still ? 1 : 1 + .05 * Math.sin(t / 1100))); glow.addColorStop(0, p.a(p.accent, .5)); glow.addColorStop(1, p.a(p.accent, 0));
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(origin.x, origin.y, 170 * k, 0, 6.2832); ctx.fill();
+    const few = base.all.length <= 26;
+    for (const b of model.bodies) {
+      if (b.ring === 0) continue; const pos = at.get(b.id), thing = base.byId.get(b.id); if (!pos || !thing) continue;
+      const r = size(b.id) * k, color = areaColor(p, thing.areaIndex), on = b.id === hover, faded = !!hover && !lit.has(b.id);
+      ctx.globalAlpha = faded ? .3 : 1; if (on) { ctx.shadowColor = p.a(color, .8); ctx.shadowBlur = 18 * sight.scale; }
+      ctx.beginPath(); ctx.arc(pos.x, pos.y, on ? r + 2 : r, 0, 6.2832); ctx.fillStyle = b.ring === 4 ? p.a(color, .35) : color; ctx.fill(); ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.lineWidth = (b.ring === 1 || on ? 2 : 1) * k; ctx.strokeStyle = b.ring === 1 || on ? p.ink : p.a(p.paper, .9); ctx.stroke();
+      if (b.ring <= 2 || few || on || lit.has(b.id) || sight.scale >= .8) {
+        const right = Math.cos(b.angle) >= 0, lx = pos.x + (r + 7 * k) * (right ? 1 : -1); ctx.font = `${b.ring === 1 || on ? 600 : 500} ${(b.ring === 1 ? 13 : 12) * k}px ${FONT}`; ctx.textAlign = right ? 'left' : 'right'; ctx.textBaseline = 'middle';
+        const text = thing.title.length > 30 ? thing.title.slice(0, 29).trimEnd() + '…' : thing.title; ctx.lineWidth = 4 * k; ctx.lineJoin = 'round'; ctx.strokeStyle = p.a(p.paper, .85); ctx.strokeText(text, lx, pos.y);
+        ctx.fillStyle = b.ring === 1 || on ? p.ink : p.a(p.ink, b.ring === 2 ? .82 : .6); ctx.fillText(text, lx, pos.y);
       }
+      ctx.globalAlpha = 1;
     }
+    const sun = base.byId.get(model.centre); if (sun) { ctx.save(); ctx.translate(origin.x, origin.y); ctx.scale(Math.min(k, 1.3), Math.min(k, 1.3)); plate(ctx, p, { ...sight, scale: sight.scale * Math.min(k, 1.3) }, sun, 0, 0, { chosen: true, w: SUN.w, h: SUN.h }); ctx.restore(); }
   };
-
-  const onPointer = (e: SurfacePointer) => {
-    if (!frameRef.current) return;
-
-    if (e.kind === 'down') {
-      pointerRef.current = { x: e.x, y: e.y };
-      pointerStartRef.current = { x: e.x, y: e.y };
-      if (!reducedMotion.current) {
-        if (!recentring && Math.abs(rotationVelRef.current) > 0.001) {
-          rotationVelRef.current = 0;
-        }
-      }
-    } else if (e.kind === 'move' && pointerRef.current) {
-      const oldAngle = Math.atan2(pointerRef.current.y - (STAGE_INSET.top + (frameRef.current.height - STAGE_INSET.top - STAGE_INSET.bottom) / 2), pointerRef.current.x - (STAGE_INSET.left + (frameRef.current.width - STAGE_INSET.left - STAGE_INSET.right) / 2));
-      const newAngle = Math.atan2(e.y - (STAGE_INSET.top + (frameRef.current.height - STAGE_INSET.top - STAGE_INSET.bottom) / 2), e.x - (STAGE_INSET.left + (frameRef.current.width - STAGE_INSET.left - STAGE_INSET.right) / 2));
-      const delta = newAngle - oldAngle;
-
-      rotationRef.current += delta;
-      if (!reducedMotion.current) {
-        rotationVelRef.current = delta;
-        setRotating(true);
-      }
-      pointerRef.current = { x: e.x, y: e.y };
-    } else if (e.kind === 'up' || e.kind === 'cancel') {
-      if (pointerStartRef.current) {
-        const dx = e.x - pointerStartRef.current.x;
-        const dy = e.y - pointerStartRef.current.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        // Tap: re-centre
-        if (dist < 5) {
-          const cx = STAGE_INSET.left + (frameRef.current.width - STAGE_INSET.left - STAGE_INSET.right) / 2;
-          const cy = STAGE_INSET.top + (frameRef.current.height - STAGE_INSET.top - STAGE_INSET.bottom) / 2;
-          const safeWidth = frameRef.current.width - STAGE_INSET.left - STAGE_INSET.right;
-          const safeHeight = frameRef.current.height - STAGE_INSET.top - STAGE_INSET.bottom;
-          const R = Math.min(safeWidth, safeHeight) / 2;
-          const ringRadii = [0, 0.3, 0.55, 0.76, 0.94].map(r => r * R);
-
-          for (const body of model.bodies) {
-            if (body.id === centreId) continue;
-            const radius = ringRadii[body.ring];
-            const pos = polar(cx, cy, radius, body.angle + rotationRef.current);
-            const bdx = e.x - pos.x;
-            const bdy = e.y - pos.y;
-            const bdist = Math.sqrt(bdx * bdx + bdy * bdy);
-            if (bdist < 16) {
-              // Save current positions
-              prevPositionsRef.current.clear();
-              for (const b of model.bodies) {
-                const r = ringRadii[b.ring];
-                const p = polar(cx, cy, r, b.angle + rotationRef.current);
-                prevPositionsRef.current.set(b.id, p);
-              }
-
-              animTimeRef.current = 0;
-              rippleTimeRef.current = 0;
-              setRecentring(true);
-              if (!reducedMotion.current) {
-                rotationVelRef.current = 0;
-              }
-              void c.select([body.id]);
-              return;
-            }
-          }
-        }
-      }
-
-      if (e.kind === 'up') {
-        pointerRef.current = null;
-        pointerStartRef.current = null;
-        if (!recentring && Math.abs(rotationVelRef.current) < 0.0005) {
-          setRotating(false);
-        }
-      }
-    }
+  const overlay = (ctx: Canvas2DContext, sight: Sight) => {
+    const thing = hover ? base.byId.get(hover) : undefined, pos = hover ? now.current.get(hover) : undefined; if (!model || !thing || !pos || hover === model.centre) return;
+    const path = chain(thing.id).reverse(), reach = path.length > 1 && path[0] === model.centre;
+    tooltip(ctx, p, sight, pos, thing.title, [thing.summary, reach ? `A ${path.length - 1} ${path.length === 2 ? 'enlace' : 'enlaces'}: ${path.map(id => base.byId.get(id)?.title ?? '').join(' → ')}` : 'No hay camino de enlaces hasta el centro.', 'Presiona para ponerlo en el centro.']);
   };
-
-  const summary = `${centreThing.title} en el centro; ${model.counts[1]} cosa${model.counts[1] !== 1 ? 's' : ''} a un enlace, ${model.counts[2]} a dos, ${model.counts[3]} más lejos y ${model.counts[4]} sin camino.`;
-
-  return (
-    <Stage
-      id="orbit"
-      title="Órbita"
-      question="¿Qué tan cerca está todo de esto? Toca un cuerpo para ponerlo en el centro; arrastra para girar."
-      summary={summary}
-      animated={rotating || recentring}
-      draw={draw}
-      onPointer={onPointer}
-      cursor={rotating ? 'grab' : 'default'}
-    >
-      <View style={{ position: 'absolute', left: STAGE_INSET.left, bottom: STAGE_INSET.bottom, width: 280, backgroundColor: u.c.surface1, borderWidth: 1, borderColor: u.c.border, borderRadius: 12, padding: 12, gap: 6 }}>
-        <Txt kind="heading" numberOfLines={2}>{centreThing.title}</Txt>
-        {!!centreThing.summary && <Txt kind="small" muted numberOfLines={3}>{centreThing.summary}</Txt>}
-        <Txt kind="small">{model.counts[1]} a un enlace · {model.counts[2]} a dos · {model.counts[3]} más lejos · {model.counts[4]} sin camino</Txt>
-        <Button label="Ver en el lienzo" small icon="Frame" onPress={() => onOpen(centreId)} />
-      </View>
-    </Stage>
-  );
-}
-
-// Drawing helpers
-function drawOrbits(ctx: Canvas2DContext, radii: number[], cx: number, cy: number, p: ReturnType<typeof palette>) {
-  for (let i = 1; i < radii.length; i++) {
-    ctx.strokeStyle = i === radii.length - 1 ? p.border : p.border;
-    ctx.lineWidth = 1;
-    if (i === radii.length - 1) {
-      ctx.setLineDash([2, 5]);
-    }
-    ctx.beginPath();
-    ctx.arc(cx, cy, radii[i], 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function drawTicks(ctx: Canvas2DContext, cx: number, cy: number, R: number, model: ReturnType<typeof orbitModel>, p: ReturnType<typeof palette>, font: string, frame: SurfaceFrame) {
-  const radius = model.bodies.length > 0 ? Math.max(...model.bodies.filter(b => b.ring === 4).map(b => Math.abs(b.angle))) === 0 && model.counts[4] === 0 ? R * 0.94 : R * 0.96 : R * 0.94;
-
-  for (const sector of model.sectors) {
-    const midAngle = (sector.a0 + sector.a1) / 2;
-    const tick = polar(cx, cy, radius, midAngle);
-    const outer = polar(cx, cy, radius + 8, midAngle);
-
-    ctx.strokeStyle = p.border;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(tick.x, tick.y);
-    ctx.lineTo(outer.x, outer.y);
-    ctx.stroke();
-
-    // Area name
-    ctx.fillStyle = p.muted;
-    ctx.font = `600 11px ${font}`;
-    ctx.textBaseline = 'middle';
-    const cosAngle = Math.cos(midAngle);
-    ctx.textAlign = cosAngle > 0 ? 'left' : 'right';
-    const textX = outer.x + (cosAngle > 0 ? 6 : -6);
-    const fitted = fit(ctx, sector.area, 100);
-    ctx.fillText(fitted, textX, outer.y);
-  }
-}
-
-function drawSpokes(ctx: Canvas2DContext, cx: number, cy: number, model: ReturnType<typeof orbitModel>, bodyPos: Map<string, { x: number; y: number }>, p: ReturnType<typeof palette>) {
-  for (const body of model.bodies) {
-    if (body.ring !== 1) continue;
-    const pos = bodyPos.get(body.id);
-    if (!pos || !body.via) continue;
-
-    const color = kindColor(p, body.via.kind);
-    ctx.strokeStyle = p.a(color, 0.6);
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
-
-    // Arrowhead
-    if (body.out) {
-      drawArrowhead(ctx, cx, cy, pos.x, pos.y, p.a(color, 0.6), 6);
-    } else {
-      drawArrowhead(ctx, pos.x, pos.y, cx, cy, p.a(color, 0.6), 6);
-    }
-  }
-}
-
-function drawArrowhead(ctx: Canvas2DContext, fromX: number, fromY: number, toX: number, toY: number, color: string, size: number) {
-  const angle = Math.atan2(toY - fromY, toX - fromX);
-  const a1 = angle + (Math.PI * 5) / 6;
-  const a2 = angle - (Math.PI * 5) / 6;
-
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(toX, toY);
-  ctx.lineTo(toX + size * Math.cos(a1), toY + size * Math.sin(a1));
-  ctx.lineTo(toX + size * Math.cos(a2), toY + size * Math.sin(a2));
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawBodies(ctx: Canvas2DContext, model: ReturnType<typeof orbitModel>, bodyPos: Map<string, { x: number; y: number }>, p: ReturnType<typeof palette>) {
-  for (const body of model.bodies) {
-    const pos = bodyPos.get(body.id);
-    if (!pos) continue;
-
-    let color = p.ink;
-    let radius = 0;
-
-    if (body.ring === 0) {
-      // Centre: accent with paper ring
-      ctx.fillStyle = p.accent;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 26, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = p.paper;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 22, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (body.ring === 1) {
-      // Ring 1: kindColor
-      color = body.via ? kindColor(p, body.via.kind) : p.ink;
-      radius = 9;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (body.ring === 2) {
-      // Ring 2: ink at alpha 0.75
-      ctx.fillStyle = p.a(p.ink, 0.75);
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (body.ring === 3) {
-      // Ring 3: muted
-      ctx.fillStyle = p.muted;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (body.ring === 4) {
-      // Ring 4: muted at alpha 0.5
-      ctx.fillStyle = p.a(p.muted, 0.5);
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-function drawLabels(ctx: Canvas2DContext, model: ReturnType<typeof orbitModel>, bodyPos: Map<string, { x: number; y: number }>, hovered: string | null, p: ReturnType<typeof palette>, font: string, frame: SurfaceFrame, allThings: readonly Thing[]) {
-  const thingMap = new Map(allThings.map(t => [t.id, t]));
-
-  // Ring 1 labels (always)
-  for (const body of model.bodies) {
-    if (body.ring !== 1) continue;
-    const pos = bodyPos.get(body.id);
-    if (!pos) continue;
-
-    ctx.fillStyle = p.ink;
-    ctx.font = `500 13px ${font}`;
-    ctx.textBaseline = 'middle';
-    const cosAngle = Math.cos(body.angle);
-    ctx.textAlign = cosAngle > 0 ? 'left' : 'right';
-    const offset = 14;
-    const textX = pos.x + Math.cos(body.angle) * offset;
-    const textY = pos.y + Math.sin(body.angle) * offset;
-
-    const thing = thingMap.get(body.id);
-    const title = thing?.title ?? 'Sin título';
-    const fitted = fit(ctx, title, 180);
-    ctx.fillText(fitted, textX, textY);
-  }
-
-  // Ring 2 labels (only if 24 or fewer)
-  const ring2Count = model.bodies.filter(b => b.ring === 2).length;
-  if (ring2Count <= 24) {
-    for (const body of model.bodies) {
-      if (body.ring !== 2) continue;
-      const pos = bodyPos.get(body.id);
-      if (!pos) continue;
-
-      ctx.fillStyle = p.muted;
-      ctx.font = `12px ${font}`;
-      ctx.textBaseline = 'middle';
-      const cosAngle = Math.cos(body.angle);
-      ctx.textAlign = cosAngle > 0 ? 'left' : 'right';
-      const offset = 8;
-      const textX = pos.x + Math.cos(body.angle) * offset;
-      const textY = pos.y + Math.sin(body.angle) * offset;
-
-      const thing = thingMap.get(body.id);
-      const title = thing?.title ?? 'Sin título';
-      const fitted = fit(ctx, title, 100);
-      ctx.fillText(fitted, textX, textY);
-    }
-  }
+  const hit = (x: number, y: number, sight: Sight) => {
+    if (!model) return null; let best: string | null = null, reach = Infinity;
+    for (const b of model.bodies) { const pos = now.current.get(b.id); if (!pos) continue; if (b.ring === 0) { if (Math.abs(x - pos.x) <= SUN.w / 2 * Math.min(legible(sight), 1.3) && Math.abs(y - pos.y) <= SUN.h / 2 * Math.min(legible(sight), 1.3)) return b.id; continue; }
+      const d = Math.hypot(x - pos.x, y - pos.y); if (d <= Math.max(size(b.id) * legible(sight) + 8, 14 / sight.scale) && d < reach) { reach = d; best = b.id; } }
+    return best;
+  };
+  const sun = model ? base.byId.get(model.centre) : undefined, n = model?.counts ?? [0, 0, 0, 0, 0];
+  const summary = sun ? `«${sun.title}» en el centro. ${n[1]} a un enlace, ${n[2]} a dos, ${n[3]} más lejos y ${n[4]} sin camino hasta él.` : 'Todavía no hay nada en este lienzo.';
+  const rows: [number, string][] = [[n[1], 'a un enlace'], [n[2], 'a dos enlaces'], [n[3], 'a tres o más'], [n[4], 'sin camino hasta aquí']];
+  return <Stage id="orbit" title="Órbita" question="¿Qué tan cerca está todo de esto? Lo elegido es el sol; cada órbita es un enlace más de distancia." summary={summary} fitKey={`${base.all.length}:${model?.outer ?? 0}`}
+    bounds={model ? { x: -model.outer - 200, y: -model.outer - 140, width: 2 * model.outer + 400, height: 2 * model.outer + 280 } : { x: 0, y: 0, width: 0, height: 0 }}
+    legend={[{ color: p.accent, shape: 'ring', text: 'El centro' }, { color: p.flow, shape: 'line', text: 'Flujo' }, { color: p.needs, shape: 'line', text: 'Necesita' }, { color: p.mentions, shape: 'line', text: 'Menciona' }, { color: p.muted, text: 'Tamaño = cuántos enlaces tiene' }]}
+    draw={draw} overlay={overlay} hit={hit} onHover={setHover} onPress={id => { if (id && id !== model?.centre) void c.select([id]); }}
+    side={sun ? <><Txt kind="label" muted>En el centro</Txt><Txt kind="heading" numberOfLines={3}>{sun.title}</Txt>{!!sun.summary && <Txt kind="small" muted numberOfLines={4}>{sun.summary}</Txt>}
+      <View style={{ gap: 3 }}>{rows.filter(r => r[0] > 0).map(r => <View key={r[1]} style={{ flexDirection: 'row', gap: 8 }}><Txt kind="small" style={{ width: 26, textAlign: 'right', fontWeight: '600' }}>{r[0]}</Txt><Txt kind="small" muted>{r[1]}</Txt></View>)}</View>
+      <Txt kind="label" muted>Presiona otro cuerpo para ponerlo en el centro.</Txt><Button label="Ver en el lienzo" small icon="Frame" onPress={() => onOpen(sun.id)} /></> : undefined}>
+    {!sun && <View pointerEvents="none" style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}><Txt kind="small" muted>Todavía no hay nada en este lienzo.</Txt></View>}
+  </Stage>;
 }

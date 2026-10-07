@@ -11,5 +11,5 @@ export function CanvasSurface(props: CanvasSurfaceProps & { summary: string }) {
 export function GLSurface(props: GLSurfaceProps & { summary: string }) {
   return Platform.OS === 'web' ? <WebGLSurface {...props} /> : <NativeLearningFallback summary={props.summary} />;
 }
-export type { CanvasSurfaceProps, GLSurfaceProps, Canvas2DContext, GLContext, SurfaceFrame, SurfacePointer } from './web';
+export type { CanvasSurfaceProps, GLSurfaceProps, Canvas2DContext, CanvasPaint, GLContext, SurfaceFrame, SurfacePointer, SurfaceWheel } from './web';
 export { compileGLProgram } from './web';

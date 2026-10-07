@@ -1,534 +1,89 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import type { SurfaceFrame, SurfacePointer } from '../Surfaces';
+import { reducedMotion } from '../motion';
 import type { Canvas2DContext } from '../Surfaces';
-import { STAGE_INSET, Stage } from './Stage';
 import { Button, Txt, useUI } from '../ui';
-import { tokens } from '../tokens';
-import type { WorldProps } from './shared';
-import { things, edges, placed, palette, fit, FONT, seeded, clamp, lerp } from './shared';
-import {
-  reliefField,
-  contours,
-  levelsOf,
-  summits,
-  fitSamples,
-  type Sample
-} from './relief';
+import { areaColor, legible, tag, tooltip } from './kit';
+import { contours, reliefField, summits } from './relief';
+import { clamp, easeOut, edges, ground, mix, palette, things, type Edge, type WorldProps } from './shared';
+import { Stage, type Sight } from './Stage';
 
-const GRID_PADDING = 40;
-
+const BANDS = 9, SIGMA = 150;
+/**
+ * The canvas as land seen from above. Nothing moves from where you put it; the ground rises where things are
+ * linked the most, so the summits are what the rest leans on and the plains are what nobody connects. Raise the
+ * water and the lowlands go under, leaving only the most connected in sight.
+ */
 export function ReliefView({ controller: c, onOpen }: WorldProps) {
-  const u = useUI();
-  const doc = c.view!.document;
-  const catalog = c.catalog;
-  const p = palette(u);
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const u = useUI(), p = palette(u), doc = c.view!.document, catalog = c.catalog, [hover, setHover] = useState<string | null>(null), [sea, setSea] = useState(0), water = useRef(0), born = useRef(0);
+  const model = useMemo(() => {
+    const all = things(doc), g = ground(doc, catalog, all, .8, 280), shown = all.filter(t => g.at.has(t.id)), ids = new Set(shown.map(t => t.id)), links = edges(doc, all).filter(l => ids.has(l.from) && ids.has(l.to)), b = g.bounds;
+    const degree = new Map<string, number>(), touch = new Map<string, Edge[]>(); for (const l of links) for (const id of [l.from, l.to]) { degree.set(id, (degree.get(id) ?? 0) + 1); (touch.get(id) ?? touch.set(id, []).get(id)!).push(l); }
+    const cell = Math.max(8, Math.ceil(Math.max(b.width / 230, b.height / 160))), cols = Math.ceil(b.width / cell) + 1, rows = Math.ceil(b.height / cell) + 1;
+    const samples = shown.map(t => ({ id: t.id, x: g.at.get(t.id)!.x - b.x, y: g.at.get(t.id)!.y - b.y, weight: 1 + (degree.get(t.id) ?? 0) })), field = reliefField(samples, cols, rows, cell, SIGMA);
+    let max = 0; for (let i = 0; i < field.length; i++) max = Math.max(max, field[i]); max = max || 1;
+    const bandAt = (col: number, row: number) => clamp(Math.floor(field[clamp(row, 0, rows - 1) * cols + clamp(col, 0, cols - 1)] / max * BANDS), 0, BANDS - 1);
+    // Horizontal runs of cells of the same height and the same light, so a frame is a few thousand rectangles. Light
+    // comes from the upper left: 0 flat, 1-2 facing it, 3-4 turned away. This is what makes it read as relief.
+    const shade = (col: number, row: number) => { const h = (r: number, k: number) => field[clamp(r, 0, rows - 1) * cols + clamp(k, 0, cols - 1)], s = (h(row - 1, col - 1) - h(row + 1, col + 1)) / max * 7; return s > .3 ? 1 : s > .1 ? 2 : s < -.3 ? 4 : s < -.1 ? 3 : 0; };
+    const land: number[][] = Array.from({ length: BANDS * 5 }, () => []);
+    for (let row = 0; row < rows; row++) { let start = 0, kind = bandAt(0, row) * 5 + shade(0, row); for (let col = 1; col <= cols; col++) { const next = col < cols ? bandAt(col, row) * 5 + shade(col, row) : -1; if (next !== kind) { land[kind].push(start * cell - cell / 2, row * cell - cell / 2, (col - start) * cell); start = col; kind = next; } } }
+    const lines = Array.from({ length: BANDS - 1 }, (_, i) => contours(field, cols, rows, (i + 1) / BANDS * max)), band = new Map(samples.map(s => [s.id, bandAt(Math.round(s.x / cell), Math.round(s.y / cell))]));
+    const height = new Map(samples.map(s => [s.id, field[clamp(Math.round(s.y / cell), 0, rows - 1) * cols + clamp(Math.round(s.x / cell), 0, cols - 1)] / max]));
+    return { ...g, shown, links, degree, touch, byId: new Map(shown.map(t => [t.id, t])), cell, land, lines, band, height, peaks: new Set(summits(samples, field, cols, rows, cell, 5).map(s => s.id)) };
+  }, [doc.blocks, doc.groups, doc.links, catalog]);
+  const size = (id: string) => 5 + 1.9 * Math.sqrt(model.degree.get(id) ?? 0), selected = c.selection.length === 1 && model.byId.has(c.selection[0]) ? c.selection[0] : null;
+  const afloat = model.shown.filter(t => (model.band.get(t.id) ?? 0) >= sea).length;
 
-  // Extract things and their link counts
-  const allThings = useMemo(() => things(doc), [doc.blocks, doc.groups]);
-  const allEdges = useMemo(() => edges(doc, allThings), [doc.links, allThings]);
-
-  // Compute weights: 1 + link count
-  const weights = useMemo(() => {
-    const w = new Map<string, number>();
-    const linkCount = new Map<string, number>();
-    for (const edge of allEdges) {
-      linkCount.set(edge.from, (linkCount.get(edge.from) ?? 0) + 1);
-      linkCount.set(edge.to, (linkCount.get(edge.to) ?? 0) + 1);
+  const draw = (ctx: Canvas2DContext, sight: Sight) => {
+    if (!model.shown.length) return; if (!born.current) born.current = sight.time; const still = reducedMotion.current, t = sight.time, b = model.bounds, cell = model.cell;
+    water.current = still ? sea : water.current + (sea - water.current) * (1 - Math.exp(-sight.dt / 220)); if (Math.abs(sea - water.current) < .01) water.current = sea; const level = water.current, grown = (still ? 1 : easeOut((t - born.current) / 900)) * BANDS;
+    const tone = [p.mentions, p.mentions, p.mentions, p.ok, p.ok, p.wait, p.wait, p.wait, p.ink], depth = [0, .1, .17, .2, .28, .3, .4, .5, .42], sea0 = mix(p.paper, p.flow, still ? .24 : .24 + .03 * Math.sin(t / 1300));
+    const bright = p.dark ? p.ink : p.paper, dark = p.dark ? p.paper : p.ink, lit = p.dark ? [0, .12, .06, .3, .52] : [0, .5, .28, .07, .14];
+    // Neighbouring rectangles overlap by more than a screen pixel, or their soft edges would let the paper through.
+    const lap = 1.3 / sight.scale; ctx.save(); ctx.translate(b.x, b.y);
+    for (let k = 0; k < BANDS; k++) {
+      const wet = clamp(level - k, 0, 1), up = clamp(grown - k, 0, 1); if (!wet && (k === 0 || !up)) continue;
+      const soil = mix(p.paper, tone[k], depth[k] * up), deep = mix(sea0, p.paper, clamp((Math.floor(level) - k) * .12, 0, .5));
+      for (let sh = 0; sh < 5; sh++) { const runs = model.land[k * 5 + sh]; if (!runs.length || (k === 0 && !wet && sh === 0)) continue;
+        ctx.fillStyle = mix(sh ? mix(soil, sh < 3 ? bright : dark, lit[sh] * up) : soil, deep, wet); for (let i = 0; i < runs.length; i += 3) ctx.fillRect(runs[i], runs[i + 1], runs[i + 2] + lap, cell + lap); }
     }
-    for (const thing of allThings) {
-      w.set(thing.id, 1 + (linkCount.get(thing.id) ?? 0));
+    model.lines.forEach((segments, i) => {
+      const k = i + 1; if (k > grown) return; const shore = level > .4 && k === Math.round(level), index = k % 3 === 0; ctx.beginPath(); for (let s = 0; s < segments.length; s += 4) { ctx.moveTo(segments[s] * cell, segments[s + 1] * cell); ctx.lineTo(segments[s + 2] * cell, segments[s + 3] * cell); }
+      ctx.lineWidth = (shore ? 2.4 : index ? 1.5 : .8) / Math.min(1.4, Math.max(.5, sight.scale)); ctx.strokeStyle = shore ? p.a(p.flow, .95) : p.a(p.ink, k < level ? .08 : index ? .36 : .2); ctx.stroke();
+    });
+    ctx.restore();
+    // The edge of the sheet: this is a chart of the canvas, not the whole world.
+    ctx.lineWidth = 1 / sight.scale; ctx.strokeStyle = p.a(p.ink, .16); ctx.strokeRect(b.x - cell / 2, b.y - cell / 2, Math.ceil(b.width / cell + 1) * cell, Math.ceil(b.height / cell + 1) * cell);
+    const near = new Set((hover ? model.touch.get(hover) ?? [] : []).map(l => l.id));
+    for (const l of model.links) { const a = model.at.get(l.from), z = model.at.get(l.to); if (!a || !z) continue; const on = near.has(l.id), sunk = (model.band.get(l.from) ?? 0) < Math.round(level) || (model.band.get(l.to) ?? 0) < Math.round(level);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(z.x, z.y); ctx.lineWidth = (on ? 2.2 : 1.1) * legible(sight); ctx.setLineDash(on ? [] : [4 * legible(sight), 6 * legible(sight)]); ctx.strokeStyle = p.a(p.ink, on ? .85 : sunk ? .06 : hover ? .12 : .28); ctx.stroke(); ctx.setLineDash([]); }
+    const few = model.shown.length <= 34, k = legible(sight);
+    for (const thing of model.shown) {
+      const at = model.at.get(thing.id)!, r = size(thing.id) * k, sunk = (model.band.get(thing.id) ?? 0) < Math.round(level), on = thing.id === hover, peak = model.peaks.has(thing.id), chosen = thing.id === selected, color = areaColor(p, thing.areaIndex);
+      ctx.globalAlpha = sunk && !on ? .22 : 1; if (on || chosen) { ctx.shadowColor = p.a(chosen ? p.accent : color, .85); ctx.shadowBlur = 16 * sight.scale; }
+      ctx.beginPath(); ctx.arc(at.x, at.y, on ? r + 2 : r, 0, 6.2832); ctx.fillStyle = color; ctx.fill(); ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'; ctx.lineWidth = (chosen ? 3 : 1.75) * k; ctx.strokeStyle = chosen ? p.accent : p.paper; ctx.stroke();
+      if (peak && !sunk) { ctx.beginPath(); ctx.moveTo(at.x, at.y - r - 15 * k); ctx.lineTo(at.x - 7 * k, at.y - r - 4 * k); ctx.lineTo(at.x + 7 * k, at.y - r - 4 * k); ctx.closePath(); ctx.fillStyle = p.ink; ctx.fill(); }
+      if ((!sunk || on) && (peak || on || chosen || few || sight.scale >= .7)) { const text = thing.title.length > 32 ? thing.title.slice(0, 31).trimEnd() + '…' : thing.title; tag(ctx, p, text, at.x + r + 9 * k, at.y, { size: peak ? 13 : 12, weight: peak || on ? 700 : 500, color: p.ink, alpha: peak || on ? .92 : .7, k });
+        if (peak && sight.scale >= .55) { const n = model.degree.get(thing.id) ?? 0; tag(ctx, p, `cumbre · ${n} ${n === 1 ? 'enlace' : 'enlaces'}`, at.x + r + 9 * k, at.y + 17 * k, { size: 10, color: p.ink, alpha: .7, k }); } }
+      ctx.globalAlpha = 1;
     }
-    return w;
-  }, [allThings, allEdges]);
-
-  // Get placed positions for things
-  const positions = useMemo(() => placed(doc, catalog), [doc, catalog]);
-
-  // Samples: things that have positions
-  const samples = useMemo(() => {
-    const points = new Map<string, { x: number; y: number }>();
-    for (const thing of allThings) {
-      const pos = positions.get(thing.id);
-      if (pos) {
-        points.set(thing.id, { x: pos.x, y: pos.y });
-      }
-    }
-    const inset = STAGE_INSET;
-    const fitBox = {
-      x: inset.left + GRID_PADDING,
-      y: inset.top + GRID_PADDING,
-      width: Math.max(1, size.width - inset.left - inset.right - GRID_PADDING * 2),
-      height: Math.max(1, size.height - inset.top - inset.bottom - GRID_PADDING * 2)
-    };
-    return fitSamples(points, weights, fitBox);
-  }, [allThings, positions, weights, size]);
-
-  // Precompute grid, field, contours, and summits
-  const computed = useMemo(() => {
-    if (samples.length === 0) return null;
-
-    const inset = STAGE_INSET;
-    const safeWidth = Math.max(1, size.width - inset.left - inset.right - GRID_PADDING * 2);
-    const safeHeight = Math.max(1, size.height - inset.top - inset.bottom - GRID_PADDING * 2);
-
-    // Find smallest cell size that keeps cols × rows ≤ 18000
-    let cell = 8;
-    for (const c of [8, 10, 12, 14, 16, 20]) {
-      const cols = Math.ceil(size.width / c) + 1;
-      const rows = Math.ceil(size.height / c) + 1;
-      if (cols * rows <= 18000) {
-        cell = c;
-        break;
-      }
-    }
-
-    // The grid covers the whole stage, in the same coordinates as the samples, so the ground and the marks agree.
-    const cols = Math.ceil(size.width / cell) + 1;
-    const rows = Math.ceil(size.height / cell) + 1;
-    const sigma = 0.075 * Math.min(safeWidth, safeHeight);
-
-    const field = reliefField(samples, cols, rows, cell, sigma);
-    const levels = levelsOf(field, 9);
-    const topSummits = summits(samples, field, cols, rows, cell, 8);
-
-    return {
-      cell,
-      cols,
-      rows,
-      field,
-      levels,
-      summits: topSummits,
-      inset
-    };
-  }, [samples, size]);
-
-  // Draw function
-  const draw = useCallback(
-    (ctx: Canvas2DContext, frame: SurfaceFrame) => {
-      ctx.clearRect(0, 0, frame.width, frame.height);
-
-      if (!computed || samples.length === 0) {
-        ctx.fillStyle = p.paper;
-        ctx.fillRect(0, 0, frame.width, frame.height);
-        return;
-      }
-
-      const { cell, cols, rows, field, levels, summits: topSummits, inset } = computed;
-      const offsetX = 0;
-      const offsetY = 0;
-
-      ctx.fillStyle = p.paper;
-      ctx.fillRect(0, 0, frame.width, frame.height);
-
-      // 1. Hypsometric tint: group cells by band
-      ctx.save();
-      for (let row = 0; row < rows - 1; row++) {
-        let col = 0;
-        while (col < cols - 1) {
-          const c0 = field[row * cols + col];
-          const c1 = field[row * cols + col + 1];
-          const c2 = field[(row + 1) * cols + col + 1];
-          const c3 = field[(row + 1) * cols + col];
-          const avg = (c0 + c1 + c2 + c3) / 4;
-          const band = levels.findIndex(l => l >= avg);
-          const bandNum = band >= 0 ? band : levels.length;
-
-          // Merge runs of equal band
-          let endCol = col;
-          while (
-            endCol < cols - 1 &&
-            (() => {
-              const nc0 = field[row * cols + endCol + 1];
-              const nc1 = field[row * cols + endCol + 2];
-              const nc2 = field[(row + 1) * cols + endCol + 2];
-              const nc3 = field[(row + 1) * cols + endCol + 1];
-              const navg = (nc0 + nc1 + nc2 + nc3) / 4;
-              const nband = levels.findIndex(l => l >= navg);
-              return nband >= 0 ? nband === band : bandNum === levels.length;
-            })()
-          ) {
-            endCol++;
-          }
-
-          if (bandNum > 0) {
-            const alpha = clamp(0.035 * bandNum, 0, 1);
-            ctx.fillStyle = p.a(p.accent, alpha);
-            ctx.fillRect(
-              offsetX + col * cell,
-              offsetY + row * cell,
-              (endCol - col + 1) * cell,
-              cell
-            );
-          }
-
-          col = endCol + 1;
-        }
-      }
-      ctx.restore();
-
-      // 2. Contour lines
-      for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
-        const level = levels[levelIdx];
-        const segs = contours(field, cols, rows, level);
-        const isIndex = levelIdx % 3 === 2;
-        const alpha = isIndex ? 0.6 : 0.34;
-        const width = isIndex ? 1.25 : 0.75;
-
-        ctx.strokeStyle = p.a(p.ink, alpha);
-        ctx.lineWidth = width;
-
-        for (let i = 0; i < segs.length; i += 4) {
-          const x1 = offsetX + segs[i] * cell;
-          const y1 = offsetY + segs[i + 1] * cell;
-          const x2 = offsetX + segs[i + 2] * cell;
-          const y2 = offsetY + segs[i + 3] * cell;
-
-          ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
-        }
-      }
-
-      // 3. Rivers: flow and depends links
-      for (const edge of allEdges) {
-        const fromPos = samples.find(s => s.id === edge.from);
-        const toPos = samples.find(s => s.id === edge.to);
-        if (!fromPos || !toPos) continue;
-
-        const x1 = fromPos.x;
-        const y1 = fromPos.y;
-        const x2 = toPos.x;
-        const y2 = toPos.y;
-
-        if (edge.kind === 'reference') continue;
-
-        const isFlow = edge.kind === 'flow';
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const len = Math.sqrt(dx * dx + dy * dy);
-
-        const seed = seeded(edge.id);
-        const pushSide = (seed - 0.5) * 0.3 * len;
-        const cpx = (x1 + x2) / 2 - (dy / len) * pushSide;
-        const cpy = (y1 + y2) / 2 + (dx / len) * pushSide;
-
-        ctx.strokeStyle = p.a(isFlow ? p.flow : p.needs, isFlow ? 0.7 : 0.5);
-        ctx.lineWidth = isFlow ? 1.25 : 1;
-        if (!isFlow) ctx.setLineDash([3, 4]);
-
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.quadraticCurveTo(cpx, cpy, x2, y2);
-        ctx.stroke();
-
-        if (!isFlow) ctx.setLineDash([]);
-
-        // Arrowhead for flow only
-        if (isFlow) {
-          const angle = Math.atan2(y2 - cpy, x2 - cpx);
-          const size = 6;
-          ctx.strokeStyle = p.a(p.flow, 0.7);
-          ctx.lineWidth = 1.25;
-          ctx.beginPath();
-          ctx.moveTo(x2 - size * Math.cos(angle - Math.PI / 6), y2 - size * Math.sin(angle - Math.PI / 6));
-          ctx.lineTo(x2, y2);
-          ctx.lineTo(x2 - size * Math.cos(angle + Math.PI / 6), y2 - size * Math.sin(angle + Math.PI / 6));
-          ctx.stroke();
-        }
-      }
-
-      // 4. Survey marks (dots)
-      for (const sample of samples) {
-        const isSelected = c.selection.includes(sample.id);
-        ctx.fillStyle = isSelected ? p.a(p.accent, 1) : p.a(p.ink, 1);
-        ctx.beginPath();
-        ctx.arc(sample.x, sample.y, isSelected ? 4 : 2.5, 0, Math.PI * 2);
-        ctx.fill();
-
-        if (isSelected) {
-          ctx.strokeStyle = p.a(p.paper, 1);
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(sample.x, sample.y, 4, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      }
-
-      // 5. Area names (region labels)
-      const areaGroups = new Map<string, Sample[]>();
-      for (const sample of samples) {
-        const thing = allThings.find(t => t.id === sample.id);
-        if (thing && thing.area) {
-          if (!areaGroups.has(thing.area)) areaGroups.set(thing.area, []);
-          areaGroups.get(thing.area)!.push(sample);
-        }
-      }
-
-      ctx.font = `600 11px ${FONT}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = p.a(p.muted, 0.75);
-
-      for (const [areaName, areaSamples] of areaGroups) {
-        if (areaSamples.length < 2) continue;
-
-        const cx = areaSamples.reduce((sum, s) => sum + s.x, 0) / areaSamples.length;
-        const cy = areaSamples.reduce((sum, s) => sum + s.y, 0) / areaSamples.length;
-
-        const text = areaName.toUpperCase().split('').join(' ');
-        const fitted = fit(ctx, text, 260);
-        ctx.fillText(fitted, cx, cy);
-      }
-
-      // 6. Summits
-      const drawnLabels: { x: number; y: number; w: number; h: number }[] = [];
-
-      for (const summit of topSummits) {
-        const dotX = summit.x;
-        const dotY = summit.y;
-
-        // Triangle
-        const triBase = 9;
-        const triHeight = 8;
-        ctx.fillStyle = p.a(p.ink, 1);
-        ctx.beginPath();
-        ctx.moveTo(dotX, dotY - triHeight);
-        ctx.lineTo(dotX - triBase / 2, dotY);
-        ctx.lineTo(dotX + triBase / 2, dotY);
-        ctx.closePath();
-        ctx.fill();
-
-        // Title and cota
-        const title = allThings.find(t => t.id === summit.id)?.title || 'Sin título';
-        ctx.font = `600 12px ${FONT}`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = p.a(p.ink, 1);
-
-        const titleFitted = fit(ctx, title, 180);
-        const titleMetrics = ctx.measureText(titleFitted);
-        const labelX = dotX + 8;
-        const labelY = dotY - triHeight - 12;
-
-        ctx.font = `10px ${FONT}`;
-        const cotaText = `cota ${summit.weight - 1}`;
-        const cotaMetrics = ctx.measureText(cotaText);
-        const labelW = Math.max(titleMetrics.width, cotaMetrics.width);
-        const labelH = 20;
-
-        const overlap = drawnLabels.some(
-          rect =>
-            !(labelX + labelW < rect.x ||
-              labelX > rect.x + rect.w ||
-              labelY + labelH < rect.y ||
-              labelY > rect.y + rect.h)
-        );
-
-        if (!overlap) {
-          ctx.font = `600 12px ${FONT}`;
-          ctx.fillStyle = p.a(p.ink, 1);
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          ctx.fillText(titleFitted, labelX, labelY);
-
-          ctx.font = `10px ${FONT}`;
-          ctx.fillStyle = p.a(p.muted, 1);
-          ctx.fillText(cotaText, labelX, labelY + 14);
-
-          drawnLabels.push({ x: labelX, y: labelY, w: labelW, h: labelH });
-        }
-      }
-
-      // 7. Hover crosshair and label
-      if (hoveredId) {
-        const hoveredSample = samples.find(s => s.id === hoveredId);
-        if (hoveredSample) {
-          // Crosshair
-          ctx.strokeStyle = p.a(p.ink, 0.18);
-          ctx.lineWidth = 1;
-
-          ctx.beginPath();
-          ctx.moveTo(0, hoveredSample.y);
-          ctx.lineTo(frame.width, hoveredSample.y);
-          ctx.stroke();
-
-          ctx.beginPath();
-          ctx.moveTo(hoveredSample.x, 0);
-          ctx.lineTo(hoveredSample.x, frame.height);
-          ctx.stroke();
-
-          // Ring
-          ctx.strokeStyle = p.a(p.accent, 1);
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.arc(hoveredSample.x, hoveredSample.y, 7, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      }
-    },
-    [computed, samples, allThings, allEdges, p, c.selection, hoveredId]
-  );
-
-  // Pointer handling
-  const onPointer = useCallback(
-    (event: SurfacePointer) => {
-      if (event.kind === 'move') {
-        const threshold = 18;
-        let nearest: Sample | null = null;
-        let minDist = threshold;
-
-        for (const sample of samples) {
-          const dx = sample.x - event.x;
-          const dy = sample.y - event.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < minDist) {
-            minDist = dist;
-            nearest = sample;
-          }
-        }
-
-        if (nearest?.id !== hoveredId) {
-          setHoveredId(nearest?.id ?? null);
-        }
-      } else if (event.kind === 'down' || event.kind === 'up') {
-        const threshold = 5;
-        let nearest: Sample | null = null;
-        let minDist = threshold;
-
-        for (const sample of samples) {
-          const dx = sample.x - event.x;
-          const dy = sample.y - event.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < minDist) {
-            minDist = dist;
-            nearest = sample;
-          }
-        }
-
-        if (event.kind === 'up' && nearest) {
-          void c.select([nearest.id]);
-        }
-      }
-    },
-    [samples, hoveredId]
-  );
-
-  // Selected thing info
-  const selectedThing =
-    c.selection.length === 1
-      ? allThings.find(t => t.id === c.selection[0])
-      : null;
-
-  const summitTitles = computed
-    ?.summits.slice(0, 4)
-    .map(s => allThings.find(t => t.id === s.id)?.title || 'Sin título')
-    .join(', ');
-
-  const summary =
-    samples.length === 0
-      ? 'Todavía no hay nada en este lienzo.'
-      : summitTitles
-        ? `Relieve de ${samples.length} cosas. Las cumbres: ${summitTitles}.`
-        : `Relieve de ${samples.length} cosas, sin cumbres: nada está especialmente conectado.`;
-
-  if (samples.length === 0) {
-    return (
-      <View style={{ flex: 1, backgroundColor: u.c.surface0 }}>
-        <Stage
-          id="relieve"
-          title="Relieve"
-          question="¿Dónde está el peso de este lienzo? Las cumbres son lo más conectado."
-          summary={summary}
-          draw={draw}
-          onPointer={onPointer}
-        >
-          <View
-            style={{
-              position: 'absolute',
-              bottom: tokens.island.inset,
-              left: tokens.island.inset,
-              justifyContent: 'center',
-              alignItems: 'center',
-              width: '100%'
-            }}
-          >
-            <Txt kind="small" muted>
-              Todavía no hay nada en este lienzo.
-            </Txt>
-          </View>
-        </Stage>
-      </View>
-    );
-  }
-
-  return (
-    <View
-      style={{ flex: 1 }}
-      onLayout={e => setSize(e.nativeEvent.layout)}
-    >
-      <Stage
-        id="relieve"
-        title="Relieve"
-        question="¿Dónde está el peso de este lienzo? Las cumbres son lo más conectado."
-        summary={summary}
-        draw={draw}
-        onPointer={onPointer}
-      >
-        {selectedThing && positions.get(selectedThing.id) && (
-          <View
-            style={{
-              position: 'absolute',
-              bottom: tokens.island.inset,
-              left: tokens.island.inset,
-              width: 280,
-              backgroundColor: u.c.surface1,
-              borderWidth: 1,
-              borderColor: u.c.border,
-              borderRadius: 12,
-              padding: 12,
-              gap: 6
-            }}
-          >
-            <Txt kind="heading" numberOfLines={2}>
-              {selectedThing.title}
-            </Txt>
-            {selectedThing.summary && (
-              <Txt kind="small" muted numberOfLines={3}>
-                {selectedThing.summary}
-              </Txt>
-            )}
-            <Button
-              label="Ver en el lienzo"
-              small
-              icon="Frame"
-              onPress={() => onOpen(selectedThing.id)}
-            />
-          </View>
-        )}
-        {!selectedThing && (
-          <View
-            style={{
-              position: 'absolute',
-              bottom: tokens.island.inset,
-              left: tokens.island.inset,
-              width: 280,
-              backgroundColor: u.c.surface1,
-              borderWidth: 1,
-              borderColor: u.c.border,
-              borderRadius: 12,
-              padding: 12
-            }}
-          >
-            <Txt kind="small" muted>
-              Curvas de nivel: cuanto más juntas y más altas, más enlaces se cruzan ahí. Las líneas con flecha son el flujo.
-            </Txt>
-          </View>
-        )}
-      </Stage>
-    </View>
-  );
+  };
+  const overlay = (ctx: Canvas2DContext, sight: Sight) => {
+    const thing = hover ? model.byId.get(hover) : undefined, at = hover ? model.at.get(hover) : undefined; if (!thing || !at) return; const n = model.degree.get(thing.id) ?? 0;
+    tooltip(ctx, p, sight, at, thing.title, [thing.summary, `${n} ${n === 1 ? 'enlace' : 'enlaces'} · altura ${Math.round((model.height.get(thing.id) ?? 0) * 100)} % de la más alta`, (model.band.get(thing.id) ?? 0) < sea ? 'Bajo el agua con este nivel.' : '', 'Presiona para elegirlo.']);
+  };
+  const hit = (x: number, y: number, sight: Sight) => { let best: string | null = null, reach = Infinity; for (const thing of model.shown) { const at = model.at.get(thing.id)!, d = Math.hypot(x - at.x, y - at.y); if (d <= Math.max(size(thing.id) * legible(sight) + 8, 14 / sight.scale) && d < reach) { reach = d; best = thing.id; } } return best; };
+  const count = model.shown.length, chosen = selected ? model.byId.get(selected) : undefined, peaks = model.shown.filter(t => model.peaks.has(t.id)).map(t => t.title);
+  const summary = !count ? 'Todavía no hay nada en este lienzo.' : !model.links.length ? `${count} cosas sin enlaces: el terreno es llano.` : `${count} cosas. Lo más enlazado: ${peaks.slice(0, 4).join(', ')}.`;
+  return <Stage id="relieve" title="Relieve" question="¿Dónde se concentra esto? El suelo sube donde hay más enlaces: las cumbres son lo que el resto necesita." summary={summary} fitKey={`${count}:${Math.round(model.bounds.width)}:${Math.round(model.bounds.height)}`} bounds={model.bounds}
+    legend={[{ color: p.a(p.mentions, .5), shape: 'bar', text: 'Llano = poco enlazado' }, { color: p.a(p.wait, .7), shape: 'bar', text: 'Alto = muy enlazado' }, { color: p.ink, text: '▲ Cumbre' }, { color: p.a(p.flow, .6), shape: 'bar', text: 'Agua' }]}
+    draw={draw} overlay={overlay} hit={hit} onHover={setHover} onPress={id => { if (id) void c.select([id]); }}
+    side={count ? <><Txt kind="label" muted>Nivel del agua</Txt>
+      <View style={{ flexDirection: 'row', gap: 6 }}><Button label="Bajar" small icon="Minus" disabled={sea <= 0} onPress={() => setSea(sea - 1)} /><Button label="Subir" small icon="Plus" disabled={sea >= BANDS - 1 || afloat <= 1} onPress={() => setSea(sea + 1)} /></View>
+      <Txt kind="small" muted>{sea ? `Quedan ${afloat} de ${count} a la vista: lo más enlazado.` : 'Sube el agua para dejar a la vista solo lo más enlazado.'}</Txt>
+      {!!chosen && <View style={{ gap: 6, borderTopWidth: 1, borderColor: u.c.border, paddingTop: 10 }}><Txt kind="heading" numberOfLines={3}>{chosen.title}</Txt>{!!chosen.summary && <Txt kind="small" muted numberOfLines={4}>{chosen.summary}</Txt>}
+        <Txt kind="small">{model.degree.get(chosen.id) ?? 0} enlaces · altura {Math.round((model.height.get(chosen.id) ?? 0) * 100)} %</Txt><Button label="Ver en el lienzo" small icon="Frame" onPress={() => onOpen(chosen.id)} /></View>}</> : undefined}>
+    {!count && <View pointerEvents="none" style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}><Txt kind="small" muted>Todavía no hay nada en este lienzo.</Txt></View>}
+  </Stage>;
 }

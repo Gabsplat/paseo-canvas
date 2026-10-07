@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { ScrollView } from '@getpaseo/plugin/client/react-native';
 import type { CanvasLink } from '../shared/model';
 import { withAlpha, type Tone } from './color';
+import { Pannable } from './Pannable';
 import { tokens } from './tokens';
 import { Button, Txt, useUI } from './ui';
 import type { CanvasController } from './useCanvas';
@@ -11,10 +11,13 @@ import { focusOf, matrixOf, readings, type Neighbour } from './view-models';
 type ViewProps = { controller: CanvasController; onOpen(id: string): void };
 const V = tokens.views, kindTone = (kind: CanvasLink['kind']): Tone => tokens.graph.link.defaultTone[kind] as Tone, kindName = (kind: CanvasLink['kind']) => tokens.graph.kinds[kind];
 /** Shared shell of the alternative views: clear of the islands, one question as its heading, the canvas one press away. */
-function Frame({ title, question, children, scroll = true }: { title: string; question: string; children: React.ReactNode; scroll?: boolean }) {
-  const u = useUI(), head = <View style={{ gap: 2, paddingBottom: 12 }}><Txt kind="heading">{title}</Txt><Txt kind="small" muted>{question}</Txt></View>;
-  const style = { flex: 1, backgroundColor: u.c.surface0 }, inner = { paddingTop: u.compact ? 16 : tokens.island.bannerTop + 8, paddingHorizontal: u.compact ? 16 : V.padX, paddingBottom: V.padBottom };
-  return scroll ? <ScrollView style={style} contentContainerStyle={inner}>{head}{children}</ScrollView> : <View style={[style, inner]}>{head}{children}</View>;
+function Frame({ id, title, question, children, wide = false }: { id: string; title: string; question: string; children: React.ReactNode; wide?: boolean }) {
+  const u = useUI(), left = u.compact ? 16 : V.padX;
+  // The heading stays put; what is under it moves like the canvas does (wheel, command-wheel, a drag on empty space).
+  return <View style={{ flex: 1, backgroundColor: u.c.surface0 }}>
+    <Pannable id={id} wide={wide}><View style={{ paddingTop: (u.compact ? 16 : tokens.island.bannerTop + 8) + 58, paddingHorizontal: left, paddingBottom: V.padBottom }}>{children}</View></Pannable>
+    <View pointerEvents="none" style={{ position: 'absolute', left: left - 8, top: u.compact ? 8 : tokens.island.bannerTop, maxWidth: 560, gap: 2, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: withAlpha(u.c.surface0, .9) }}><Txt kind="heading">{title}</Txt><Txt kind="small" muted>{question}</Txt></View>
+  </View>;
 }
 function Empty({ text }: { text: string }) { return <Txt kind="small" muted>{text}</Txt>; }
 
@@ -33,8 +36,8 @@ export function FocusView({ controller: c, onOpen }: ViewProps) {
   const id = c.selection.length === 1 && all.some(e => e.id === c.selection[0]) ? c.selection[0] : all.find(e => linked.has(e.id))?.id ?? all[0]?.id, here = all.find(e => e.id === id);
   const f = useMemo(() => id ? focusOf(doc, id) : null, [doc.links, doc.blocks, doc.groups, id]), pick = (next: string) => { void c.select([next]); };
   const block = doc.blocks.find(b => b.id === id), summary = block ? String(block.data.summary ?? block.data.text ?? '') : '';
-  if (!here || !f) return <Frame title="Foco" question="¿Qué papel cumple esto?"><Empty text="Todavía no hay nada en este lienzo." /></Frame>;
-  return <Frame title="Foco" question="¿Qué papel cumple esto? Lo que necesita arriba, quién lo necesita abajo, el flujo a los lados.">
+  if (!here || !f) return <Frame id="foco" title="Foco" question="¿Qué papel cumple esto?"><Empty text="Todavía no hay nada en este lienzo." /></Frame>;
+  return <Frame id="foco" title="Foco" question="¿Qué papel cumple esto? Lo que necesita arriba, quién lo necesita abajo, el flujo a los lados.">
     <View style={{ gap: 16, maxWidth: V.focusMax, alignSelf: 'center', width: '100%' }}>
       <Slot title="Necesita a" items={f.needs} tone="violeta" onPick={pick} />
       <View style={{ flexDirection: u.compact ? 'column' : 'row', gap: 16, alignItems: 'flex-start' }}>
@@ -60,8 +63,8 @@ export function ReadingsView({ controller: c, onOpen }: ViewProps) {
   const step = reading?.steps[Math.min(at, (reading?.steps.length ?? 1) - 1)], block = step ? doc.blocks.find(b => b.id === step.id) : undefined;
   // A card that sits on several readings is a crossing: the same card, a different role in each.
   const crossings = step ? list.filter(r => r.key !== reading!.key && r.steps.some(s => s.id === step.id)) : [];
-  if (!reading) return <Frame title="Lecturas" question="¿Cuál es el camino de un punto a otro?"><Empty text="Este lienzo no tiene enlaces de flujo ni de dependencia, así que no hay caminos que leer." /></Frame>;
-  return <Frame title="Lecturas" question="¿Cuál es el camino de un punto a otro? Cada cadena de enlaces es una lectura de las mismas tarjetas.">
+  if (!reading) return <Frame id="lecturas" title="Lecturas" question="¿Cuál es el camino de un punto a otro?"><Empty text="Este lienzo no tiene enlaces de flujo ni de dependencia, así que no hay caminos que leer." /></Frame>;
+  return <Frame id="lecturas" title="Lecturas" question="¿Cuál es el camino de un punto a otro? Cada cadena de enlaces es una lectura de las mismas tarjetas.">
     <View style={{ flexDirection: u.compact ? 'column' : 'row', gap: 20, alignItems: 'flex-start' }}>
       <View style={{ width: u.compact ? '100%' : V.listWidth, gap: 4 }}>
         {list.map(r => { const on = r.key === reading.key; return <Pressable key={r.key} accessibilityRole="button" accessibilityLabel={`Lectura de ${title(r.steps[0].id)} a ${title(r.steps.at(-1)!.id)}`} accessibilityState={{ selected: on }} onPress={() => setKey(r.key)}
@@ -88,10 +91,10 @@ export function ReadingsView({ controller: c, onOpen }: ViewProps) {
 export function MatrixView({ controller: c, onOpen }: ViewProps) {
   const u = useUI(), doc = c.view!.document, m = useMemo(() => matrixOf(doc), [doc.links, doc.blocks, doc.groups]), [hover, setHover] = useState<number | null>(null), n = m.order.length, cell = V.cell, side = n * cell;
   const told = hover !== null ? m.cells[hover] : null, focusRow = told?.row ?? -1, focusCol = told?.col ?? -1;
-  if (!m.cells.length) return <Frame title="Matriz" question="¿Qué está acoplado con qué?"><Empty text="Este lienzo no tiene enlaces todavía." /></Frame>;
-  return <Frame title="Matriz" question="¿Qué está acoplado con qué? Cada celda es un enlace de la fila hacia la columna; lejos de la diagonal, acople entre áreas." scroll={false}>
+  if (!m.cells.length) return <Frame id="matriz" title="Matriz" question="¿Qué está acoplado con qué?"><Empty text="Este lienzo no tiene enlaces todavía." /></Frame>;
+  return <Frame id="matriz" title="Matriz" question="¿Qué está acoplado con qué? Cada celda es un enlace de la fila hacia la columna; lejos de la diagonal, acople entre áreas." wide>
     <View style={{ minHeight: 34, justifyContent: 'center' }}>{told ? <Txt kind="small"><Txt kind="small" style={{ fontWeight: '600' }}>{m.order[told.row].title}</Txt> {tokens.graph.kindHelp[told.kind].toLowerCase()} <Txt kind="small" style={{ fontWeight: '600' }}>{m.order[told.col].title}</Txt>{told.label ? ` · ${told.label}` : ''}</Txt> : <View style={{ flexDirection: 'row', gap: 14, flexWrap: 'wrap' }}>{(['flow', 'depends', 'reference'] as const).map(kind => <View key={kind} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: u.tone(kindTone(kind)) }} /><Txt kind="small" muted>{kindName(kind)}</Txt></View>)}<Txt kind="small" muted>{m.cells.length} enlaces entre {n} elementos</Txt></View>}</View>
-    <ScrollView style={{ flex: 1 }}><ScrollView horizontal><View nativeID="lienzo-matrix" style={{ flexDirection: 'row' }}>
+    <View nativeID="lienzo-matrix" style={{ flexDirection: 'row' }}>
       <View style={{ width: V.rowLabel, paddingTop: V.colHead }}>{m.order.map((e, i) => <Pressable key={e.id} accessibilityRole="button" accessibilityLabel={`Ver ${e.title} en el lienzo`} onPress={() => onOpen(e.id)} style={{ height: cell, flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 8, backgroundColor: i === focusRow ? withAlpha(u.c.accent, .14) : 'transparent' }}><Txt kind="label" muted style={{ width: 22, textAlign: 'right' }}>{i + 1}</Txt><Txt kind="small" numberOfLines={1} style={{ flex: 1, fontWeight: e.group ? '600' : '400' }}>{e.title}</Txt></Pressable>)}</View>
       <View><View style={{ height: V.colHead, flexDirection: 'row', alignItems: 'flex-end' }}>{m.order.map((e, i) => <View key={e.id} style={{ width: cell, alignItems: 'center', paddingBottom: 4, backgroundColor: i === focusCol ? withAlpha(u.c.accent, .14) : 'transparent' }}><Txt kind="label" muted style={{ fontSize: 9 }}>{i + 1}</Txt></View>)}</View>
         <View style={{ width: side, height: side, borderWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
@@ -100,6 +103,6 @@ export function MatrixView({ controller: c, onOpen }: ViewProps) {
           {m.cells.map((k, i) => <Pressable key={k.linkId} accessibilityRole="button" accessibilityLabel={`${m.order[k.row].title} ${tokens.graph.kindHelp[k.kind].toLowerCase()} ${m.order[k.col].title}`} onHoverIn={() => setHover(i)} onHoverOut={() => setHover(h => h === i ? null : h)} onPress={() => { setHover(i); void c.select([m.order[k.row].id, m.order[k.col].id]); }}
             style={{ position: 'absolute', left: k.col * cell + 2, top: k.row * cell + 2, width: cell - 4, height: cell - 4, borderRadius: 3, backgroundColor: u.tone(kindTone(k.kind)), opacity: hover === null || hover === i ? 1 : .55, borderWidth: hover === i ? 2 : 0, borderColor: u.c.foreground }} />)}
         </View></View>
-    </View></ScrollView></ScrollView>
+    </View>
   </Frame>;
 }

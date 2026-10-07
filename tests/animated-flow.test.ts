@@ -55,7 +55,8 @@ const commit = (owned: HookHost) => { const pending = owned.effects.splice(0); p
 const cleanup = (owned: HookHost) => owned.slots.forEach(slot => { if (typeof slot?.cleanup === 'function') { slot.cleanup(); slot.cleanup = undefined; } });
 function context() {
   const texts: string[] = [], points: number[][] = [];
-  return { texts, points, ctx: { fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, font: '', textAlign: '', textBaseline: '', lineCap: '', lineJoin: '',
+  return { texts, points, ctx: { fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, font: '', textAlign: '', textBaseline: '', lineCap: '', lineJoin: '', lineDashOffset: 0, shadowColor: '', shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0,
+    createLinearGradient() { return { addColorStop() {} }; }, createRadialGradient() { return { addColorStop() {} }; }, strokeText() {},
     clearRect() {}, fillRect() {}, strokeRect() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc(x: number, y: number) { points.push([x, y]); }, quadraticCurveTo() {}, bezierCurveTo() {}, fill() {}, stroke() {}, clip() {}, save() {}, restore() {}, setTransform() {}, translate() {}, rotate() {}, scale() {}, setLineDash() {}, fillText(value: string) { texts.push(value); }, measureText(value: string) { return { width: value.length * 7 }; }, drawImage() {},
   } satisfies Canvas2DContext };
 }

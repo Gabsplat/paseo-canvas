@@ -25,35 +25,43 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await wait('!!document.querySelector("#lienzo-entity-d5")');await new Promise(r=>setTimeout(r,900));
  await click('#lienzo-entity-b2');await wait('__panelQA.doc().selectedIds.includes("b2")');
  const rev=await ev('__panelQA.doc().revision'),log=await ev('__panelQA.log.length'),results={};
+ const wheel=(x,y,dx,dy,ctrl=false)=>call('Input.dispatchMouseEvent',{type:'mouseWheel',x,y,deltaX:dx,deltaY:dy,modifiers:ctrl?2:0});
+ const pause=ms=>new Promise(r=>setTimeout(r,ms));
+ const rect=sel=>ev(`(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);
+ const text=id=>ev('document.querySelector("#lienzo-world-'+id+'").innerText');
+ const zoom=()=>ev('Number((document.querySelector("#lienzo-view-zoom").innerText.match(/(\\d+) %/)||[])[1])');
+ // Where the things of a world are on screen: the stage shows a pointing hand over anything that can be pressed.
+ const spots=async(id,want=6)=>{const b=await rect('#lienzo-world-'+id+' canvas'),out=[];for(let gy=0;gy<26&&out.length<want;gy++)for(let gx=0;gx<40&&out.length<want;gx++){const x=b.x+40+gx*(b.w-420)/40,y=b.y+150+gy*(b.h-290)/26;await mouse('mouseMoved',x,y);
+   if(await ev('getComputedStyle(document.querySelector("#lienzo-world-'+id+'")).cursor')==='pointer'&&!out.some(h=>Math.hypot(h.x-x,h.y-y)<46))out.push({x,y});}await mouse('mouseMoved',b.x+8,b.y+b.h-8);return out;};
+ const tap=async(x,y)=>{await mouse('mouseMoved',x,y);await mouse('mousePressed',x,y,1);await mouse('mouseReleased',x,y);await pause(350);};
  for(const [name,id] of [['Órbita','orbit'],['Estratos','strata'],['Cauce','course'],['Relieve','relieve']]){
-  await view(name);await wait('!!document.querySelector("#lienzo-world-'+id+' canvas")');await new Promise(r=>setTimeout(r,1300));
+  await view(name);await wait('!!document.querySelector("#lienzo-world-'+id+' canvas")');await pause(1500);
   const painted=await ink();results[id]={painted};assert.ok(painted>=6,name+' draws something: '+painted+' distinct colours');
-  assert.ok((await ev('document.querySelector("#lienzo-world-'+id+'").innerText')).includes(name),name+' names itself');await shot(id);
-  const box=await ev(`(()=>{const r=document.querySelector('#lienzo-world-${id} canvas').getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);
-  // Sweep presses over the stage: none may throw, and none may write.
-  for(const [fx,fy] of [[.5,.5],[.35,.45],[.62,.58],[.45,.7],[.7,.35]]){await mouse('mouseMoved',box.x+box.w*fx,box.y+box.h*fy);await new Promise(r=>setTimeout(r,60));}
-  for(const [fx,fy] of [[.42,.52],[.6,.42]])await press(box.x+box.w*fx,box.y+box.h*fy);
-  await shot(id+'-after');assert.deepEqual(uncaught.map(u=>u.exception?.description||u.text),[],name+' threw');assert.ok(!/Plugin failed|Minified React/.test(await ev('document.body.innerText')),name+' broke the panel');
+  assert.ok((await text(id)).includes(name),name+' names itself');assert.ok(await ev('!!document.querySelector("#lienzo-world-'+id+'-legend")'),name+' says how to read it');await shot(id);
+  // The camera: command-wheel zooms, the wheel pans, a drag pans, and "Encajar" comes back. The drawing changes each time.
+  const b=await rect('#lienzo-world-'+id+' canvas'),cx=b.x+b.w/2,cy=b.y+b.h/2,z0=await zoom();
+  await wheel(cx,cy,0,-240,true);await pause(700);const z1=await zoom();assert.ok(z1>z0,name+' zooms in: '+z0+' → '+z1);await shot(id+'-near');
+  await wheel(cx,cy,180,120);await pause(200);await mouse('mouseMoved',b.x+12,b.y+b.h-40);await mouse('mousePressed',b.x+12,b.y+b.h-40,1);await mouse('mouseMoved',b.x+90,b.y+b.h-90,1);await mouse('mouseReleased',b.x+90,b.y+b.h-90);await pause(200);
+  await click('#lienzo-world-'+id+' [aria-label="Encajar"]');await pause(900);assert.equal(await zoom(),z0,name+' fits again');
+  const found=await spots(id,id==='strata'?40:id==='course'?14:6);if(id==='strata')found.reverse();results[id].things=found.length;assert.ok(found.length>=2,name+' has things under the pointer: '+found.length);
+  if(id==='orbit'){const before=await ev('__panelQA.doc().selectedIds[0]');let moved=false;for(const h of found){if(Math.hypot(h.x-cx,h.y-cy)<170)continue;await tap(h.x,h.y);moved=(await ev('__panelQA.doc().selectedIds[0]'))!==before;if(moved)break;}assert.ok(moved,'pressing a body puts it in the centre');await pause(1200);await shot('orbit-recentred');}
+  if(id==='strata'){let took=false;for(const h of found){await tap(h.x,h.y);took=(await text('strata')).includes('Soltar la muestra');if(took)break;}assert.ok(took,'pressing a block takes a sample');await pause(400);await shot('strata-sample');await click('#lienzo-world-strata [aria-label="Sobre qué descansa"]');await pause(300);assert.ok(/Para existir necesita|No necesita nada/.test(await text('strata')));await click('#lienzo-world-strata [aria-label="Soltar la muestra"]');}
+  if(id==='course'){let done=false;for(let k=1;k<found.length&&!done;k++){await tap(found[0].x,found[0].y);assert.ok(/Ahora toca/.test(await text('course')),'the first press asks for the second');if(k===1)await shot('course-from');await tap(found[k].x,found[k].y);done=/El camino más corto/.test(await text('course'));if(!done&&await ev(`!!document.querySelector('#lienzo-world-course [aria-label="Empezar de nuevo"]')`))await click('#lienzo-world-course [aria-label="Empezar de nuevo"]');}
+   assert.ok(done,'two presses produced a route');await pause(900);await shot('course-route');const actions=await ev('__panelQA.actions.length');await click('#lienzo-world-course [aria-label="Pedir esta explicación"]');await wait('__panelQA.actions.length>'+actions);await wait('/Enviado al asistente|Guardado en cola/.test(document.querySelector("#lienzo-world-course").innerText)');
+   const sent=await ev('JSON.stringify(__panelQA.actions.at(-1))');assert.ok(sent.includes('route.explain')&&sent.includes('path'),sent.slice(0,200));}
+  if(id==='relieve'){await click('#lienzo-world-relieve [aria-label="Subir"]');await click('#lienzo-world-relieve [aria-label="Subir"]');await wait('document.querySelector("#lienzo-world-relieve").innerText.includes("Quedan")');await pause(900);await shot('relieve-water');}
+  assert.deepEqual(uncaught.map(u=>u.exception?.description||u.text),[],name+' threw');assert.ok(!/Plugin failed|Minified React/.test(await ev('document.body.innerText')),name+' broke the panel');
  }
- // Órbita: pressing a body on the first orbit puts it in the centre (it becomes the selection).
- await view('Órbita');await wait('!!document.querySelector("#lienzo-world-orbit canvas")');await new Promise(r=>setTimeout(r,1200));
- {const before=await ev('__panelQA.doc().selectedIds[0]');const b=await ev(`(()=>{const r=document.querySelector('#lienzo-world-orbit canvas').getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);
-  const cx=b.x+(32+b.w-32)/2,cy=b.y+(132+b.h-128)/2,R=Math.min(b.w-64,b.h-260)/2;let moved=false;
-  for(let k=0;k<36&&!moved;k++){const a=k*Math.PI/18;await press(cx+R*0.30*Math.cos(a),cy+R*0.30*Math.sin(a));moved=(await ev('__panelQA.doc().selectedIds[0]'))!==before;}
-  assert.ok(moved,'a body on the first orbit became the centre');await new Promise(r=>setTimeout(r,800));await shot('orbit-recentred');}
- // Cauce: two presses on swellings leave only the shortest way, which can be sent to the assistant as a real request.
- await view('Cauce');await wait('!!document.querySelector("#lienzo-world-course canvas")');await new Promise(r=>setTimeout(r,1200));
- {const b=await ev(`(()=>{const r=document.querySelector('#lienzo-world-course canvas').getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);
-  const text=()=>ev('document.querySelector("#lienzo-world-course").innerText'),tap=async(x,y)=>{await mouse('mouseMoved',x,y);await mouse('mousePressed',x,y,1);await mouse('mouseReleased',x,y);await new Promise(r=>setTimeout(r,30));};
-  // Find where the swellings are by pressing over a grid: a press on one asks for the second; a press on nothing resets.
-  const hits=[];for(let gy=0;gy<30&&hits.length<8;gy++)for(let gx=0;gx<44&&hits.length<8;gx++){const x=b.x+40+gx*(b.w-420)/44,y=b.y+130+gy*(b.h-270)/30;await tap(x,y);if(/Ahora toca/.test(await text())){if(!hits.some(h=>Math.hypot(h.x-x,h.y-y)<24))hits.push({x,y});await tap(b.x+6,b.y+b.h-6);}}
-  assert.ok(hits.length>=2,'found swellings to press: '+hits.length);let stage=0;
-  for(let k=1;k<hits.length&&stage<2;k++){await tap(hits[0].x,hits[0].y);await tap(hits[k].x,hits[k].y);await new Promise(r=>setTimeout(r,300));if(/El camino más corto/.test(await text()))stage=2;else await tap(b.x+6,b.y+b.h-6);}
-  assert.equal(stage,2,'two presses produced a route');await new Promise(r=>setTimeout(r,900));await shot('course-route');
-  const actions=await ev('__panelQA.actions.length');await click('[aria-label="Pedir esta explicación"]');await wait('__panelQA.actions.length>'+actions);await wait('document.querySelector("#lienzo-world-course").innerText.includes("Enviado al asistente")');
-  const sent=await ev('JSON.stringify(__panelQA.actions.at(-1))');assert.ok(sent.includes('route.explain')&&sent.includes('path'),sent.slice(0,200));}
+ // The native views move like the canvas too: the wheel pans their content and command-wheel zooms it.
+ for(const [name,id] of [['Foco','foco'],['Lecturas','lecturas'],['Matriz','matriz'],['Lista','lista']]){
+  await view(name);await wait('!!document.querySelector("#lienzo-pan-'+id+'-content")');await pause(500);const b=await rect('#lienzo-pan-'+id),at=()=>ev('getComputedStyle(document.querySelector("#lienzo-pan-'+id+'-content")).transform');
+  const t0=await at();await wheel(b.x+b.w/2,b.y+b.h/2,60,140);await pause(200);const t1=await at();assert.notEqual(t1,t0,name+' pans with the wheel');
+  await wheel(b.x+b.w/2,b.y+b.h/2,0,-200,true);await pause(200);assert.ok(await zoom()>100,name+' zooms with command-wheel');await shot('pan-'+id);
+  await click('#lienzo-pan-'+id+' [aria-label="Volver al inicio"]');await pause(200);assert.equal(await zoom(),100);assert.equal(await at(),t0,name+' returns to the start');
+  assert.deepEqual(uncaught.map(u=>u.exception?.description||u.text),[],name+' threw');
+ }
  await view('Lienzo');await wait('!!document.querySelector("#lienzo-canvas-viewport")');
  assert.equal(await ev('__panelQA.doc().revision'),rev);assert.equal(await ev('__panelQA.log.length'),log);
- console.log('PASS four worlds draw, take presses and write nothing',JSON.stringify(results));
+ console.log('PASS worlds redraw, move like the canvas and write nothing',JSON.stringify(results));
  }finally{ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

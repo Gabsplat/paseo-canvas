@@ -1428,31 +1428,42 @@ Logic in `plugin/client/view-models.ts`, tested in `tests/views.test.ts`. Verifi
 `design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history); captures
 `views-sheet.png` and `lens-agent.png` in `design/qa-shapes-legibility-2026-10-06/`.
 
-## 31. Four worlds (v18)
+## 31. Four worlds and a camera for every view (v19)
 
-Four more entries in "Cambiar vista". Each one redraws the same document as a place with its own physics
-and answers one question; none of them writes, and none is about who changed what. All four are drawn on
-one 2D surface (`plugin/client/worlds/Stage.tsx`), with native overlays for anything that is read or
-pressed as text. "Ver en el lienzo" returns to the canvas with the entity selected.
+Every view other than the canvas now moves like the canvas: the wheel pans, command-wheel or a pinch zooms around
+the pointer, a drag on empty space pans, and a pill in the lower left zooms out, shows the scale (press for 100 %),
+zooms in and returns. The native views (Lista, Foco, Lecturas, Matriz) sit in `plugin/client/Pannable.tsx`; their
+heading stays put while the content moves. The list does not pan on drag, so text can still be selected. Nothing
+about what those four show has changed.
 
-- **Órbita — ¿qué tan cerca está todo de esto?** The selected entity is the sun; every other one sits on
-  the ring of its distance in links (1, 2, further), and the unreachable ones drift on a dotted outer ring.
-  The angle is the area, so an area is a sector. Pressing a body puts it in the centre; dragging turns the
-  system. Only the links of the centre are drawn.
-- **Estratos — ¿qué sostiene a qué?** Needs and flow stack the entities in layers: bedrock at the bottom
-  needs nothing, each layer above rests on something below. A cell is as wide as what rests on it.
-  Pressing one lights its core sample, either "Lo que sostiene" (everything above that falls with it) or
-  "Sobre qué descansa" (everything below it needs). Loops are folded into one layer; mentions do not stack;
-  entities with no need or flow are pebbles beside the cut.
-- **Cauce — ¿cuál es el camino más corto para explicar una cosa a partir de otra?** Links are veins,
-  thicker where more shortest paths cross. Two presses (what is known, what is wanted) leave only the
-  shortest way lit, numbered, and listed at the right. "Pedir esta explicación" sends that path to the
-  assistant as a real request (`route.explain`); with no assistant connected it is queued and says so.
-- **Relieve — ¿dónde se concentra esto?** The canvas positions kept as they are, under a terrain whose
-  height is how much is linked there. Contour lines every step; summits are the entities most things lean
-  on, flat ground is where nothing connects.
+The four worlds are drawn on one 2D surface with its own camera (`plugin/client/worlds/Stage.tsx`): each world
+draws in fixed world units, is fitted on entry and by "Encajar" or a double press on nothing, and names itself, the
+question it answers and a legend of how to read it. Marks and words grow when the camera is far (up to 1.75×) so a
+whole world fitted on screen is still readable; a plate shows its text only when it is close enough to read.
+Pointing at anything says what it is in a small card; a panel at the right holds what was chosen. None of them
+writes, and none is about who changed what. Shared drawing in `plugin/client/worlds/kit.ts`.
 
-Models in `plugin/client/worlds/{orbit,strata,course,relief}.ts`, tested in `tests/world-*.test.ts`.
-Verified with `design/whiteboard-harness/worlds.cjs` (RN-web, isolated omabox, example data): each world
-paints, takes presses without changing the document, Órbita re-centres and Cauce sends its request.
-Captures `world-*.png` in `design/qa-shapes-legibility-2026-10-06/`.
+- **Órbita — ¿qué tan cerca está todo de esto?** The selected entity is the sun; every other one sits on the ring
+  of its distance in links, labelled on the ring itself (a 1 enlace, a 2, a 3 o más, sin camino). Each area owns a
+  slice of the sky. A thread joins each body to the one before it on the way to the sun, so pointing at a far body
+  lights the chain it is reached through. Links of the sun carry their kind's colour, an arrow and a moving dot in
+  the direction they point. Pressing a body puts it in the centre and the system travels to its new arrangement.
+- **Estratos — ¿qué sostiene a qué?** A cut through the ground: needs and flow stack the entities in layers, the
+  base needs nothing, each layer rests on those below. A block is as wide as what it carries and says how many it
+  holds. Layers settle from the bottom up on entry. Pointing at a block draws what it stands on (solid, down) and
+  what stands on it (dashed, up); pressing it takes a sample: everything above that falls with it, or everything
+  below it needs. Loops are one block; mentions do not stack; entities with no need or flow lie loose above.
+- **Cauce — ¿cuál es el camino más corto para explicar una cosa a partir de otra?** The canvas' own arrangement,
+  with links as rivers: as wide as the number of shortest ways through them, with a current that runs the way the
+  link points. Press what is known: every other thing says how many steps away it is. Press what is wanted: only
+  the shortest way stays lit, numbered, with something travelling it. "Pedir esta explicación" sends that path to
+  the assistant as a real request (`route.explain`); when it is only queued the panel says so.
+- **Relieve — ¿dónde se concentra esto?** The same arrangement as land seen from above: filled height bands with
+  light from the upper left, contour lines, and a flag on the summits (the entities the rest leans on). "Nivel del
+  agua" floods the lowlands step by step and says how many remain in sight, so the most linked are what is left.
+
+Models in `plugin/client/worlds/{orbit,strata,course,relief}.ts`, tested in `tests/world-*.test.ts`. Verified
+with `design/whiteboard-harness/worlds.cjs` (RN-web, isolated omabox, example data, dark and light): each world
+paints, has a legend, zooms, pans and fits; Órbita re-centres, Estratos takes a sample, Cauce finds a route and
+sends its request, Relieve raises the water; the four native views pan, zoom and return; the document is never
+written. Captures in `design/qa-worlds-2026-10-07/`.

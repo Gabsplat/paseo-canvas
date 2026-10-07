@@ -497,8 +497,13 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
 }
 
 /** Small browser drawing contracts. Extend these here rather than enabling DOM types in the client. */
+/** A gradient made by the context; only good as a `fillStyle` or `strokeStyle` of that same context. */
+export interface CanvasPaint { addColorStop(offset: number, color: string): void }
 export interface Canvas2DContext {
-  fillStyle: string; strokeStyle: string; lineWidth: number; globalAlpha: number; font: string;
+  fillStyle: string | CanvasPaint; strokeStyle: string | CanvasPaint; lineWidth: number; globalAlpha: number; font: string;
+  lineDashOffset: number; shadowColor: string; shadowBlur: number; shadowOffsetX: number; shadowOffsetY: number;
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasPaint;
+  createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number): CanvasPaint;
   textAlign: string; textBaseline: string; lineCap: string; lineJoin: string;
   clearRect(x: number, y: number, w: number, h: number): void;
   fillRect(x: number, y: number, w: number, h: number): void; strokeRect(x: number, y: number, w: number, h: number): void;
@@ -509,7 +514,7 @@ export interface Canvas2DContext {
   fill(): void; stroke(): void; clip(): void; save(): void; restore(): void;
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
   translate(x: number, y: number): void; rotate(angle: number): void; scale(x: number, y: number): void;
-  setLineDash(values: number[]): void; fillText(text: string, x: number, y: number): void;
+  setLineDash(values: number[]): void; fillText(text: string, x: number, y: number): void; strokeText(text: string, x: number, y: number): void;
   measureText(text: string): { width: number };
   drawImage(image: unknown, ...coordinates: number[]): void;
 }
@@ -549,7 +554,8 @@ export function compileGLProgram(gl: GLContext, vertexSource: string, fragmentSo
 }
 export type SurfaceFrame = { width: number; height: number; pixelRatio: number; time: number };
 export type SurfacePointer = { kind: 'down' | 'move' | 'up' | 'cancel'; x: number; y: number; pointerId: number; buttons: number; pressure: number };
-type SurfaceBase = { id: string; label: string; height: number; animated?: boolean; maxPixelSize?: number; onVisibilityChange?(visible: boolean): void; onPointer?(event: SurfacePointer): void; onError?(message: string): void };
+export type SurfaceWheel = { x: number; y: number; dx: number; dy: number; command: boolean };
+type SurfaceBase = { id: string; label: string; height: number; animated?: boolean; maxPixelSize?: number; onVisibilityChange?(visible: boolean): void; onPointer?(event: SurfacePointer): void; onWheel?(event: SurfaceWheel): void; onError?(message: string): void };
 export type CanvasSurfaceProps = SurfaceBase & { draw(context: Canvas2DContext, frame: SurfaceFrame): void };
 export type GLSurfaceProps = SurfaceBase & {
   initialize?(context: GLContext): { error?: string; dispose?(): void } | void;
@@ -636,6 +642,14 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
     };
   }, [kind, props.id, kind === 'webgl' ? (props as GLSurfaceProps).initialize : undefined]);
   useEffect(() => { invalidate.current(); });
+  // A surface that reads the wheel (a world with a camera) takes it whole: the page must not scroll or zoom under it.
+  const wheels = !!props.onWheel;
+  useEffect(() => {
+    const canvas = ref.current as unknown as (BrowserElement & { clientWidth: number; clientHeight: number; addEventListener(type: string, listener: (e: BrowserKeyEvent) => void, options?: { passive: boolean }): void }) | null; if (Platform.OS !== 'web' || !canvas || !wheels) return;
+    const listener = (e: BrowserKeyEvent) => { const rect = canvas.getBoundingClientRect(); e.preventDefault(); e.stopPropagation();
+      latest.current.onWheel?.({ x: (e.clientX - rect.left) * canvas.clientWidth / Math.max(1, rect.width ?? 1), y: (e.clientY - rect.top) * canvas.clientHeight / Math.max(1, rect.height ?? 1), dx: e.deltaX, dy: e.deltaY, command: e.ctrlKey || e.metaKey }); };
+    canvas.addEventListener('wheel', listener, { passive: false }); return () => canvas.removeEventListener('wheel', listener);
+  }, [wheels, props.id]);
   if (Platform.OS !== 'web') return null;
   type PointerLike = { clientX: number; clientY: number; pointerId: number; buttons: number; pressure: number; stopPropagation(): void; preventDefault(): void };
   const pointer = (kind: SurfacePointer['kind']) => (event: PointerLike) => {

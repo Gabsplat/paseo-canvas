@@ -1,646 +1,92 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { View, ScrollView, Pressable } from 'react-native';
-import type { Canvas2DContext, SurfaceFrame } from '../Surfaces';
-import { Stage, STAGE_INSET } from './Stage';
-import {
-  things, edges, placed, palette, kindColor, FONT, fit, seeded, clamp, lerp, easeOut,
-  type WorldProps, type Edge as IEdge,
-} from './shared';
-import { betweenness, route, fitPoints } from './course';
-import { Txt, Button, useUI } from '../ui';
-import { reducedMotion } from '../motion';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View } from 'react-native';
+import { ScrollView } from '@getpaseo/plugin/client/react-native';
 import { newId } from '../logic';
-import { withAlpha } from '../color';
+import { reducedMotion } from '../motion';
+import type { Canvas2DContext } from '../Surfaces';
+import { Button, Txt, useUI } from '../ui';
+import { betweenness, route } from './course';
+import { along, areaColor, arrow, bend, PLATE, plate, rounded, tag, tooltip, type Point } from './kit';
+import { clamp, edges, ground, hops, kindColor, palette, seeded, things, type Edge, type WorldProps } from './shared';
+import { Stage, type Sight } from './Stage';
 
-type Thing = ReturnType<typeof things>[number];
-
+type Sent = 'idle' | 'sending' | 'sent' | 'queued' | 'failed';
+/**
+ * The canvas as a watershed. Everything stays where you put it; the links become rivers that run the way they
+ * point and are as wide as the number of shortest ways that pass through them. Press what you already know and
+ * then what you want to understand: only the shortest way between them stays lit, and it can be asked for.
+ */
 export function CourseView({ controller: c, onOpen }: WorldProps) {
-  const u = useUI();
-  const doc = c.view!.document;
-  const catalog = c.catalog;
-  const [frameBox, setFrameBox] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
-
-  // Build model from document
+  const u = useUI(), p = palette(u), doc = c.view!.document, catalog = c.catalog;
+  const [from, setFrom] = useState<string | null>(null), [to, setTo] = useState<string | null>(null), [hover, setHover] = useState<string | null>(null), [sent, setSent] = useState<Sent>('idle'), born = useRef(0);
   const model = useMemo(() => {
-    const allThings = things(doc);
-    const allEdges = edges(doc, allThings);
-    const positions = placed(doc, catalog);
-    const positioned = allThings.filter(t => positions.has(t.id));
-
-    if (positioned.length === 0) {
-      return { things: positioned, edges: allEdges, positions, betweenness: new Map() };
-    }
-
-    // Compute fitted positions using frame dimensions
-    const computeFitted = (frameWidth: number, frameHeight: number) => {
-      const insetBox = {
-        x: STAGE_INSET.left,
-        y: STAGE_INSET.top,
-        width: Math.max(1, frameWidth - STAGE_INSET.left - STAGE_INSET.right - (frameWidth >= 900 ? 320 : 0)),
-        height: Math.max(1, frameHeight - STAGE_INSET.top - STAGE_INSET.bottom),
-      };
-
-      return fitPoints(
-        new Map(positioned.map(t => [t.id, positions.get(t.id)!])),
-        insetBox
-      );
-    };
-
-    const fitted = frameBox.width > 0 && frameBox.height > 0
-      ? computeFitted(frameBox.width, frameBox.height)
-      : new Map(positioned.map(t => [t.id, { x: 0, y: 0 }]));
-
-    const bet = betweenness(
-      positioned.map(t => t.id),
-      allEdges
-    );
-
-    return {
-      things: positioned,
-      edges: allEdges,
-      positions: fitted,
-      betweenness: bet,
-    };
-  }, [doc.blocks, doc.groups, doc.links, catalog, frameBox]);
-
-  // Selection state
-  const [from, setFrom] = useState<string | null>(null);
-  const [to, setTo] = useState<string | null>(null);
-
-  // Animation state
-  const [routePath, setRoutePath] = useState<{ ids: string[]; via: IEdge[] } | null>(null);
-  const [animationT, setAnimationT] = useState(0);
-  const animationStart = useRef<number | null>(null);
-  const isWithdrawing = useRef(true);
-
-  // Compute route
-  useEffect(() => {
-    if (!from || !to || from === to) {
-      setRoutePath(null);
-      return;
-    }
-
-    const result = route(from, to, model.edges);
-    setRoutePath(result);
-
-    if (animationStart.current === null) {
-      animationStart.current = Date.now();
-      isWithdrawing.current = true;
-    }
-  }, [from, to, model.edges]);
-
-  // Animation loop
-  const animationRequest = useRef<number | null>(null);
-  useEffect(() => {
-    const animate = () => {
-      if (animationStart.current === null) {
-        setAnimationT(0);
-        return;
-      }
-
-      const elapsed = Date.now() - animationStart.current;
-      const duration = routePath ? (isWithdrawing.current ? 700 : 500) : 500;
-      const t = Math.min(elapsed / duration, 1);
-
-      if (isWithdrawing.current) {
-        setAnimationT(easeOut(t));
-      } else {
-        setAnimationT(1 - easeOut(t));
-      }
-
-      if (t < 1) {
-        animationRequest.current = requestAnimationFrame(animate);
-      } else {
-        if (!routePath && isWithdrawing.current) {
-          setAnimationT(0);
-          animationStart.current = null;
-        }
-      }
-    };
-
-    animationRequest.current = requestAnimationFrame(animate);
-    return () => {
-      if (animationRequest.current !== null) {
-        cancelAnimationFrame(animationRequest.current);
-      }
-    };
-  }, [routePath]);
-
-  const handlePress = (thingId: string | null, x: number, y: number) => {
-    if (thingId === null) {
-      // Pressed empty space
-      setFrom(null);
-      setTo(null);
-      animationStart.current = null;
-      return;
-    }
-
-    if (!from) {
-      setFrom(thingId);
-    } else if (thingId !== from) {
-      setTo(thingId);
-    }
-  };
-
-  const draw = (ctx: Canvas2DContext, frame: SurfaceFrame) => {
-    // Capture frame dimensions for layout computation
-    if (frameBox.width !== frame.width || frameBox.height !== frame.height) {
-      setFrameBox({ width: frame.width, height: frame.height });
-    }
-
-    ctx.clearRect(0, 0, frame.width, frame.height);
-
-    const p = palette(u);
-    const positions = model.positions;
-    const bet = model.betweenness;
-
-    // Determine which things/edges are on the route
-    const routeIds = new Set(routePath?.ids ?? []);
-    const routeEdges = new Set(routePath?.via.map(e => e.id) ?? []);
-
-    // Compute degree
-    const degree = new Map<string, number>();
-    for (const thing of model.things) degree.set(thing.id, 0);
-    for (const edge of model.edges) {
-      if (positions.has(edge.from) && positions.has(edge.to)) {
-        degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
-        degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
-      }
-    }
-
-    // Draw veins (links)
-    for (const edge of model.edges) {
-      const fromPos = positions.get(edge.from);
-      const toPos = positions.get(edge.to);
-      if (!fromPos || !toPos) continue;
-
-      const isOnRoute = routeEdges.has(edge.id);
-      const centrality = bet.get(edge.id) ?? 0;
-
-      // Quadratic curve with perpendicular offset
-      const dx = toPos.x - fromPos.x;
-      const dy = toPos.y - fromPos.y;
-      const len = Math.hypot(dx, dy);
-      const perpX = -dy / len;
-      const perpY = dx / len;
-      const offset = (seeded(edge.id) - 0.5) * 0.24 * len;
-      const cpX = (fromPos.x + toPos.x) / 2 + perpX * offset;
-      const cpY = (fromPos.y + toPos.y) / 2 + perpY * offset;
-
-      // Animation: withdraw non-route veins
-      let width: number;
-      let alpha: number;
-      let color: string;
-
-      if (isOnRoute) {
-        width = lerp(1 + 5 * centrality, 5, animationT);
-        alpha = lerp(0.32, 0.95, animationT);
-        color = p.accent;
-      } else {
-        width = lerp(1 + 5 * centrality, 0.4, animationT);
-        alpha = lerp(0.32, 0.05, animationT);
-        color = p.ink;
-      }
-
-      ctx.strokeStyle = p.a(color, alpha);
-      ctx.lineWidth = width;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(fromPos.x, fromPos.y);
-      ctx.quadraticCurveTo(cpX, cpY, toPos.x, toPos.y);
-      ctx.stroke();
-    }
-
-    // Draw particles (if not reduced motion and animated)
-    if (!reducedMotion.current) {
-      for (const edge of model.edges) {
-        const fromPos = positions.get(edge.from);
-        const toPos = positions.get(edge.to);
-        if (!fromPos || !toPos) continue;
-
-        const isOnRoute = routeEdges.has(edge.id);
-        const centrality = bet.get(edge.id) ?? 0;
-        const particleCount = 1 + Math.round(2 * centrality);
-
-        const dx = toPos.x - fromPos.x;
-        const dy = toPos.y - fromPos.y;
-        const len = Math.hypot(dx, dy);
-        const perpX = -dy / len;
-        const perpY = dx / len;
-        const offset = (seeded(edge.id) - 0.5) * 0.24 * len;
-        const cpX = (fromPos.x + toPos.x) / 2 + perpX * offset;
-        const cpY = (fromPos.y + toPos.y) / 2 + perpY * offset;
-
-        const speed = 40; // CSS px per second
-        const timeMs = frame.time % (len / speed * 1000);
-        const progress = timeMs / (len / speed * 1000);
-
-        for (let i = 0; i < particleCount; i++) {
-          const phase = seeded(edge.id, 7) + i / particleCount;
-          const phaseTime = (frame.time / 1000 + phase * len / speed) % (len / speed);
-          const t = phaseTime / (len / speed);
-
-          // Position on quadratic curve
-          const u_val = t;
-          const px = (1 - u_val) * (1 - u_val) * fromPos.x +
-                     2 * (1 - u_val) * u_val * cpX +
-                     u_val * u_val * toPos.x;
-          const py = (1 - u_val) * (1 - u_val) * fromPos.y +
-                     2 * (1 - u_val) * u_val * cpY +
-                     u_val * u_val * toPos.y;
-
-          let particleAlpha = 0.7;
-          if (isOnRoute) {
-            particleAlpha = lerp(0.7, 0.7, animationT);
-          } else {
-            particleAlpha = lerp(0.7, 0, animationT);
-          }
-
-          ctx.fillStyle = p.a(p.ink, particleAlpha);
-          ctx.beginPath();
-          ctx.arc(px, py, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-
-    // Draw swellings (things)
-    const topDegreeIds = new Set(
-      model.things
-        .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))
-        .slice(0, 12)
-        .map(t => t.id)
-    );
-
-    for (const thing of model.things) {
-      const pos = positions.get(thing.id);
-      if (!pos) continue;
-
-      const deg = degree.get(thing.id) ?? 0;
-      const radius = 4 + 2 * Math.sqrt(deg);
-      const isOnRoute = routeIds.has(thing.id);
-
-      let alpha = 0.85;
-      if (!isOnRoute && routePath) {
-        alpha = lerp(0.85, 0.14, animationT);
-      }
-
-      ctx.fillStyle = p.a(p.ink, alpha);
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Outline
-      ctx.strokeStyle = p.paper;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Highlight for selection
-      if (thing.id === from) {
-        ctx.strokeStyle = p.ok;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2);
-        ctx.stroke();
-      } else if (thing.id === to) {
-        ctx.strokeStyle = p.accent;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      // Draw title and number for route or high degree
-      const showLabel = isOnRoute || topDegreeIds.has(thing.id) || thing.id === from || thing.id === to;
-      if (showLabel) {
-        ctx.font = `500 12px ${FONT}`;
-        const fitted = fit(ctx, thing.title, 160);
-        const titleX = pos.x > frame.width * 0.67 ? pos.x - radius - 12 : pos.x + radius + 12;
-        const titleAlign = pos.x > frame.width * 0.67 ? 'right' : 'left';
-
-        ctx.textAlign = titleAlign;
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = p.ink;
-        ctx.fillText(fitted, titleX, pos.y);
-      }
-
-      // Draw number for on-route things
-      if (isOnRoute && routePath) {
-        const index = routePath.ids.indexOf(thing.id);
-        if (index !== -1) {
-          const numberRadius = 9;
-          ctx.fillStyle = p.accent;
-          ctx.beginPath();
-          ctx.arc(pos.x, pos.y, numberRadius, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.font = `600 11px ${FONT}`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillStyle = p.paper;
-          ctx.fillText(String(index + 1), pos.x, pos.y);
-        }
-      }
-    }
-  };
-
-  const handlePointer = (e: { kind: 'down' | 'move' | 'up' | 'cancel'; x: number; y: number }) => {
-    if (e.kind === 'down') {
-      // Find which thing was pressed
-      // The nearest swelling within reach of a fingertip, not only its exact centre.
-      let pressed: string | null = null;
-      let best = 24;
-      for (const thing of model.things) {
-        const pos = model.positions.get(thing.id);
-        if (!pos) continue;
-        const dist = Math.hypot(e.x - pos.x, e.y - pos.y);
-        if (dist <= best) {
-          best = dist;
-          pressed = thing.id;
-        }
-      }
-      handlePress(pressed, e.x, e.y);
-    }
-  };
-
-  // Summary
-  let summary: string;
-  if (routePath) {
-    const fromThing = model.things.find(t => t.id === from);
-    const toThing = model.things.find(t => t.id === to);
-    if (fromThing && toThing) {
-      const titles = routePath.ids.map(id => model.things.find(t => t.id === id)?.title || 'Sin título').join(' → ');
-      summary = `Camino de ${fromThing.title} a ${toThing.title}: ${titles}.`;
-    } else {
-      summary = `${model.things.length} cosas unidas por ${model.edges.length} enlaces.`;
-    }
-  } else {
-    summary = `${model.things.length} cosas unidas por ${model.edges.length} enlaces. Elige dos para ver el camino más corto entre ellas.`;
-  }
-
-  const emptyDraw = (ctx: Canvas2DContext, frame: SurfaceFrame) => {
-    ctx.clearRect(0, 0, frame.width, frame.height);
-  };
-
-  // Empty states
-  if (model.things.length === 0) {
-    return (
-      <Stage
-        id="course"
-        title="Cauce"
-        question="¿Cuál es el camino más corto para explicar una cosa a partir de otra? Toca lo que ya conoces y luego lo que quieres entender."
-        summary={summary}
-        draw={emptyDraw}
-      >
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Txt kind="small" muted>Todavía no hay nada en este lienzo.</Txt>
-        </View>
-      </Stage>
-    );
-  }
-
-  if (model.edges.length === 0) {
-    return (
-      <Stage
-        id="course"
-        title="Cauce"
-        question="¿Cuál es el camino más corto para explicar una cosa a partir de otra? Toca lo que ya conoces y luego lo que quieres entender."
-        summary={summary}
-        draw={draw}
-        onPointer={handlePointer}
-      >
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Txt kind="small" muted>Sin enlaces no hay cauce: este lienzo todavía no conecta nada.</Txt>
-        </View>
-      </Stage>
-    );
-  }
-
-  return (
-    <Stage
-      id="course"
-      title="Cauce"
-      question="¿Cuál es el camino más corto para explicar una cosa a partir de otra? Toca lo que ya conoces y luego lo que quieres entender."
-      summary={summary}
-      animated={true}
-      draw={draw}
-      onPointer={handlePointer}
-    >
-      {/* Hint */}
-      {!routePath && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: STAGE_INSET.bottom + 16,
-            left: '50%',
-            transform: [{ translateX: -150 }],
-            width: 300,
-            backgroundColor: u.c.surface1,
-            borderWidth: 1,
-            borderColor: u.c.border,
-            borderRadius: 999,
-            paddingVertical: 6,
-            paddingHorizontal: 12,
-          }}
-        >
-          <Txt kind="small" muted style={{ textAlign: 'center' }}>
-            {!from ? 'Toca lo que ya conoces' : 'Ahora toca lo que quieres entender'}
-          </Txt>
-        </View>
-      )}
-
-      {/* Error message */}
-      {routePath === null && from && to && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: STAGE_INSET.bottom + 16,
-            left: '50%',
-            transform: [{ translateX: -150 }],
-            width: 300,
-            backgroundColor: withAlpha(u.c.statusDanger, 0.1),
-            borderWidth: 1,
-            borderColor: u.c.statusDanger,
-            borderRadius: 12,
-            paddingVertical: 12,
-            paddingHorizontal: 14,
-          }}
-        >
-          <Txt kind="small" style={{ color: u.c.statusDanger }}>
-            No hay camino entre estas dos cosas.
-          </Txt>
-        </View>
-      )}
-
-      {/* Side panel */}
-      {routePath && (
-        <View
-          style={{
-            position: 'absolute',
-            right: STAGE_INSET.right,
-            top: STAGE_INSET.top,
-            width: 300,
-            maxHeight: Math.max(200, frameBox.height - STAGE_INSET.top - STAGE_INSET.bottom),
-            backgroundColor: u.c.surface1,
-            borderWidth: 1,
-            borderColor: u.c.border,
-            borderRadius: 12,
-            padding: 14,
-            gap: 10,
-          }}
-        >
-          <Txt kind="heading">El camino más corto</Txt>
-
-          {(() => {
-            const fromThing = model.things.find(t => t.id === from);
-            const toThing = model.things.find(t => t.id === to);
-            if (fromThing && toThing) {
-              return (
-                <Txt kind="small" muted>
-                  {routePath.ids.length} pasos de «{fromThing.title}» a «{toThing.title}»
-                </Txt>
-              );
-            }
-            return null;
-          })()}
-
-          <ScrollView style={{ maxHeight: 200, marginVertical: 4 }}>
-            {routePath.ids.map((id, i) => {
-              const thing = model.things.find(t => t.id === id);
-              const link = routePath.via[i];
-              return (
-                <View key={id} style={{ marginBottom: 12, gap: 4 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View
-                      style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: 10,
-                        backgroundColor: u.c.accent,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <Txt kind="small" style={{ color: u.c.surface0, fontWeight: '600' }}>
-                        {i + 1}
-                      </Txt>
-                    </View>
-                    <Txt kind="small" style={{ flex: 1, fontWeight: '500' }} numberOfLines={2}>
-                      {thing?.title || 'Sin título'}
-                    </Txt>
-                  </View>
-                  {link?.label && (
-                    <Txt kind="small" muted style={{ marginLeft: 28 }}>
-                      {link.label}
-                    </Txt>
-                  )}
-                </View>
-              );
-            })}
-          </ScrollView>
-
-          <SidePanelButtons
-            c={c}
-            from={from}
-            to={to}
-            routePath={routePath}
-            things={model.things}
-            onOpen={onOpen}
-            onClear={() => {
-              setFrom(null);
-              setTo(null);
-              setRoutePath(null);
-              animationStart.current = null;
-            }}
-          />
-        </View>
-      )}
-    </Stage>
-  );
-}
-
-function SidePanelButtons({
-  c,
-  from,
-  to,
-  routePath,
-  things,
-  onOpen,
-  onClear,
-}: {
-  c: any;
-  from: string | null;
-  to: string | null;
-  routePath: { ids: string[]; via: IEdge[] } | null;
-  things: Thing[];
-  onOpen: (id: string) => void;
-  onClear: () => void;
-}) {
-  const [sending, setSending] = useState(false);
-  const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'failed'>('idle');
-  const u = useUI();
-
-  const handleSend = async () => {
-    if (!from || !to || !routePath) return;
-
-    setSending(true);
-    setSendStatus('sending');
-
+    const all = things(doc), g = ground(doc, catalog, all), shown = all.filter(t => g.at.has(t.id)), ids = new Set(shown.map(t => t.id)), links = edges(doc, all).filter(l => ids.has(l.from) && ids.has(l.to));
+    const touch = new Map<string, Edge[]>(); for (const l of links) for (const id of [l.from, l.to]) (touch.get(id) ?? touch.set(id, []).get(id)!).push(l);
+    return { ...g, shown, links, touch, byId: new Map(shown.map(t => [t.id, t])), busy: betweenness(shown.map(t => t.id), links) };
+  }, [doc.blocks, doc.groups, doc.links, catalog]);
+  useEffect(() => { if (from && !model.byId.has(from)) { setFrom(null); setTo(null); } else if (to && !model.byId.has(to)) setTo(null); }, [model, from, to]);
+  const way = useMemo(() => from && to && from !== to ? route(from, to, model.links) : null, [from, to, model.links]);
+  const steps = useMemo(() => from ? hops(from, model.links) : null, [from, model.links]);
+  const onWay = useMemo(() => new Map((way?.via ?? []).map((e, i) => [e.id, way!.ids[i] === e.from])), [way]), inWay = useMemo(() => new Map((way?.ids ?? []).map((id, i) => [id, i])), [way]);
+  const title = (id: string | null) => (id ? model.byId.get(id)?.title : '') || 'Sin título';
+  const restart = () => { setFrom(null); setTo(null); setSent('idle'); };
+  const press = (id: string | null) => { if (!id) return; setSent('idle'); if (!from || (to && id !== from)) { setFrom(id); setTo(null); } else if (id === from) restart(); else setTo(id); };
+  const ask = async () => {
+    if (!way || !from || !to) return; setSent('sending');
     try {
-      const fromThing = things.find(t => t.id === from);
-      const toThing = things.find(t => t.id === to);
-      if (!fromThing || !toThing) {
-        setSendStatus('failed');
-        setSending(false);
-        return;
-      }
-
-      const titles = routePath.ids.map(id => things.find(t => t.id === id)?.title || '').filter(Boolean);
-      const result = await c.send(
-        {
-          kind: 'route.explain',
-          label: `Explicar el camino de «${fromThing.title}» a «${toThing.title}»`,
-          payload: { path: routePath.ids, titles },
-          targetIds: routePath.ids.slice(0, 20),
-          delivery: 'immediate',
-        },
-        newId('evt')
-      );
-
-      if (result && result.status !== 'failed') {
-        setSendStatus('success');
-      } else {
-        setSendStatus('failed');
-      }
-    } catch {
-      setSendStatus('failed');
-    }
-
-    setSending(false);
+      const result = await c.send({ kind: 'route.explain', label: `Explicar el camino de «${title(from)}» a «${title(to)}»`, payload: { path: way.ids, titles: way.ids.map(title), links: way.via.map(e => ({ kind: e.kind, label: e.label })) }, targetIds: way.ids.slice(0, 20), delivery: 'immediate' }, newId('evt'));
+      setSent(!result || result.status === 'failed' ? 'failed' : result.status === 'pending' ? 'queued' : 'sent');
+    } catch { setSent('failed'); }
   };
 
-  return (
-    <View style={{ gap: 8 }}>
-      <Button
-        label="Pedir esta explicación"
-        variant="primary"
-        small
-        icon="SendHorizontal"
-        disabled={c.offline || sending}
-        onPress={handleSend}
-      />
-      {sendStatus !== 'idle' && (
-        <Txt kind="small" style={{ color: sendStatus === 'failed' ? u.c.statusDanger : u.c.accent }}>
-          {sendStatus === 'sending'
-            ? 'Enviando…'
-            : sendStatus === 'success'
-              ? 'Enviado al asistente.'
-              : 'No se envió.'}
-        </Txt>
-      )}
-
-      <Button label="Ver en el lienzo" small icon="Frame" onPress={() => onOpen(routePath!.ids[0])} />
-      <Button label="Empezar de nuevo" small variant="ghost" onPress={onClear} />
-    </View>
-  );
+  const draw = (ctx: Canvas2DContext, sight: Sight) => {
+    if (!born.current) born.current = sight.time; const still = reducedMotion.current, t = sight.time, rise = still ? 1 : clamp((t - born.current) / 600, 0, 1), near = new Set((hover ? model.touch.get(hover) ?? [] : []).map(l => l.id));
+    for (const a of model.areas) { const color = areaColor(p, a.index); rounded(ctx, a.x, a.y, a.width, a.height, 22); ctx.fillStyle = p.a(color, .04); ctx.fill(); ctx.lineWidth = 1.25; ctx.strokeStyle = p.a(color, .28); ctx.setLineDash([2, 7]); ctx.stroke(); ctx.setLineDash([]); tag(ctx, p, a.title, a.x + 18, a.y - 14, { size: 13, weight: 700, color, pad: false }); }
+    ctx.lineCap = 'round';
+    for (const pass of [0, 1]) for (const l of model.links) {
+      const lit = onWay.has(l.id); if ((pass === 1) !== lit) continue; const a = model.at.get(l.from), b = model.at.get(l.to); if (!a || !b) continue;
+      const mid = bend(a, b, (seeded(l.id) - .5) * .26), width = 2.5 + 11 * (model.busy.get(l.id) ?? 0), color = lit ? p.accent : kindColor(p, l.kind), touched = near.has(l.id), fade = rise * (way ? (lit ? 1 : .3) : hover ? (touched ? 1 : .3) : 1);
+      const trace = () => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(mid.x, mid.y, b.x, b.y); };
+      if (lit) { ctx.shadowColor = p.a(p.accent, .8); ctx.shadowBlur = 18 * sight.scale; } trace(); ctx.lineWidth = lit ? width + 5 : width; ctx.strokeStyle = p.a(color, (lit ? .9 : .34) * fade); ctx.stroke(); ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      // The current: bright dashes that travel the way the link points, or the way the route crosses it.
+      const forward = lit ? onWay.get(l.id)! : true, dash = 5 + width * .5, gap = 15 + width, core = Math.max(1.5, width * .36);
+      if (still) { ctx.fillStyle = p.a(lit ? p.paper : color, fade); const tip = along(a, mid, b, forward ? .56 : .44), tail = along(a, mid, b, forward ? .46 : .54); arrow(ctx, tail, tip, 8 + width * .5); }
+      else { trace(); ctx.setLineDash([dash, gap]); ctx.lineDashOffset = (forward ? -1 : 1) * (t * (lit ? .07 : .028) % (dash + gap)); ctx.lineWidth = core; ctx.strokeStyle = p.a(lit ? p.paper : color, (lit ? .95 : .9) * fade); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0; }
+      if (l.label && sight.scale >= .95 && (lit || touched)) { const m = along(a, mid, b, .5); tag(ctx, p, l.label, m.x, m.y - width / 2 - 11, { size: 11, align: 'center', color: lit ? p.accent : p.ink }); }
+    }
+    for (const thing of model.shown) {
+      const at = model.at.get(thing.id)!, order = inWay.get(thing.id), reach = steps?.get(thing.id), isFrom = thing.id === from, isHover = thing.id === hover, touched = !!hover && (model.touch.get(hover) ?? []).some(l => l.from === thing.id || l.to === thing.id);
+      const dim = way ? order === undefined : from ? reach === undefined : !!hover && !isHover && !touched;
+      ctx.globalAlpha = rise; plate(ctx, p, sight, thing, at.x, at.y, { dim, hover: isHover, lit: touched && !way, chosen: order !== undefined || isFrom, badge: order !== undefined ? String(order + 1) : isFrom ? 'Desde' : undefined, badgeColor: isFrom && !way ? p.ok : p.accent });
+      if (from && !way && !isFrom && reach !== undefined && sight.scale >= .5) tag(ctx, p, reach === 1 ? 'a 1 paso' : `a ${reach} pasos`, at.x, at.y + PLATE.h / 2 + 13, { size: 11, align: 'center', color: p.ok });
+      ctx.globalAlpha = 1;
+    }
+    // Something travelling the whole route, so the order of the steps is a movement and not only numbers.
+    if (way && way.via.length && !still) for (let n = 0; n < 3; n++) {
+      const k = ((t / (700 * way.via.length + 900) + n / 3) % 1) * way.via.length, i = Math.min(way.via.length - 1, Math.floor(k)), e = way.via[i], a = model.at.get(e.from), b = model.at.get(e.to); if (!a || !b) continue;
+      const mid = bend(a, b, (seeded(e.id) - .5) * .26), forward = way.ids[i] === e.from, dot: Point = along(a, mid, b, forward ? k - i : 1 - (k - i)); ctx.beginPath(); ctx.arc(dot.x, dot.y, 6, 0, 6.2832); ctx.fillStyle = p.paper; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = p.accent; ctx.stroke();
+    }
+  };
+  const overlay = (ctx: Canvas2DContext, sight: Sight) => {
+    const thing = hover ? model.byId.get(hover) : undefined, at = hover ? model.at.get(hover) : undefined; if (!thing || !at) return; const n = model.touch.get(thing.id)?.length ?? 0;
+    tooltip(ctx, p, sight, { x: at.x + PLATE.w / 2 - 14, y: at.y + PLATE.h / 2 - 14 }, thing.title, [thing.summary, n ? `${n} ${n === 1 ? 'enlace pasa' : 'enlaces pasan'} por aquí.` : 'Ningún enlace pasa por aquí.', !from ? 'Presiona si es lo que ya conoces.' : thing.id === from ? 'Presiona otra vez para soltarlo.' : 'Presiona para ver el camino hasta aquí.']);
+  };
+  const hit = (x: number, y: number, sight: Sight) => { const rx = Math.max(PLATE.w / 2, 14 / sight.scale), ry = Math.max(PLATE.h / 2, 14 / sight.scale); for (let i = model.shown.length - 1; i >= 0; i--) { const at = model.at.get(model.shown[i].id)!; if (Math.abs(x - at.x) <= rx && Math.abs(y - at.y) <= ry) return model.shown[i].id; } return null; };
+  const count = model.shown.length, summary = !count ? 'Todavía no hay nada en este lienzo.' : way ? `Camino de ${title(from)} a ${title(to)}: ${way.ids.map(title).join(' → ')}.` : `${count} cosas unidas por ${model.links.length} enlaces. Elige dos para ver el camino más corto entre ellas.`;
+  const note = sent === 'sending' ? 'Enviando…' : sent === 'sent' ? 'Enviado al asistente.' : sent === 'queued' ? 'Guardado en cola: sale cuando haya un asistente conectado.' : sent === 'failed' ? 'No se envió.' : '';
+  return <Stage id="course" title="Cauce" question="¿Cuál es el camino más corto para explicar una cosa a partir de otra? Toca lo que ya conoces y luego lo que quieres entender." summary={summary} fitKey={`${count}:${Math.round(model.bounds.width)}:${Math.round(model.bounds.height)}`} bounds={model.bounds}
+    legend={[{ color: p.flow, shape: 'line', text: 'Flujo' }, { color: p.needs, shape: 'line', text: 'Necesita' }, { color: p.mentions, shape: 'line', text: 'Menciona' }, { color: p.muted, shape: 'bar', text: 'Más ancho = más caminos pasan por ahí' }]}
+    draw={draw} overlay={overlay} hit={hit} onHover={setHover} onPress={press}
+    side={!from ? undefined : !to ? <><Txt kind="label" muted>Desde</Txt><Txt kind="heading" numberOfLines={3}>{title(from)}</Txt><Txt kind="small" muted>Ahora toca lo que quieres entender. Cada cosa dice a cuántos pasos queda.</Txt><Button label="Empezar de nuevo" small variant="ghost" onPress={restart} /></>
+      : !way ? <><Txt kind="heading">Sin camino</Txt><Txt kind="small" muted>No hay camino entre «{title(from)}» y «{title(to)}»: ningún enlace las une, ni siquiera pasando por otras.</Txt><Button label="Empezar de nuevo" small onPress={restart} /></>
+      : <><Txt kind="heading">El camino más corto</Txt><Txt kind="small" muted>{way.ids.length} pasos de «{title(from)}» a «{title(to)}»</Txt>
+        <ScrollView style={{ maxHeight: 240 }}>{way.ids.map((id, i) => <View key={id} style={{ marginBottom: 10, gap: 3 }}>
+          {i > 0 && !!way.via[i - 1]?.label && <Txt kind="label" muted style={{ marginLeft: 28 }}>↓ {way.via[i - 1].label}</Txt>}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: u.c.accent, justifyContent: 'center', alignItems: 'center' }}><Txt kind="label" style={{ color: u.c.surface0, fontWeight: '700' }}>{i + 1}</Txt></View><Txt kind="small" numberOfLines={2} style={{ flex: 1, fontWeight: '500' }}>{title(id)}</Txt></View></View>)}</ScrollView>
+        <Button label="Pedir esta explicación" variant="primary" small icon="SendHorizontal" disabled={c.offline || sent === 'sending'} onPress={() => { void ask(); }} />
+        {!!note && <Txt kind="small" style={{ color: sent === 'failed' ? u.c.statusDanger : u.c.accent }}>{note}</Txt>}
+        <Button label="Ver en el lienzo" small icon="Frame" onPress={() => onOpen(way.ids[0])} /><Button label="Empezar de nuevo" small variant="ghost" onPress={restart} /></>}>
+    {!count && <View pointerEvents="none" style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}><Txt kind="small" muted>Todavía no hay nada en este lienzo.</Txt></View>}
+    {!!count && !from && <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 136, alignItems: 'center' }}><View style={{ backgroundColor: u.c.surface1, borderWidth: 1, borderColor: u.c.border, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 14 }}><Txt kind="small" muted>{model.links.length ? 'Toca lo que ya conoces' : 'Sin enlaces no hay cauce: este lienzo todavía no conecta nada.'}</Txt></View></View>}
+  </Stage>;
 }
