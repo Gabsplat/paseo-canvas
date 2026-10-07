@@ -659,3 +659,15 @@ test('a selection box takes the cards it touches and only the areas it fully hol
   assert.deepEqual(marqueeSelection(doc, rects, { x: -10, y: -10, width: 1100, height: 500 }), ['g', 'out']);
   assert.deepEqual(marqueeSelection(doc, rects, { x: 650, y: 200, width: 50, height: 50 }), []);
 });
+
+test('canvas cursors are self-contained drawings in the theme colours with a system fallback', async () => {
+  const { canvasCursors, cursorForTool } = await import('../plugin/client/cursors');
+  const set = canvasCursors('#101010', '#fafafa', '#c05010'), fallback = { select: 'default', hand: 'grab', handActive: 'grabbing', text: 'text', shape: 'crosshair', draw: 'crosshair', eraser: 'cell' };
+  for (const [name, value] of Object.entries(set)) {
+    assert.match(value, /^url\("data:image\/svg\+xml,[^"]+"\) \d+(\.\d+)? \d+(\.\d+)?, [a-z]+$/, name); assert.ok(value.endsWith(`, ${fallback[name as keyof typeof fallback]}`), name);
+    const svg = decodeURIComponent(value.slice(value.indexOf(',') + 1, value.indexOf('")')));
+    assert.ok(svg.includes('#101010') && svg.includes('#fafafa'), `${name} uses ink and paper`); assert.ok(!/https?:|<script|<image|href/i.test(svg.replace("xmlns='http://www.w3.org/2000/svg'", '')), `${name} loads nothing`);
+  }
+  assert.equal(new Set(Object.values(set)).size, 7); assert.equal(canvasCursors('#101010', '#fafafa', '#c05010'), set, 'cached per palette');
+  assert.equal(cursorForTool(set, 'svg'), set.select); assert.equal(cursorForTool(set, 'eraser'), set.eraser);
+});

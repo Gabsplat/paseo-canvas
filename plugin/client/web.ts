@@ -225,12 +225,6 @@ export function keyboard(element: unknown, handler: (event: { key: string; shift
  * and a Pressable there would take it as a press (selecting, or collapsing a multi-selection). Call this when a
  * gesture that moved ends: the one click that follows is dropped before React sees it. Nothing happens on native.
  */
-/** The eraser's cursor is its reach: a ring of the radius it erases, with a halo so it reads on any surface. */
-export function ringCursor(radius: number, ink: string, paper: string, fallback: string): string {
-  const size = Math.ceil(radius * 2 + 6), c = size / 2, colour = (value: string) => encodeURIComponent(value);
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'><circle cx='${c}' cy='${c}' r='${radius}' fill='none' stroke='${colour(paper)}' stroke-width='3.5'/><circle cx='${c}' cy='${c}' r='${radius}' fill='none' stroke='${colour(ink)}' stroke-width='1.5'/></svg>`;
-  return `url("data:image/svg+xml,${svg.replace(/</g, '%3C').replace(/>/g, '%3E')}") ${c} ${c}, ${fallback}`;
-}
 /** While the primary button is held over `element`, show `cursor()` (the closed hand of the hand tool). Null leaves it alone. */
 export function attachPressCursor(element: unknown, cursor: () => string | null): () => void {
   const node = element as (BrowserElement & { style?: { cursor: string } }) | null, doc = browser().document; if (!doc || !node?.addEventListener || !node.style) return () => {};

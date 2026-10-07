@@ -1874,7 +1874,10 @@ const baseTokens = {
         "text": "text",
         "shape": "crosshair",
         "draw": "crosshair",
-        "eraser": "cell"
+        "eraser": "cell",
+        "size": 24,
+        "line": 1.5,
+        "halo": 2.5
       }
     },
     "style": {

@@ -1409,10 +1409,21 @@ tool, Space + drag, the middle button, or the wheel/trackpad. Touch and compact 
 A plain click anywhere on a card (its text or padding, not only its title) selects it.
 Verified with `design/whiteboard-harness/marquee.cjs` and `basic.cjs`; capture `marquee.png`.
 
-## 27. Tool cursors (v14)
+## 27. Lienzo cursors (v14)
 
-On the web the cursor says which tool is in hand (`whiteboard.tools.cursor`): select `default`, hand
-`grab` and `grabbing` while the button is held, text `text`, shape and pencil `crosshair`, eraser a ring
-of its 10 px reach (ink line 1.5 over a 3.5 paper halo, `cell` as fallback). Cards show the grab hand only
-with the select tool; with any other tool its cursor shows through them. System cursors only, apart from
-the eraser ring. Verified with `design/whiteboard-harness/cursors.cjs`.
+On the web the canvas uses its own cursors (`plugin/client/cursors.ts`, `whiteboard.tools.cursor`): 24 px
+drawings in the theme's ink (line 1.5) over a paper halo (+2.5) so they read on any surface, with the
+accent marking the exact acting point. Each carries its hot spot and falls back to the system cursor.
+
+| Tool | Drawing | Hot spot | Fallback |
+|---|---|---|---|
+| Select | filled ink arrow, paper outline | tip (5, 3) | `default` |
+| Hand | open hand; closed hand while the button is held | centre | `grab` / `grabbing` |
+| Text | I-beam | centre | `text` |
+| Shape | cross with a 4 px gap and an accent point | centre | `crosshair` |
+| Pencil | ring of 5.5 with an accent point where the ink lands | centre | `crosshair` |
+| Eraser | ring of its 10 px reach | centre | `cell` |
+
+Cards show the open hand with the select tool and the closed hand while carried; with any other tool its
+cursor shows through them. Buttons keep the system pointer. Verified with
+`design/whiteboard-harness/cursors.cjs`; sheet in `design/qa-shapes-legibility-2026-10-06/cursors.png`.

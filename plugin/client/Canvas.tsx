@@ -13,13 +13,14 @@ import { getClientRenderer } from './renderers';
 import { LinkLayer, type LinkLayerHandle, type LinkDraft } from './Links';
 import { MagnetCue } from './MagnetCue';
 import { Chip, Txt, useUI } from './ui';
-import { attachEntityDrag, attachMiddlePan, attachPressCursor, ringCursor, attachWheel, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
+import { attachEntityDrag, attachMiddlePan, attachPressCursor, attachWheel, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
 import { Appear, NATIVE, easeOut, frame, glide, reducedMotion, settle, useReducedMotion } from './motion';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type CanvasToolProps, type SvgInsertOptions } from './whiteboard-tools';
 import { isWhiteboardRenderer, whiteboardMinSize, type WbRenderer } from '../shared/whiteboard';
 import { useWhiteboard } from './useWhiteboard';
 import { WhiteboardContent } from './WhiteboardContent';
 import { Minimap, SelectionBeacon } from './Wayfinding';
+import { canvasCursors, cursorForTool, type CanvasCursors } from './cursors';
 import { WhiteboardEditor, WhiteboardPreview } from './WhiteboardOverlay';
 import { LinkLabelEditor, SelectionOverlay, type LinkLabelSession } from './SelectionOverlay';
 import { ZoomControl } from './ZoomControl';
@@ -98,6 +99,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const linkMotion = useCallback((epochMs: number) => motionSources?.(c.learning.getSnapshot(), epochMs, presentation?.hiddenBy ?? new Map()) ?? { tokens: [], playing: false }, [motionSources, c.learning, presentation?.hiddenBy]);
   const marquee = useRef<{ x: number; y: number; origin: Point; add: boolean } | null>(null), marqueeOn = useRef(false), box = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), w: new Animated.Value(0), h: new Animated.Value(0), o: new Animated.Value(0) }).current;
   marqueeOn.current = web && !u.compact;
+  const cursorsRef = useRef<CanvasCursors | null>(null);
   /** The entity last selected by pressing it on the canvas; a selection that is not this one came from elsewhere. */
   const pressed = useRef<string | null>(null);
   const viewport = useRef<View>(null), marks = useRef<View>(null), links = useRef<LinkLayerHandle>(null), vp = useRef<Point | null>(null);
@@ -364,7 +366,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const held = useRef<{ id: string; event: GestureResponderEvent; state: PanResponderGestureState; long: boolean } | null>(null), holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearHold = () => { if (holdTimer.current) clearTimeout(holdTimer.current); holdTimer.current = null; held.current = null; };
   useEffect(() => () => clearHold(), []);
-  useEffect(() => web && mode === 'canvas' ? attachPressCursor(viewport.current, () => toolRef.current === 'hand' ? tokens.whiteboard.tools.cursor.handActive : null) : undefined, [web, mode, doc.id]);
+  useEffect(() => web && mode === 'canvas' ? attachPressCursor(viewport.current, () => toolRef.current === 'hand' ? cursorsRef.current?.handActive ?? null : null) : undefined, [web, mode, doc.id]);
   const canDrag = !u.compact && !c.offline, canDragRef = useRef(canDrag); canDragRef.current = canDrag;
   useEffect(() => {
     if (!web || mode !== 'canvas') return;
@@ -579,10 +581,11 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   // The pin: shown on the frame in focus when it holds a place of its own inside an automatic layout. Pressing it lets go.
   const pinFor = !linkDraft && handleFor && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === doc.blocks.find(b => b.id === handleFor)?.typeId)?.renderer) && handleRect && !handleRect.hidden && index.entities.get(handleFor)?.position && !manual(index.mode(index.parent.get(handleFor) || null)) ? handleFor : null;
   const worldX = useMemo(() => Animated.add(camX, Animated.multiply(camS, bound.x)), [bound.x]), worldY = useMemo(() => Animated.add(camY, Animated.multiply(camS, bound.y)), [bound.y]);
-  const shadow = `${M.drag.shadow} ${withAlpha(isDark(u.c.surface0) ? u.c.surface0 : u.c.foreground, M.drag.shadowAlpha)}`, K = tokens.whiteboard.tools.cursor;
-  // The cursor says which tool is in hand. Cards show the grab hand only with the select tool; any other tool shows through them.
-  const toolCursor = !web ? undefined : toolRef.current === 'eraser' ? ringCursor(tokens.whiteboard.draw.eraserRadiusScreen, u.c.foreground, u.c.surface0, K.eraser) : toolRef.current === 'svg' ? K.select : K[toolRef.current];
-  const cursor = (lifted: boolean) => !web ? undefined : toolRef.current !== 'select' ? toolCursor : canDrag ? lifted ? 'grabbing' : 'grab' : undefined;
+  const shadow = `${M.drag.shadow} ${withAlpha(isDark(u.c.surface0) ? u.c.surface0 : u.c.foreground, M.drag.shadowAlpha)}`, cursors = canvasCursors(u.c.foreground, u.c.surface0, u.c.accent); cursorsRef.current = cursors;
+  // The cursor says which tool is in hand, in Lienzo's own drawing. Cards show the open hand only with the select tool
+  // and the closed one while carried; any other tool shows through them.
+  const toolCursor = web ? cursorForTool(cursors, toolRef.current) : undefined;
+  const cursor = (lifted: boolean) => !web ? undefined : toolRef.current !== 'select' ? toolCursor : canDrag ? lifted ? cursors.handActive : cursors.hand : undefined;
   function groupHeader(group: CanvasGroup, ordinal: number, outline = false, targeted = false, dashed = false) {
     const count = group.blockIds.length + group.groupIds.length, selected = c.selection.includes(group.id), template = c.catalog?.templates.find(t => t.id === group.templateId);
     return <View {...(!outline && canDrag ? dragHandlers(group.id) : {})} style={{ ...noSelect, flexDirection: 'row', height: outline ? 36 : group.parentGroupId ? tokens.size.groupHeaderNested : tokens.size.groupHeader, alignItems: 'center', paddingLeft: 8, paddingRight: 10, gap: 6, borderBottomWidth: !outline && !group.collapsed && !dashed ? 1 : 0, borderColor: targeted ? withAlpha(u.c.accent, tokens.alpha.toneBorder) : u.c.border }}>
