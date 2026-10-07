@@ -13,7 +13,7 @@ import { getClientRenderer } from './renderers';
 import { LinkLayer, type LinkLayerHandle, type LinkDraft } from './Links';
 import { MagnetCue } from './MagnetCue';
 import { Chip, Txt, useUI } from './ui';
-import { attachEntityDrag, attachMiddlePan, attachWheel, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
+import { attachEntityDrag, attachMiddlePan, attachPressCursor, ringCursor, attachWheel, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
 import { Appear, NATIVE, easeOut, frame, glide, reducedMotion, settle, useReducedMotion } from './motion';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type CanvasToolProps, type SvgInsertOptions } from './whiteboard-tools';
 import { isWhiteboardRenderer, whiteboardMinSize, type WbRenderer } from '../shared/whiteboard';
@@ -364,6 +364,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const held = useRef<{ id: string; event: GestureResponderEvent; state: PanResponderGestureState; long: boolean } | null>(null), holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearHold = () => { if (holdTimer.current) clearTimeout(holdTimer.current); holdTimer.current = null; held.current = null; };
   useEffect(() => () => clearHold(), []);
+  useEffect(() => web && mode === 'canvas' ? attachPressCursor(viewport.current, () => toolRef.current === 'hand' ? tokens.whiteboard.tools.cursor.handActive : null) : undefined, [web, mode, doc.id]);
   const canDrag = !u.compact && !c.offline, canDragRef = useRef(canDrag); canDragRef.current = canDrag;
   useEffect(() => {
     if (!web || mode !== 'canvas') return;
@@ -578,7 +579,10 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   // The pin: shown on the frame in focus when it holds a place of its own inside an automatic layout. Pressing it lets go.
   const pinFor = !linkDraft && handleFor && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === doc.blocks.find(b => b.id === handleFor)?.typeId)?.renderer) && handleRect && !handleRect.hidden && index.entities.get(handleFor)?.position && !manual(index.mode(index.parent.get(handleFor) || null)) ? handleFor : null;
   const worldX = useMemo(() => Animated.add(camX, Animated.multiply(camS, bound.x)), [bound.x]), worldY = useMemo(() => Animated.add(camY, Animated.multiply(camS, bound.y)), [bound.y]);
-  const shadow = `${M.drag.shadow} ${withAlpha(isDark(u.c.surface0) ? u.c.surface0 : u.c.foreground, M.drag.shadowAlpha)}`, cursor = (lifted: boolean) => web && canDrag ? lifted ? 'grabbing' : 'grab' : undefined;
+  const shadow = `${M.drag.shadow} ${withAlpha(isDark(u.c.surface0) ? u.c.surface0 : u.c.foreground, M.drag.shadowAlpha)}`, K = tokens.whiteboard.tools.cursor;
+  // The cursor says which tool is in hand. Cards show the grab hand only with the select tool; any other tool shows through them.
+  const toolCursor = !web ? undefined : toolRef.current === 'eraser' ? ringCursor(tokens.whiteboard.draw.eraserRadiusScreen, u.c.foreground, u.c.surface0, K.eraser) : toolRef.current === 'svg' ? K.select : K[toolRef.current];
+  const cursor = (lifted: boolean) => !web ? undefined : toolRef.current !== 'select' ? toolCursor : canDrag ? lifted ? 'grabbing' : 'grab' : undefined;
   function groupHeader(group: CanvasGroup, ordinal: number, outline = false, targeted = false, dashed = false) {
     const count = group.blockIds.length + group.groupIds.length, selected = c.selection.includes(group.id), template = c.catalog?.templates.find(t => t.id === group.templateId);
     return <View {...(!outline && canDrag ? dragHandlers(group.id) : {})} style={{ ...noSelect, flexDirection: 'row', height: outline ? 36 : group.parentGroupId ? tokens.size.groupHeaderNested : tokens.size.groupHeader, alignItems: 'center', paddingLeft: 8, paddingRight: 10, gap: 6, borderBottomWidth: !outline && !group.collapsed && !dashed ? 1 : 0, borderColor: targeted ? withAlpha(u.c.accent, tokens.alpha.toneBorder) : u.c.border }}>
@@ -618,7 +622,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     {!u.compact && size.width >= tokens.canvas.minimap.minPanelWidth && mapItems.length >= tokens.canvas.minimap.minItems && <Minimap items={mapItems} content={mapContent} view={size} source={cameraSource} onNavigate={goTo} />}
   </> : null;
   const guideLine = (line: typeof guideV, vertical: boolean) => <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, zIndex: 6, backgroundColor: u.c.accent, opacity: line.opacity, transformOrigin: 'top left', transform: [{ translateX: line.x }, { translateY: line.y }, { scaleX: vertical ? line.thickness : line.length }, { scaleY: vertical ? line.length : line.thickness }] }} />;
-  return <View ref={viewport} nativeID="lienzo-canvas-viewport" onLayout={e => { setSize(e.nativeEvent.layout); measureViewport(); }} style={{ flex: 1, overflow: 'hidden', backgroundColor: u.c.surface0 }}>
+  return <View ref={viewport} nativeID="lienzo-canvas-viewport" onLayout={e => { setSize(e.nativeEvent.layout); measureViewport(); }} style={{ flex: 1, overflow: 'hidden', backgroundColor: u.c.surface0, ...(toolCursor ? { cursor: toolCursor } as object : null) }}>
     <View {...(web || toolRef.current === 'select' ? pan.panHandlers : nativeTools.panHandlers)} style={{ position: 'absolute', inset: 0 }}>
     <Pressable accessible={false} focusable={false} onPress={() => { if (toolRef.current !== 'select') return; setInteractionMode(null); setMulti(false); latest.current.onLink(null); void latest.current.c.select([]); }} style={{ position: 'absolute', inset: 0 }} />
     <Animated.View pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width: bound.width, height: bound.height, opacity: shown, transformOrigin: 'top left', transform: [{ translateX: worldX }, { translateY: worldY }, { scale: camS }] }}>

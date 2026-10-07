@@ -1408,3 +1408,11 @@ adds to the current selection; a box over nothing clears it. The view does not m
 tool, Space + drag, the middle button, or the wheel/trackpad. Touch and compact keep one-finger panning.
 A plain click anywhere on a card (its text or padding, not only its title) selects it.
 Verified with `design/whiteboard-harness/marquee.cjs` and `basic.cjs`; capture `marquee.png`.
+
+## 27. Tool cursors (v14)
+
+On the web the cursor says which tool is in hand (`whiteboard.tools.cursor`): select `default`, hand
+`grab` and `grabbing` while the button is held, text `text`, shape and pencil `crosshair`, eraser a ring
+of its 10 px reach (ink line 1.5 over a 3.5 paper halo, `cell` as fallback). Cards show the grab hand only
+with the select tool; with any other tool its cursor shows through them. System cursors only, apart from
+the eraser ring. Verified with `design/whiteboard-harness/cursors.cjs`.
