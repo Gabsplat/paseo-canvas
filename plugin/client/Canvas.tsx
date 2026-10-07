@@ -623,7 +623,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const mapMargin = Math.max(maxX - minX, maxY - minY) * tokens.canvas.minimap.margin, mapContent = { x: minX - mapMargin, y: minY - mapMargin, width: maxX - minX + 2 * mapMargin, height: maxY - minY + 2 * mapMargin };
   const beaconId = c.selection.length === 1 && !drag && !wb.editor ? c.selection[0] : null, beaconBox = beaconId ? rects.get(beaconId) : undefined;
   // Lenses: the same canvas, tinted by a variable it does not otherwise show. Marks sit over the cards and never move them.
-  const [lens, setLens] = useState<LensId>('none'), stored = useHistory(c, lens === 'author' || lens === 'age');
+  const [lens, setLens] = useState<LensId>('none'), stored = useHistory(c, lens === 'author' || lens === 'age' || lens === 'agent');
   const tint = useMemo(() => lensMarks(lens, doc, stored.changes ?? [], c.events), [lens, doc.blocks, doc.revision, stored.changes, c.events]);
   const lensNote = lens === 'none' ? undefined : stored.failed ? 'No se pudo leer el historial.' : lens === 'talk' ? undefined : !stored.changes ? 'Leyendo el historial…' : 'Según los 50 cambios más recientes.';
   const showMap = !u.compact && size.width >= tokens.canvas.minimap.minPanelWidth && doc.blocks.length + doc.groups.length >= tokens.canvas.minimap.minItems;

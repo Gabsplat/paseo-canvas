@@ -1410,3 +1410,31 @@ Both read the history the server stores, which is the 50 most recent changes; ea
 
 Verified with `design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history served by
 the QA host); captures `lens-author.png` and `rings.png` in `design/qa-shapes-legibility-2026-10-06/`.
+
+## 30. More readings of the same document (v17)
+
+A "Cambiar vista" button in the title island (and the menu) lists the views: Lienzo, Lista, Foco, Lecturas,
+Matriz, Corriente, Anillos. Only the canvas and the list edit; the rest are for looking, never write, and
+return to the canvas with "Ver en el lienzo". The tool column hides in them. Each view states the question
+it answers under its title.
+
+- **Foco.** The selected entity in the middle (accent border), its neighbours placed by what each link
+  means: what it needs above, what needs it below, where the flow comes from on the left and goes on the
+  right, mentions last. `from` needs `to`; `from` flows to `to`. Pressing a neighbour stands on it.
+- **Lecturas.** Every path the flow links spell out from a start to an end, and every chain of needs, at
+  most 12 per kind, loops cut where they close. A reading is picked from a list and walked one card at a
+  time; the label of the link that led to a card is shown above it. A card on several readings is marked
+  as a crossing.
+- **Matriz.** Rows and columns are the entities in reading order (area by area, then areas that end a
+  link); a link is a 22 px cell at (from, to) in its kind's tone. Area bands are shaded, so cells outside a
+  band are coupling between areas. Hovering a cell says the relation in words; pressing selects both ends.
+- **Corriente.** The stored changes and the requests to the assistant as one list, newest first: who, what,
+  revision, time, and the cards touched as chips. Requests not yet attended are pulled out on top.
+- **Lens "Lo que ve el asistente".** A fifth lens. Up to date: the assistant changed the card last, or
+  attended a request about it since its last change. Behind: you changed it afterwards. No record:
+  nothing is claimed. This is derived from the stored changes and requests; the assistant's actual reading
+  is not recorded, and the reverse (what you have seen) is not tracked at all.
+
+Logic in `plugin/client/view-models.ts`, tested in `tests/views.test.ts`. Verified with
+`design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history); captures
+`views-sheet.png` and `lens-agent.png` in `design/qa-shapes-legibility-2026-10-06/`.

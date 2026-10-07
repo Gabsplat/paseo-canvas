@@ -22,6 +22,9 @@ import { withAlpha } from './color';
 import { usePresentation } from './usePresentation';
 import { BlockPalette } from './BlockPalette';
 import { Rings } from './Rings';
+import { FocusView, MatrixView, ReadingsView, StreamView } from './Views';
+type ViewMode = 'canvas' | 'outline' | 'focus' | 'readings' | 'matrix' | 'stream' | 'rings';
+const VIEWS: { id: ViewMode; label: string; icon: string }[] = [{ id: 'canvas', label: 'Lienzo', icon: 'Frame' }, { id: 'outline', label: 'Lista', icon: 'ListTree' }, { id: 'focus', label: 'Foco', icon: 'Crosshair' }, { id: 'readings', label: 'Lecturas', icon: 'Route' }, { id: 'matrix', label: 'Matriz', icon: 'Grid3x3' }, { id: 'stream', label: 'Corriente', icon: 'Waves' }, { id: 'rings', label: 'Anillos', icon: 'Target' }];
 import { ToolIsland, StyleIsland, ShapePopover, LibraryPopover, SvgImportDialog } from './FloatingTools';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
@@ -148,7 +151,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   }), [raw]);
   const doc = c.view?.document;
   const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [islandWidth, setIslandWidth] = useState(0), [composerHeight, setComposerHeight] = useState(44), [styleHeight, setStyleHeight] = useState(0);
-  const [mode, setMode] = useState<'canvas' | 'outline' | 'rings'>(u.compact ? 'outline' : 'canvas'), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null), [catalogFull, setCatalogFull] = useState(true);
+  const [mode, setMode] = useState<ViewMode>(u.compact ? 'outline' : 'canvas'), [viewMenu, setViewMenu] = useState(false), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null), [catalogFull, setCatalogFull] = useState(true);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('types'), [catalogKey, setCatalogKey] = useState(0);
   const [inspectorSection, setInspectorSection] = useState<InspectorSection>('document'), [inspectorKey, setInspectorKey] = useState(0);
   const [docsError, setDocsError] = useState(''), [docsLoading, setDocsLoading] = useState(false);
@@ -445,6 +448,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     return keyboard(root.current, e => {
       if (guideOpen) return false;
       if (e.key === 'Escape' && actionPopup) { setActionPopup(null); return true; }
+      if (e.key === 'Escape' && viewMenu) { setViewMenu(false); return true; }
       if (e.key === 'Escape' && overflow && !u.compact) { setOverflow(false); return true; }
       if (e.key === 'Escape' && palette) { setOverlay(null); return true; }
       if (actionPopup || overlay || toolsOpen || documentSettingsOpen || docsOpen || agentsOpen || overflow || template || mediaOpen || svgOpen) return false;
@@ -489,6 +493,9 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       return false;
     });
   }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, note, overlay, sending, immersive, linkId, mode, guideOpen, tool, toolPopover, toolsOpen, interactionId, actionPopup, documentSettingsOpen, docsOpen, agentsOpen, overflow, template, mediaOpen, svgOpen]);
+  // Views are different readings of the same document. The canvas and the list edit it; the others are for looking.
+  const alt = !['canvas', 'outline'].includes(mode), openOnCanvas = (id: string) => { void c.select([id]); setMode('canvas'); };
+  const viewRows = (close: () => void, only: readonly ViewMode[] = VIEWS.map(v => v.id)) => VIEWS.filter(v => only.includes(v.id)).map(v => <MenuRow key={v.id} icon={v.icon} label={v.label} hint={mode === v.id ? '•' : undefined} disabled={!doc} onPress={() => { close(); setOverlay(null); setMode(v.id); }} />);
   const menuRows = <>
       {/* Grouped by what the action is about; one left edge, dividers instead of headings. */}
       <MenuRow icon="Plus" label="Nuevo lienzo" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
@@ -506,7 +513,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
         <MenuRow icon="Trash2" label="Eliminar selección" danger disabled={disabled} onPress={() => { setOverflow(false); removeSelection(); }} /></>}
       <MenuDivider />
       <MenuRow icon={mode === 'canvas' ? 'ListTree' : 'Frame'} label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} hint="⇧L" onPress={() => { setOverflow(false); setMode(mode === 'canvas' ? 'outline' : 'canvas'); }} />
-      <MenuRow icon="Target" label={mode === 'rings' ? 'Volver al lienzo' : 'Ver como anillos'} disabled={!doc} onPress={() => { setOverflow(false); setOverlay(null); setMode(mode === 'rings' ? 'canvas' : 'rings'); }} />
+      {viewRows(() => setOverflow(false), ['focus', 'readings', 'matrix', 'stream', 'rings'])}
       <MenuRow icon="Maximize2" label="Solo lienzo" hint="F" disabled={!doc} onPress={() => { setOverflow(false); setOverlay(null); setImmersive(true); }} />
       {u.compact && <MenuRow icon="PenTool" label="Herramientas" disabled={!doc} onPress={() => { setOverflow(false); setMode('canvas'); setToolsOpen(true); }} />}
       <MenuDivider />
@@ -535,13 +542,13 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   return <View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
     {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
       <IconButton icon="Menu" label="Más acciones" onPress={() => setOverflow(true)} /><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Ejemplo" tone="aviso" icon="FlaskConical" center />}<IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Plus" label="Añadir" disabled={!doc || disabled} onPress={() => openCatalog()} /><IconButton icon="PenTool" label="Herramientas" disabled={!doc} onPress={() => { setMode('canvas'); setToolsOpen(true); }} />
-      <IconButton icon={mode === 'canvas' ? 'ListTree' : 'Frame'} label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} onPress={() => setMode(mode === 'canvas' ? 'outline' : 'canvas')} /><IconButton icon="Target" label={mode === 'rings' ? 'Volver al lienzo' : 'Ver como anillos'} active={mode === 'rings'} onPress={() => { setOverlay(null); setMode(mode === 'rings' ? 'canvas' : 'rings'); }} />
+      <IconButton icon={mode === 'canvas' ? 'ListTree' : 'Frame'} label={mode === 'canvas' ? 'Ver como lista' : 'Ver como lienzo'} onPress={() => setMode(mode === 'canvas' ? 'outline' : 'canvas')} /><IconButton icon="Layers" label="Cambiar vista" active={alt || viewMenu} onPress={() => { setOverflow(false); setViewMenu(open => !open); }} />
     </View>}
     <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="No se pudo abrir el lienzo" error={c.failure.message}><Button label="Reintentar" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo">
         <Button label="Nuevo lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Ejemplos</Txt>
         {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-      </EmptyState> : mode === 'rings' ? <Rings controller={c} onOpen={id => { void c.select([id]); setMode('canvas'); }} /> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode === 'outline' ? 'outline' : 'canvas'} linkId={linkId} onLink={id => { if (id === null) setToolPopover(null); selectLink(id); }} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
+      </EmptyState> : mode === 'rings' ? <Rings controller={c} onOpen={openOnCanvas} /> : mode === 'focus' ? <FocusView controller={c} onOpen={openOnCanvas} /> : mode === 'readings' ? <ReadingsView controller={c} onOpen={openOnCanvas} /> : mode === 'matrix' ? <MatrixView controller={c} onOpen={openOnCanvas} /> : mode === 'stream' ? <StreamView controller={c} onOpen={openOnCanvas} /> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode === 'outline' ? 'outline' : 'canvas'} linkId={linkId} onLink={id => { if (id === null) setToolPopover(null); selectLink(id); }} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!u.compact && !c.selection.length && !linkId && actionPopup && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, width: tokens.popover.width.medium }}>{selectionToolbar}</View>}
@@ -553,9 +560,9 @@ function Panel({ workspaceId }: { workspaceId: string }) {
         {(saveSlow || c.failure) && <View accessibilityLabel={c.failure ? 'No se guardó' : 'Guardando'} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.failure ? u.c.statusDanger : u.c.statusWarning }} />}
         <View style={{ width: tokens.island.divider.width, height: tokens.island.divider.height, marginHorizontal: tokens.island.divider.marginH, backgroundColor: u.c.border }} />
         <IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />{width >= 560 && <IconButton icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />}
-        {!!doc && <IconButton icon="Target" label={mode === 'rings' ? 'Volver al lienzo' : 'Ver como anillos'} active={mode === 'rings'} onPress={() => { setOverlay(null); setMode(mode === 'rings' ? 'canvas' : 'rings'); }} />}
+        {!!doc && <IconButton icon="Layers" label="Cambiar vista" active={alt || viewMenu} onPress={() => { setOverflow(false); setViewMenu(open => !open); }} />}
       </View></View>}
-      {!u.compact && !immersive && mode !== 'rings' && <View pointerEvents="box-none" style={dock ? { position: 'absolute', top: dockTop, left: tokens.island.inset } : { position: 'absolute', top: toolsTop, left: toolsTop === tokens.island.inset ? toolsLeft : Math.max(tokens.island.inset, (width - toolWidth) / 2) }}>{toolIsland}</View>}
+      {!u.compact && !immersive && !alt && <View pointerEvents="box-none" style={dock ? { position: 'absolute', top: dockTop, left: tokens.island.inset } : { position: 'absolute', top: toolsTop, left: toolsTop === tokens.island.inset ? toolsLeft : Math.max(tokens.island.inset, (width - toolWidth) / 2) }}>{toolIsland}</View>}
       {doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select' && <View pointerEvents="box-none" style={{ position: 'absolute', top: toolsTop + 80, left: 24, right: 24, alignItems: 'center', gap: 8 }}><View pointerEvents="none"><Txt kind="display" style={{ textAlign: 'center' }}>Un lienzo en blanco</Txt><Txt muted style={{ textAlign: 'center' }}>Escribe, dibuja o añade un bloque.</Txt></View><View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Button label="Añadir un bloque" disabled={disabled} onPress={() => openCatalog()} /><Button label="Usar una plantilla" disabled={disabled} onPress={() => openCatalog('templates')} /></View></View>}
       {doc && !immersive && !u.compact && <View pointerEvents="box-none" onLayout={e => setComposerHeight(e.nativeEvent.layout.height)} style={{ position: 'absolute', bottom: tokens.island.inset, left: width < 560 ? tokens.island.inset : (width - composerWidth) / 2, width: composerWidth }}><ContextTray composerRef={composerRef} controller={c} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} /></View>}
       {showStyle && !immersive && !u.compact && mode === 'canvas' && <View pointerEvents="box-none" style={width >= 880 ? { position: 'absolute', right: tokens.island.inset, top: Math.max(toolsTop + 56, (panelHeight - styleHeight) / 2), maxHeight: Math.max(80, panelHeight - 160) } : { position: 'absolute', bottom: tokens.island.inset + composerHeight + 8, left: tokens.island.inset, right: tokens.island.inset }}><ScrollView pointerEvents="box-none" style={{ maxHeight: Math.max(80, panelHeight - 160) }} contentContainerStyle={{ alignItems: width >= 880 ? 'flex-end' : 'center' }}><View pointerEvents="box-none" onLayout={e => setStyleHeight(e.nativeEvent.layout.height)}>{styleIsland}</View></ScrollView></View>}
@@ -608,6 +615,9 @@ function Panel({ workspaceId }: { workspaceId: string }) {
     </Modal.Content></Modal>
     {palette && <><Pressable accessibilityLabel="Cerrar bloques" onPress={() => setOverlay(null)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
       <View pointerEvents="box-none" style={{ position: 'absolute', left: dockFlyoutLeft, top: 0, bottom: 0, justifyContent: 'center', zIndex: 41 }}><BlockPalette types={c.catalog?.blockTypes ?? []} extras={paletteExtras} insert={insert} onMore={() => setCatalogFull(true)} disabled={disabled} maxRows={Math.floor((panelHeight - 2 * tokens.island.bannerTop) / tokens.island.palette.button)} /></View></>}
+    {viewMenu && !u.compact && <><Pressable accessibilityLabel="Cerrar vistas" onPress={() => setViewMenu(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
+      <View nativeID="lienzo-interactive-views" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + 48, width: 260, zIndex: 41, ...islandStyle(u, true), padding: 6 }}>{viewRows(() => setViewMenu(false))}</View></>}
+    <Modal title="Vistas" open={viewMenu && u.compact} onOpenChange={setViewMenu}><Modal.Content><View>{viewRows(() => setViewMenu(false))}</View></Modal.Content></Modal>
     {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
     {overflow && !u.compact && <><Pressable accessibilityLabel="Cerrar menú" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
       <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + 48, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}

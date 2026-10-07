@@ -1,5 +1,6 @@
 import type { AgentEvent, CanvasDocument } from '../shared/model';
 import type { Tone } from './color';
+import { agentView } from './view-models';
 
 /** One stored change, as the history RPC returns it. The server keeps the most recent ones, not the whole life. */
 export type Change = { revision: number; actor: 'user' | 'agent' | 'system'; label: string; at: string; changed: readonly string[]; removed: readonly string[]; kind: 'edit' | 'undo' | 'redo' };
@@ -15,11 +16,11 @@ export function biographies(changes: readonly Change[]): Map<string, Biography> 
   }
   return out;
 }
-export const LENSES = ['none', 'author', 'age', 'talk'] as const;
+export const LENSES = ['none', 'author', 'age', 'talk', 'agent'] as const;
 export type LensId = typeof LENSES[number];
-export const LENS_LABEL: Record<LensId, string> = { none: 'Sin lente', author: 'Autoría', age: 'Antigüedad', talk: 'Conversación' };
+export const LENS_LABEL: Record<LensId, string> = { none: 'Sin lente', author: 'Autoría', age: 'Antigüedad', talk: 'Conversación', agent: 'Lo que ve el asistente' };
 export type LensKey = { key: string; label: string; tone: Tone; count: number };
-type Events = readonly Pick<AgentEvent, 'status' | 'action'>[];
+type Events = readonly Pick<AgentEvent, 'status' | 'action' | 'revision'>[];
 /**
  * A lens keeps every card where it is and tints it by one variable the canvas does not show: who last changed
  * it, how long it has been left alone, or whether it was ever taken up with the assistant.
@@ -31,6 +32,7 @@ export function lensMarks(lens: LensId, doc: Pick<CanvasDocument, 'blocks' | 're
     author: [['user', 'Tú', 'acento'], ['agent', 'Asistente', 'violeta'], ['quiet', 'Sin cambios recientes', 'neutro']],
     age: [['fresh', 'Recién cambiado', 'riesgo'], ['recent', 'Reciente', 'aviso'], ['settled', 'Asentado', 'turquesa'], ['quiet', 'Quieto', 'neutro']],
     talk: [['open', 'Pendiente de respuesta', 'aviso'], ['failed', 'No se entregó', 'riesgo'], ['acked', 'Atendido', 'exito'], ['never', 'Nunca conversado', 'neutro']],
+    agent: [['current', 'Al día', 'exito'], ['behind', 'Lo cambiaste después', 'aviso'], ['unknown', 'Sin registro', 'neutro']],
   };
   const state = new Map<string, string>();
   if (lens === 'talk') for (const event of events) for (const id of event.action.targetIds ?? []) {
@@ -38,8 +40,10 @@ export function lensMarks(lens: LensId, doc: Pick<CanvasDocument, 'blocks' | 're
     // The worst outstanding state wins: something still waiting matters more than something already answered.
     if (!before || now === 'open' || now === 'failed' && before === 'acked') state.set(id, now);
   }
+  const held = lens === 'agent' ? agentView(doc, changes, events) : null;
   for (const block of doc.blocks) {
     const life = lives.get(block.id);
+    if (held) { marks.set(block.id, held.get(block.id) ?? 'unknown'); continue; }
     if (lens === 'author') marks.set(block.id, life ? life.lastActor : 'quiet');
     else if (lens === 'age') { const idle = life ? doc.revision - life.last : Infinity; marks.set(block.id, idle <= 2 ? 'fresh' : idle <= 10 ? 'recent' : Number.isFinite(idle) ? 'settled' : 'quiet'); }
     else marks.set(block.id, state.get(block.id) ?? 'never');
