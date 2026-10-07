@@ -1164,7 +1164,8 @@ const baseTokens = {
       "minWidth": 96,
       "paddingH": 8
     },
-    "bannerTop": 64
+    "bannerTop": 64,
+    "dock": { "minPanelHeight": 520, "width": 48, "height": 372, "flyoutWidth": 280, "flyoutMaxHeight": 640 }
   },
   "toolbar": {
     "$doc": "Barra contextual sobre la selección (§5). Usa island + elevation.popover.",

@@ -13,13 +13,15 @@ export type ToolIslandProps = {
   tool: CanvasTool; onToolChange(tool: CanvasTool): void; locked?: boolean; onLockChange?(locked: boolean): void;
   shape?: WbShape; onOpenShapes(): void; onOpenLibrary(): void; onOpenPicker(): void;
   width: number; touch?: boolean; disabled?: boolean; grid?: boolean;
+  /** Docked on the left edge as a column, the way drawing programs keep their tools. */
+  vertical?: boolean;
 };
-export function ToolIsland({ tool, onToolChange, locked = false, onLockChange, onOpenShapes, onOpenLibrary, onOpenPicker, width, touch = false, disabled = false, grid = false }: ToolIslandProps) {
-  const u = useUI(), last = useRef<{ tool: string; time: number } | null>(null), narrow = width < 560;
+export function ToolIsland({ tool, onToolChange, locked = false, onLockChange, onOpenShapes, onOpenLibrary, onOpenPicker, width, touch = false, disabled = false, grid = false, vertical = false }: ToolIslandProps) {
+  const u = useUI(), last = useRef<{ tool: string; time: number } | null>(null), narrow = width < 560 && !vertical;
   const order = grid ? tokens.whiteboard.tools.order.filter(id => id !== '|') : narrow ? tokens.whiteboard.tools.narrowOrder : tokens.whiteboard.tools.order;
-  return <View nativeID="lienzo-tools" style={grid ? { flexDirection: 'row', flexWrap: 'wrap', width: 200, gap: 8 } : [islandStyle(u), { flexDirection: 'row', alignItems: 'center' }]}>
+  return <View nativeID="lienzo-tools" style={grid ? { flexDirection: 'row', flexWrap: 'wrap', width: 200, gap: 8 } : [islandStyle(u), { flexDirection: vertical ? 'column' : 'row', alignItems: 'center' }]}>
     {order.map((id, i) => {
-      if (id === '|') return <View key={`divider-${i}`} style={{ width: 1, height: 20, marginHorizontal: 4, backgroundColor: u.c.border }} />;
+      if (id === '|') return <View key={`divider-${i}`} style={vertical ? { width: 20, height: 1, marginVertical: 4, backgroundColor: u.c.border } : { width: 1, height: 20, marginHorizontal: 4, backgroundColor: u.c.border }} />;
       const item = tokens.whiteboard.tools.items[id], active = tool === id, blocked = disabled && id !== 'select' && id !== 'hand';
       return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`${item.label}${'key' in item ? ` (${item.key})` : ''}`} accessibilityState={{ selected: active, disabled: blocked }} aria-pressed={id === 'library' || id === 'add' ? undefined : active} disabled={blocked} onPress={e => {
         e.stopPropagation();

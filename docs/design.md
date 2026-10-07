@@ -1356,3 +1356,13 @@ right; pressing the row selects that card (pressing again clears it) and, on a p
 alone opens and closes it. While its card is selected the row has a stronger accent wash (0.24) and an
 accent name. Unpaired rows are pressable only when they are directories with children. Verified with `design/whiteboard-harness/tree.cjs`
 (RN-web, isolated omabox); capture `design/qa-shapes-legibility-2026-10-06/file-tree.png`.
+
+## 24. Docked tools and block flyout (v11)
+
+On a non-compact panel at least 520 tall (`island.dock`), the tool island is a floating column on the
+left edge, vertically centred (never above `bannerTop`), with horizontal dividers. Its popovers (shapes,
+library) and the block picker open to its right, 8 from the column. The block picker is a 280 wide
+floating flyout from `bannerTop` (up to 640 tall): search, tabs, one-column rows of 34 with a 24 icon
+tile, and the hovered block's description in the footer. It closes with Escape, a click outside, or the
+"+" tool again. Shorter panels keep the top row of tools; compact keeps the sheet. Verified with
+`design/whiteboard-harness/chrome.cjs`; capture `design/qa-shapes-legibility-2026-10-06/tools-dock.png`.
