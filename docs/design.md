@@ -1386,3 +1386,27 @@ cursor shows through them. Buttons keep the system pointer. Verified with
 
 Verified with `design/whiteboard-harness/windows.cjs` (RN-web, isolated omabox); capture
 `design/qa-shapes-legibility-2026-10-06/windows.png`.
+
+## 29. Lenses and Anillos (v16)
+
+Both read the history the server stores, which is the 50 most recent changes; each view says so.
+
+- **Lenses** (`lens`). A control above the minimap names the lens in use; each press moves to the next:
+  none, Autoría, Antigüedad, Conversación. A lens keeps every card in place and lays a mark over it (2 px
+  border, 0.2 fill, radius 12, 2 px outset; neutral states at half fill). Autoría: last author, accent for
+  the person and violet for the assistant, neutral when the stored history has no change. Antigüedad:
+  changed within 2 revisions (risk tone), within 10 (warning), earlier (turquoise), not in the stored history
+  (neutral). Conversación: requests waiting (warning), not delivered (risk), attended (success), never taken
+  up (neutral). The legend counts the cards in each state. Marks hide while cards are being dragged.
+- **Anillos** (`rings`). A third view beside canvas and list, opened from the title island or the menu.
+  Angle is identity: each block has a bearing, ordered so that a top-level area is a sector, with blocks
+  outside any area in a last sector. Radius is time: the innermost ring is the oldest stored change and the
+  rim is the newest. Each change is an arc on the bearings it touched, accent for the person, violet for
+  the assistant, thin and dashed for an undo; arc thickness is 0.62 of the ring band, between 1.5 and 9.
+  Requests to the assistant are dots outside the rim: filled when attended, hollow while waiting. Hovering
+  or pressing a slice washes it (0.14) and the side panel reads that block: stored changes by author, how
+  long it has been still, and the changes themselves. "Ver en el lienzo" returns with it selected. Changes
+  to links, areas and deleted entities have no bearing and are counted, not drawn. Web only for the figure.
+
+Verified with `design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history served by
+the QA host); captures `lens-author.png` and `rings.png` in `design/qa-shapes-legibility-2026-10-06/`.

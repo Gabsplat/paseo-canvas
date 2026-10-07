@@ -46,7 +46,7 @@ function runtime(controller: any) {
     './usePresentation': { usePresentation: () => ({ document: controller.view?.document, hiddenBy: new Map(), activeGates: new Set() }) },
     './HiddenResult': { HiddenResult: control('HiddenResult') },
     './FloatingTools': Object.fromEntries(['ToolIsland','StyleIsland','ShapePopover','LibraryPopover','SvgImportDialog'].map(name=>[name,control(name)])), './whiteboard-tools': { DEFAULT_TOOL_STYLE }, './interaction': { needsContentInteraction:()=>true }, '../shared/whiteboard': whiteboard, './whiteboard-visuals': { islandStyle: () => ({}) }, './media': { mediaSource: () => null },
-    './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined }, './BlockPalette': { BlockPalette: control('BlockPalette') },
+    './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined }, './BlockPalette': { BlockPalette: control('BlockPalette') }, './Rings': { Rings: control('Rings') },
   };
   const load = (name: string) => {
     const source = readFileSync(new URL(`../plugin/client/${name}.tsx`, import.meta.url), 'utf8');

@@ -19,7 +19,9 @@ import { DEFAULT_TOOL_STYLE, type CanvasTool, type CanvasToolProps, type SvgInse
 import { isWhiteboardRenderer, whiteboardMinSize, type WbRenderer } from '../shared/whiteboard';
 import { useWhiteboard } from './useWhiteboard';
 import { WhiteboardContent } from './WhiteboardContent';
-import { Minimap, SelectionBeacon } from './Wayfinding';
+import { LensControl, Minimap, SelectionBeacon } from './Wayfinding';
+import { lensMarks, type LensId } from './lenses';
+import { useHistory } from './useHistory';
 import { canvasCursors, cursorForTool, type CanvasCursors } from './cursors';
 import { WhiteboardEditor, WhiteboardPreview } from './WhiteboardOverlay';
 import { LinkLabelEditor, SelectionOverlay, type LinkLabelSession } from './SelectionOverlay';
@@ -620,9 +622,17 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const mapItems = useMemo(() => [...doc.groups.map(g => ({ id: g.id, group: true })), ...doc.blocks.map(b => ({ id: b.id, group: false }))].flatMap(e => { const r = rects.get(e.id); return r && !r.hidden ? [{ id: e.id, group: e.group, box: r, lit: c.selection.includes(e.id) }] : []; }), [doc.groups, doc.blocks, rects, c.selection]);
   const mapMargin = Math.max(maxX - minX, maxY - minY) * tokens.canvas.minimap.margin, mapContent = { x: minX - mapMargin, y: minY - mapMargin, width: maxX - minX + 2 * mapMargin, height: maxY - minY + 2 * mapMargin };
   const beaconId = c.selection.length === 1 && !drag && !wb.editor ? c.selection[0] : null, beaconBox = beaconId ? rects.get(beaconId) : undefined;
+  // Lenses: the same canvas, tinted by a variable it does not otherwise show. Marks sit over the cards and never move them.
+  const [lens, setLens] = useState<LensId>('none'), stored = useHistory(c, lens === 'author' || lens === 'age');
+  const tint = useMemo(() => lensMarks(lens, doc, stored.changes ?? [], c.events), [lens, doc.blocks, doc.revision, stored.changes, c.events]);
+  const lensNote = lens === 'none' ? undefined : stored.failed ? 'No se pudo leer el historial.' : lens === 'talk' ? undefined : !stored.changes ? 'Leyendo el historial…' : 'Según los 50 cambios más recientes.';
+  const showMap = !u.compact && size.width >= tokens.canvas.minimap.minPanelWidth && doc.blocks.length + doc.groups.length >= tokens.canvas.minimap.minItems;
+  const lensLayer = lens !== 'none' && !drag ? doc.blocks.map(b => { const r = rects.get(b.id), key = tint.marks.get(b.id), entry = tint.legend.find(l => l.key === key); if (!r || r.hidden || !entry) return null; const tone = u.tone(entry.tone), L = tokens.lens;
+    return <View key={b.id} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x - L.outset, top: r.y - bound.y - L.outset, width: r.width + 2 * L.outset, height: r.height + 2 * L.outset, zIndex: 7, borderRadius: L.radius, borderWidth: L.border, borderColor: entry.tone === 'neutro' ? withAlpha(u.c.foregroundMuted, .5) : tone, backgroundColor: withAlpha(entry.tone === 'neutro' ? u.c.foregroundMuted : tone, entry.tone === 'neutro' ? L.fill / 2 : L.fill) }} />; }) : null;
   const wayfinding = mode === 'canvas' && size.width > 0 ? <>
+    {!u.compact && doc.blocks.length > 0 && <LensControl lens={lens} legend={tint.legend} note={lensNote} bottom={tokens.island.inset + (showMap ? tokens.canvas.minimap.height + 2 * tokens.canvas.minimap.padding + 10 : 0)} onChange={setLens} />}
     {beaconId && beaconBox && !beaconBox.hidden && <SelectionBeacon id={beaconId} title={title(beaconId)} box={beaconBox} remote={pressed.current !== beaconId} view={size} source={cameraSource} inset={tokens.canvas.beacon.inset} onGo={() => fit([beaconId])} />}
-    {!u.compact && size.width >= tokens.canvas.minimap.minPanelWidth && mapItems.length >= tokens.canvas.minimap.minItems && <Minimap items={mapItems} content={mapContent} view={size} source={cameraSource} onNavigate={goTo} />}
+    {showMap && mapItems.length >= tokens.canvas.minimap.minItems && <Minimap items={mapItems} content={mapContent} view={size} source={cameraSource} onNavigate={goTo} />}
   </> : null;
   const guideLine = (line: typeof guideV, vertical: boolean) => <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, zIndex: 6, backgroundColor: u.c.accent, opacity: line.opacity, transformOrigin: 'top left', transform: [{ translateX: line.x }, { translateY: line.y }, { scaleX: vertical ? line.thickness : line.length }, { scaleY: vertical ? line.length : line.thickness }] }} />;
   return <View ref={viewport} nativeID="lienzo-canvas-viewport" onLayout={e => { setSize(e.nativeEvent.layout); measureViewport(); }} style={{ flex: 1, overflow: 'hidden', backgroundColor: u.c.surface0, ...(toolCursor ? { cursor: toolCursor } as object : null) }}>
@@ -645,6 +655,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
       {doc.blocks.filter(b => !rects.get(b.id)!.hidden && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer)).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
         return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) ? resizeHandlers(b.id) : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!lit(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
+      {lensLayer}
       {whiteboardItems(['wb-text'])}{whiteboardItems(['wb-draw'])}
       <WhiteboardPreview store={wb.store} origin={bound} />
       {wb.editor && <WhiteboardEditor key={`${wb.editor.documentId}:${wb.editor.block.id}`} session={wb.editor} origin={bound} error={wb.editorError} saving={wb.saving} onSave={wb.saveText} onCancel={wb.cancel} />}

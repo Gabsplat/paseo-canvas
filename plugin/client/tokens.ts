@@ -1447,6 +1447,8 @@ const baseTokens = {
     "recommendedMax": 4,
     "neutral": "foreground: parámetros locales no compartidos y la serie de referencia"
   },
+  "rings": { "pad": 16, "labelRoom": 96, "bottomRoom": 104, "rim": 40, "core": 44, "coreRatio": 0.22, "tick": 6, "inkMin": 1.5, "inkMax": 9, "inkShare": 0.62, "focusFill": 0.14, "barb": 3.5, "barbAt": 14, "labelAt": 30, "labelMax": 14, "sideBreak": 900, "sideWidth": 300, "listHeight": 220, "listMax": 10 },
+  "lens": { "fill": 0.2, "border": 2, "radius": 12, "outset": 2 },
   "fileTree": { "row": 26, "rowCompact": 36, "indent": 16, "chevron": 12, "icon": 14, "gap": 6, "bleed": 4, "radius": 6, "highlightFill": 0.14, "pointedFill": 0.24, "mutedAlpha": 0.5 },
   "whiteboard": {
     "$doc": "Pizarra libre (design/whiteboard-spec.md, docs/design.md §20). Unidades de mundo salvo donde dice pantalla. Los colores son roles guardados en el documento; el valor sale del tema.",

@@ -15,11 +15,11 @@ let doc: CanvasDocument = {
  links:[{id:'qa-link',from:'server',to:'note',kind:'flow'}]
 };
 let selectionVersion=0, runtimeVersion=0, runtime={blocks:{},scopes:{}}, fail=false;
-const undo:CanvasDocument[]=[], redo:CanvasDocument[]=[], log:any[]=[], errors:any[]=[], actions:any[]=[];
+const undo:CanvasDocument[]=[], redo:CanvasDocument[]=[], log:any[]=[], errors:any[]=[], actions:any[]=[], history:any[]=[];
 const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime}));
 // `seed` stands in for another author; `seedAgent` runs the reducer as the assistant actor. `actions` records what
 // would be delivered: nothing here reaches an assistant.
-(globalThis as any).__panelQA={doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};},view:snapshot};
+(globalThis as any).__panelQA={setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};},view:snapshot};
 async function invoke(contract:any, raw:any) {
  const input=contract.input.parse(raw), name=contract.name;
  let output:any;
@@ -38,7 +38,7 @@ async function invoke(contract:any, raw:any) {
  } else if(name==='canvas.undo'||name==='canvas.redo'){
    const src=name==='canvas.undo'?undo:redo,dest=name==='canvas.undo'?redo:undo;
    const next=src.pop();if(next){dest.push(structuredClone(doc));doc={...next,revision:doc.revision+1};}output=snapshot();
- } else if(name==='canvas.history') output={revision:doc.revision,transactions:[]};
+ } else if(name==='canvas.history') output={revision:doc.revision,transactions:structuredClone(history)};
  else if(name==='canvas.create'){doc={...input.content,id:'qa-new',workspaceId:'qa-workspace',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};output=snapshot();}
  else if(name==='canvas.runtime.set'){
    const blocks:any={...runtime.blocks},scopes:any={...runtime.scopes};
