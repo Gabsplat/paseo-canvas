@@ -44,7 +44,9 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await view('Matriz');await wait('!!document.querySelector("#lienzo-matrix")');assert.equal(await ev('document.querySelectorAll("#lienzo-matrix [aria-label*=\\" sigue o envía a \\"],#lienzo-matrix [aria-label*=\\" necesita a \\"],#lienzo-matrix [aria-label*=\\" menciona a \\"]").length'),8);await shot('matrix');
  // Corriente: stored changes newest first.
  await view('Corriente');await wait('document.querySelector("#lienzo-stream")?.innerText.includes("Ejemplo de cambio 39")');t=await ev('document.querySelector("#lienzo-stream").innerText');assert.ok(t.indexOf('Ejemplo de cambio 39')<t.indexOf('Ejemplo de cambio 2\n')||t.indexOf('Ejemplo de cambio 39')<t.indexOf('Ejemplo de cambio 10'),'newest first');assert.ok(/El asistente/.test(t)&&/deshiciste/.test(t));await shot('stream');
- await view('Lienzo');await wait('!!document.querySelector("#lienzo-canvas-viewport")');await ev('__panelQA.doc()');
+ // Lista and back: switching between the canvas and the list must not break rendering (React hook order).
+ await view('Lista');await wait('!document.querySelector("#lienzo-canvas-viewport")');assert.ok(/Ejemplo a0/.test(await body()),'the list renders');assert.ok(!/Plugin failed|Minified React/.test(await body()));
+ await view('Lienzo');await wait('!!document.querySelector("#lienzo-canvas-viewport")');assert.ok(/Ejemplo a0/.test(await body()));await ev('__panelQA.doc()');
  await view('Anillos');await wait('!!document.querySelector("#lienzo-rings svg")');await new Promise(r=>setTimeout(r,500));
  const text=await ev('document.querySelector("#lienzo-rings").innerText');assert.ok(/Se muestran 40 cambios/.test(text)&&/no tienen? dirección/.test(text),text.slice(0,400));
  const slices=await ev(`[...document.querySelectorAll('#lienzo-rings svg path')].filter(p=>getComputedStyle(p).pointerEvents==='all').length`);assert.equal(slices,await ev('__panelQA.doc().blocks.length'));await shot('rings');
