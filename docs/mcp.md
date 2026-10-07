@@ -430,3 +430,13 @@ layout/link undo and redo, later endpoint dependencies, optional node text prope
 the labelled graph example, and graph guidance with Codex's existing preapproval workaround.
 Real MCP stdio tests exercise graph schema discovery, outline/full/ID reads, link create/update/delete,
 undo/redo, errors without writes, and bridge/store reopening with the original client.
+
+## Legibility report
+
+`canvas_create`, `canvas_apply` and `canvas_group` add `legibility: { links, crossAreaLinks, warnings[] }`
+to their result when the document has become hard for a person to follow; a clean write carries no such
+field. It never rejects a transaction. Warnings (limits in `plugin/shared/legibility.ts`): more than 12
+block-to-block links between different areas, an area with more than 9 items, a node with more than 6
+links, more than 16 labelled links, and numbered areas linked high-to-low (the canvas then shows the last
+area first, because the `from` end of a link is always drawn before the `to` end). Each warning names the
+restructuring: link whole areas with group IDs, split the area, or link in reading order.

@@ -30,11 +30,13 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
   // Same links, same keys; only the geometry differs while something is off its place.
   const moved = doc && layout && shift && [...layout.rects.keys()].some(id => shift(id)) ? new Map(linkRoutes(doc, layout, shift).map(route => [route.key, route])) : null;
   const live = (route: LinkRoute) => moved?.get(route.key) ?? route;
+  // A dense canvas rests calm: connectors between areas recede and drop their labels until something is in focus.
+  const dense = useMemo(() => routes.filter(route => route.across).length > L.calm.threshold, [routes]);
   const styled = useMemo(() => routes.map(route => {
-    const active = !!focus?.routes.has(route.key) || selected === route.key, dimmed = !!focus && !active, tone = u.tone(linkTone(route));
+    const active = !!focus?.routes.has(route.key) || selected === route.key, dimmed = !!focus && !active, calm = dense && !active && route.across, tone = u.tone(linkTone(route));
     const color = active ? tone : route.tone && route.tone !== 'neutro' ? tone : u.c.foregroundMuted;
-    return { route, active, color, opacity: dimmed ? L.alpha.dim : active ? 1 : route.tone && route.tone !== 'neutro' ? L.alpha.toned : L.alpha.rest, width: active ? L.widthActive : L.width, text: route.label.length > L.label.maxChars ? `${route.label.slice(0, L.label.maxChars - 1)}…` : route.label };
-  }), [routes, focus, selected, u]);
+    return { route, active, color, opacity: dimmed ? L.alpha.dim : calm ? L.calm.alpha : active ? 1 : route.tone && route.tone !== 'neutro' ? L.alpha.toned : L.alpha.rest, width: active ? L.widthActive : L.width, text: dense && !active ? '' : route.label.length > L.label.maxChars ? `${route.label.slice(0, L.label.maxChars - 1)}…` : route.label };
+  }), [routes, focus, selected, u, dense]);
   useEffect(() => {
     if (!web) return;
     layer.current = mountLinkLayer(host.current, { onPress: key => handlers.current.onPress(key), onHover: key => handlers.current.onHover(key) }, marks?.current);

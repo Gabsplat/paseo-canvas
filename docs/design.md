@@ -1322,3 +1322,19 @@ lives in island E, so it is not duplicated there).
 `V` `H` `T` `R` `D` `E` tools · `Space` held = Mano · `Enter`/`F2` edits a selected text or shape
 label, or enters interaction mode on a card that has one · `Esc` leaves, in order: text editing,
 interaction mode, active tool, selection. None fire while an input has focus.
+
+## 21. Shape labels and dense graphs (v8)
+
+- **Label editing in place.** A shape's label is edited where it is drawn: the editor covers the shape,
+  is transparent and borderless, centred both ways, in the label's own colour and size. The saved label is
+  hidden while editing, so nothing moves or changes colour between editing and saved.
+- **Fill colour.** `fillColor` (same eight colour roles) is independent of the outline; absent, the fill
+  follows the outline. On a solid fill the label takes paper or ink, whichever contrasts.
+- **One size step.** S/M/L/XL sets outline weight and label size together: 13/18, 15/21, 20/28, 28/36.
+- **Calm dense graphs.** With more than 12 connectors between different containers
+  (`graph.link.calm.threshold`), those connectors rest at alpha 0.16 and all labels are hidden until a
+  node, group or link is hovered or selected; the focused links then show at full weight with labels.
+  Connectors inside one area are unchanged.
+
+Verified in RN-web (isolated omabox, light and dark): `design/whiteboard-harness/shape-label.cjs` (3 checks)
+and `dense.cjs`; captures in `design/qa-shapes-legibility-2026-10-06/`. Not verified in installed Paseo or native.

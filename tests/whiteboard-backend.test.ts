@@ -318,3 +318,20 @@ test('a shape keeps a fill colour separate from its outline, through the real se
   assert.deepEqual({ color: box.data.color, fill: box.data.fill, fillColor: box.data.fillColor, weight: box.data.weight, text: box.data.text }, { color: 'naranja', fill: 'solid', fillColor: 'verde', weight: 'xl', text: 'Hola' });
   await assert.rejects(service.mutate(mutation(2, [{ type: 'block.update', id: 'box', patch: { data: { fillColor: 'fucsia' } } }])));
 });
+
+test('legibility report names a tangle, a hub and areas numbered against the links; a small graph stays silent', async () => {
+  const { legibility } = await import('../plugin/shared/legibility');
+  const block = (id: string, parentGroupId: string) => ({ id, typeId: 'node', title: id, data: {}, parentGroupId });
+  const group = (id: string, title: string, blockIds: string[]) => ({ id, title, description: '', blockIds, groupIds: [] });
+  const small = documentContentSchema.parse({ title: 'Small', blocks: [block('a', 'g1'), block('b', 'g2')], groups: [group('g1', 'Capa 1', ['a']), group('g2', 'Capa 2', ['b'])], links: [{ id: 'l', from: 'a', to: 'b' }], communication: { instructions: '' } });
+  assert.deepEqual(legibility(small), { links: 1, crossAreaLinks: 1, warnings: [] });
+  const top = Array.from({ length: 7 }, (_, i) => `t${i}`), bottom = Array.from({ length: 4 }, (_, i) => `b${i}`);
+  const dense = documentContentSchema.parse({ title: 'Dense', blocks: [...top.map(id => block(id, 'g4')), ...bottom.map(id => block(id, 'g1'))], groups: [group('g4', 'Capa 4 · Quién usa', top), group('g1', 'Capa 1 · Dónde vive', bottom)],
+    links: top.flatMap(from => bottom.map(to => ({ id: `${from}-${to}`, from, to }))), communication: { instructions: '' } });
+  const report = legibility(dense);
+  assert.equal(report.crossAreaLinks, 28); assert.equal(report.warnings.length, 3);
+  assert.match(report.warnings[0], /28 links join blocks in different areas/); assert.match(report.warnings[0], /group-to-group/);
+  assert.match(report.warnings[1], /has 7 links/); assert.match(report.warnings[2], /numbering runs against the links/);
+  const bundled = documentContentSchema.parse({ ...dense, links: [{ id: 'areas', from: 'g1', to: 'g4' }] });
+  assert.deepEqual(legibility(bundled).warnings, []);
+});

@@ -866,6 +866,7 @@ const baseTokens = {
         "size": 10
       },
       "sideGap": 20,
+      "calm": { "threshold": 12, "alpha": 0.16 },
       "strands": {
         "max": 4,
         "gap": 5

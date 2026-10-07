@@ -482,6 +482,8 @@ const normals: Record<Side, Point> = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 
 /** Parallel links between the same two visible frames, drawn as one connector. */
 export type LinkRoute = {
   key: string; links: CanvasLink[]; from: string; to: string; kind: LinkKind; tone?: CanvasLink['tone']; label: string; count: number;
+  /** Joins two different containers: the long connectors that tangle a dense canvas. */
+  across: boolean;
   d: string; elbow: Segment[]; start: Point; end: Point; endSide: Side; labelPoint: Point; badgePoint: Point;
 };
 const cubicAt = (p: Point, c1: Point, c2: Point, q: Point, t: number): Point => { const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t; return { x: a * p.x + b * c1.x + c * c2.x + d * q.x, y: a * p.y + b * c1.y + c * c2.y + d * q.y }; };
@@ -571,7 +573,7 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
     const label = links.map(l => l.label?.trim()).filter(Boolean).join(' · ');
     // Along a sideways connector the label rides above the line, so a long label never hides a short link.
     const at = cubicAt(middle.p, middle.c1, middle.c2, middle.q, .5), labelPoint = vertical ? at : { x: at.x, y: at.y - L.label.lift };
-    return { key, links, from, to, kind: links[0].kind, tone: links[0].tone, label, count: links.length, d, elbow, start, end, endSide: sides[1], labelPoint, badgePoint: cubicAt(first.p, first.c1, first.c2, first.q, label ? .24 : .5) };
+    return { key, links, from, to, kind: links[0].kind, tone: links[0].tone, label, count: links.length, across: index.parent.get(from) !== index.parent.get(to), d, elbow, start, end, endSide: sides[1], labelPoint, badgePoint: cubicAt(first.p, first.c1, first.c2, first.q, label ? .24 : .5) };
   });
 }
 /** What stays lit when something is in focus. `null` means nothing to emphasise, so nothing is dimmed either. */
