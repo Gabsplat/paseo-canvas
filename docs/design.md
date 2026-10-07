@@ -1427,3 +1427,32 @@ it answers under its title.
 Logic in `plugin/client/view-models.ts`, tested in `tests/views.test.ts`. Verified with
 `design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history); captures
 `views-sheet.png` and `lens-agent.png` in `design/qa-shapes-legibility-2026-10-06/`.
+
+## 31. Four worlds (v18)
+
+Four more entries in "Cambiar vista". Each one redraws the same document as a place with its own physics
+and answers one question; none of them writes, and none is about who changed what. All four are drawn on
+one 2D surface (`plugin/client/worlds/Stage.tsx`), with native overlays for anything that is read or
+pressed as text. "Ver en el lienzo" returns to the canvas with the entity selected.
+
+- **Órbita — ¿qué tan cerca está todo de esto?** The selected entity is the sun; every other one sits on
+  the ring of its distance in links (1, 2, further), and the unreachable ones drift on a dotted outer ring.
+  The angle is the area, so an area is a sector. Pressing a body puts it in the centre; dragging turns the
+  system. Only the links of the centre are drawn.
+- **Estratos — ¿qué sostiene a qué?** Needs and flow stack the entities in layers: bedrock at the bottom
+  needs nothing, each layer above rests on something below. A cell is as wide as what rests on it.
+  Pressing one lights its core sample, either "Lo que sostiene" (everything above that falls with it) or
+  "Sobre qué descansa" (everything below it needs). Loops are folded into one layer; mentions do not stack;
+  entities with no need or flow are pebbles beside the cut.
+- **Cauce — ¿cuál es el camino más corto para explicar una cosa a partir de otra?** Links are veins,
+  thicker where more shortest paths cross. Two presses (what is known, what is wanted) leave only the
+  shortest way lit, numbered, and listed at the right. "Pedir esta explicación" sends that path to the
+  assistant as a real request (`route.explain`); with no assistant connected it is queued and says so.
+- **Relieve — ¿dónde se concentra esto?** The canvas positions kept as they are, under a terrain whose
+  height is how much is linked there. Contour lines every step; summits are the entities most things lean
+  on, flat ground is where nothing connects.
+
+Models in `plugin/client/worlds/{orbit,strata,course,relief}.ts`, tested in `tests/world-*.test.ts`.
+Verified with `design/whiteboard-harness/worlds.cjs` (RN-web, isolated omabox, example data): each world
+paints, takes presses without changing the document, Órbita re-centres and Cauce sends its request.
+Captures `world-*.png` in `design/qa-shapes-legibility-2026-10-06/`.
