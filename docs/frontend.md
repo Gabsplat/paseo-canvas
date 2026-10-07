@@ -100,7 +100,6 @@ Explicit sends use a generated event ID retained for retry:
 | Enviar al asistente | `selection.send`, selection IDs and note | Immediate |
 | Enviar respuesta | `block.answer`, answer and block ID | Immediate |
 | Form Enviar | `block.submit`, committed typed values and block ID | Immediate |
-| Preguntar por este paso | `diagram.step`, node ID, label, block ID | Immediate |
 | Ver pista | `block.hint`, block ID | Batched |
 
 Checklist toggles, text edits, dragging, collapse, and selection only persist data.
@@ -139,19 +138,7 @@ same transaction. This prevents retained root coordinates from changing the targ
 to an inferred free layout. Explicit stack/grid/flow layouts are preserved, and
 dragging never silently converts an automatic layout to free.
 
-## Diagrams, previews, and references
-
-Diagram data is parsed with `diagramDataSchema`. A pure layout function derives
-stable layers, fixed 136 × 44 node cards, orthogonal connectors, rail routes for
-skipped/back edges, and arrowheads. Labeled diagrams use a 48 px row gap; next-row
-labels sit below the horizontal run, centred on their target with a 136 px limit.
-Unlabeled diagrams retain a 40 px gap. Explicit positions are normalized. Narrow
-contexts or more than 30 nodes use a connected list. Node arrays and edge arrays
-render from each real update. The last newly added node becomes current; tapping a
-node or the stepper changes the client view. Todo shows all nodes; Paso a paso keeps
-later nodes as unlabeled ghosts. The detail shows descriptions and outgoing edges.
-Asking about a step is an explicit real action. Invalid data remains readable and
-cannot crash the canvas.
+## Previews and references
 
 `preview` blocks with a valid URL embed that actual URL on the web with the
 Opus-specified `allow-scripts allow-forms` sandbox. A transparent shield covers the frame until explicit interaction mode starts. Selection alone keeps the shield. Double click, Enter/F2 or Interactuar removes it; a visible Interactuando · Esc chip exits the mode. The
@@ -178,7 +165,7 @@ pnpm typecheck
 pnpm test
 ```
 
-The frontend checks cover layered/progressive diagrams, cycles and unclipped rails,
+The frontend checks cover
 session restoration and host/workspace isolation, fan-out label separation,
 readable initial camera framing, renderer widths,
 stack/grid/flow and collapse geometry, group-drop layout preservation,

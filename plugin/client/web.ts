@@ -7,7 +7,6 @@ import { frameSandbox } from './media';
 import type { LinkMotionSample } from './renderers/types';
 import { sanitizeSvg, SVG_LIMITS } from '../shared/svg';
 import { useContentInteraction } from './interaction';
-import type { StepAudioPort } from './sequencer-audio';
 interface BrowserEventTarget {
   addEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
   removeEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
@@ -47,15 +46,6 @@ export function activateRendererReset(root: unknown, id: string, isCurrent: () =
   action.click();
   return true;
 }
-// RN supplies nativeEvent.source; RN-web 0.21 supplies a browser load event.
-// Keep browser image properties in this adapter and use confirmed intrinsic sizes.
-export function imageLoadDimensions(event: unknown): { width: number; height: number } | null {
-  const nativeEvent = (event as { nativeEvent?: { source?: { width?: number; height?: number }; target?: { naturalWidth?: number; naturalHeight?: number } } } | null)?.nativeEvent;
-  const source = nativeEvent?.source;
-  const target = browser().document ? nativeEvent?.target : undefined;
-  const width = source?.width ?? target?.naturalWidth, height = source?.height ?? target?.naturalHeight;
-  return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? { width, height } : null;
-}
 let lastInputWasKeyboard = false, stopFocusTracking: (() => void) | undefined;
 const focusSubscribers = new Set<() => void>();
 function setKeyboardInput(value: boolean) {
@@ -79,12 +69,39 @@ const noKeyboardInput = () => false, noFocusSubscription = () => () => {};
 export function useKeyboardFocus(web: boolean) {
   return useSyncExternalStore(web ? subscribeKeyboardInput : noFocusSubscription, web ? () => lastInputWasKeyboard : noKeyboardInput, noKeyboardInput);
 }
-export function WebFrame({ url, title, border, height, surface, player = false, onLoaded, onTimeout }: { url: string; title: string; border: string; height: number | '100%'; surface: string; player?: boolean; onLoaded?: () => void; onTimeout?: () => void }) {
+export function WebFrame({ url, title, border, height, surface, player = false, bare = false, onLoaded, onTimeout }: { url: string; title: string; border: string; height: number | '100%'; surface: string; player?: boolean; bare?: boolean; onLoaded?: () => void; onTimeout?: () => void }) {
   const interacting = useContentInteraction(), safe = safeUrl(url), [loaded, setLoaded] = useState(false);
   useEffect(() => { if (Platform.OS !== 'web') return; setLoaded(false); const timer = setTimeout(() => onTimeout?.(), 8000); return () => clearTimeout(timer); }, [safe]);
   if (Platform.OS !== 'web' || !safe) return null;
-  return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-frame-${title}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height, width: '100%', border: `1px solid ${border}`, borderRadius: 6, overflow: 'hidden', backgroundColor: surface } },
+  return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-frame-${title}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height, width: '100%', border: bare ? 0 : `1px solid ${border}`, borderRadius: bare ? 0 : 6, overflow: 'hidden', backgroundColor: surface } },
     React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0, pointerEvents: interacting ? 'auto' : 'none' }, 'aria-label': loaded ? title : `Cargando ${title}` }), !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
+}
+/** What every mini app gets before its own code: a `lienzo` object that talks to the canvas through messages. */
+const HTML_APP_BRIDGE = "<script>(function(){var l=[],c=null;function post(m){m.lienzo=1;parent.postMessage(m,'*')}window.lienzo={send:function(k,p){post({type:'event',kind:String(k),payload:p===undefined?null:p})},resize:function(h){post({type:'resize',height:Number(h)})},select:function(id){post({type:'select',id:String(id)})},onContext:function(f){l.push(f);if(c)f(c)},get context(){return c}};addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||d.type!=='context')return;c=d.context;try{document.documentElement.style.colorScheme=c.theme.dark?'dark':'light'}catch(_){}l.forEach(function(f){try{f(c)}catch(_){}})});post({type:'ready'})})();</script>";
+export type HtmlAppMessage = { type: 'ready' } | { type: 'event'; kind: unknown; payload: unknown } | { type: 'resize'; height: unknown } | { type: 'select'; id: unknown };
+/**
+ * A page written by the author or an agent, running in a sandboxed frame with an opaque origin: scripts run, but it
+ * cannot reach the canvas page, its storage or its cookies. It hears only the context it is sent and is heard only
+ * through messages from its own window.
+ */
+export function WebHtml({ id, html, title, surface, context, onMessage }: { id: string; html: string; title: string; surface: string; context: unknown; onMessage(message: HtmlAppMessage): void }) {
+  const interacting = useContentInteraction(), frame = useRef<{ contentWindow?: { postMessage(message: unknown, target: string): void } | null } | null>(null), ready = useRef(false), latest = useRef({ context, onMessage }); latest.current = { context, onMessage };
+  const post = () => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, type: 'context', context: latest.current.context }, '*'); } catch {} };
+  useEffect(() => {
+    const host = globalThis as unknown as { addEventListener?(type: string, listener: (event: { source: unknown; data: unknown }) => void): void; removeEventListener?(type: string, listener: (event: { source: unknown; data: unknown }) => void): void };
+    if (Platform.OS !== 'web' || !host.addEventListener) return;
+    const listen = (event: { source: unknown; data: unknown }) => {
+      const data = event.data as { lienzo?: unknown; type?: unknown } | null;
+      if (!frame.current?.contentWindow || event.source !== frame.current.contentWindow || !data || data.lienzo !== 1 || typeof data.type !== 'string') return;
+      if (data.type === 'ready') { ready.current = true; post(); } else if (['event', 'resize', 'select'].includes(data.type)) latest.current.onMessage(data as HtmlAppMessage);
+    };
+    host.addEventListener('message', listen); return () => { host.removeEventListener?.('message', listen); ready.current = false; };
+  }, [html]);
+  const key = JSON.stringify(context); useEffect(() => { if (ready.current) post(); }, [key]);
+  if (Platform.OS !== 'web') return null;
+  return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-html-${id}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height: '100%', width: '100%', overflow: 'hidden', backgroundColor: surface } },
+    React.createElement('iframe', { key: html, ref: frame, srcDoc: HTML_APP_BRIDGE + html, title, sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups', referrerPolicy: 'no-referrer', allow: 'fullscreen', style: { width: '100%', height: '100%', border: 0, display: 'block', pointerEvents: interacting ? 'auto' : 'none' } }),
+    !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 /** Uses browser controls, with no playback loop in React. No media implementation is loaded on native. */
 export function WebMedia({ url, title, kind, height, surface, onError }: { url: string; title: string; kind: 'video' | 'audio'; height: number | '100%'; surface: string; onError: () => void }) {
@@ -728,79 +745,6 @@ export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () =
   };
   doc.addEventListener('pointerdown', outside, true); doc.addEventListener('keydown', key, true);
   return () => { doc.removeEventListener('pointerdown', outside, true); doc.removeEventListener('keydown', key, true); };
-}
-// ---- Step sequencer audio ----------------------------------------------------------------------------------------
-// The only Web Audio entry. A context exists only between a learner's press and the next stop: closing is the one
-// way to stop, so nothing keeps sounding or holding an audio thread after pause, hide, replace or unmount.
-type AudioParam = { setValueAtTime(value: number, time: number): void; linearRampToValueAtTime(value: number, time: number): void };
-type AudioNode = { connect(target: unknown): void; disconnect(): void };
-type AudioOscillator = AudioNode & { type: string; frequency: AudioParam; onended: (() => void) | null; start(time: number): void; stop(time?: number): void };
-interface AudioHost {
-  currentTime: number; state: string; destination: unknown; onstatechange: (() => void) | null;
-  resume(): Promise<void>; close(): Promise<void>;
-  createGain(): AudioNode & { gain: AudioParam }; createOscillator(): AudioOscillator;
-}
-export const STEP_AUDIO = { master: .2, peak: { sine: .3, triangle: .3, square: .1 }, attack: .006, maxNote: .5, maxVoices: 24, minHz: 30, maxHz: 4200, activationMs: 1500 } as const;
-export type StepAudioInterrupt = 'hidden' | 'suspended' | 'replaced';
-export type StepAudioOpen = { port: StepAudioPort; ready: Promise<boolean> } | { error: 'unsupported' | 'failed' };
-let liveStepAudio: ((reason: StepAudioInterrupt) => void) | null = null;
-/**
- * Call synchronously from a press handler. `ready` resolves false, with the context already closed, when the
- * browser refuses to start it. One context is live across the plugin: opening another interrupts the previous owner.
- */
-export function openStepAudio(options: { voice: keyof typeof STEP_AUDIO.peak; elementId?: string; onInterrupt(reason: StepAudioInterrupt): void }): StepAudioOpen {
-  const host = browser() as unknown as { AudioContext?: new () => AudioHost; webkitAudioContext?: new () => AudioHost; document?: BrowserHost['document'] & { getElementById?(id: string): unknown };
-    IntersectionObserver?: new (cb: (entries: { isIntersecting: boolean }[]) => void) => { observe(node: unknown): void; disconnect(): void } };
-  const Context = host.AudioContext ?? host.webkitAudioContext, doc = host.document;
-  if (!doc || !Context) return { error: 'unsupported' };
-  liveStepAudio?.('replaced');
-  let context: AudioHost, master: AudioNode & { gain: AudioParam };
-  try {
-    context = new Context(); master = context.createGain();
-    master.gain.setValueAtTime(STEP_AUDIO.master, context.currentTime); master.connect(context.destination);
-  } catch { return { error: 'failed' }; }
-  const voices = new Set<AudioOscillator>();
-  let closed = false, started = false, observer: { observe(node: unknown): void; disconnect(): void } | null = null;
-  const close = () => {
-    if (closed) return;
-    closed = true; if (liveStepAudio === interrupt) liveStepAudio = null;
-    doc.removeEventListener('visibilitychange', visibility); observer?.disconnect(); context.onstatechange = null;
-    for (const voice of voices) { voice.onended = null; try { voice.stop(); } catch { /* not started */ } try { voice.disconnect(); } catch { /* already released */ } }
-    voices.clear();
-    try { master.disconnect(); } catch { /* already released */ }
-    try { void context.close().catch(() => {}); } catch { /* already closed */ }
-  };
-  const interrupt = (reason: StepAudioInterrupt) => { if (closed) return; close(); options.onInterrupt(reason); };
-  const visibility = () => { if (doc.hidden) interrupt('hidden'); };
-  liveStepAudio = interrupt;
-  doc.addEventListener('visibilitychange', visibility);
-  const element = options.elementId ? doc.getElementById?.(options.elementId) : null;
-  if (element && host.IntersectionObserver) { observer = new host.IntersectionObserver(entries => { if (entries.some(entry => !entry.isIntersecting)) interrupt('hidden'); }); observer.observe(element); }
-  context.onstatechange = () => { if (started && context.state !== 'running') interrupt('suspended'); };
-  const port: StepAudioPort = {
-    now: () => context.currentTime,
-    running: () => !closed && context.state === 'running',
-    note(frequency, at, duration) {
-      if (closed || voices.size >= STEP_AUDIO.maxVoices || !(frequency >= STEP_AUDIO.minHz && frequency <= STEP_AUDIO.maxHz) || !(duration > 0)) return false;
-      const length = Math.min(STEP_AUDIO.maxNote, duration), start = Math.max(at, context.currentTime);
-      const oscillator = context.createOscillator(), envelope = context.createGain();
-      oscillator.type = options.voice; oscillator.frequency.setValueAtTime(frequency, start);
-      envelope.gain.setValueAtTime(0, start); envelope.gain.linearRampToValueAtTime(STEP_AUDIO.peak[options.voice], start + Math.min(STEP_AUDIO.attack, length / 2)); envelope.gain.linearRampToValueAtTime(0, start + length);
-      oscillator.connect(envelope); envelope.connect(master);
-      oscillator.onended = () => { voices.delete(oscillator); try { oscillator.disconnect(); envelope.disconnect(); } catch { /* already released */ } };
-      voices.add(oscillator); oscillator.start(start); oscillator.stop(start + length + .01);
-      return true;
-    },
-    close,
-  };
-  let timer: ReturnType<typeof setTimeout> | undefined, resumed: Promise<void>;
-  // Requested in this same call stack: a deferred resume() can fall outside the browser's user activation.
-  try { resumed = context.resume(); } catch (error) { resumed = Promise.reject(error); }
-  const ready = Promise.race([
-    resumed.then(() => context.state === 'running', () => false),
-    new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), STEP_AUDIO.activationMs); }),
-  ]).then(ok => { clearTimeout(timer); if (ok && !closed) started = true; else close(); return ok && started; });
-  return { port, ready };
 }
 /** Arrow, Home and End inside a grid. The handler returns true when it used the key. Nothing happens on native. */
 export function attachGridKeys(element: unknown, handler: (key: string) => boolean): () => void {

@@ -64,7 +64,7 @@ test('leaving a group with only an annotation detaches it and preserves its worl
   assert.equal(after.blocks.find(b => b.id === 'a')!.parentGroupId, 'g');
 });
 test('type slots use renderer aliases and Datos excludes in-place fields only outside compact', () => {
-  for (const [id, kind] of [['node', 'status'], ['code', 'language'], ['preview', 'url'], ['media', 'url'], ['step-sequencer', 'reset']] as const) {
+  for (const [id, kind] of [['node', 'status'], ['code', 'language'], ['preview', 'url'], ['media', 'url'], ['glsl-shader', 'reset']] as const) {
     const type = builtinTypes.find(t => t.id === id)!; assert.ok(type, id); assert.equal(typeSlot({ ...type, id: 'custom-alias' })?.kind, kind);
   }
   const note = builtinTypes.find(t => t.id === 'note')!; assert.equal(typeSlot(note), undefined); assert.deepEqual(dataProperties(note), []); assert.ok(dataProperties(note, true).some(p => p.key === 'text'));

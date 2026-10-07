@@ -4,7 +4,7 @@ import { anchorCard, containerMode, freezeOperations, manual, topSelection, type
 import { getRendererSpec } from '../shared/renderers';
 export type Entity = CanvasBlock | CanvasGroup;
 export const layoutIcons = { graph: 'Workflow', stack: 'Rows3', grid: 'Grid2x2', flow: 'ArrowRightFromLine', free: 'Move', rows: 'Rows3' } as const;
-export const inlineKeys = (renderer?: string): string[] => ({ note: ['text'], text: ['text'], callout: ['text'], step: ['text'], node: ['summary', 'details'], code: ['code'], checklist: ['items'], choice: ['question', 'options'], quiz: ['question', 'options'], metric: ['value', 'label'], 'image-ref': ['caption'], 'preview-frame': ['description'] }[renderer ?? ''] ?? []);
+export const inlineKeys = (renderer?: string): string[] => ({ note: ['text'], text: ['text'], callout: ['text'], step: ['text'], node: ['summary', 'details'], code: ['code'], checklist: ['items'], quiz: ['question', 'options'], metric: ['value', 'label'], 'image-ref': ['caption'], 'preview-frame': ['description'] }[renderer ?? ''] ?? []);
 export function dataProperties(type: BlockType | undefined, compact = false) { return type?.properties.filter(p => compact || !inlineKeys(type.renderer).includes(p.key)) ?? []; }
 export function typeSlot(type?: BlockType): { label: string; icon: string; kind: 'url' | 'language' | 'status' | 'reset' | 'data' } | undefined {
   if (!type) return { label: 'Datos', icon: 'SlidersHorizontal', kind: 'data' };

@@ -20,7 +20,7 @@ those files change, **they win on names and shapes, this file wins on how things
 | `docs/design-audit.md` | Designer's review of the implemented UI. |
 
 **Map of this file.** §1 identity · §2 platform · §3 regions and widths · §4 primitives and controls ·
-§5 contextual toolbar and popovers · §6 canvas, blocks, groups · §7 diagram block · §8 direct
+§5 contextual toolbar and popovers · §6 canvas, blocks, groups · §8 direct
 manipulation (in-place editing, `+` handles, quick-create) · §9 adding blocks, collections, Lista ·
 §10 assistant composer · §11 states and first run · §12 keyboard · §13 accessibility · §15 graph ·
 §16 dragging and motion · §17 media, sizes, link magnetism · §18 interactive learning blocks ·
@@ -74,7 +74,6 @@ still to be published by the backend; it fixes their look and behaviour, not the
     the document island, the Lienzos list and the Lista header. Not dismissible.
   - Assistant activity is drawn only from real signals: `useAgent(...).status`, `AgentEvent.status`,
     `readHistory` transactions. No typing dots, no optimistic "Enviado".
-  - `progress` blocks show declared numbers; never animate them as if work were happening.
   - An interactive block never plays, sounds or reveals by itself (§18.1).
 
 
@@ -351,7 +350,7 @@ One component, three uses.
 | --- | --- | --- | --- |
 | Status ("Ejemplo", "Estático", counts) | 20 | `wash(tone)` | optional icon 12 in tone + `label` muted |
 | Context (selection in the composer, §10) | 24 (32 touch) | `wash("acento")` | type icon 12 `accent` + `small` 600 title, max width 160 + `X` 12 in a 24 hit ("Quitar del contexto") |
-| Toggle (layers, §18.11; quick types) | 24 | off transparent + 1 px `border`; on `wash` of its colour + 1 px of its colour @0.38 | optional leading icon 12 + `small` 600; `accessibilityState.checked` |
+| Toggle (quick types) | 24 | off transparent + 1 px `border`; on `wash` of its colour + 1 px of its colour @0.38 | optional leading icon 12 + `small` 600; `accessibilityState.checked` |
 
 Radius 6, pad H 6, gap 4. A chip never wraps its text.
 
@@ -389,8 +388,7 @@ no border, no fill. Nothing around it moves when editing starts. Behaviour is §
 There is no danger button: deleting is an icon in the toolbar or a danger row in a menu, and it is
 always undoable. One primary button per card or popover. Icon+label: icon 14, gap 6. Radio/check
 glyphs are Views: 16×16, 1.5 px ring in `foregroundMuted`@0.7; checked = tone fill + host `Check`
-12 in `surface1`; radio radius 8 with a 6 px dot. Progress bar: 6 high, radius 3, track `surface2`,
-fill `toneColor("exito")`, `accessibilityRole="progressbar"`.
+12 in `surface1`; radio radius 8 with a 6 px dot.
 
 **Field pattern** (only inside the Datos and Ajustes popovers): label `small` 600 above the control
 (gap 4), helper `small` muted below; fields gap 12. Commit on blur, on popover dismissal or after
@@ -550,16 +548,6 @@ Collapsed groups preserve membership and connections; links attach to their visi
 controls live in the selection toolbar. There are no group resize grips or manual pixel fields.
 
 
-## 7. Diagram blocks
-
-Existing diagram data and layout remain compatible. Nodes and edges inside a diagram are a small
-self-contained figure; connections between canvas ideas use real canvas nodes and links.
-Layout follows layers, bounds cycles and keeps edges inside the drawing. A selected diagram step
-has a thicker outline and caption, so colour is not its only signal. "Preguntar por este paso"
-sends the existing real action. Compact uses a connected textual list. Diagram authors use the
-shared registry contract; there is no separate core-renderer switch to extend.
-
-
 ## 8. Direct manipulation: editing in place, `+` handles, quick-create
 
 ### 8.1 Editing text in place
@@ -593,15 +581,14 @@ Every text a person can author is edited where it is drawn, with `InlineText` (�
 | `node` | title · `summary` (multi-line, 2 lines at rest) · `details` in its side note (§15) | "Idea" · "Resumen en una línea" · "Explicación" |
 | `code` | `code`, multi-line, `code` style | "Pegar o escribir código" |
 | `checklist` | each item label; `Enter` commits and adds an item below, `⌫` on an empty item removes it | "Elemento" |
-| `choice`, `quiz` | `question` · each option (same list behaviour) | "Pregunta" · "Opción" |
+| `quiz` | `question` · each option (same list behaviour) | "Pregunta" · "Opción" |
 | `metric` | `value` · `label` | "0" · "Qué mide" |
 | `image-ref` | `caption` | "Pie de imagen" |
 | `preview-frame` | `description` | "Qué muestra" |
 | Connection | label | "Qué pasa por aquí" |
 
 Everything else (numbers, booleans, JSON, URLs, language, status) is edited in a toolbar popover
-(§5.2 type slot, §5.3 Datos). A `diagram` block's internal nodes use declarative specification edits; its title and
-caption are editable in place.
+(§5.2 type slot, §5.3 Datos).
 
 - **Empty texts at rest.** A selected block shows the placeholder of an empty title in
   `foregroundMuted`@0.55 so there is something to double-click; an unselected block omits the row.
@@ -781,9 +768,8 @@ Existing actions use `agentAction`; learning summaries use `runtime.settle` from
 | Press | `kind` | `targetIds` | `payload` | `delivery` |
 | --- | --- | --- | --- | --- |
 | Composer send | `selection.send` | selected ids (may be empty) | `{ note }` | `immediate` |
-| Choice/quiz "Enviar respuesta" | `block.answer` | `[blockId]` | `{ answer }` | `immediate` |
+| Quiz "Enviar respuesta" | `block.answer` | `[blockId]` | `{ answer }` | `immediate` |
 | Form "Enviar" | `block.submit` | `[blockId]` | `{ values }` | `immediate` |
-| Diagram "Preguntar por este paso" | `diagram.step` | `[blockId]` | `{ nodeId, label }` | `immediate` |
 | Quiz "Ver pista" | `block.hint` | `[blockId]` | `{}` | `batched` |
 | Learning block "Pedir arreglo" (§18.10) | `block.error` | `[blockId]` | `{ message }` | `immediate` |
 
@@ -975,7 +961,7 @@ summary with the chip "Estático" and "La interacción está disponible en la ve
 ### 18.2 Spec, current state and assistant feedback
 
 Renderer data is declarative JSON validated by its shared schema. No agent-provided JavaScript,
-HTML, evaluation functions or dynamic imports run. Expressions use shared/expr.ts. GLSL fragment
+HTML, evaluation functions or dynamic imports run. GLSL fragment
 source is the only programmable exception; shader errors remain visible inside the block.
 
 Document and group variable declarations are content and use revisions and undo. Current values,
@@ -988,7 +974,7 @@ Renderers update their own stage and sibling scope subscribers on every pointer/
 Transport may debounce; visible feedback must not wait for pointer release or a server reply.
 The assistant receives only settled events after the runtime flush succeeds. Summaries include
 final value and explored range. Never send animation
-frames, hover coordinates, pointer moves, audio ticks or intermediate slider values. Coalescing
+frames, hover coordinates, pointer moves or intermediate slider values. Coalescing
 must preserve the range explored, and must not replace a batch already being delivered.
 
 A successful event receipt is not a correct answer. Feedback labels are "En cola", "Enviado",
@@ -998,7 +984,7 @@ attempt and guiding question; reveal a solution only if the learner explicitly r
 ### 18.3 Variables and sliders
 
 One declared name resolves to the nearest ancestor group, then to the document. A shared value
-has the same colour and shape in controls, plot marks and legends; its identity follows declaration
+has the same colour and shape in controls, marks and legends; its identity follows declaration
 order, not the consuming block. Local parameters use neutral ink. Use viz.series light/dark values;
 a name or symbol accompanies every colour. Above six series, repeat colour with a distinct dash
 style. Prefer four or fewer series per figure.
@@ -1014,7 +1000,7 @@ may show a short variables strip, but no empty strip appears without declaration
 Default to manual stepping. Prev/next flank "Paso {current} de {total}" with a caption. Play is
 optional, clearly labelled and never starts automatically. A timeline scrubber updates continuously;
 settled feedback describes the final position and explored interval. Leaving the document, hiding
-its stage or unmounting stops timers and audio. Reduced motion leaves a manual step path.
+its stage or unmounting stops timers. Reduced motion leaves a manual step path.
 Hover/trace readouts use axis/value typography inside the stage, not floating cards over controls.
 A pin action preserves a readout; keyboard navigation can reach the same sample without hover.
 
@@ -1026,28 +1012,8 @@ renderer file, one client renderer file and its tests; the coordinator adds regi
 any required core integration after review. No engineer modifies another renderer or the core.
 Use only web/desktop interactive adapters, plus an honest static native fallback.
 
-The seven renderer briefs below are future work. Their names do not imply that a registered
-renderer or persisted data schema already exists. The implementation must publish schemas before
-examples claim to use them.
-
-### 18.7 Function plot
-
-Use expr.ts for one or a few expressions over x and named scope variables. Draw axes, units,
-curves and only the grid needed to read values. Re-evaluate from the current scope on every frame
-while a sibling slider moves. An optional parameter family uses a small fixed sample count and
-labels its range; the active curve stays thicker. Undefined intervals make gaps, not invented
-points. Syntax/domain errors show "No se pudo evaluar la expresión" with the specific safe reason.
-Hover or keyboard trace provides x and y. Reset restores local view and trace, while shared
-controls reset their own declared variables. No separate plot slider duplicates a shared control.
-
-### 18.8 Step-through figure
-
-One persistent figure changes through declarative, validated step patches. Keep its coordinate
-system and stable identifiers across steps. Back/forward show the step caption and highlight what
-changed with a brief outline plus a text description. Highlight fades without moving unchanged
-parts. Default to steps; optional play uses the same sequence and can pause or scrub. Reset
-returns to the initial figure. Invalid patches show the failing step and keep the last valid
-figure. The assistant receives the final step and explored interval, not each playback frame.
+The renderer briefs below fix presentation and interaction for the registered learning
+renderers. Their schemas live in `plugin/shared/renderers/`.
 
 ### 18.9 Animated flow over canvas links
 
@@ -1076,19 +1042,6 @@ disponible" and a declared static reference if present. Cap resolution, source s
 release programs and drawing resources on unmount. Do not auto-start continuous rendering when
 the stage is offscreen.
 
-### 18.11 Annotated image or text
-
-Use one normalized anchor schema for image hotspots and text locations, including a stable
-substrate/reference key. Image points/rectangles map to normalized coordinates; text ranges map
-to a stable passage key and validated offsets. Layers and annotations share anchor ownership and
-layer IDs. A stale text range or changed image reference is an unresolved annotation, never silently
-moved onto unrelated content.
-
-Hotspots use numbered marks, 22-unit visual size and at least 32 hit area, 44 touch. Press or
-keyboard focus reveals the annotation within the stage or its caption area. Layer chips show Eye/
-EyeOff and the layer name, so the state is understandable without colour. Reset restores declared
-layer visibility and closes the current annotation. No hover-only content is required.
-
 ### 18.12 Freehand stroke layer
 
 Store strokes as bounded declarative points, colour-role and width, with an anchor to the figure
@@ -1103,20 +1056,6 @@ layer. A separate attachment/storage design requires coordinator review. Reset r
 learner's current experiment layer, preserving assistant and authored strokes. Send a bounded
 settled summary, never the full point stream, unless the assistant explicitly requests an allowed
 bounded runtime read.
-
-### 18.13 Audible step sequencer
-
-Use a small grid, up to six pitch rows and sixteen steps, with a declared locked scale. Labels
-show note names or scale degrees, so the learner cannot leave the musical question accidentally.
-A highlighted playhead and beat dividers identify position. Click toggles a cell; keyboard space
-and arrows provide the same action. Play, pause, tempo and reset are sufficient controls.
-
-Create/resume Web Audio only within a real user gesture. Show "Activar sonido" when the audio
-context needs permission; rejected activation says "No se pudo activar el sonido" and retains the
-grid. Never autoplay or continue sounding after leaving the document. Use bounded safe gain and
-short scheduled notes; release audio resources on unmount. Settled feedback describes the final
-pattern and tempo, never every beat. Native shows the labelled static pattern without pretending
-to play audio.
 
 ## 19. Spanish copy and event honesty
 
@@ -1192,9 +1131,9 @@ release moves the element.** It holds over the whole card.
 | --- | --- | --- |
 | Card body, title, plain text, image | select | move |
 | Button, checkbox, option, chip, connection row | the control | move; the control does not fire |
-| Slider, scrub, drawing/plot/shader stage with its own pointer, resize and connection handles | the control | the control |
+| Slider, scrub, drawing/shader stage with its own pointer, resize and connection handles | the control | the control |
 | Text being edited | caret | text selection |
-| Read-only selectable text (code, annotatable passages) | select card | move, unless in interaction mode |
+| Read-only selectable text (code) | select card | move, unless in interaction mode |
 | Embedded page or player (`iframe`, video, audio) | select card | move, unless in interaction mode |
 | Region with its own scroll | select card | move; wheel scrolls it only in interaction mode |
 
@@ -1427,3 +1366,23 @@ accent marking the exact acting point. Each carries its hot spot and falls back 
 Cards show the open hand with the select tool and the closed hand while carried; with any other tool its
 cursor shows through them. Buttons keep the system pointer. Verified with
 `design/whiteboard-harness/cursors.cjs`; sheet in `design/qa-shapes-legibility-2026-10-06/cursors.png`.
+
+## 28. Windows and mini apps (v15)
+
+- **Windows.** A web page (`preview`), media (`media`) and a mini app (`html`) are drawn as a window, not as
+  a card: radius 10, a 1.5 border in muted ink at 0.55 (0.8 on hover, accent when selected), a 28 high bar
+  (36 compact) with the name in `small` 600 muted, and the content edge to edge beneath it. There is no type
+  label, no address row and no hint text. The bar is the handle to drag it by; an untitled page is named by
+  its host. The only button is "Abrir fuera del lienzo" when there is a link. A media caption sits under the
+  content.
+- **Mini app (`html`).** `data.html` is a complete page with any HTML, CSS and JavaScript, shown in a
+  sandboxed frame (`allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups`, no
+  `allow-same-origin`, so an opaque origin with no access to the canvas page). Double click enters it, as
+  with other deep content. A `lienzo` object is injected before the page: `send(kind, payload)` becomes a
+  batched `html.event` to the agent (kind matching `[a-zA-Z][a-zA-Z0-9._:-]{0,63}`, payload JSON up to 4000
+  characters, otherwise dropped); `onContext(fn)` receives theme colours, the block, the document and up to
+  20 selected entities, now and on change; `select(id)` selects an existing entity; `resize(height)` is
+  clamped to 80..1600. Native shows a plain notice.
+
+Verified with `design/whiteboard-harness/windows.cjs` (RN-web, isolated omabox); capture
+`design/qa-shapes-legibility-2026-10-06/windows.png`.

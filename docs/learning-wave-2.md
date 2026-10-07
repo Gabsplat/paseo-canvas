@@ -1,17 +1,15 @@
 # Aprendizaje interactivo
 
-La rama `aprendizaje` integra seis tarjetas de aprendizaje y Trazos sobre las capas
-`wb-draw` de la pizarra. El conjunto pasa 293 pruebas headless y typecheck. Las acciones
+La rama `aprendizaje` integra las tarjetas de aprendizaje Controles, Flujo animado y
+Shader GLSL, y Trazos sobre las capas `wb-draw` de la pizarra. El conjunto pasa las
+pruebas headless (`pnpm test`) y typecheck. Las acciones
 contextuales y los popovers de la interfaz flotante están implementados e integrados.
 
 | Función | Comportamiento implementado |
 | --- | --- |
-| Gráfica de funciones | Variables compartidas, respuesta durante el arrastre, huecos de dominio y lectura de traza. |
-| Figura por pasos | Parches declarativos validados, avance y retroceso, descripción y reproducción opcional. |
+| Controles | Deslizadores para las variables compartidas del grupo o documento, con Reiniciar. |
 | Flujo animado | Eventos sobre nodos y conexiones reales, referencias ausentes visibles y pausa fuera de vista. |
 | Shader GLSL | Uniforms declarados, variables compartidas, errores de compilación visibles y alternativa sin WebGL. |
-| Imagen/texto anotado | Hotspots, detalles accesibles y anclas que se invalidan si cambia el contenido. |
-| Secuenciador | Escala fija, patrón y tempo; audio tras pulsar Reproducir y silencio al salir; ningún evento por paso. |
 | Trazos | Capas persistentes, autor distinguible, anclaje a una tarjeta, Borrar mis trazos y resumen asentado al salir. |
 
 Trazos extiende el renderer de pizarra existente. Conserva los límites de puntos y
@@ -19,11 +17,6 @@ de 1 MiB por documento, las transacciones y el deshacer. Las copias remapean el
 anclaje cuando también copian la tarjeta. Borrar mis trazos conserva las capas del
 asistente y del documento original. La estimación de tamaño cuenta una capa
 reemplazada una sola vez.
-
-La marca de escucha del Secuenciador corresponde a la música que completó un ciclo
-real. Cambiar el patrón o el tempo y pausar enseguida no acredita el patrón nuevo.
-El scheduler cuenta los pasos que alcanzó el reloj de audio; las notas en cola aún
-no cuentan. El contador por paso no es una región viva para lectores de pantalla.
 
 ## Validación
 
@@ -33,28 +26,23 @@ resultados ocultos y callbacks tardíos después de cambiar de documento.
 
 La comprobación en navegador se hizo dentro de omabox aislado:
 
-- Siete escenarios de aprendizaje con componentes RN-web, incluidos WebGL real y
-  carga de hotspots. [Informe](../design/qa-learning-2026-10-06/report.md).
+- Escenarios de aprendizaje con componentes RN-web, incluido WebGL real.
+  [Informe](../design/qa-learning-2026-10-06/report.md).
 - Veinticuatro casos de pizarra con el Panel y useCanvas reales, texto, formas,
   resize, SVG, iframes, compacto claro/oscuro y 150 bloques.
   [Informe](../design/qa-whiteboard-2026-10-06/report.md).
-- Catorce casos del Secuenciador con señal Web Audio medida tras el clic, sin
-  dispositivo de audio físico. El rechazo de audio y la pestaña oculta se simularon.
-  [Resultados](../design/qa-cierre-2026-10-06/sequencer-results.json).
-- Doce casos posteriores con el Panel real comprobaron trazos anclados,
-  identificación del autor, borrado propio, teclado y escucha del patrón final.
+- Casos posteriores con el Panel real comprobaron trazos anclados,
+  identificación del autor, borrado propio y teclado.
   [Resultados](../design/qa-cierre-2026-10-06/cierre-results.json).
 
-La comprobación final del conjunto volvió a ejecutar 18 casos de acciones contextuales,
-12 de convivencia de Trazos y Secuenciador y cinco de la guía. Incluye instrucciones
-heredadas, conexiones, foco, compacto de 48 px y reset contextual con rechazo visible.
-El reset contextual usa un AudioHost instrumentado; la convivencia usa Web Audio del
-navegador. [Informe final](../design/qa-final-integration-2026-10-06/report.md).
+La comprobación final del conjunto volvió a ejecutar las acciones contextuales, los
+trazos anclados y la guía. Incluye instrucciones heredadas, conexiones, foco, compacto
+de 48 px y reset contextual con rechazo visible.
+[Informe final](../design/qa-final-integration-2026-10-06/report.md).
 
 El host y transporte de los arneses son sustitutos. No equivalen a instalar el
 plugin en Paseo, probar dispositivos nativos o enviar feedback a un agente real.
-En nativo, las tarjetas de aprendizaje muestran una descripción estática; el
-Secuenciador no abre un contexto de audio.
+En nativo, las tarjetas de aprendizaje muestran una descripción estática.
 
 ## Contratos y forma de trabajo
 

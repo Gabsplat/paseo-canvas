@@ -16,9 +16,6 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const label=text=>'[aria-label='+JSON.stringify(text)+']';
  const shot=async name=>{const r=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('/tmp/lienzo-wb-'+name+'.png',Buffer.from(r.data,'base64'));};
  const checks=[];const check=async(name,run)=>{try{await run();checks.push({name,result:'pass'});console.log('PASS '+name);}catch(error){checks.push({name,result:'fail',error:error.message});console.log('FAIL '+name+': '+error.message);throw error;}};
- const probe=`(() => { const Real = window.AudioContext; if (!Real) return; const audio = window.__audio = { contexts: [], starts: 0 };
-  window.AudioContext = class extends Real { constructor(...a) { super(...a); audio.contexts.push(this); } };
-  const start = OscillatorNode.prototype.start; OscillatorNode.prototype.start = function (...a) { audio.starts++; return start.apply(this, a); }; })();`;
  const pause=ms=>new Promise(r=>setTimeout(r,ms));
  const rectOf=async id=>box('#lienzo-entity-'+id);
  const draws=()=>ev('__panelQA.doc().blocks.filter(b=>b.typeId==="wb-draw").map(b=>({id:b.id,author:b.data.author??null,anchor:b.data.anchor??null,strokes:b.data.strokes.length,parent:b.parentGroupId??null}))');
@@ -28,7 +25,6 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  try{
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
  await call('Emulation.setDeviceMetricsOverride',{width:1920,height:1080,deviceScaleFactor:1,mobile:false});
- await call('Page.addScriptToEvaluateOnNewDocument',{source:probe});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');await pause(400);
  // ---- Trazos (§18.12) ---------------------------------------------------------------------------------------------
  await soft('pencil strokes are signed as the learner; one that starts on a card is anchored to it',async()=>{
@@ -74,50 +70,6 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
   await key('Delete','Delete');await wait('!__panelQA.doc().blocks.some(b=>b.id==="note")');
   assert.deepEqual((await draws()).map(d=>d.anchor),[null,'server']);
   await click(label('Deshacer'));await wait('__panelQA.doc().blocks.some(b=>b.id==="note")');assert.equal((await draws()).filter(d=>d.anchor==='note').length,1);
- });
- // ---- Secuenciador inside the v7 Panel ------------------------------------------------------------------------------
- const cell=(row,step)=>`[id="lienzo-interactive-sequencer-cell-seq-${row}-${step}"]`,seq='#lienzo-interactive-renderer-seq ';
- const pattern=()=>ev('__panelQA.runtime().blocks.seq?.pattern ?? null');
- await ev(`__panelQA.seed([{type:'block.create',block:{id:'seq',typeId:'step-sequencer',title:'Secuenciador de ejemplo',position:{x:860,y:330},size:{width:560,height:460},data:{}}}])`);
- await wait(`!!document.querySelector(${JSON.stringify(cell(0,0))})`);await pause(400);
- await soft('a short click on a cell toggles it without Interactuar and without moving the card',async()=>{
-  const count=await ev('__panelQA.log.length');await click(cell(0,1));await wait('!!__panelQA.runtime().blocks.seq');
-  assert.equal((await pattern())[0],'.x......');assert.equal(await ev('__panelQA.log.length'),count);await shot('cierre-sequencer-panel');
- });
- await soft('tool shortcuts and Space typed on a focused cell stay in the sequencer',async()=>{
-  await ev(`document.querySelector(${JSON.stringify(cell(0,3))}).focus()`);
-  for(const k of ['d','t','r','e','h','v'])await key(k,'Key'+k.toUpperCase());await pause(150);
-  assert.notEqual(await selected('Lápiz (D)'),'true');assert.notEqual(await selected('Goma (E)'),'true');assert.notEqual(await selected('Mano (H)'),'true');assert.equal(await ev('!!document.querySelector("#lienzo-editor")'),false);
-  await call('Input.dispatchKeyEvent',{type:'keyDown',key:' ',code:'Space',windowsVirtualKeyCode:32,text:' '});await call('Input.dispatchKeyEvent',{type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32});await pause(150);
-  assert.equal((await pattern())[0],'.x.x....');
-  await call('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});await call('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});await pause(100);
-  assert.equal(await ev('document.activeElement.id'),'lienzo-interactive-sequencer-cell-seq-0-4');assert.deepEqual(await ev('__panelQA.doc().blocks.find(b=>b.id==="seq").position'),{x:860,y:330},'arrows did not nudge the card');
-  await ev('document.activeElement.blur()');
- });
- await soft('a drag that starts on a cell moves the card and does not toggle the cell',async()=>{
-  const before=await pattern(),count=await ev('__panelQA.log.length'),b=await box(cell(2,5)),x=b.x+b.w/2,y=b.y+b.h/2;
-  await mouse('mouseMoved',x,y);await mouse('mousePressed',x,y,'left',1);for(let i=1;i<=12;i++){await mouse('mouseMoved',x+i*5,y+i*3,'left',1);await pause(10);}await mouse('mouseReleased',x+60,y+36);
-  await wait('__panelQA.log.length>'+count);await pause(400);assert.deepEqual(await ev('__panelQA.log.at(-1).operations.filter(o=>o.type==="entity.move").map(o=>o.id)'),['seq']);assert.deepEqual(await pattern(),before);
- });
- await soft('with the pencil active the grid is drawing surface: no toggle, and the stroke is anchored to the sequencer card',async()=>{
-  const before=await pattern();await click(label('Lápiz (D)'));const b=await box(cell(3,2));await stroke(b.x+4,b.y+b.h/2,90);
-  await wait('__panelQA.doc().blocks.some(b=>b.typeId==="wb-draw"&&b.data.anchor==="seq")');assert.deepEqual(await pattern(),before);
-  // The stroke now lies over cells 2 to 4 and takes presses there, as any whiteboard drawing does, and the Estilo island
-  // floats over the card's right edge while the drawing is selected. A clear cell on the left toggles.
-  await key('Escape','Escape');await pause(200);await click(cell(3,0));await pause(200);assert.notDeepEqual(await pattern(),before,'back in Seleccionar a cell toggles again');await shot('cierre-sequencer-annotated');
- });
- await soft('listening is credited to the music that sounded: edit then immediate pause is unheard; a full cycle of the final pattern is heard',async()=>{
-  const last=()=>ev('__panelQA.actions.filter(a=>a.kind==="step-sequencer.pattern").at(-1)?.payload ?? null');
-  await click(seq+label('Reproducir'));await wait('window.__audio.contexts.at(-1)?.state==="running"');await wait('window.__audio.starts>0');
-  await pause(3200);await click(cell(4,6));await click(seq+label('Pausar'));
-  assert.equal(await ev('window.__audio.contexts.at(-1).state'),'closed');await pause(900);
-  const afterEdit=await last();assert.ok(afterEdit,'the edit settled');assert.equal(afterEdit.heard,false,'pattern B never completed a cycle');
-  await click(seq+label('Reproducir'));await wait('window.__audio.contexts.at(-1)?.state==="running"');await pause(1200);await click(seq+label('Pausar'));await pause(400);
-  assert.equal((await last()).heard,false,'less than one cycle of B');
-  await click(seq+label('Reproducir'));await wait('window.__audio.contexts.at(-1)?.state==="running"');await pause(3200);await click(seq+label('Pausar'));
-  await wait('__panelQA.actions.filter(a=>a.kind==="step-sequencer.pattern").at(-1)?.payload.heard===true');
-  assert.equal(await ev('window.__audio.contexts.filter(c=>c.state!=="closed").length'),0);
-  assert.equal(await ev('__panelQA.actions.some(a=>"step" in a.payload||"playhead" in a.payload)'),false);
  });
  await shot('cierre-final');assert.deepEqual(await ev('__panelQA.errors'),[]);
  }finally{checks.push({name:'Uncaught page errors',result:uncaught.length?'fail':'pass',...(uncaught.length?{error:JSON.stringify(uncaught).slice(0,600)}:{})});fs.writeFileSync('/tmp/lienzo-wb-cierre-result.json',JSON.stringify({checks},null,2));console.log(checks.filter(c=>c.result==='pass').length+'/'+checks.length+' checks passed');ws.close();process.exitCode=checks.some(c=>c.result==='fail')?1:0;}

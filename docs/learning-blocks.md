@@ -50,8 +50,14 @@ Use the same `id` as `blockType.renderer`; built-in type IDs normally match too.
 schema validates all data, including JSON properties, on server writes and pack validation.
 Client dispatch parses data before calling the renderer. Defaults must pass the schema.
 List every top-level data key in `blockType.properties`. One-line guidance appears in MCP
-catalog results and agent integration instructions. The 15 legacy renderer names remain
-valid. Diagram uses the registry; the remaining legacy renderers still work.
+catalog results and agent integration instructions. The legacy renderer names in
+`legacyRendererNames` remain valid and still work.
+
+`retiredRendererNames` lists renderers that no longer exist. The type schema still accepts
+them, so a stored catalog, a pack or a custom type that names one keeps loading and
+exporting unchanged. Such a type is left out of the usable catalog: it cannot be inserted
+or saved again, and blocks that carry its ID are kept and shown as blocks of an unknown
+type, which can still be moved, renamed and deleted.
 
 Creation merges type defaults with supplied data. Updates use JSON merge patch, with null
 removing a key. For a schema with variants, a complete valid data object replaces the
@@ -160,7 +166,7 @@ unique names; all numbers are finite, `min <= value <= max`, and supplied step i
 Resolution uses the nearest declaring ancestor, then document scope `$document`. Current
 values come from runtime or fall back to declared value; reads clamp old overrides to the
 current range. `scope.set(name,null)` removes the override. Every sibling resolves against
-one optimistic store, so sliders and figures update together before the server responds.
+one optimistic store, so sliders and the cards that read them update together before the server responds.
 `controls.data.variables` lists at most four names per block, while each scope permits 24.
 Reset each listed variable with null, then settle a reset event with the declared defaults.
 
@@ -177,23 +183,7 @@ or the source document are outside that template and must be supplied by its des
 `runtimeVersion` also covers existing selection/connection/feedback changes; watch/poll
 therefore observes both kinds of runtime changes. Runtime updates never lock the card.
 
-## Math and drawing
-
-`shared/expr.ts` exports `compileExpression(source): CompiledExpression`,
-`validateExpression(source, allowedIdentifiers = [])`, and `ExpressionParseError`.
-Compilation throws a readable error with zero-based `position` on invalid syntax.
-A compiled object has `identifiers` and `evaluate(variables = {}): number`. Compile once
-with `useMemo`, then evaluate with scope values. Evaluation catches failures and returns
-NaN for missing variables and nonfinite/domain results. Validator returns
-`{valid, unknownIdentifiers, error?}` for a Zod refinement.
-
-Operators are `+ - * / ^ %`, unary `- + !`, `< <= > >= == !=`, `&& ||`, and ternary `?:`.
-Powers associate right, `-2^2` is -4, logic/comparisons return 0/1, and logic/ternary
-short-circuit. Constants are `pi e tau`. Functions are `sin cos tan asin acos atan atan2
-sinh cosh tanh exp ln log log10 log2 sqrt cbrt abs floor ceil round sign min max clamp mix
-step smoothstep mod hypot`. `log` means natural log; `%` is remainder and `mod` wraps.
-Source length is capped at 4096 characters, nesting/tree depth at 64 and variadic arity
-at 64. No property access, assignment, eval, Function or executable code is supported.
+## Drawing
 
 Import `CanvasSurface`, `GLSurface`, `NativeLearningFallback` and drawing types from
 `client/Surfaces`. Only `client/web.ts` accesses DOM; do not enable the DOM TypeScript lib.
@@ -247,37 +237,6 @@ is invented. Paused scrubs draw once, playback draws via RAF, and hidden/offscre
 or unmount cancels that loop. Sampling never writes runtime or sends assistant events.
 At most 256 tokens are drawn across the canvas per frame; excess tokens are omitted in
 stable document/event order. Native retains static links and the honest block summary.
-
-## Step sequencer (`step-sequencer`)
-
-Data is declarative and strict: `question`; a locked `scale {root, mode, octave}` (roots `C..B`
-with sharps or `Db/Eb/Gb/Ab/Bb`; modes `major`, `minor`, `dorian`, `pentatonic-major`,
-`pentatonic-minor`, `blues`; octave 2..5); `rows`, 1..6 distinct one-based scale degrees up to
-15; `labels` (`note` or `degree`); `steps` 2..16; `stepsPerBeat` 1..4; `tempo {bpm,min,max}`
-inside 40..240; `pattern`, one string per row of exactly `steps` characters (`x` sounds, `.` is
-silent); `voice` (`sine`, `triangle`, `square`). Pitches must fall in MIDI 36..96. There is no
-URL, sample, script or autoplay field. Rows display highest first; `pattern[i]` always belongs
-to `rows[i]`.
-
-Runtime holds `{pattern, bpm, heard?}` and falls back to the authored pattern when the stored
-shape no longer fits. `heard` is a short fingerprint of the exact music that completed a cycle
-(scale, rows, voice, steps, subdivision, tempo and pattern), so an authored change to any of them
-is unheard again while a still-fitting learner pattern and tempo are kept. The moving step
-counter is hidden from assistive technology; a polite live region announces only playback state
-and audio errors. The learner toggles cells (click, Space or Enter; arrows, Home and End
-move between cells) and moves tempo inside the declared range. One coalescing settled event,
-`step-sequencer.pattern`, describes the final pattern, tempo and whether a full cycle was heard:
-600 ms after the last toggle, on tempo release, and once when a first full cycle has been heard.
-`step-sequencer.reset` follows Reiniciar. Playback position is never stored or sent.
-
-Audio lives behind `openStepAudio` in `client/web.ts`, the only Web Audio entry, and the pure
-lookahead scheduler in `client/sequencer-audio.ts`. A context is created and resumed inside the
-Reproducir press and closed, never suspended, on pause, reset, read-only, unmount, document
-change, hidden tab, the grid leaving the viewport, a browser suspension, or another sequencer
-starting: one live context across the plugin. Master gain 0.2, per-note peak at most 0.3, notes
-at most 0.5 s, 24 voices, 30..4200 Hz. A refused start shows "No se pudo activar el sonido" with
-"Activar sonido" and keeps the grid editable; a browser without Web Audio says so. Native shows
-the labelled grid and its text description as static and never reaches for audio.
 
 ## Stroke annotations (`wb-draw`)
 
@@ -343,7 +302,7 @@ export const exampleRenderer: ClientRenderer<ExampleData> = {
 };
 ```
 
-Test valid/invalid data and expressions, actual calculations, reset, missing references,
+Test valid/invalid data, actual calculations, reset, missing references,
 readOnly, and native fallback. Do not edit registry indices in parallel worktrees; send
 registration lines to the coordinator, who can validate registry dispatch after integration.
 Run `PATH="$HOME/.local/share/pnpm/bin:$PATH" pnpm typecheck` and `pnpm test`.

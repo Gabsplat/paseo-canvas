@@ -7,6 +7,7 @@ import {
   type CanvasDocument, type DocumentView, type AgentEvent,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
+import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
 import { catalogView, packDiff, packIssues, parsePack, validateTemplate, validateType } from "./catalog";
 import { clone, newId, reduce, validateDocument, normalizeBlock, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
@@ -186,6 +187,8 @@ export class CanvasService {
       switch (action.type) {
         case "type.put":
           if (current.blockTypes.some(type => type.id === action.blockType.id) && !state.catalog.localTypes.some(type => type.id === action.blockType.id)) throw new CanvasError("VALIDATION", "Local types cannot replace a built-in or pack type.");
+          // Retired names stay readable in stored data; a type saved now must be one the catalog can offer.
+          if (isRetiredRenderer(action.blockType.renderer) || isRetiredRenderer(action.blockType.id)) throw new CanvasError("VALIDATION", `Block type ${action.blockType.id} uses a renderer or ID that is no longer available.`);
           validateType(action.blockType);
           state.catalog.localTypes = [...state.catalog.localTypes.filter(type => type.id !== action.blockType.id), clone(action.blockType)]; break;
         case "template.put":

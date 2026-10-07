@@ -74,7 +74,7 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
     draw(doc && layout && shift && [...layout.rects.keys()].some(id => shift(id)) ? new Map(linkRoutes(doc, layout, shift).map(route => [route.key, route])) : null);
   }, preview(value) { if (layer.current) layer.current.preview(latest.current.draftDraw(value)); else setTick(n => n + 1); } }), []);
   useEffect(() => { draw(moved); }, [styled, draft, origin.x, origin.y, u, motion]);
-  // Native fallback (also covers a web host without SVG): elbow segments made of Views, like the diagram block.
+  // Native fallback (also covers a web host without SVG): elbow segments made of Views.
   const fallback = !web;
   return <View ref={host} pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width, height, zIndex: 1 }}>
     {fallback && styled.map(({ route: rest, active, color, opacity, width, text }) => {

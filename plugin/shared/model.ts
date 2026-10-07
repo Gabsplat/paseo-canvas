@@ -1,4 +1,4 @@
-import { rendererNames } from "./renderers";
+import { storedRendererNames } from "./renderers";
 import { variablesSchema, runtimeStateSchema } from "./learning";
 import { z } from "zod";
 
@@ -26,7 +26,6 @@ export const linkPatchSchema = z.object({
   kind: z.enum(["flow", "depends", "reference"]).optional(),
   tone: linkSchema.shape.tone,
 }).strict();
-export { diagramNodeSchema, diagramEdgeSchema, diagramDataSchema, type DiagramNode, type DiagramEdge, type DiagramData } from "./renderers/diagram";
 export const checklistItemSchema = z.union([z.string().max(2000), z.object({ label: z.string().max(2000), done: z.boolean() }).strict()]);
 export const checklistDataSchema = z.object({ items: z.array(checklistItemSchema).max(200) }).strict();
 export type ChecklistItem = z.infer<typeof checklistItemSchema>;
@@ -73,7 +72,8 @@ export const propertySchema = z.object({
 export const blockTypeSchema = z.object({
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
   properties: z.array(propertySchema).max(50), defaults: jsonObjectSchema,
-  renderer: z.enum(rendererNames).optional(),
+  // Includes retired renderer names: stored catalogs and packs that still carry them must keep loading.
+  renderer: z.enum(storedRendererNames).optional(),
 }).strict();
 export const templateSchema = z.object({
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),

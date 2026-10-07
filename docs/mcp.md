@@ -91,7 +91,7 @@ The built-in `node` type uses renderer `node` and four optional text properties:
 `summary`, `details`. Use the block title and a short summary for the compact card; longer
 explanations belong in details. Build systems, flows and lessons with node blocks joined by links,
 inside area groups with `layout.mode: "graph"`. Avoid stacking more than a few prose notes.
-Reserve the in-block `diagram` for small self-contained figures. Teach by adding actual nodes
+Teach by adding actual nodes
 and links through confirmed transactions. `canvas_example {packId:"graph"}` creates the Spanish
 "Ejemplo: cómo funciona Lienzo" document with three graph groups and flow/depends/reference
 links, including cross-group connections. It has `example:true` and describes architecture,
@@ -117,14 +117,18 @@ prefix. Packs have `format: "paseo-canvas-pack"` and `version: 1`, and describe 
 typed property lists rather than arbitrary JSON Schema. Pack export returns portable JSON data.
 Unknown type IDs already present in documents are preserved; creating an unknown type fails.
 
-The `diagram` built-in type uses renderer `diagram`. Its exact contract is `diagramDataSchema`:
-`{nodes: [{id, label, description?, position?: {x,y}}], edges: [{id, from, to, label?}], caption?}`.
-Node and edge IDs are unique, and both edge endpoints must exist. Positions are optional;
-the frontend uses the Opus-designed automatic layout when absent. Render visual node cards and
-connectors, not raw JSON. `block.update` merge patches replace the `nodes` and `edges` arrays,
-so a teaching agent can show one node first and commit further nodes/connections as the lesson
-progresses. The `learn` pack includes a request-state diagram. References to media remain links
-in this native first version; there is no embedded media playback contract.
+`blockTypeSchema.renderer` accepts the live renderer names plus `retiredRendererNames`
+(`shared/renderers/index.ts`): renderers that no longer exist but may still be named by a
+stored catalog, an imported pack or a custom type. State files and packs that carry them load,
+import and export unchanged. The catalog view (`canvas.catalog.read`, `canvas_catalog`) leaves
+out every type whose renderer is retired, so it cannot be inserted, and `type.put` rejects a
+retired renderer or a retired built-in type ID. Blocks that carry such a type ID follow the
+unknown-type rule above: they are preserved, can be moved, retitled and deleted, and cannot be
+created again. A pack template or document that needs one fails with `UNKNOWN_TYPE` when
+inserted or instantiated.
+
+The `learn` pack teaches request states with a node, notes and a code example. References to
+media remain links in this native first version; there is no embedded media playback contract.
 
 The built-in `preview` type accepts `data.description` and optional `data.url`.
 The `media` type accepts `data.url`, optional `data.caption` and `data.mediaKind`.
@@ -415,7 +419,7 @@ tests and the frontend's own no-DOM config when it exists. Tests import the enti
 server entry through the actual installed SDK. They cover atomic rollback, persistence and abrupt
 process exit, stale writer recovery, optimistic concurrent conflicts, selection versions,
 group cycles/depth/parent consistency, omitted-patch defaults, subtree movement/duplication/export,
-per-agent undo and related-edit blocking, diagrams/checklists/media URL validation, pack import
+per-agent undo and related-edit blocking, checklists/media URL validation, retired renderer names in stored state, pack import
 dry-run/collision/roundtrip, missing types, truthful large-write acknowledgements, feedback queues
 and terminal acknowledgement, plus immutable outbound batch replay after accepted-send/lost-mark
 recovery with new event arrivals. The official MCP SDK stdio client verifies real initialize/list/call,
@@ -454,3 +458,13 @@ An entry may carry `ref`, the ID of the block or group that explains it: pressin
 card, and selecting the card lights the entry. Without `ref`, an entry pairs with the card or group whose
 title is its path (`lib/`, `db/migrations/`, or `spine/ · bases/` for two). `ref` is remapped when a
 subtree or template is copied.
+
+## Mini app block
+
+`html` holds one self-contained page: `data: { html (1..200000 characters), height? (80..1600) }`. Any HTML,
+CSS and JavaScript is allowed; there are no preset components. It runs sandboxed without access to the
+canvas page; scripts and network requests are allowed. The injected `lienzo` object is the only channel:
+`lienzo.send(kind, payload)` arrives as a canvas event of kind `html.event` with
+`payload: { event, data }`; `lienzo.onContext(fn)` gives `{ theme: { dark, colors }, block, document,
+selection }`; `lienzo.select(id)`; `lienzo.resize(height)`. Update the page with `block.update` on
+`data.html`. For projects with several files or a server, run them and use a `preview` block with `data.url`.

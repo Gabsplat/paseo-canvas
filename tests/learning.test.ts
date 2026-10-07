@@ -26,7 +26,7 @@ async function withScopes(service: CanvasService) {
     { type: 'group.create', group: { id: 'inner', title: 'Inner', description: '', blockIds: ['b', 'c'], groupIds: [], parentGroupId: 'outer', variables: [variable('x', 4)] } },
   ]));
 }
-test('registry validates registered JSON data, keeps 15 legacy names and exposes agent guidance', async t => {
+test('registry validates registered JSON data, keeps the legacy names and exposes agent guidance', async t => {
   const { service } = await setup(t);
   for (const name of legacyRendererNames) assert.ok(blockTypeSchema.shape.renderer.safeParse(name).success);
   assert.ok(blockTypeSchema.shape.renderer.safeParse('controls').success); assert.ok(!blockTypeSchema.shape.renderer.safeParse('unregistered').success);

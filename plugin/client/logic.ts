@@ -1,7 +1,7 @@
 import { isWhiteboardRenderer, whiteboardMinSize } from '../shared/whiteboard';
 import { getRendererVisual } from "./renderer-visuals";
 import { getRendererSpec } from "../shared/renderers";
-import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasOperation, DiagramData, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
+import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasOperation, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
 import { tokens } from './tokens';
 export type Entity = CanvasBlock | CanvasGroup;
 export type Point = { x: number; y: number };
@@ -82,73 +82,6 @@ export function documentContent(doc: CanvasDocument, own = false): DocumentConte
   return { title: own ? `${title} · copia` : title, description, blocks, groups, links: links ?? [], ...(layout ? { layout } : {}), ...(variables ? { variables } : {}), selectedIds, communication, example: own ? false : example };
 }
 export type Segment = { from: Point; to: Point };
-export function diagramLayout(data: DiagramData, innerWidth = 565) {
-  const d = tokens.diagram, w = d.node.width, h = d.node.height, back = new Set<string>(), visited = new Set<string>(), visiting = new Set<string>();
-  const labeled = data.edges.some(edge => !!edge.label), gapY = labeled ? d.gapYLabeled : d.gapY;
-  const visit = (id: string) => {
-    visited.add(id); visiting.add(id);
-    for (const e of data.edges.filter(e => e.from === id)) {
-      if (visiting.has(e.to)) back.add(e.id); else if (!visited.has(e.to)) visit(e.to);
-    }
-    visiting.delete(id);
-  };
-  data.nodes.forEach(n => { if (!visited.has(n.id)) visit(n.id); });
-  const layers = new Map<string, number>();
-  const layer = (id: string): number => {
-    if (layers.has(id)) return layers.get(id)!;
-    const predecessors = data.edges.filter(e => e.to === id && !back.has(e.id));
-    const n = predecessors.length ? 1 + Math.max(...predecessors.map(e => layer(e.from))) : 0; layers.set(id, n); return n;
-  };
-  data.nodes.forEach(n => layer(n.id));
-  const explicit = data.nodes.length > 0 && data.nodes.every(n => n.position);
-  const railSpace = d.rail.inset + d.rail.maxLanes * d.rail.laneGap;
-  function place(left = 0, right = 0) {
-    const rows = new Map<string, number>(), points = new Map<string, Point>();
-    if (explicit) {
-      const minX = Math.min(...data.nodes.map(n => n.position!.x)), minY = Math.min(...data.nodes.map(n => n.position!.y));
-      data.nodes.forEach(n => points.set(n.id, { x: n.position!.x - minX + d.padding + left, y: n.position!.y - minY + d.padding }));
-    } else {
-      const width = Math.max(w, innerWidth - left - right), cols = Math.min(d.maxColumns.wide, Math.max(1, Math.floor((width + d.gapX) / (w + d.gapX))));
-      let row = 0;
-      for (let l = 0; l <= Math.max(0, ...layers.values()); l++) {
-        const group = data.nodes.filter(n => layers.get(n.id) === l);
-        for (let i = 0; i < group.length; i += cols) {
-          const nodes = group.slice(i, i + cols);
-          nodes.forEach((n, j) => { rows.set(n.id, row); points.set(n.id, { x: left + (width - (nodes.length * w + (nodes.length - 1) * d.gapX)) / 2 + j * (w + d.gapX), y: d.padding + row * (h + gapY) }); }); row++;
-        }
-      }
-    }
-    return { rows, points };
-  }
-  let placed = place();
-  const hasLeft = data.edges.some(e => e.from !== e.to && (back.has(e.id) || placed.points.get(e.to)!.y < placed.points.get(e.from)!.y));
-  const hasRight = !explicit && data.edges.some(e => !back.has(e.id) && (placed.rows.get(e.to)! - placed.rows.get(e.from)!) > 1);
-  placed = place(hasLeft ? railSpace : 0, hasRight ? railSpace : 0);
-  const nodes = data.nodes.map(n => ({ ...n, ...placed.points.get(n.id)!, width: w, height: h }));
-  const byId = new Map(nodes.map(n => [n.id, n])), left = nodes.length ? Math.min(...nodes.map(n => n.x)) : d.padding, right = Math.max(w, ...nodes.map(n => n.x + w));
-  let leftLane = 0, rightLane = 0;
-  const edges = data.edges.filter(e => e.from !== e.to).map((e, i) => {
-    const a = byId.get(e.from)!, b = byId.get(e.to)!;
-    const backwards = back.has(e.id) || b.y < a.y;
-    let points: Point[];
-    const nextRow = !backwards && (explicit ? b.y >= a.y + h + 16 : placed.rows.get(e.to)! - placed.rows.get(e.from)! === 1);
-    if (nextRow) {
-      const mid = a.y + h + (labeled ? d.edgeLabel.nextRowOffsets.run : gapY / 2);
-      points = [{ x: a.x + w / 2, y: a.y + h }, { x: a.x + w / 2, y: mid }, { x: b.x + w / 2, y: mid }, { x: b.x + w / 2, y: b.y }];
-    } else if (!backwards && a.y === b.y) {
-      const goesRight = b.x > a.x;
-      points = [{ x: a.x + (goesRight ? w : 0), y: a.y + h / 2 }, { x: b.x + (goesRight ? 0 : w), y: b.y + h / 2 }];
-    } else {
-      const lane = (backwards ? leftLane++ : rightLane++) % d.rail.maxLanes, x = backwards ? left - d.rail.inset - lane * d.rail.laneGap : right + d.rail.inset + lane * d.rail.laneGap;
-      points = [{ x: a.x + (backwards ? 0 : w), y: a.y + h / 2 }, { x, y: a.y + h / 2 }, { x, y: b.y + h / 2 }, { x: b.x + (backwards ? 0 : w), y: b.y + h / 2 }];
-    }
-    const segments = points.slice(1).map((to, j) => ({ from: points[j], to })).filter(s => s.from.x !== s.to.x || s.from.y !== s.to.y);
-    const horizontals = segments.filter(s => s.from.y === s.to.y).sort((a, b) => Math.abs(b.to.x - b.from.x) - Math.abs(a.to.x - a.from.x));
-    const labelSegment = horizontals[0] ?? segments[0];
-    return { ...e, dashed: backwards, segments, end: points.at(-1)!, direction: points.at(-1)!.y > points.at(-2)!.y ? 'down' : points.at(-1)!.y < points.at(-2)!.y ? 'up' : points.at(-1)!.x > points.at(-2)!.x ? 'right' : 'left', labelWidth: nextRow ? d.edgeLabel.maxWidthNextRow : d.edgeLabel.maxWidth, labelPoint: nextRow ? { x: b.x + w / 2, y: a.y + h + d.edgeLabel.nextRowOffsets.labelCenter } : { x: (labelSegment.from.x + labelSegment.to.x) / 2 + (horizontals.length ? 0 : 6), y: (labelSegment.from.y + labelSegment.to.y) / 2 } };
-  });
-  return { nodes, edges, width: Math.max(innerWidth, right + (hasRight ? railSpace : d.padding)), height: Math.max(96, ...nodes.map(n => n.y + h + d.padding)), list: innerWidth < d.listFallback.whenInnerWidthBelow || nodes.length > d.listFallback.whenNodesAbove };
-}
 export const descriptionKey = (groupId: string) => `${groupId}#description`;
 export type Box = Pick<Rect, 'x' | 'y' | 'width' | 'height'>;
 // Stored positions carry no size, so whoever wrote them (a person, an agent, a template) could not know how large the
@@ -445,7 +378,7 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
   const dimensions = (id: string, depth: number, hidden: boolean, wrap: number): Rect => {
     const block = blocks.get(id);
     if (block) {
-      const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = getRendererVisual(renderer)?.width === 'wide' || renderer === 'diagram' || renderer === 'preview-frame';
+      const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = getRendererVisual(renderer)?.width === 'wide' || renderer === 'preview-frame';
       if (isWhiteboardRenderer(renderer)) {
         const scale = typeof block.data.scale === 'string' && block.data.scale in tokens.whiteboard.text ? block.data.scale as 's'|'m'|'l'|'xl' : 'm';
         const textStyle = tokens.whiteboard.text[scale];

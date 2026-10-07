@@ -6,5 +6,5 @@ export const useContentInteraction = () => useContext(ContentInteraction) === tr
 export const useContentSelectionAllowed = () => useContext(ContentInteraction) !== false;
 /** Cards with text ranges, scrolling or embedded media benefit from explicit interaction mode. */
 export function needsContentInteraction(renderer?: string): boolean {
-  return ['text','note','code','callout','step','preview-frame','image-ref','annotated-content'].includes(renderer ?? '');
+  return ['text','note','code','callout','step','preview-frame','image-ref','html'].includes(renderer ?? '');
 }

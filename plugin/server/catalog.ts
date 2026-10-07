@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { packSchema, blockTypeSchema, templateSchema, type CanvasPack, type CanvasCatalog, type BlockType, type GroupTemplate } from "../shared/model";
 import { builtinPacks, builtinTemplates, builtinTypes } from "../shared/builtins";
+import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasError } from "../shared/errors";
 import { safeJson, validateTree, validateLinks, validateBlockData, validateDocument, normalizeBlock, validateBlockPresentation } from "./reducer";
 
@@ -18,6 +19,9 @@ export function catalogView(storage: CatalogStorage): CanvasCatalog {
   }
   for (const type of storage.localTypes) types.set(type.id, structuredClone(type));
   for (const template of storage.localTemplates) templates.set(template.id, structuredClone(template));
+  // A stored type whose renderer was retired stays in storage and in its pack, but is not a usable type:
+  // it cannot be inserted, and blocks that carry its ID are kept as blocks of an unknown type.
+  for (const [id, type] of types) if (isRetiredRenderer(type.renderer)) types.delete(id);
   return { revision: storage.revision, blockTypes: [...types.values()], templates: [...templates.values()], packs: structuredClone([...builtinPacks, ...storage.packs]) };
 }
 export function validateType(type: BlockType): void {

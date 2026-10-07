@@ -33,13 +33,13 @@ Los contratos publicados están en
 ## Qué contiene
 
 - Bloques tipados y grupos anidados con instrucciones de comunicación.
-- Diagramas con nodos y conexiones que el agente puede ampliar durante una explicación.
+- Nodos, enlaces y grupos en grafo que el agente puede ampliar durante una explicación.
 - Catálogo local de tipos, plantillas y packs JSON portables.
 - Documentos de ejemplo para revisión de frontend y enseñanza progresiva.
 - Revisiones, transacciones, selección y feedback explícito al agente.
 - Referencias a medios y previews web, con enlaces en clientes nativos.
 - Pizarra con herramientas flotantes, texto libre, formas y SVG importado o de biblioteca.
-- Secuenciador con audio tras pulsar Reproducir y trazos que acompañan a su tarjeta.
+- Trazos a mano alzada que acompañan a su tarjeta.
 
 Los ejemplos están identificados como ejemplos. El documento persistido es la fuente del contenido;
 la interfaz no simula actividad ni respuestas del agente.
@@ -97,7 +97,7 @@ elige el destinatario del feedback.
 ## Contratos y diseño
 
 - [`docs/mcp.md`](docs/mcp.md) describe los contratos del backend y la integración con agentes.
-- [`docs/design.md`](docs/design.md) define la interfaz, los diagramas y las alternativas nativas.
+- [`docs/design.md`](docs/design.md) define la interfaz, los grafos y las alternativas nativas.
 - [`design/tokens.json`](design/tokens.json) contiene los colores y medidas aprobados por diseño.
 - [`docs/architecture.md`](docs/architecture.md) separa el contrato actual de las propuestas originales.
 

@@ -49,7 +49,6 @@ test("graph contract and guidance cross real MCP stdio, link CRUD/undo and reope
   assert.match(integrationInstructions, /node blocks joined by links/);
   assert.match(integrationInstructions, /summary\/details/);
   assert.match(integrationInstructions, /never stack more than a few prose notes/);
-  assert.match(integrationInstructions, /small self-contained figures/);
   const catalog = await call("canvas_catalog", { action: "read", id: "node" });
   assert.equal((catalog.entry as { renderer: string }).renderer, "node");
   const applied = await call("canvas_apply", { documentId: "d", expectedRevision: 0, operations: [
@@ -136,7 +135,7 @@ test("real MCP SDK stdio protocol roundtrip shares UI state and existing client 
   for (const name of ["canvas_read", "canvas_apply", "canvas_group", "canvas_catalog", "canvas_undo"]) assert.ok(tools.tools.some(tool => tool.name === name));
   const catalog = resultData(await client.callTool({ name: "canvas_catalog", arguments: { action: "list" } }));
   assert.equal(catalog.revision, 0);
-  assert.ok((catalog.blockTypes as { id: string }[]).some(type => type.id === "diagram"));
+  assert.ok((catalog.blockTypes as { id: string }[]).some(type => type.id === "node"));
   const applied = await client.callTool({ name: "canvas_apply", arguments: { documentId: "d", expectedRevision: 0, operations: [{ type: "block.update", id: "b", patch: { data: { text: "MCP changed it" } } }] } });
   assert.equal(resultData(applied).revision, 1);
   assert.equal((await service.read({ documentId: "d", workspaceId })).document.blocks[0].data.text, "MCP changed it");

@@ -62,7 +62,7 @@ test('real dispatcher passes a protected document to neighboring renderers and c
   const rendered = (child.type as Function)(child.props) as Element;
   assert.ok(!JSON.stringify(rendered).includes('SECRET RESULT'));
   assert.ok(!JSON.stringify(rendered).includes('SECRET DATA'));
-  const target = RegisteredRenderer({ block: view.document.blocks.find(b => b.id === 'c')!, id: 'function-plot', controller, readOnly: false, send: async () => {} }) as Element;
+  const target = RegisteredRenderer({ block: view.document.blocks.find(b => b.id === 'c')!, id: 'glsl-shader', controller, readOnly: false, send: async () => {} }) as Element;
   assert.equal(target.type, HiddenResult);
   assert.equal(view.document.blocks.find(b => b.id === 'c')!.title, 'SECRET RESULT');
 });

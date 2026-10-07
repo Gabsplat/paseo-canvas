@@ -9,7 +9,7 @@ import contribute from "../plugin/index.server";
 import { CanvasStore } from "../plugin/server/store";
 import { CanvasService } from "../plugin/server/service";
 import { CanvasError } from "../plugin/shared/errors";
-import { groupSchema, groupPatchSchema, diagramDataSchema, checklistDataSchema, packSchema, documentSchema, documentContentSchema, templateSchema, linkSchema, operationSchema, layoutSchema } from "../plugin/shared/model";
+import { groupSchema, groupPatchSchema, checklistDataSchema, packSchema, documentSchema, documentContentSchema, templateSchema, linkSchema, operationSchema, layoutSchema } from "../plugin/shared/model";
 import { groupSubtree, effectiveInstructions } from "../plugin/server/reducer";
 import { ToolRouter } from "../plugin/server/tools";
 import { setup, workspaceId, mutation, content } from "./helpers";
@@ -415,15 +415,14 @@ test("selection has an independent version, no content revision and polling dete
   await assert.rejects(service.selection({ ...reference, expectedSelectionVersion: 0, ids: [] }), rejectCode("REVISION_CONFLICT"));
 });
 
-test("diagram references/checklist objects/media protocols validate; conceptual and real previews work", async t => {
+test("checklist objects/media protocols validate; conceptual and real previews work", async t => {
   const { service } = await setup(t);
   assert.deepEqual(checklistDataSchema.parse({ items: [{ label: "Ready", done: true }] }).items, [{ label: "Ready", done: true }]);
-  assert.throws(() => diagramDataSchema.parse({ nodes: [{ id: "n", label: "N" }], edges: [{ id: "e", from: "n", to: "missing" }] }));
   await service.mutate(mutation(0, [{ type: "block.create", block: { id: "p", title: "Real preview", typeId: "preview", data: { description: "Running frontend", url: "https://example.test/preview" } } }]));
   for (const url of ["javascript:alert(1)", "data:text/html,hello", "file:///tmp/private", "https://user:password@example.test/"]) await assert.rejects(service.mutate(mutation(1, [{ type: "block.update", id: "p", patch: { data: { url } } }])), rejectCode("VALIDATION"));
   const learned = await service.instantiatePack({ workspaceId, packId: "learn", documentIndex: 0 });
   assert.equal(learned.document.example, true);
-  assert.ok(learned.document.blocks.some(block => block.typeId === "diagram"));
+  assert.deepEqual(learned.document.blocks.map(block => block.typeId), ["node", "note", "code", "note", "note"]);
 });
 
 const userPack = () => packSchema.parse({ format: "paseo-canvas-pack", version: 1, id: "custom", name: "Custom", description: "", blockTypes: [{ id: "custom.note", name: "Custom note", description: "", properties: [{ key: "text", label: "Text", kind: "text", required: true }], defaults: { text: "" } }], templates: [], documents: [] });

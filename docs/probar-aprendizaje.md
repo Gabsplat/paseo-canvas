@@ -1,10 +1,9 @@
 # Probar aprendizaje
 
 La rama `aprendizaje` incluye el arrastre libre, resize guardado, onboarding, medios
-interactivos y la pizarra con herramientas flotantes. También incluye Gráfica,
-Figura por pasos, Flujo animado, Shader GLSL e Imagen/texto anotado, además del
-Secuenciador y las anotaciones con Trazos. Es una rama de
-desarrollo para probar el progreso.
+interactivos y la pizarra con herramientas flotantes. También incluye Controles,
+Flujo animado y Shader GLSL, además de las anotaciones con Trazos. Es una rama de
+desarrollo para probar el avance.
 
 ## Cargarla en Paseo
 
@@ -70,21 +69,13 @@ de herramientas son V para seleccionar, H para mano, T para texto, R para forma,
 lápiz y E para goma. Los controles enfocados conservan sus teclas. La ayuda del onboarding
 reúne los controles de cámara, selección, enlaces, medios y posiciones automáticas.
 
-Los seis bloques nuevos están en el catálogo. Para armar un ejemplo con variables,
-enlaces y resultados referenciados, crea un agente nuevo después de cargar esta versión
-y pídele:
+Los bloques de aprendizaje están en el catálogo. Para armar un ejemplo con variables y
+enlaces, crea un agente nuevo después de cargar esta versión y pídele:
 
-> Crea un lienzo de ejemplo de aprendizaje. Consulta canvas_catalog y arma una Gráfica
-> con una variable y un bloque Controles para moverla. Incluye Figura por pasos, un Flujo animado
-> sobre enlaces reales, un Shader GLSL sencillo e Imagen/texto anotado con texto de
-> ejemplo. Añade un Secuenciador en La menor con seis filas y ocho pasos para experimentar
-> con notas y tempo. Etiqueta el documento como ejemplo y crea todo con transacciones confirmadas.
-
-En el Secuenciador, pulsa las celdas para activar notas y Reproducir para habilitar el
-audio. Prueba Pausar, Reiniciar y cambiar de documento mientras suena. El sonido debe
-detenerse al salir del documento o sacar la rejilla de vista. Los pasos en cola todavía
-no cuentan como escuchados; después de editar, la música nueva necesita su propio ciclo.
-El asistente recibe el patrón y tempo finales, sin eventos por cada paso.
+> Crea un lienzo de ejemplo de aprendizaje. Consulta canvas_catalog y arma un Shader GLSL
+> sencillo con una variable compartida y un bloque Controles para moverla. Incluye un Flujo
+> animado sobre enlaces reales entre nodos. Etiqueta el documento como ejemplo y crea todo
+> con transacciones confirmadas.
 
 Los contratos y ejemplos de datos están en [learning-blocks.md](learning-blocks.md).
 Las declaraciones de variables son parte del documento; su valor durante la interacción
@@ -93,23 +84,20 @@ En clientes nativos los bloques de aprendizaje ofrecen una descripción estátic
 
 ## Estado de la entrega
 
-El conjunto integrado pasa typecheck y 293 pruebas headless. Cubren persistencia,
+El conjunto integrado pasa typecheck y las pruebas headless (`pnpm test`). Cubren persistencia,
 conflictos, packs, runtime, protección de resultados y validación de los cuatro tipos de
 pizarra. Pasan 24 casos de navegador con el Panel, useCanvas, reducer y esquemas RPC reales
 bajo RN-web en omabox aislado. El host y el transporte son sustitutos. Se probaron texto,
 formas, resize, lápiz/goma, SVG, iframes, compacto claro/oscuro y arrastre de 150 bloques.
 [Informe de pizarra y capturas](../design/qa-whiteboard-2026-10-06/report.md).
 
-Los bloques de aprendizaje conservan la QA anterior de siete escenarios RN-web, incluidos
-controles compartidos, enlaces en movimiento y hotspots. Shader se
-comprobó con WebGL real del navegador.
+Los bloques de aprendizaje conservan la QA anterior en RN-web, incluidos controles
+compartidos y enlaces en movimiento. Shader se comprobó con WebGL real del navegador.
 [Informe de aprendizaje y capturas](../design/qa-learning-2026-10-06/report.md).
 
-Secuenciador y Trazos están integrados. La QA del Secuenciador pasó 14 casos con señal
-Web Audio medida en Chromium bajo RN-web, sin escuchar un dispositivo físico. Otra pasada
-de 12 casos con el Panel real comprobó su
-convivencia con los trazos, los controles de teclado y el crédito de escucha después de
-editar. [Resultados y capturas](../design/qa-cierre-2026-10-06/).
+Trazos está integrado. Una pasada con el Panel real comprobó los trazos anclados, la
+identificación del autor, el borrado propio y los controles de teclado.
+[Resultados y capturas](../design/qa-cierre-2026-10-06/).
 
 La barra contextual ofrece acciones para bloques, grupos, selección múltiple y enlaces.
 Instrucción permite editar indicaciones propias, consultar las heredadas y vaciar con
@@ -117,15 +105,12 @@ deshacer. Los popovers de Datos y Disposición sustituyen el inspector genérico
 edita el texto de un enlace en el lienzo; Escape cancela sin escribir. En compacto hay
 Deshacer y Añadir en la cabecera y una barra de 48 px sobre el compositor.
 
-Reiniciar desde la barra utiliza el mismo handler del bloque. En Secuenciador cierra el
-audio y cancela ediciones pendientes antes de guardar; un rechazo muestra un error y no
-envía un evento de éxito. Sacar del grupo mueve una tarjeta junto con sus anotaciones;
+Reiniciar desde la barra utiliza el mismo handler del bloque; un rechazo muestra un error
+y no envía un evento de éxito. Sacar del grupo mueve una tarjeta junto con sus anotaciones;
 si sacas sólo el dibujo, lo desvincula y conserva su posición.
 
-La comprobación final del conjunto pasó 35 casos RN-web: 18 de acciones contextuales,
-12 de convivencia de Trazos/Secuenciador y cinco de la guía. El AudioHost del caso de
-reset contextual está instrumentado; la convivencia usa Web Audio del navegador, sin
-dispositivo físico. [Informe final y capturas](../design/qa-final-integration-2026-10-06/report.md).
+La comprobación final del conjunto volvió a ejecutar en RN-web las acciones contextuales,
+los trazos anclados y la guía. [Informe final y capturas](../design/qa-final-integration-2026-10-06/report.md).
 
 Paseo instalado, dispositivos nativos y nuevas interacciones con un agente real siguen
 sin verificarse. Las pruebas de navegador usan un host y transporte sustitutos, sin

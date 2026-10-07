@@ -12,23 +12,6 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 const { WebCanvasSurface, WebGLSurface, WebRange, compileGLProgram, MAX_LIVE_GL_CONTEXTS } = require('../plugin/client/web');
 const { CanvasSurface, GLSurface, NativeLearningFallback } = require('../plugin/client/Surfaces');
 const { controlsRenderer } = require('../plugin/client/renderers/controls');
-const { imageLoadDimensions } = require('../plugin/client/web');
-test('image load dimensions accept native source and RN-web target without trusting authored ratios', () => {
-  assert.deepEqual(imageLoadDimensions({ nativeEvent: { source: { width: 640, height: 420 } } }), { width: 640, height: 420 });
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
-  try {
-    Object.defineProperty(globalThis, 'document', { configurable: true, value: {} });
-    Platform.OS = 'web';
-    assert.deepEqual(imageLoadDimensions({ nativeEvent: { target: { naturalWidth: 640, naturalHeight: 420 } } }), { width: 640, height: 420 });
-    assert.equal(imageLoadDimensions({ nativeEvent: { target: { naturalWidth: 0, naturalHeight: 420 } } }), null);
-    assert.equal(imageLoadDimensions({ nativeEvent: {} }), null);
-    Platform.OS = 'ios';
-    assert.equal(imageLoadDimensions({ nativeEvent: { target: { naturalWidth: 640, naturalHeight: 420 } } }), null);
-  } finally {
-    Platform.OS = 'web';
-    if (previous) Object.defineProperty(globalThis, 'document', previous); else Reflect.deleteProperty(globalThis, 'document');
-  }
-});
 const children = (node: Element): Element[] => (Array.isArray(node.props.children) ? node.props.children.flat(Infinity) : [node.props.children]).filter((x: unknown) => x && typeof x === 'object');
 const find = (node: Element, type: unknown): Element | undefined => node.type === type ? node : children(node).map(n => find(n, type)).find(Boolean);
 function harness(kind: '2d' | 'webgl', props: Record<string, unknown>, gl?: Record<string, unknown>) {
