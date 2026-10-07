@@ -49,6 +49,6 @@ export function RegisteredRenderer({ block, id, controller, readOnly, send }: {
   };
   const scopedScope = { ...scope, set: (...args: Parameters<typeof scope.set>) => { if (active()) scope.set(...args); } };
   return <View nativeID={spec?.interactive ? `lienzo-interactive-renderer-${block.id}` : undefined} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
-    <Component key={rendererKey} document={presentation?.document ?? controller.view.document} data={parsed.data} block={block} availableWidth={width} compact={ui.compact} readOnly={readOnly} ui={ui} runtime={scopedRuntime} scope={scopedScope} send={send} />
+    <Component key={rendererKey} document={presentation?.document ?? controller.view.document} data={parsed.data} block={block} availableWidth={width} compact={ui.compact} readOnly={readOnly} ui={ui} runtime={scopedRuntime} scope={scopedScope} send={send} selection={controller.selection} select={ids => { void controller.select(ids); }} />
   </View>;
 }

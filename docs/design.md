@@ -1351,5 +1351,8 @@ Verified in RN-web (isolated omabox): `design/whiteboard-harness/chrome.cjs`; ca
 gap 6. Names in the code face, 600 for directories and highlighted entries; the note follows the name in
 `small` muted on the same line, truncated. A highlighted row has an accent wash (0.14) and accent name; a
 muted entry and everything under it is at 0.5. A closed directory shows its child count on the right.
-Only directories with children are pressable. Verified with `design/whiteboard-harness/tree.cjs`
+An entry paired with a card (explicit `ref`, or a card titled after its path) shows a 12 px arrow at the
+right; pressing the row selects that card (pressing again clears it) and, on a paired folder, the chevron
+alone opens and closes it. While its card is selected the row has a stronger accent wash (0.24) and an
+accent name. Unpaired rows are pressable only when they are directories with children. Verified with `design/whiteboard-harness/tree.cjs`
 (RN-web, isolated omabox); capture `design/qa-shapes-legibility-2026-10-06/file-tree.png`.

@@ -60,6 +60,7 @@ type CardProps = Pick<BlockItemProps, 'interacting' | 'block' | 'height' | 'sele
 function sameCard(a: CardProps, b: CardProps) {
   const id = a.block.id, p = a.controller, n = b.controller, pe = lastEvent(p, id), ne = lastEvent(n, id);
   return a.interacting === b.interacting && a.block === b.block && a.selected === b.selected && a.lifted === b.lifted && a.height === b.height && a.detailsSide === b.detailsSide && a.cursor === b.cursor
+    && (p.selection === n.selection || p.catalog?.blockTypes.find(t => t.id === a.block.typeId)?.renderer !== 'file-tree')
     && p.catalog === n.catalog && p.offline === n.offline && p.failure === n.failure && p.pendingIds.includes(id) === n.pendingIds.includes(id) && (!a.selected || (p.selection.length === 1) === (n.selection.length === 1))
     && (p.busy === n.busy || p.catalog?.blockTypes.find(t => t.id === a.block.typeId)?.renderer === 'node')
     && p.view?.document.example === n.view?.document.example && pe?.id === ne?.id && pe?.status === ne?.status && pe?.error === ne?.error;

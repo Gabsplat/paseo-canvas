@@ -8,6 +8,8 @@ export type RendererProps<Data = unknown> = {
   data: Data; block: CanvasBlock; availableWidth: number; compact: boolean; readOnly: boolean;
   ui: ReturnType<typeof useUI>; runtime: RendererRuntime; scope: RendererScope;
   send(kind: string, payload: CanvasBlock['data'], label: string, delivery?: 'immediate' | 'batched'): Promise<void>;
+  /** The canvas selection, and a way to move it: how a renderer points at other cards. Absent outside a canvas. */
+  selection?: readonly string[]; select?(ids: string[]): void;
 };
 export type RendererVisual = { icon: string; tone: string; width: 'standard' | 'wide' | 'node' };
 export type LinkMotionToken = { linkId: string; progress: number; kind: 'message' | 'signal' | 'value'; label: string; sign?: 1 | -1; delay?: number };

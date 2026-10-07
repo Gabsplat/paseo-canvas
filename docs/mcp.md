@@ -450,3 +450,7 @@ slash marks a directory and unlisted parents are implied. `note` (≤120 charact
 for, `highlight` marks the few entries the explanation is about, `muted` marks generated or vendored ones
 (children inherit it), and `collapsed` lists directories that start closed. Opening and closing is local to
 the reader and never written to the document.
+An entry may carry `ref`, the ID of the block or group that explains it: pressing the entry selects that
+card, and selecting the card lights the entry. Without `ref`, an entry pairs with the card or group whose
+title is its path (`lib/`, `db/migrations/`, or `spine/ · bases/` for two). `ref` is remapped when a
+subtree or template is copied.
