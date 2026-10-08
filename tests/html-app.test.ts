@@ -29,3 +29,23 @@ test('a mini app is created and rewritten through the real service, and the agen
   assert.ok((await service.catalog()).blockTypes.some(type => type.id === 'html' && type.name === 'Mini app'));
   void workspaceId;
 });
+test('the bridge tells a mini app where its window is, and believes only the canvas page', async () => {
+  const { readFile } = await import('node:fs/promises'), vm = await import('node:vm');
+  // The bridge is text shipped into a frame; it is read here as text because its module needs a browser.
+  const source = await readFile('plugin/client/web.ts', 'utf8'), literal = /export const HTML_APP_BRIDGE = ("(?:[^"\\]|\\.)*");/.exec(source);
+  assert.ok(literal, 'bridge found'); const script = (JSON.parse(literal[1]) as string).replace(/^<script>|<\/script>$/g, '');
+  const sent: { type: string }[] = [], listeners: ((e: { source: unknown; data: unknown }) => void)[] = [], parent = { postMessage: (m: never) => { sent.push(m); } };
+  const window: Record<string, unknown> = {}, sandbox = { window, parent, document: { documentElement: { style: {} } }, addEventListener: (_: string, f: never) => { listeners.push(f); } };
+  vm.runInNewContext(script, sandbox);
+  const lienzo = window.lienzo as { frame: unknown; context: unknown; onFrame(f: (frame: unknown) => void): void }, deliver = (data: unknown, from: unknown = parent) => listeners.forEach(f => f({ source: from, data }));
+  assert.equal(sent[0].type, 'ready'); assert.equal(lienzo.frame, null);
+  const seen: unknown[] = []; lienzo.onFrame(f => seen.push(f));
+  const frame = { x: 10, y: 20, width: 300, height: 200, others: [{ x: 400, y: 20, width: 300, height: 200 }] };
+  deliver({ lienzo: 1, type: 'frame', frame }); assert.deepEqual(seen, [frame]); assert.deepEqual(lienzo.frame, frame);
+  const late: unknown[] = []; lienzo.onFrame(f => late.push(f)); assert.deepEqual(late, [frame], 'a late listener gets the current frame at once');
+  // Another mini app can post here, but not as the canvas.
+  deliver({ lienzo: 1, type: 'frame', frame: { x: 0 } }, {}); deliver({ lienzo: 1, type: 'context', context: { theme: { dark: true } } }, {});
+  assert.deepEqual(lienzo.frame, frame); assert.equal(lienzo.context, null);
+  deliver({ lienzo: 1, type: 'context', context: { theme: { dark: true } } }); assert.deepEqual(lienzo.context, { theme: { dark: true } });
+  assert.ok(getRendererSpec('html')!.guidance!.includes('lienzo.onFrame'));
+});

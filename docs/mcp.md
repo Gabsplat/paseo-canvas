@@ -466,7 +466,8 @@ CSS and JavaScript is allowed; there are no preset components. It runs sandboxed
 canvas page; scripts and network requests are allowed. The injected `lienzo` object is the only channel:
 `lienzo.send(kind, payload)` arrives as a canvas event of kind `html.event` with
 `payload: { event, data }`; `lienzo.onContext(fn)` gives `{ theme: { dark, colors }, block, document,
-selection }`; `lienzo.select(id)`; `lienzo.resize(height)`. Update the page with `block.update` on
+selection }`; `lienzo.select(id)`; `lienzo.resize(height)`; `lienzo.onFrame(fn)` gives `{ x, y, width, height, others }` in
+screen pixels, this window and the other mini apps, on every move. Update the page with `block.update` on
 `data.html`. For projects with several files or a server, run them and use a `preview` block with `data.url`.
 
 ## Extensions

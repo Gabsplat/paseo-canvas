@@ -76,8 +76,11 @@ export function WebFrame({ url, title, border, height, surface, player = false, 
   return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-frame-${title}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height, width: '100%', border: bare ? 0 : `1px solid ${border}`, borderRadius: bare ? 0 : 6, overflow: 'hidden', backgroundColor: surface } },
     React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0, pointerEvents: interacting ? 'auto' : 'none' }, 'aria-label': loaded ? title : `Cargando ${title}` }), !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
-/** What every mini app gets before its own code: a `lienzo` object that talks to the canvas through messages. */
-const HTML_APP_BRIDGE = "<script>(function(){var l=[],c=null;function post(m){m.lienzo=1;parent.postMessage(m,'*')}window.lienzo={send:function(k,p){post({type:'event',kind:String(k),payload:p===undefined?null:p})},resize:function(h){post({type:'resize',height:Number(h)})},select:function(id){post({type:'select',id:String(id)})},onContext:function(f){l.push(f);if(c)f(c)},get context(){return c}};addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||d.type!=='context')return;c=d.context;try{document.documentElement.style.colorScheme=c.theme.dark?'dark':'light'}catch(_){}l.forEach(function(f){try{f(c)}catch(_){}})});post({type:'ready'})})();</script>";
+/**
+ * What every mini app gets before its own code: a `lienzo` object that talks to the canvas through messages. It only
+ * believes messages from the canvas page: mini apps can post to each other, and one must not pass for the canvas.
+ */
+export const HTML_APP_BRIDGE = "<script>(function(){var l=[],c=null,m=[],r=null;function post(m){m.lienzo=1;parent.postMessage(m,'*')}window.lienzo={send:function(k,p){post({type:'event',kind:String(k),payload:p===undefined?null:p})},resize:function(h){post({type:'resize',height:Number(h)})},select:function(id){post({type:'select',id:String(id)})},onContext:function(f){l.push(f);if(c)f(c)},get context(){return c},onFrame:function(f){m.push(f);if(r)f(r)},get frame(){return r}};addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||e.source!==parent)return;if(d.type==='frame'){r=d.frame;m.forEach(function(f){try{f(r)}catch(_){}});return}if(d.type!=='context')return;c=d.context;try{document.documentElement.style.colorScheme=c.theme.dark?'dark':'light'}catch(_){}l.forEach(function(f){try{f(c)}catch(_){}})});post({type:'ready'})})();</script>";
 export type HtmlAppMessage = { type: 'ready' } | { type: 'event'; kind: unknown; payload: unknown } | { type: 'resize'; height: unknown } | { type: 'select'; id: unknown };
 /**
  * A page written by the author or an agent, running in a sandboxed frame with an opaque origin: scripts run, but it
@@ -98,9 +101,27 @@ export function WebHtml({ id, html, title, surface, context, onMessage }: { id: 
     host.addEventListener('message', listen); return () => { host.removeEventListener?.('message', listen); ready.current = false; };
   }, [html]);
   const key = JSON.stringify(context); useEffect(() => { if (ready.current) post(); }, [key]);
+  // The page also hears where its window is on screen and where the other mini apps are, every time that changes: a
+  // drag never reaches the document until it ends, so this is how a page reacts to being moved or to what is beside it.
+  useEffect(() => {
+    type Box = { getBoundingClientRect(): { left: number; top: number; width: number; height: number } };
+    const host = globalThis as unknown as { requestAnimationFrame?(tick: () => void): number; cancelAnimationFrame?(id: number): void; document?: { querySelectorAll(selector: string): ArrayLike<Box> } };
+    if (Platform.OS !== 'web' || !host.requestAnimationFrame || !host.document) return;
+    const box = (node: Box) => { const r = node.getBoundingClientRect(); return { x: Math.round(r.left * 10) / 10, y: Math.round(r.top * 10) / 10, width: Math.round(r.width * 10) / 10, height: Math.round(r.height * 10) / 10 }; };
+    let request = 0, sent = '';
+    const tick = () => {
+      request = host.requestAnimationFrame!(tick);
+      const self = frame.current as unknown as (Box & { contentWindow?: { postMessage(message: unknown, target: string): void } | null }) | null;
+      if (!self?.contentWindow || !ready.current) { sent = ''; return; }
+      const message = { ...box(self), others: Array.from(host.document!.querySelectorAll('iframe[data-lienzo-app]')).filter(node => node !== self).map(box) }, text = JSON.stringify(message);
+      if (text === sent) return;
+      sent = text; try { self.contentWindow.postMessage({ lienzo: 1, type: 'frame', frame: message }, '*'); } catch {}
+    };
+    request = host.requestAnimationFrame(tick); return () => host.cancelAnimationFrame?.(request);
+  }, [html]);
   if (Platform.OS !== 'web') return null;
   return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-html-${id}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height: '100%', width: '100%', overflow: 'hidden', backgroundColor: surface } },
-    React.createElement('iframe', { key: html, ref: frame, srcDoc: HTML_APP_BRIDGE + html, title, sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups', referrerPolicy: 'no-referrer', allow: 'fullscreen', style: { width: '100%', height: '100%', border: 0, display: 'block', pointerEvents: interacting ? 'auto' : 'none' } }),
+    React.createElement('iframe', { key: html, ref: frame, srcDoc: HTML_APP_BRIDGE + html, title, 'data-lienzo-app': 'true', sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups', referrerPolicy: 'no-referrer', allow: 'fullscreen', style: { width: '100%', height: '100%', border: 0, display: 'block', pointerEvents: interacting ? 'auto' : 'none' } }),
     !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 export type ExtensionCall = { method: string; args: Record<string, unknown> };
