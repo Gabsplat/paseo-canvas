@@ -40,7 +40,9 @@ export function forkPack(source: CanvasPack, id = newId('pack')): CanvasPack {
   const types = new Map(source.blockTypes.map((t, i) => [t.id, `${id}.type${i}`])), templates = new Map(source.templates.map((t, i) => [t.id, `${id}.template${i}`]));
   const block = (b: CanvasBlock) => ({ ...b, typeId: types.get(b.typeId) ?? b.typeId });
   const group = (g: CanvasGroup) => ({ ...g, templateId: g.templateId ? templates.get(g.templateId) : undefined });
-  return { ...source, id, name: `${source.name} · copia portable`, blockTypes: source.blockTypes.map(t => ({ ...t, id: types.get(t.id)! })), templates: source.templates.map(t => ({ ...t, id: templates.get(t.id)!, blocks: t.blocks.map(block), groups: t.groups.map(group) })), documents: source.documents.map(d => ({ ...d, blocks: d.blocks.map(block), groups: d.groups.map(group) })) };
+  return { ...source, id, name: `${source.name} · copia portable`, blockTypes: source.blockTypes.map(t => ({ ...t, id: types.get(t.id)! })), templates: source.templates.map(t => ({ ...t, id: templates.get(t.id)!, blocks: t.blocks.map(block), groups: t.groups.map(group) })), documents: source.documents.map(d => ({ ...d, blocks: d.blocks.map(block), groups: d.groups.map(group) })),
+    // An extension keeps its own name inside the new namespace, so a copy of a copy stays recognisable.
+    extensions: (source.extensions ?? []).map((e, i) => ({ ...e, id: `${id}.${e.id.startsWith(`${source.id}.`) ? e.id.slice(source.id.length + 1) : `ext${i}`}`.slice(0, 100) })) };
 }
 export function selectionPack(doc: CanvasDocument, catalog: CanvasCatalog, ids: string[]): CanvasPack {
   const included = new Set(ids);
@@ -51,7 +53,7 @@ export function selectionPack(doc: CanvasDocument, catalog: CanvasCatalog, ids: 
   content.groups = doc.groups.filter(g => included.has(g.id)).map(g => ({ ...g, parentGroupId: g.parentGroupId && included.has(g.parentGroupId) ? g.parentGroupId : null, blockIds: g.blockIds.filter(id => included.has(id)), groupIds: g.groupIds.filter(id => included.has(id)) }));
   content.links = (doc.links ?? []).filter(l => included.has(l.from) && included.has(l.to));
   content.selectedIds = [];
-  return forkPack({ format: 'paseo-canvas-pack', version: 1, id: 'selection', name: `Selección de ${doc.title}`, description: doc.description, blockTypes: catalog.blockTypes.filter(t => content.blocks.some(b => b.typeId === t.id)), templates: [], documents: [content] });
+  return forkPack({ format: 'paseo-canvas-pack', version: 1, id: 'selection', name: `Selección de ${doc.title}`, description: doc.description, blockTypes: catalog.blockTypes.filter(t => content.blocks.some(b => b.typeId === t.id)), templates: [], documents: [content], extensions: [] });
 }
 export function safeUrl(input: unknown): string | null {
   if (typeof input !== 'string' || !/^https?:\/\//i.test(input)) return null;

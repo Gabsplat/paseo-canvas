@@ -4,12 +4,12 @@ import type { RpcInput } from "@getpaseo/plugin";
 import * as rpc from "../shared/rpc";
 import {
   documentContentSchema, documentSchema, catalogMutateInputSchema,
-  type CanvasDocument, type DocumentView, type AgentEvent,
+  type CanvasDocument, type CanvasPack, type DocumentView, type AgentEvent,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
 import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
-import { catalogView, packDiff, packIssues, parsePack, validateTemplate, validateType } from "./catalog";
+import { catalogView, packDiff, packIssues, parsePack, validateExtension, validateTemplate, validateType } from "./catalog";
 import { clone, newId, reduce, validateDocument, normalizeBlock, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
 
 const timestamp = () => new Date().toISOString();
@@ -27,6 +27,11 @@ const view = (record: DocumentRecord, actor: Actor = "user", agentId?: string): 
   selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion, runtime: clone(record.runtime),
 });
 const touchRuntime = (record: RuntimeRecord) => { record.runtimeVersion++; };
+/** A grant is for the code that was approved: an extension that is new or different in the replacing pack needs approval again. */
+function keptGrants(grants: string[], old: CanvasPack | undefined, next: CanvasPack): string[] {
+  const before = new Map((old?.extensions ?? []).map(extension => [extension.id, JSON.stringify(extension)])), mine = new Set([...(old?.extensions ?? []), ...next.extensions].map(extension => extension.id));
+  return grants.filter(id => !mine.has(id) || next.extensions.some(extension => extension.id === id && before.get(id) === JSON.stringify(extension)));
+}
 function recordEdit(record: DocumentRecord, next: CanvasDocument, actor: Actor, label: string, kind: HistoryEntry["kind"] = "edit", target?: string, agentId?: string): void {
   const before = clone(record.document);
   next.revision = before.revision + 1;
@@ -199,11 +204,25 @@ export class CanvasService {
           const pack = parsePack(action.pack, current);
           const old = state.catalog.packs.find(pack => pack.id === action.pack.id);
           if (old && !action.replace) throw new CanvasError("VALIDATION", "Pack already exists; pass replace:true explicitly.");
-          state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; break;
+          state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.grants = keptGrants(state.catalog.grants, old, pack); break;
         }
-        case "pack.remove":
-          if (!state.catalog.packs.some(pack => pack.id === action.id)) throw new CanvasError("NOT_FOUND", "User pack was not found.");
-          state.catalog.packs = state.catalog.packs.filter(pack => pack.id !== action.id); break;
+        case "pack.remove": {
+          const gone = state.catalog.packs.find(pack => pack.id === action.id);
+          if (!gone) throw new CanvasError("NOT_FOUND", "User pack was not found.");
+          state.catalog.packs = state.catalog.packs.filter(pack => pack.id !== action.id);
+          state.catalog.grants = state.catalog.grants.filter(id => !gone.extensions.some(extension => extension.id === id)); break;
+        }
+        case "extension.put":
+          validateExtension(action.extension, current);
+          state.catalog.localExtensions = [...state.catalog.localExtensions.filter(extension => extension.id !== action.extension.id), clone(action.extension)]; break;
+        case "extension.remove":
+          if (!state.catalog.localExtensions.some(extension => extension.id === action.id)) throw new CanvasError("NOT_FOUND", "Local extension was not found. Extensions that came in a pack are removed with their pack.");
+          state.catalog.localExtensions = state.catalog.localExtensions.filter(extension => extension.id !== action.id); break;
+        case "extension.grant": {
+          const held = current.extensions.find(extension => extension.id === action.id);
+          if (!held || held.source === "local" || held.source === "builtin") throw new CanvasError("NOT_FOUND", "Only an extension that came in an imported pack is granted or revoked.");
+          state.catalog.grants = [...state.catalog.grants.filter(id => id !== action.id), ...(action.granted ? [action.id] : [])]; break;
+        }
       }
       state.catalog.revision++;
       return catalogView(state.catalog);
@@ -215,7 +234,7 @@ export class CanvasService {
       const catalog = catalogView(state.catalog), pack = parsePack(input.pack, catalog), old = state.catalog.packs.find(item => item.id === pack.id);
       if (old && !input.replace) throw new CanvasError("VALIDATION", "Pack already exists; pass replace:true explicitly.");
       const diff = packDiff(old, pack);
-      if (!input.dryRun) { state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.revision++; }
+      if (!input.dryRun) { state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.grants = keptGrants(state.catalog.grants, old, pack); state.catalog.revision++; }
       return { catalog: catalogView(state.catalog), diff, committed: !input.dryRun };
     });
   }

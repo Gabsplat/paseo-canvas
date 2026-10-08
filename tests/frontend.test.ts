@@ -13,7 +13,7 @@ import { alignmentGuides, connectionsOf, connectOperations, containerMode, descr
 import { initialDocumentId, rememberOpenDocument } from '../plugin/client/session';
 import { linkMagnet, minimumBlockSize, resizeBlockSize } from '../plugin/client/logic';
 import { frameSandbox, mediaSource } from '../plugin/client/media';
-const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks };
+const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks, extensions: [] };
 test('media URLs resolve to safe players, preserve timestamps and Vimeo privacy hashes, and do not enable autoplay', () => {
   for (const url of ['https://youtube.com/watch?v=M7lc1UVf-VE&t=1m12s&autoplay=1', 'https://youtu.be/M7lc1UVf-VE?t=72', 'https://www.youtube.com/shorts/M7lc1UVf-VE?start=72', 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE?start=72']) {
     const media = mediaSource(url)!; assert.equal(media.provider, 'YouTube');
@@ -460,7 +460,7 @@ test('clearing communication removes its effective level without changing group 
   assert.equal(hasCommunication({ ...empty, audience: 'Team' }), true);
 });
 test('shipped example export forks into an importable portable namespace', () => {
-  for (const pack of builtinPacks) { const fork = forkPack(pack, `copy-${pack.id}`); const parsed = parsePack(JSON.parse(JSON.stringify(fork)), catalog); assert.equal(parsed.id, `copy-${pack.id}`); assert.ok(parsed.templates.every(t => t.id.startsWith(`${parsed.id}.`))); assert.equal(parsed.documents[0].example, true); }
+  for (const pack of builtinPacks) { const fork = forkPack(pack, `copy-${pack.id}`); const parsed = parsePack(JSON.parse(JSON.stringify(fork)), catalog); assert.equal(parsed.id, `copy-${pack.id}`); assert.ok(parsed.templates.every(t => t.id.startsWith(`${parsed.id}.`))); assert.ok(parsed.extensions.every(e => e.id.startsWith(`${parsed.id}.`))); assert.equal(parsed.extensions.length, pack.extensions.length); if (parsed.documents.length) assert.equal(parsed.documents[0].example, true); }
 });
 test('form properties are typed and URL previews reject executable schemes and credentials', () => {
   assert.equal(propertyValue('boolean', false), false); assert.equal(propertyValue('boolean', 'true'), true); assert.throws(() => propertyValue('boolean', 'yes'));

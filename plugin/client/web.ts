@@ -103,6 +103,33 @@ export function WebHtml({ id, html, title, surface, context, onMessage }: { id: 
     React.createElement('iframe', { key: html, ref: frame, srcDoc: HTML_APP_BRIDGE + html, title, sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups', referrerPolicy: 'no-referrer', allow: 'fullscreen', style: { width: '100%', height: '100%', border: 0, display: 'block', pointerEvents: interacting ? 'auto' : 'none' } }),
     !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
+export type ExtensionCall = { method: string; args: Record<string, unknown> };
+/**
+ * The frame an extension runs in. Same isolation as a mini app (opaque origin, scripts only), always interactive, and
+ * a request/response channel on top: the page calls a method, `onCall` answers or throws, and the page gets the result.
+ * `revision` says when the context is worth sending again, so a large document is not serialised on every render.
+ */
+export function WebExtension({ id, source, title, surface, context, revision, onCall }: { id: string; source: string; title: string; surface: string; context: unknown; revision: string; onCall(call: ExtensionCall): Promise<unknown> }) {
+  const frame = useRef<{ contentWindow?: { postMessage(message: unknown, target: string): void } | null } | null>(null), ready = useRef(false), latest = useRef({ context, onCall }); latest.current = { context, onCall };
+  const post = (message: Record<string, unknown>) => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, ...message }, '*'); } catch {} };
+  useEffect(() => {
+    const host = globalThis as unknown as { addEventListener?(type: string, listener: (event: { source: unknown; data: unknown }) => void): void; removeEventListener?(type: string, listener: (event: { source: unknown; data: unknown }) => void): void };
+    if (Platform.OS !== 'web' || !host.addEventListener) return;
+    const listen = (event: { source: unknown; data: unknown }) => {
+      const data = event.data as { lienzo?: unknown; type?: unknown; id?: unknown; method?: unknown; args?: unknown } | null;
+      if (!frame.current?.contentWindow || event.source !== frame.current.contentWindow || !data || data.lienzo !== 1) return;
+      if (data.type === 'ready') { ready.current = true; post({ type: 'context', context: latest.current.context }); }
+      else if (data.type === 'call' && typeof data.id === 'number' && typeof data.method === 'string') { const callId = data.id;
+        Promise.resolve().then(() => latest.current.onCall({ method: data.method as string, args: data.args && typeof data.args === 'object' ? data.args as Record<string, unknown> : {} }))
+          .then(value => post({ type: 'result', id: callId, ok: true, value: value ?? null }), error => post({ type: 'result', id: callId, ok: false, error: error instanceof Error ? error.message : String(error) })); }
+    };
+    host.addEventListener('message', listen); return () => { host.removeEventListener?.('message', listen); ready.current = false; };
+  }, [source]);
+  useEffect(() => { if (ready.current) post({ type: 'context', context: latest.current.context }); }, [revision]);
+  if (Platform.OS !== 'web') return null;
+  return React.createElement('div', { id: `lienzo-extension-${id}`, 'data-lienzo-interacting': 'true', style: { position: 'relative', height: '100%', width: '100%', overflow: 'hidden', backgroundColor: surface } },
+    React.createElement('iframe', { key: source, ref: frame, srcDoc: source, title, sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock', referrerPolicy: 'no-referrer', style: { width: '100%', height: '100%', border: 0, display: 'block' } }));
+}
 /** Uses browser controls, with no playback loop in React. No media implementation is loaded on native. */
 export function WebMedia({ url, title, kind, height, surface, onError }: { url: string; title: string; kind: 'video' | 'audio'; height: number | '100%'; surface: string; onError: () => void }) {
   const interacting = useContentInteraction(), element = useRef<{ pause(): void } | null>(null), safe = safeUrl(url);

@@ -468,3 +468,10 @@ canvas page; scripts and network requests are allowed. The injected `lienzo` obj
 `payload: { event, data }`; `lienzo.onContext(fn)` gives `{ theme: { dark, colors }, block, document,
 selection }`; `lienzo.select(id)`; `lienzo.resize(height)`. Update the page with `block.update` on
 `data.html`. For projects with several files or a server, run them and use a `preview` block with `data.url`.
+
+## Extensions
+
+`canvas_catalog` also lists, reads, saves and removes extensions: `list` returns `extensions` (ID, kind, name,
+description, permissions, source) and `extensionGuide`, the whole frame API as text; `read { id }` returns one with
+its page; `save_extension { expectedRevision, extension }` adds or replaces a local one; `remove_extension` deletes a
+local one. Like every catalog write it needs the person's approval. The contract is in `docs/extensions.md`.

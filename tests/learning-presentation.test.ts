@@ -20,7 +20,7 @@ function fixture() {
       { id: 'result', typeId: 'node', title: 'SECRET TITLE', data: { summary: 'SECRET SUMMARY', details: 'SECRET DETAILS', status: 'SECRET STATUS' }, communication: { intent: '', audience: '', instructions: 'SECRET HINT' } },
     ], links: [{ id: 'link', from: 'g1', to: 'result', label: 'SECRET LINK', kind: 'flow' }],
   };
-  const catalog: CanvasCatalog = { revision: 1, templates: [], packs: [], blockTypes: [...builtinTypes, { ...controlsSpec.blockType, id: 'gate', renderer: 'test-gate' }] };
+  const catalog: CanvasCatalog = { revision: 1, templates: [], packs: [], extensions: [], blockTypes: [...builtinTypes, { ...controlsSpec.blockType, id: 'gate', renderer: 'test-gate' }] };
   const runtime: RuntimeState = { blocks: {}, scopes: {} };
   const lookup = (id?: string) => id === 'test-gate' ? { ...controlsSpec, hiddenTargets: (data: unknown, state: Record<string, unknown>) => state.revealed ? [] : [(data as { target: string }).target] } : undefined;
   return { document, catalog, runtime, lookup, present: () => canvasPresentation(document, catalog, runtime, lookup) };

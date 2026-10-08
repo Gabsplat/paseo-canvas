@@ -4,7 +4,8 @@ import { builtinTypes, builtinTemplates, builtinPacks } from '../../plugin/share
 import { documentViewSchema, documentSummarySchema, documentContentSchema, type CanvasDocument } from '../../plugin/shared/model';
 import { reduce } from '../../plugin/server/reducer';
 export type PluginHostProps = any; export type PluginWorkspacePanelProps = any;
-const catalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks };
+import { builtinExtensions } from '../../plugin/shared/extensions';
+const catalog: any = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks, extensions: builtinExtensions.map(e => ({ ...e, source: 'builtin', granted: true })) };
 const communication = { instructions: '', intent: '', audience: '' };
 let doc: CanvasDocument = {
  id:'qa-board',workspaceId:'qa-workspace',title:'Pizarra de prueba',description:'Datos de ejemplo para QA, sin asistente conectado.',example:true,
@@ -19,12 +20,20 @@ const undo:CanvasDocument[]=[], redo:CanvasDocument[]=[], log:any[]=[], errors:a
 const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime}));
 // `seed` stands in for another author; `seedAgent` runs the reducer as the assistant actor. `actions` records what
 // would be delivered: nothing here reaches an assistant.
-(globalThis as any).__panelQA={setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};},view:snapshot};
+(globalThis as any).__panelQA={setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};},view:snapshot};
 async function invoke(contract:any, raw:any) {
  const input=contract.input.parse(raw), name=contract.name;
  let output:any;
  if(name==='canvas.list'){const {id,workspaceId,title,description,example,revision,updatedAt}=doc;output={documents:[documentSummarySchema.parse({id,workspaceId,title,description,example,revision,updatedAt})]};}
  else if(name==='canvas.catalog.read') output=catalog;
+ else if(name==='canvas.catalog.mutate'){
+   // Only what the extension UI needs: saving a local one, removing it, and granting an imported one.
+   const a=input.action;if(a.type==='extension.put')catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==a.extension.id),{...a.extension,source:'local',granted:true}];
+   else if(a.type==='extension.remove')catalog.extensions=catalog.extensions.filter((e:any)=>e.id!==a.id);
+   else if(a.type==='extension.grant')catalog.extensions=catalog.extensions.map((e:any)=>e.id===a.id?{...e,granted:a.granted}:e);
+   else throw Error('QA host does not implement catalog '+a.type);
+   catalog.revision++;output=catalog;
+ }
  else if(name==='canvas.read') output=snapshot();
  else if(name==='canvas.watch') output={revision:doc.revision,runtimeVersion,...(input.knownRevision!==doc.revision?{view:snapshot()}:{})};
  else if(name==='canvas.agent.events') output={events:[]};

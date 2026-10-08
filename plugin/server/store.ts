@@ -116,7 +116,7 @@ export class CanvasStore {
     try { this.state = stateSchema.parse(JSON.parse(await readFile(this.file, "utf8"))); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new CanvasError("UNAVAILABLE", "Canvas state is unreadable or invalid; it was not overwritten.");
-      this.state = { format: "paseo-canvas-state/1", commit: 0, documents: {}, catalog: { revision: 0, localTypes: [], localTemplates: [], packs: [] }, owners: {}, injection: { revision: 0, workspaceIds: [] }, sharing: {} };
+      this.state = { format: "paseo-canvas-state/1", commit: 0, documents: {}, catalog: { revision: 0, localTypes: [], localTemplates: [], packs: [], localExtensions: [], grants: [] }, owners: {}, injection: { revision: 0, workspaceIds: [] }, sharing: {} };
       await this.persist(this.state);
     }
     for (const record of Object.values(this.state.documents)) validateDocument(record.document);

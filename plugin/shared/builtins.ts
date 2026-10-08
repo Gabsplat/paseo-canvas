@@ -1,3 +1,4 @@
+import { builtinExtensions } from "./extensions";
 import { rendererSpecs } from "./renderers";
 import type { BlockType, CanvasPack, DocumentContent, GroupTemplate } from "./model";
 
@@ -67,7 +68,8 @@ export const builtinTemplates: GroupTemplate[] = [
   { id: "progressive-lesson", name: "Lección progresiva", description: learning.groups[0].description, blocks: learning.blocks, groups: learning.groups, links: [] },
 ];
 export const builtinPacks: CanvasPack[] = [
-  { format: "paseo-canvas-pack", version: 1, id: "frontend", name: "Ejemplo frontend", description: "Datos de ejemplo para revisar una interfaz.", blockTypes: [], templates: [builtinTemplates[0]], documents: [frontend] },
-  { format: "paseo-canvas-pack", version: 1, id: "learn", name: "Ejemplo de aprendizaje", description: "Datos de ejemplo para aprender progresivamente.", blockTypes: [], templates: [builtinTemplates[1]], documents: [learning] },
-  { format: "paseo-canvas-pack", version: 1, id: "graph", name: "Ejemplo: arquitectura de Lienzo", description: "Mapa de ejemplo con nodos, grupos y conexiones del propio Lienzo. No representa actividad real.", blockTypes: [], templates: [], documents: [graph] },
+  { format: "paseo-canvas-pack", version: 1, id: "frontend", name: "Ejemplo frontend", description: "Datos de ejemplo para revisar una interfaz.", blockTypes: [], templates: [builtinTemplates[0]], documents: [frontend], extensions: [] },
+  { format: "paseo-canvas-pack", version: 1, id: "learn", name: "Ejemplo de aprendizaje", description: "Datos de ejemplo para aprender progresivamente.", blockTypes: [], templates: [builtinTemplates[1]], documents: [learning], extensions: [] },
+  { format: "paseo-canvas-pack", version: 1, id: "graph", name: "Ejemplo: arquitectura de Lienzo", description: "Mapa de ejemplo con nodos, grupos y conexiones del propio Lienzo. No representa actividad real.", blockTypes: [], templates: [], documents: [graph], extensions: [] },
+  { format: "paseo-canvas-pack", version: 1, id: "ejemplos", name: "Ejemplos de extensiones", description: "Una vista y una herramienta de ejemplo hechas con la API de extensiones. Sirven de punto de partida.", blockTypes: [], templates: [], documents: [], extensions: builtinExtensions },
 ];

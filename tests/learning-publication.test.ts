@@ -75,7 +75,7 @@ function fixture() {
     blocks: [{ id: 'gate', typeId: 'gate', title: 'Gate', data: { target: 'result' } }, { id: 'result', typeId: 'node', title: 'SECRET TITLE', data: { summary: 'SECRET DATA' } }],
     links: [{ id: 'link', from: 'gate', to: 'result', label: 'SECRET LINK', kind: 'flow' }],
   };
-  const catalog: CanvasCatalog = { revision: 0, blockTypes: [...builtinTypes, gateSpec.blockType], templates: [], packs: [] };
+  const catalog: CanvasCatalog = { revision: 0, blockTypes: [...builtinTypes, gateSpec.blockType], templates: [], packs: [], extensions: [] };
   return { document, catalog, runtime: { blocks: { gate: { revealed: true } }, scopes: {} } satisfies RuntimeState };
 }
 

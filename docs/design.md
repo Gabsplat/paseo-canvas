@@ -1467,3 +1467,15 @@ with `design/whiteboard-harness/worlds.cjs` (RN-web, isolated omabox, example da
 paints, has a legend, zooms, pans and fits; Órbita re-centres, Estratos takes a sample, Cauce finds a route and
 sends its request, Relieve raises the water; the four native views pan, zoom and return; the document is never
 written. Captures in `design/qa-worlds-2026-10-07/`.
+
+## 32. Extensions: views and tools from outside the plugin (v20)
+
+A person or their assistant can add a view or a tool without touching the plugin (contract in `docs/extensions.md`).
+User views are listed in "Cambiar vista" under the shipped ones, after a divider, and get the same kind of heading
+(name, one line of description) above a frame that fills the panel. User tools are behind a "Herramientas propias"
+button in the title island (in the main menu on a compact panel) and open as a 320 px floating panel that stays over
+any view; one tool is open at a time. An imported extension that asks for a permission shows a warning-toned strip
+saying what it asks for in words and a single "Permitir". The collections tab lists what each pack brings, has a
+"Mis extensiones" card to remove or export the local ones, and the import review says plainly when a pack brings
+code. Extensions take every colour from the theme they are given. Verified with
+`design/whiteboard-harness/extensions.cjs`; captures in `design/qa-extensions-2026-10-08/`.

@@ -22,11 +22,12 @@ import { withAlpha } from './color';
 import { usePresentation } from './usePresentation';
 import { BlockPalette } from './BlockPalette';
 import { FocusView, MatrixView, ReadingsView } from './Views';
+import { ExtensionTool, ExtensionView, extensionIcon } from './Extensions';
 import { OrbitView } from './worlds/OrbitView';
 import { StrataView } from './worlds/StrataView';
 import { CourseView } from './worlds/CourseView';
 import { ReliefView } from './worlds/ReliefView';
-type ViewMode = 'canvas' | 'outline' | 'focus' | 'readings' | 'matrix' | 'orbit' | 'strata' | 'course' | 'relief';
+type ViewMode = 'canvas' | 'outline' | 'focus' | 'readings' | 'matrix' | 'orbit' | 'strata' | 'course' | 'relief' | `ext:${string}`;
 const VIEWS: { id: ViewMode; label: string; icon: string }[] = [{ id: 'canvas', label: 'Lienzo', icon: 'Frame' }, { id: 'outline', label: 'Lista', icon: 'ListTree' }, { id: 'focus', label: 'Foco', icon: 'Crosshair' }, { id: 'readings', label: 'Lecturas', icon: 'Route' }, { id: 'matrix', label: 'Matriz', icon: 'Grid3x3' }, { id: 'orbit', label: 'Órbita', icon: 'Orbit' }, { id: 'strata', label: 'Estratos', icon: 'Layers3' }, { id: 'course', label: 'Cauce', icon: 'Waypoints' }, { id: 'relief', label: 'Relieve', icon: 'Mountain' }];
 import { ToolIsland, StyleIsland, ShapePopover, LibraryPopover, SvgImportDialog } from './FloatingTools';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
@@ -154,7 +155,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   }), [raw]);
   const doc = c.view?.document;
   const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [islandWidth, setIslandWidth] = useState(0), [composerHeight, setComposerHeight] = useState(44), [styleHeight, setStyleHeight] = useState(0);
-  const [mode, setMode] = useState<ViewMode>(u.compact ? 'outline' : 'canvas'), [viewMenu, setViewMenu] = useState(false), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null), [catalogFull, setCatalogFull] = useState(true);
+  const [mode, setMode] = useState<ViewMode>(u.compact ? 'outline' : 'canvas'), [viewMenu, setViewMenu] = useState(false), [toolMenu, setToolMenu] = useState(false), [extTool, setExtTool] = useState<string | null>(null), [overlay, setOverlay] = useState<'catalog' | 'inspector' | null>(null), [catalogFull, setCatalogFull] = useState(true);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('types'), [catalogKey, setCatalogKey] = useState(0);
   const [inspectorSection, setInspectorSection] = useState<InspectorSection>('document'), [inspectorKey, setInspectorKey] = useState(0);
   const [docsError, setDocsError] = useState(''), [docsLoading, setDocsLoading] = useState(false);
@@ -498,8 +499,17 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   }, [u.layout.platform, doc, c.selection, c.busy, c.offline, c.loading, note, overlay, sending, immersive, linkId, mode, guideOpen, tool, toolPopover, toolsOpen, interactionId, actionPopup, documentSettingsOpen, docsOpen, agentsOpen, overflow, template, mediaOpen, svgOpen]);
   // Views are different readings of the same document. The canvas and the list edit it; the others are for looking.
   const alt = !['canvas', 'outline'].includes(mode), openOnCanvas = (id: string) => { void c.select([id]); setMode('canvas'); };
-  const viewRows = (close: () => void, only: readonly ViewMode[] = VIEWS.map(v => v.id)) => VIEWS.filter(v => only.includes(v.id)).map(v => <MenuRow key={v.id} icon={v.icon} label={v.label} hint={mode === v.id ? '•' : undefined} disabled={!doc} onPress={() => { close(); setOverlay(null); setMode(v.id); }} />);
+  // Views and tools the person or their assistant added. They are read again whenever a menu that lists them opens,
+  // so one the assistant has just saved is there without reloading anything.
+  const extensions = c.catalog?.extensions ?? [], extViews = extensions.filter(e => e.kind === 'view'), extTools = extensions.filter(e => e.kind === 'tool');
+  const extView = mode.startsWith('ext:') ? extViews.find(e => 'ext:' + e.id === mode) : undefined, openTool = extTool ? extTools.find(e => e.id === extTool) : undefined;
+  useEffect(() => { if (viewMenu || toolMenu || overflow) void c.api.catalog({}).then(c.setCatalog).catch(() => {}); }, [viewMenu, toolMenu, overflow]);
+  useEffect(() => { if (mode.startsWith('ext:') && c.catalog && !extView) setMode('canvas'); }, [mode, c.catalog, !!extView]);
+  const viewRows = (close: () => void, only: readonly ViewMode[] = VIEWS.map(v => v.id)) => <>{VIEWS.filter(v => only.includes(v.id)).map(v => <MenuRow key={v.id} icon={v.icon} label={v.label} hint={mode === v.id ? '•' : undefined} disabled={!doc} onPress={() => { close(); setOverlay(null); setMode(v.id); }} />)}
+    {!!extViews.length && <MenuDivider />}{extViews.map(e => <MenuRow key={e.id} icon={extensionIcon(e)} label={e.name} hint={mode === 'ext:' + e.id ? '•' : undefined} disabled={!doc} onPress={() => { close(); setOverlay(null); setMode(`ext:${e.id}`); }} />)}</>;
+  const toolRows = (close: () => void) => extTools.map(e => <MenuRow key={e.id} icon={extensionIcon(e)} label={e.name} hint={extTool === e.id ? '•' : undefined} disabled={!doc} onPress={() => { close(); setExtTool(extTool === e.id ? null : e.id); }} />);
   const menuRows = <>
+      {u.compact && !!extTools.length && <>{toolRows(() => setOverflow(false))}<MenuDivider /></>}
       {/* Grouped by what the action is about; one left edge, dividers instead of headings. */}
       <MenuRow icon="Plus" label="Nuevo lienzo" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
       <MenuRow icon="Frame" label="Documentos" onPress={() => { setOverflow(false); openDocuments(); }} />
@@ -551,7 +561,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="No se pudo abrir el lienzo" error={c.failure.message}><Button label="Reintentar" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo">
         <Button label="Nuevo lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Ejemplos</Txt>
         {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-      </EmptyState> : mode === 'focus' ? <FocusView controller={c} onOpen={openOnCanvas} /> : mode === 'readings' ? <ReadingsView controller={c} onOpen={openOnCanvas} /> : mode === 'matrix' ? <MatrixView controller={c} onOpen={openOnCanvas} /> : mode === 'orbit' ? <OrbitView controller={c} onOpen={openOnCanvas} /> : mode === 'strata' ? <StrataView controller={c} onOpen={openOnCanvas} /> : mode === 'course' ? <CourseView controller={c} onOpen={openOnCanvas} /> : mode === 'relief' ? <ReliefView controller={c} onOpen={openOnCanvas} /> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode === 'outline' ? 'outline' : 'canvas'} linkId={linkId} onLink={id => { if (id === null) setToolPopover(null); selectLink(id); }} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
+      </EmptyState> : mode === 'focus' ? <FocusView controller={c} onOpen={openOnCanvas} /> : mode === 'readings' ? <ReadingsView controller={c} onOpen={openOnCanvas} /> : mode === 'matrix' ? <MatrixView controller={c} onOpen={openOnCanvas} /> : mode === 'orbit' ? <OrbitView controller={c} onOpen={openOnCanvas} /> : mode === 'strata' ? <StrataView controller={c} onOpen={openOnCanvas} /> : mode === 'course' ? <CourseView controller={c} onOpen={openOnCanvas} /> : mode === 'relief' ? <ReliefView controller={c} onOpen={openOnCanvas} /> : extView ? <ExtensionView key={extView.id} extension={extView} controller={c} onOpen={openOnCanvas} /> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionToolbar} onRelease={release} controller={c} mode={mode === 'outline' ? 'outline' : 'canvas'} linkId={linkId} onLink={id => { if (id === null) setToolPopover(null); selectLink(id); }} onInspect={() => inspectorOpen()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!u.compact && !c.selection.length && !linkId && actionPopup && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, width: tokens.popover.width.medium }}>{selectionToolbar}</View>}
@@ -563,7 +573,8 @@ function Panel({ workspaceId }: { workspaceId: string }) {
         {(saveSlow || c.failure) && <View accessibilityLabel={c.failure ? 'No se guardó' : 'Guardando'} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.failure ? u.c.statusDanger : u.c.statusWarning }} />}
         <View style={{ width: tokens.island.divider.width, height: tokens.island.divider.height, marginHorizontal: tokens.island.divider.marginH, backgroundColor: u.c.border }} />
         <IconButton icon="Undo2" label="Deshacer" disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />{width >= 560 && <IconButton icon="Redo2" label="Rehacer" disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />}
-        {!!doc && <IconButton icon="Layers" label="Cambiar vista" active={alt || viewMenu} onPress={() => { setOverflow(false); setViewMenu(open => !open); }} />}
+        {!!doc && <IconButton icon="Layers" label="Cambiar vista" active={alt || viewMenu} onPress={() => { setOverflow(false); setToolMenu(false); setViewMenu(open => !open); }} />}
+        {!!doc && !!extTools.length && <IconButton icon="Puzzle" label="Herramientas propias" active={toolMenu || !!openTool} onPress={() => { setOverflow(false); setViewMenu(false); setToolMenu(open => !open); }} />}
       </View></View>}
       {!u.compact && !immersive && !alt && <View pointerEvents="box-none" style={dock ? { position: 'absolute', top: dockTop, left: tokens.island.inset } : { position: 'absolute', top: toolsTop, left: toolsTop === tokens.island.inset ? toolsLeft : Math.max(tokens.island.inset, (width - toolWidth) / 2) }}>{toolIsland}</View>}
       {doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select' && <View pointerEvents="box-none" style={{ position: 'absolute', top: toolsTop + 80, left: 24, right: 24, alignItems: 'center', gap: 8 }}><View pointerEvents="none"><Txt kind="display" style={{ textAlign: 'center' }}>Un lienzo en blanco</Txt><Txt muted style={{ textAlign: 'center' }}>Escribe, dibuja o añade un bloque.</Txt></View><View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Button label="Añadir un bloque" disabled={disabled} onPress={() => openCatalog()} /><Button label="Usar una plantilla" disabled={disabled} onPress={() => openCatalog('templates')} /></View></View>}
@@ -620,6 +631,9 @@ function Panel({ workspaceId }: { workspaceId: string }) {
       <View pointerEvents="box-none" style={{ position: 'absolute', left: dockFlyoutLeft, top: 0, bottom: 0, justifyContent: 'center', zIndex: 41 }}><BlockPalette types={c.catalog?.blockTypes ?? []} extras={paletteExtras} insert={insert} onMore={() => setCatalogFull(true)} disabled={disabled} maxRows={Math.floor((panelHeight - 2 * tokens.island.bannerTop) / tokens.island.palette.button)} /></View></>}
     {viewMenu && !u.compact && <><Pressable accessibilityLabel="Cerrar vistas" onPress={() => setViewMenu(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
       <View nativeID="lienzo-interactive-views" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + 48, width: 260, zIndex: 41, ...islandStyle(u, true), padding: 6 }}>{viewRows(() => setViewMenu(false))}</View></>}
+    {toolMenu && !u.compact && <><Pressable accessibilityLabel="Cerrar herramientas" onPress={() => setToolMenu(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
+      <View nativeID="lienzo-interactive-extension-tools" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + 48, width: 280, zIndex: 41, ...islandStyle(u, true), padding: 6 }}>{toolRows(() => setToolMenu(false))}</View></>}
+    {!!doc && !!openTool && <ExtensionTool key={openTool.id} extension={openTool} controller={c} onOpen={openOnCanvas} onClose={() => setExtTool(null)} left={u.compact ? 8 : dock && !alt ? dockFlyoutLeft : tokens.island.inset} top={u.compact ? tokens.size.topBarCompact + 8 : tokens.island.bannerTop + 64} maxHeight={Math.max(200, panelHeight - (u.compact ? tokens.size.topBarCompact + 8 : tokens.island.bannerTop + 64) - 140)} />}
     <Modal title="Vistas" open={viewMenu && u.compact} onOpenChange={setViewMenu}><Modal.Content><View>{viewRows(() => setViewMenu(false))}</View></Modal.Content></Modal>
     {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
     {overflow && !u.compact && <><Pressable accessibilityLabel="Cerrar menú" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />

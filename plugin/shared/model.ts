@@ -64,7 +64,8 @@ export const documentSchema = documentContentSchema.extend({
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 });
 
-// Portable packs contain declarative data only. No code, file paths, or executable hooks.
+// Portable packs are declarative data, with one exception: extensions (below) carry a page that runs only sandboxed.
+// No file paths and no hooks into the plugin or the host.
 export const propertySchema = z.object({
   key: idSchema, label: z.string().min(1).max(200),
   kind: z.enum(["text", "number", "boolean", "json"]), required: z.boolean().default(false),
@@ -80,15 +81,26 @@ export const templateSchema = z.object({
   blocks: z.array(blockSchema).max(1000), groups: z.array(groupSchema).max(200),
   links: z.array(linkSchema).max(2000).default([]),
 }).strict();
+// An extension is the one kind of pack entry that carries code: a self-contained page that runs sandboxed in its own
+// frame and reaches the canvas only through the versioned `lienzo` API (docs/extensions.md). It never imports plugin code.
+export const extensionPermissionSchema = z.enum(["edit", "agent", "network"]);
+export const extensionSchema = z.object({
+  id: idSchema, kind: z.enum(["view", "tool"]), api: z.literal(1),
+  name: z.string().min(1).max(80), description: z.string().max(600).default(""), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(),
+  html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(3).default([]),
+}).strict();
 export const packSchema = z.object({
   format: z.literal("paseo-canvas-pack"), version: z.literal(1),
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
   blockTypes: z.array(blockTypeSchema).max(100), templates: z.array(templateSchema).max(100),
-  documents: z.array(documentContentSchema).max(20),
+  documents: z.array(documentContentSchema).max(20), extensions: z.array(extensionSchema).max(50).default([]),
 }).strict();
+// `source` is "local", "builtin" or the ID of the pack that brought it. An imported extension holds no permission
+// until the person grants them; local and shipped ones are trusted.
+export const catalogExtensionSchema = extensionSchema.extend({ source: z.string().min(1).max(200), granted: z.boolean() });
 export const catalogSchema = z.object({
   revision: revisionSchema, blockTypes: z.array(blockTypeSchema),
-  templates: z.array(templateSchema), packs: z.array(packSchema),
+  templates: z.array(templateSchema), packs: z.array(packSchema), extensions: z.array(catalogExtensionSchema).default([]),
 }).strict();
 export const connectionSchema = z.object({
   agentId: z.string().min(1).max(200), workspaceId: z.string().min(1).max(200),
@@ -137,6 +149,9 @@ export const catalogMutationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("template.put"), template: templateSchema }).strict(),
   z.object({ type: z.literal("pack.import"), pack: packSchema, replace: z.boolean().default(false) }).strict(),
   z.object({ type: z.literal("pack.remove"), id: idSchema }).strict(),
+  z.object({ type: z.literal("extension.put"), extension: extensionSchema }).strict(),
+  z.object({ type: z.literal("extension.remove"), id: idSchema }).strict(),
+  z.object({ type: z.literal("extension.grant"), id: idSchema, granted: z.boolean() }).strict(),
 ]);
 export const catalogMutateInputSchema = z.object({
   expectedRevision: revisionSchema, action: catalogMutationSchema,
@@ -162,6 +177,9 @@ export type DocumentView = z.infer<typeof documentViewSchema>;
 export type CanvasOperation = z.infer<typeof operationSchema>;
 export type CanvasCatalog = z.infer<typeof catalogSchema>;
 export type CanvasPack = z.infer<typeof packSchema>;
+export type CanvasExtension = z.infer<typeof extensionSchema>;
+export type CatalogExtension = z.infer<typeof catalogExtensionSchema>;
+export type ExtensionPermission = z.infer<typeof extensionPermissionSchema>;
 export type BlockType = z.infer<typeof blockTypeSchema>;
 export type GroupTemplate = z.infer<typeof templateSchema>;
 export type AgentEvent = z.infer<typeof agentEventSchema>;

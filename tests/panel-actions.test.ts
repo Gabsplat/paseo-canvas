@@ -11,7 +11,7 @@ import { CanvasStore } from '../plugin/server/store';
 import { CanvasService } from '../plugin/server/service';
 import { LearningRuntimeStore } from '../plugin/client/learning-state';
 import { mutation, setup, workspaceId } from './helpers';
-const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks };
+const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks, extensions: [] };
 const fixture = () => documentSchema.parse({ id: 'd', workspaceId, title: 'Panel example', description: '', example: true, revision: 0, createdAt: '2026-10-06T00:00:00.000Z', updatedAt: '2026-10-06T00:00:00.000Z', selectedIds: [], communication: { instructions: 'Document', intent: '', audience: '' }, groups: [{ id: 'g', title: 'Group', description: '', blockIds: ['a', 'b'], groupIds: [], position: { x: 50, y: 60 }, layout: { mode: 'stack' }, communication: { instructions: 'Group', intent: 'Intent', audience: 'Audience' }, variables: [{ name: 'x', label: 'X', value: 2, min: 0, max: 10 }] }], blocks: [{ id: 'a', typeId: 'note', title: 'A', parentGroupId: 'g', data: { text: 'Authored text' } }, { id: 'b', typeId: 'node', title: 'B', parentGroupId: 'g', data: { status: 'Nuevo' } }, { id: 'c', typeId: 'note', title: 'C', data: { text: 'Other' } }], links: [] });
 function apply(operations: CanvasOperation[], doc = fixture()) { const parsed = mutateInputSchema.parse({ workspaceId, documentId: doc.id, expectedRevision: doc.revision, operations }); return reduce(doc, parsed.operations, catalog); }
 test('instruction edits preserve read-only intent/audience and inheritance, clearing removes all three local fields', () => {
