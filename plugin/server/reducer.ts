@@ -1,6 +1,8 @@
+import { getRendererSpec } from "../shared/renderers";
+import { isWhiteboardRenderer, whiteboardMinSize } from '../shared/whiteboard';
 import { randomUUID } from "node:crypto";
 import {
-  documentSchema, diagramDataSchema, checklistDataSchema, type CanvasDocument, type CanvasOperation, type CanvasCatalog,
+  documentSchema, checklistDataSchema, type CanvasDocument, type CanvasOperation, type CanvasCatalog,
   type CanvasBlock, type CanvasGroup, type CanvasLink, type GroupTemplate, type BlockType,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
@@ -20,7 +22,11 @@ export function safeJson(value: unknown, depth = 0): void {
 
 export function validateBlockData(block: CanvasBlock, type: BlockType): void {
   safeJson(block.data);
-  if (type.renderer === "diagram") diagramDataSchema.parse(block.data);
+  const schema = getRendererSpec(type.renderer)?.dataSchema;
+  if (isWhiteboardRenderer(type.renderer)) {
+    const parsed = schema!.safeParse(block.data);
+    if (!parsed.success) throw new CanvasError('VALIDATION', parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '));
+  } else schema?.parse(block.data);
   if (type.renderer === "checklist") checklistDataSchema.parse(block.data);
   if (["preview-frame", "image-ref"].includes(type.renderer ?? "") && block.data.url !== undefined && block.data.url !== "") {
     try {
@@ -40,6 +46,28 @@ export function validateBlockData(block: CanvasBlock, type: BlockType): void {
     if (!type.properties.some(property => property.key === key))
       throw new CanvasError("VALIDATION", `Undeclared property data.${key} on type ${type.id}.`);
   }
+}
+
+/** Only normalize newly supplied block data, never rewrite unrelated blocks during validation. */
+export function normalizeBlock(block: CanvasBlock, type: BlockType): void {
+  if (!isWhiteboardRenderer(type.renderer)) return;
+  const parsed = getRendererSpec(type.renderer)!.dataSchema.safeParse(block.data);
+  if (!parsed.success) throw new CanvasError('VALIDATION', parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '));
+  block.data = parsed.data as CanvasBlock['data'];
+}
+export function validateBlockPresentation(block: CanvasBlock, type?: BlockType): void {
+  // Removed pack types retain raw blocks. The wire envelope still applies, but their renderer/minima are unknown.
+  if (!type) return;
+  const renderer = type?.renderer;
+  if (isWhiteboardRenderer(renderer)) {
+    if (!block.position || !Number.isFinite(block.position.x) || !Number.isFinite(block.position.y) || Math.abs(block.position.x) > 100000 || Math.abs(block.position.y) > 100000) throw new CanvasError('VALIDATION', 'Los objetos de pizarra necesitan position finita entre -100000 y 100000.');
+    if (renderer === 'wb-text' && block.size) throw new CanvasError('VALIDATION', 'El texto libre usa data.width; no admite block.size.');
+    if (renderer === 'wb-draw' && !block.size) throw new CanvasError('VALIDATION', 'El dibujo necesita block.size.');
+  }
+  if (!block.size) return;
+  const spec = getRendererSpec(renderer);
+  const min = isWhiteboardRenderer(renderer) ? whiteboardMinSize(renderer, block.data) : { width: Math.max(160, spec?.minSize?.width ?? 160), height: Math.max(104, spec?.minSize?.height ?? 104) };
+  if (block.size.width < min.width || block.size.height < min.height) throw new CanvasError('VALIDATION', `El bloque ${block.id} necesita un tamaño mínimo de ${min.width} × ${min.height}.`);
 }
 
 export function validateTree(blocks: CanvasBlock[], groups: CanvasGroup[]): void {
@@ -86,6 +114,7 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
     throw new CanvasError("INVARIANT", "Selection must contain unique existing entity IDs.");
   if (catalog) for (const block of document.blocks) {
     const type = catalog.blockTypes.find(type => type.id === block.typeId);
+    validateBlockPresentation(block, type);
     if (type) validateBlockData(block, type);
   }
 }
@@ -121,6 +150,12 @@ export function mergePatch(target: Record<string, unknown>, patch: Record<string
     } else result[key] = clone(value);
   }
   return result;
+}
+
+/** Complete variant data can replace incompatible defaults or an earlier variant. */
+function rendererData(type: BlockType | undefined, merged: CanvasBlock['data'], provided: CanvasBlock['data']): CanvasBlock['data'] {
+  const schema = getRendererSpec(type?.renderer)?.dataSchema;
+  return schema && !schema.safeParse(merged).success && schema.safeParse(provided).success ? clone(provided) : merged;
 }
 
 function entity(document: CanvasDocument, id: string): CanvasBlock | CanvasGroup {
@@ -168,17 +203,56 @@ function synchronizeChildren(document: CanvasDocument, group: CanvasGroup, block
   }
 }
 
-function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefix: string): void {
+function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefix: string, catalog: CanvasCatalog): void {
   const remap = (id: string) => `${prefix}.${id}`;
   const copied = new Set([...template.blocks, ...template.groups].map(entity => entity.id));
-  for (const block of template.blocks) document.blocks.push({ ...clone(block), id: remap(block.id), parentGroupId: block.parentGroupId ? remap(block.parentGroupId) : null });
+  const ids = new Map([...copied, ...template.links.map(link => link.id)].map(id => [id, remap(id)]));
+  const types = new Map(catalog.blockTypes.map(type => [type.id, type.renderer]));
+  for (const block of template.blocks) {
+    const cloned = clone(block), spec = getRendererSpec(types.get(block.typeId));
+    document.blocks.push({ ...cloned, data: spec?.remapReferences?.(cloned.data, ids) ?? cloned.data,
+      id: remap(block.id), parentGroupId: block.parentGroupId ? remap(block.parentGroupId) : null });
+  }
   for (const group of template.groups) document.groups.push({ ...clone(group), id: remap(group.id), parentGroupId: group.parentGroupId ? remap(group.parentGroupId) : null, blockIds: group.blockIds.map(remap), groupIds: group.groupIds.map(remap), templateId: template.id });
   for (const link of template.links) if (copied.has(link.from) && copied.has(link.to)) document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) });
 }
 
-export function reduce(document: CanvasDocument, operations: CanvasOperation[], catalog: CanvasCatalog): CanvasDocument {
-  const next = clone(document);
+/**
+ * Stroke layers (§18.12). An assistant cannot sign a drawing as the learner; a drawing anchored to a card
+ * shares that card's group and is removed with it. An anchor that was never in this document stays unresolved.
+ */
+function settleStrokeLayers(next: CanvasDocument, before: ReadonlyMap<string, CanvasBlock>, operation: CanvasOperation, catalog: CanvasCatalog, actor: 'user' | 'agent' | 'system'): void {
+  const renderer = (block: CanvasBlock) => catalog.blockTypes.find(type => type.id === block.typeId)?.renderer;
+  if (actor === 'agent' && (operation.type === 'block.create' || operation.type === 'block.update')) {
+    const block = next.blocks.find(item => item.id === (operation.type === 'block.create' ? operation.block.id : operation.id));
+    if (block && renderer(block) === 'wb-draw') {
+      const prior = before.get(block.id), author = prior ? prior.data.author : 'assistant';
+      if (author === undefined) delete block.data.author; else block.data.author = author;
+    }
+  }
+  const blocks = new Map(next.blocks.map(block => [block.id, block]));
+  for (const block of next.blocks) {
+    if (renderer(block) !== 'wb-draw' || typeof block.data.anchor !== 'string') continue;
+    const anchor = blocks.get(block.data.anchor);
+    if (!anchor) continue;
+    if (anchor.id === block.id || isWhiteboardRenderer(renderer(anchor))) throw new CanvasError('VALIDATION', 'Un dibujo solo puede anclarse a una tarjeta, no a otro elemento de pizarra.');
+    if ((anchor.parentGroupId ?? null) !== (block.parentGroupId ?? null)) attach(next, block.id, anchor.parentGroupId ?? null);
+  }
+}
+/** Once the whole transaction has run: a card that was here and is gone takes its annotations with it. */
+function removeOrphanedStrokeLayers(next: CanvasDocument, known: ReadonlySet<string>, catalog: CanvasCatalog): void {
+  const present = new Set(next.blocks.map(block => block.id));
+  const orphaned = next.blocks.filter(block => catalog.blockTypes.find(type => type.id === block.typeId)?.renderer === 'wb-draw' && typeof block.data.anchor === 'string' && !present.has(block.data.anchor) && known.has(block.data.anchor)).map(block => block.id);
+  if (!orphaned.length) return;
+  for (const id of orphaned) detach(next, id);
+  next.blocks = next.blocks.filter(block => !orphaned.includes(block.id)); removeTouchingLinks(next, orphaned);
+  next.selectedIds = next.selectedIds.filter(id => !orphaned.includes(id));
+  validateDocument(next, catalog);
+}
+export function reduce(document: CanvasDocument, operations: CanvasOperation[], catalog: CanvasCatalog, actor: 'user' | 'agent' | 'system' = 'user'): CanvasDocument {
+  const next = clone(document), known = new Set(document.blocks.map(block => block.id));
   for (const operation of operations) {
+    const before = new Map(next.blocks.map(block => [block.id, block.id === (operation.type === 'block.update' ? operation.id : '') ? clone(block) : block]));
     switch (operation.type) {
       case "document.update": Object.assign(next, Object.fromEntries(Object.entries(operation).filter(([key]) => key !== "type"))); break;
       case "link.create": next.links.push(clone(operation.link)); break;
@@ -197,7 +271,8 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const block = clone(operation.block);
         const type = catalog.blockTypes.find(type => type.id === block.typeId);
         if (!type) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}. Read canvas_catalog first.`, { available: catalog.blockTypes.map(type => type.id) });
-        block.data = { ...clone(type.defaults), ...block.data };
+        block.data = rendererData(type, { ...clone(type.defaults), ...block.data }, block.data);
+        normalizeBlock(block, type);
         next.blocks.push(block);
         attach(next, block.id, block.parentGroupId ?? null);
         break;
@@ -208,7 +283,9 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const { data, parentGroupId, ...patch } = operation.patch;
         if (patch.typeId && !catalog.blockTypes.some(type => type.id === patch.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${patch.typeId}.`);
         Object.assign(block, patch);
-        if (data) block.data = mergePatch(block.data, data) as CanvasBlock["data"];
+        if (data) block.data = rendererData(catalog.blockTypes.find(type => type.id === block.typeId), mergePatch(block.data, data) as CanvasBlock['data'], data);
+        const type = catalog.blockTypes.find(type => type.id === block.typeId);
+        if (type) normalizeBlock(block, type);
         if (parentGroupId !== undefined) attach(next, block.id, parentGroupId);
         break;
       }
@@ -267,10 +344,12 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
           const subtree = new Set(groupSubtree(next, source.id));
           const template: GroupTemplate = { id: "duplicate", name: source.title, description: source.description, blocks: clone(next.blocks.filter(block => subtree.has(block.id))), groups: clone(next.groups.filter(group => subtree.has(group.id))), links: clone(next.links.filter(link => subtree.has(link.from) && subtree.has(link.to))) };
           template.groups.find(group => group.id === source.id)!.parentGroupId = null;
-          insertTemplate(next, template, operation.idPrefix);
+          insertTemplate(next, template, operation.idPrefix, catalog);
           attach(next, `${operation.idPrefix}.${source.id}`, source.parentGroupId ?? null);
         } else {
-          const block = { ...clone(source), id: `${operation.idPrefix}.${source.id}` };
+          const cloned = clone(source), renderer = catalog.blockTypes.find(type => type.id === source.typeId)?.renderer;
+          const ids = new Map([[source.id, `${operation.idPrefix}.${source.id}`]]);
+          const block = { ...cloned, data: getRendererSpec(renderer)?.remapReferences?.(cloned.data, ids) ?? cloned.data, id: `${operation.idPrefix}.${source.id}` };
           next.blocks.push(block);
           attach(next, block.id, source.parentGroupId ?? null);
         }
@@ -283,14 +362,17 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         if (!template) throw new CanvasError("NOT_FOUND", `Template ${operation.templateId} does not exist.`);
         for (const block of template.blocks) if (!catalog.blockTypes.some(type => type.id === block.typeId))
           throw new CanvasError("UNKNOWN_TYPE", `Template needs missing type ${block.typeId}.`);
-        insertTemplate(next, template, operation.idPrefix);
+        insertTemplate(next, template, operation.idPrefix, catalog);
         break;
       }
     }
+    settleStrokeLayers(next, before, operation, catalog, actor);
     const ids = new Set([...next.blocks, ...next.groups].map(entity => entity.id));
     next.selectedIds = next.selectedIds.filter(id => ids.has(id));
     validateDocument(next, catalog);
+    for (const block of next.blocks) known.add(block.id);
   }
+  removeOrphanedStrokeLayers(next, known, catalog);
   return next;
 }
 

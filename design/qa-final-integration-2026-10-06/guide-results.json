@@ -1,0 +1,25 @@
+{
+  "checks": [
+    {
+      "name": "The guide opens from the real Panel menu and offers tour and searchable options",
+      "result": "pass"
+    },
+    {
+      "name": "Searching finds the sequencer interaction and stops playback instructions",
+      "result": "pass"
+    },
+    {
+      "name": "Searching finds learner-only stroke reset and anchoring",
+      "result": "pass"
+    },
+    {
+      "name": "Compact dark guide keeps its search usable and the modal within the viewport",
+      "result": "pass"
+    },
+    {
+      "name": "No uncaught page errors",
+      "result": "pass"
+    }
+  ],
+  "errors": []
+}

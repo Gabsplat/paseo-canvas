@@ -1,22 +1,37 @@
+import { cleanRuntime, DOCUMENT_SCOPE, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
+import { safeJson } from "./reducer";
 import type { RpcInput } from "@getpaseo/plugin";
 import * as rpc from "../shared/rpc";
 import {
   documentContentSchema, documentSchema, catalogMutateInputSchema,
-  type CanvasDocument, type DocumentView, type AgentEvent,
+  type CanvasDocument, type CanvasPack, type DocumentView, type AgentEvent,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
-import { CanvasStore, documentRecord, assertRevision, changedEntities, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
-import { catalogView, packDiff, packIssues, parsePack, validateTemplate, validateType } from "./catalog";
-import { clone, newId, reduce, validateDocument, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
+import { isRetiredRenderer } from "../shared/renderers";
+import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
+import { catalogView, packDiff, packIssues, parsePack, validateExtension, validateTemplate, validateType } from "./catalog";
+import { clone, newId, reduce, validateDocument, normalizeBlock, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
 
 const timestamp = () => new Date().toISOString();
+type State = Parameters<Parameters<CanvasStore["transaction"]>[0]>[0];
+// Untouched preferences mean "every workspace": installing the plugin is enough for new agents to get the tools.
+// The user turns this off from the agent dialog; any explicit choice is stored and respected.
+const injectionOf = (state: State) => state.injection.revision === 0 && !state.injection.workspaceIds.length ? { revision: 0, workspaceIds: ["*"] } : state.injection;
+/** With one canvas per agent, a document is reachable by its creator, its recipient, or anyone while it is unclaimed. */
+const reachable = (state: State, record: DocumentRecord, agentId: string) => state.sharing[record.document.workspaceId] !== "agent"
+  || record.ownerAgentId === agentId || record.connection?.agentId === agentId || !record.ownerAgentId && !record.connection;
 const view = (record: DocumentRecord, actor: Actor = "user", agentId?: string): DocumentView => ({
   document: clone(record.document), connection: clone(record.connection),
   canUndo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && !entry.undone),
   canRedo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && entry.undone),
-  selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion,
+  selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion, runtime: clone(record.runtime),
 });
-const touchRuntime = (record: DocumentRecord) => { record.runtimeVersion++; };
+const touchRuntime = (record: RuntimeRecord) => { record.runtimeVersion++; };
+/** A grant is for the code that was approved: an extension that is new or different in the replacing pack needs approval again. */
+function keptGrants(grants: string[], old: CanvasPack | undefined, next: CanvasPack): string[] {
+  const before = new Map((old?.extensions ?? []).map(extension => [extension.id, JSON.stringify(extension)])), mine = new Set([...(old?.extensions ?? []), ...next.extensions].map(extension => extension.id));
+  return grants.filter(id => !mine.has(id) || next.extensions.some(extension => extension.id === id && before.get(id) === JSON.stringify(extension)));
+}
 function recordEdit(record: DocumentRecord, next: CanvasDocument, actor: Actor, label: string, kind: HistoryEntry["kind"] = "edit", target?: string, agentId?: string): void {
   const before = clone(record.document);
   next.revision = before.revision + 1;
@@ -29,13 +44,15 @@ function recordEdit(record: DocumentRecord, next: CanvasDocument, actor: Actor, 
   record.history = record.history.slice(-50);
   while (record.history.length > 1 && Buffer.byteLength(JSON.stringify(record.history)) > 8 * 1024 * 1024) record.history.shift();
   record.document = next;
+  const oldRuntime = JSON.stringify(record.runtime); cleanRuntime(next, record.runtime);
+  if (oldRuntime !== JSON.stringify(record.runtime)) touchRuntime(record);
 }
 
 export class CanvasService {
   constructor(readonly store: CanvasStore) {}
-  async list(input: RpcInput<typeof rpc.listDocuments>) {
+  async list(input: RpcInput<typeof rpc.listDocuments>, agentId?: string) {
     const state = await this.store.read();
-    return { documents: Object.values(state.documents).filter(record => record.document.workspaceId === input.workspaceId).map(({ document }) => ({ id: document.id, workspaceId: document.workspaceId, title: document.title, description: document.description, example: document.example, revision: document.revision, updatedAt: document.updatedAt })) };
+    return { documents: Object.values(state.documents).filter(record => record.document.workspaceId === input.workspaceId && (!agentId || reachable(state, record, agentId))).map(({ document }) => ({ id: document.id, workspaceId: document.workspaceId, title: document.title, description: document.description, example: document.example, revision: document.revision, updatedAt: document.updatedAt })) };
   }
   async read(input: RpcInput<typeof rpc.readDocument>, actor: Actor = "user", agentId?: string) { return view(documentRecord(await this.store.read(), input.documentId, input.workspaceId), actor, agentId); }
   async watch(input: RpcInput<typeof rpc.watchDocument>) {
@@ -50,9 +67,10 @@ export class CanvasService {
       const document = documentSchema.parse({ ...input.content, id, workspaceId: input.workspaceId, revision: 0, createdAt: now, updatedAt: now });
       const catalog = catalogView(state.catalog);
       for (const block of document.blocks) if (!catalog.blockTypes.some(type => type.id === block.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}.`);
+      for (const block of document.blocks) normalizeBlock(block, catalog.blockTypes.find(type => type.id === block.typeId)!);
       validateDocument(document, catalog);
       if (Buffer.byteLength(JSON.stringify(document)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
-      state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, events: [], outboundBatches: [] };
+      state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, runtime: { blocks: {}, scopes: {} }, events: [], outboundBatches: [], ...(actor === "agent" && connection ? { ownerAgentId: connection.agentId } : {}) };
       return view(state.documents[id], actor);
     });
   }
@@ -60,7 +78,7 @@ export class CanvasService {
     return this.store.transaction(state => {
       const record = documentRecord(state, input.documentId, input.workspaceId);
       assertRevision(record, input.expectedRevision);
-      const next = reduce(record.document, input.operations, catalogView(state.catalog));
+      const next = reduce(record.document, input.operations, catalogView(state.catalog), actor);
       if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
       recordEdit(record, next, actor, input.label, "edit", undefined, agentId);
       return view(record, actor, agentId);
@@ -89,7 +107,7 @@ export class CanvasService {
       next.blocks = restore(next.blocks, snapshot.blocks);
       next.groups = restore(next.groups, snapshot.groups);
       next.links = restore(next.links, snapshot.links);
-      if (affected.has("$document")) { next.title = snapshot.title; next.description = snapshot.description; next.example = snapshot.example; next.communication = clone(snapshot.communication); if (snapshot.layout) next.layout = clone(snapshot.layout); else delete next.layout; }
+      if (affected.has("$document")) { next.title = snapshot.title; next.description = snapshot.description; next.example = snapshot.example; next.communication = clone(snapshot.communication); next.variables = clone(snapshot.variables); if (snapshot.layout) next.layout = clone(snapshot.layout); else delete next.layout; }
       const ids = new Set([...next.blocks, ...next.groups].map(entity => entity.id));
       next.selectedIds = next.selectedIds.filter(id => ids.has(id));
       try { validateDocument(next); }
@@ -115,6 +133,51 @@ export class CanvasService {
       return view(record);
     });
   }
+  async runtimeRead(raw: RpcInput<typeof rpc.readRuntime>) {
+    const input = rpc.runtimeReadInputSchema.parse(raw);
+    const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
+    return this.runtimeSubset(record, input.blockIds, input.scopeIds);
+  }
+  private runtimeSubset(record: RuntimeRecord, blockIds: string[], scopeIds: string[]) {
+    return { runtimeVersion: record.runtimeVersion, runtime: {
+      blocks: Object.fromEntries(blockIds.filter(id => Object.hasOwn(record.runtime.blocks, id)).map(id => [id, clone(record.runtime.blocks[id])])),
+      scopes: Object.fromEntries(scopeIds.filter(id => Object.hasOwn(record.runtime.scopes, id)).map(id => [id, clone(record.runtime.scopes[id])])),
+    } };
+  }
+  runtimeSet(raw: RpcInput<typeof rpc.setRuntime>) {
+    safeJson(raw);
+    const input = rpc.runtimeSetInputSchema.parse(raw);
+    return this.store.runtimeTransaction(input.documentId, input.workspaceId, record => {
+      const before = JSON.stringify(record.runtime);
+      for (const entry of input.blocks) {
+        if (!record.document.blocks.some(b => b.id === entry.id)) throw new CanvasError('NOT_FOUND', `Block ${entry.id} was not found.`);
+        if (entry.state === null) delete record.runtime.blocks[entry.id];
+        else {
+          safeJson(entry.state);
+          if (Buffer.byteLength(JSON.stringify(entry.state)) > RUNTIME_BLOCK_BYTES) throw new CanvasError('TOO_LARGE', 'Block runtime exceeds 4 KiB.');
+          record.runtime.blocks[entry.id] = clone(entry.state);
+        }
+      }
+      for (const entry of input.scopes) {
+        const declarations = entry.id === DOCUMENT_SCOPE ? record.document.variables : record.document.groups.find(g => g.id === entry.id)?.variables;
+        if (!declarations) throw new CanvasError('NOT_FOUND', 'Scope has no variable declarations.');
+        const values = record.runtime.scopes[entry.id] ?? {};
+        for (const [name, value] of Object.entries(entry.values)) {
+          const variable = declarations.find(v => v.name === name);
+          if (!variable) throw new CanvasError('NOT_FOUND', `Variable ${name} is not declared in ${entry.id}.`);
+          if (value === null) delete values[name];
+          else {
+            if (value < variable.min || value > variable.max) throw new CanvasError('VALIDATION', `Variable ${name} is outside its declared range.`);
+            values[name] = value;
+          }
+        }
+        if (Object.keys(values).length) record.runtime.scopes[entry.id] = values; else delete record.runtime.scopes[entry.id];
+      }
+      if (Buffer.byteLength(JSON.stringify(record.runtime)) > RUNTIME_DOCUMENT_BYTES) throw new CanvasError('TOO_LARGE', 'Document runtime exceeds 256 KiB.');
+      if (before !== JSON.stringify(record.runtime)) touchRuntime(record);
+      return this.runtimeSubset(record, input.blocks.map(b => b.id), input.scopes.map(s => s.id));
+    });
+  }
   async selected(input: RpcInput<typeof rpc.readDocument>) {
     const current = await this.read(input);
     return { revision: current.document.revision, selectionVersion: current.selectionVersion, ids: current.document.selectedIds, entities: current.document.selectedIds.map(id => ({ entity: [...current.document.blocks, ...current.document.groups].find(entity => entity.id === id), effectiveInstructions: effectiveInstructions(current.document, id) })) };
@@ -129,6 +192,8 @@ export class CanvasService {
       switch (action.type) {
         case "type.put":
           if (current.blockTypes.some(type => type.id === action.blockType.id) && !state.catalog.localTypes.some(type => type.id === action.blockType.id)) throw new CanvasError("VALIDATION", "Local types cannot replace a built-in or pack type.");
+          // Retired names stay readable in stored data; a type saved now must be one the catalog can offer.
+          if (isRetiredRenderer(action.blockType.renderer) || isRetiredRenderer(action.blockType.id)) throw new CanvasError("VALIDATION", `Block type ${action.blockType.id} uses a renderer or ID that is no longer available.`);
           validateType(action.blockType);
           state.catalog.localTypes = [...state.catalog.localTypes.filter(type => type.id !== action.blockType.id), clone(action.blockType)]; break;
         case "template.put":
@@ -139,11 +204,25 @@ export class CanvasService {
           const pack = parsePack(action.pack, current);
           const old = state.catalog.packs.find(pack => pack.id === action.pack.id);
           if (old && !action.replace) throw new CanvasError("VALIDATION", "Pack already exists; pass replace:true explicitly.");
-          state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; break;
+          state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.grants = keptGrants(state.catalog.grants, old, pack); break;
         }
-        case "pack.remove":
-          if (!state.catalog.packs.some(pack => pack.id === action.id)) throw new CanvasError("NOT_FOUND", "User pack was not found.");
-          state.catalog.packs = state.catalog.packs.filter(pack => pack.id !== action.id); break;
+        case "pack.remove": {
+          const gone = state.catalog.packs.find(pack => pack.id === action.id);
+          if (!gone) throw new CanvasError("NOT_FOUND", "User pack was not found.");
+          state.catalog.packs = state.catalog.packs.filter(pack => pack.id !== action.id);
+          state.catalog.grants = state.catalog.grants.filter(id => !gone.extensions.some(extension => extension.id === id)); break;
+        }
+        case "extension.put":
+          validateExtension(action.extension, current);
+          state.catalog.localExtensions = [...state.catalog.localExtensions.filter(extension => extension.id !== action.extension.id), clone(action.extension)]; break;
+        case "extension.remove":
+          if (!state.catalog.localExtensions.some(extension => extension.id === action.id)) throw new CanvasError("NOT_FOUND", "Local extension was not found. Extensions that came in a pack are removed with their pack.");
+          state.catalog.localExtensions = state.catalog.localExtensions.filter(extension => extension.id !== action.id); break;
+        case "extension.grant": {
+          const held = current.extensions.find(extension => extension.id === action.id);
+          if (!held || held.source === "local" || held.source === "builtin") throw new CanvasError("NOT_FOUND", "Only an extension that came in an imported pack is granted or revoked.");
+          state.catalog.grants = [...state.catalog.grants.filter(id => id !== action.id), ...(action.granted ? [action.id] : [])]; break;
+        }
       }
       state.catalog.revision++;
       return catalogView(state.catalog);
@@ -155,7 +234,7 @@ export class CanvasService {
       const catalog = catalogView(state.catalog), pack = parsePack(input.pack, catalog), old = state.catalog.packs.find(item => item.id === pack.id);
       if (old && !input.replace) throw new CanvasError("VALIDATION", "Pack already exists; pass replace:true explicitly.");
       const diff = packDiff(old, pack);
-      if (!input.dryRun) { state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.revision++; }
+      if (!input.dryRun) { state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.grants = keptGrants(state.catalog.grants, old, pack); state.catalog.revision++; }
       return { catalog: catalogView(state.catalog), diff, committed: !input.dryRun };
     });
   }
@@ -164,11 +243,11 @@ export class CanvasService {
     if (!pack) throw new CanvasError("NOT_FOUND", "Pack was not found.");
     return pack;
   }
-  async instantiatePack(input: RpcInput<typeof rpc.instantiatePack>) {
+  async instantiatePack(input: RpcInput<typeof rpc.instantiatePack>, actor: Actor = "user", connection: DocumentRecord["connection"] = null) {
     const pack = await this.exportPack({ id: input.packId });
     const content = pack.documents[input.documentIndex];
     if (!content) throw new CanvasError("NOT_FOUND", "Pack document was not found.");
-    return this.create({ workspaceId: input.workspaceId, id: input.id, content: { ...content, example: true } });
+    return this.create({ workspaceId: input.workspaceId, id: input.id, content: { ...content, example: true } }, actor, connection);
   }
   async exportGroup(input: RpcInput<typeof rpc.exportGroup>) {
     return { template: groupTemplate((await this.read(input)).document, input.groupId, input.templateId, input.name) };
@@ -190,11 +269,28 @@ export class CanvasService {
         if (JSON.stringify(existing.action) !== JSON.stringify(input.action)) throw new CanvasError("VALIDATION", "Event ID was reused with a different action.");
         return existing;
       }
-      assertRevision(record, input.expectedRevision);
+      if (!input.action.settled) assertRevision(record, input.expectedRevision);
       const ids = new Set([...record.document.blocks, ...record.document.groups].map(entity => entity.id));
       if (input.action.targetIds?.some(id => !ids.has(id))) throw new CanvasError("NOT_FOUND", "Action target was not found.");
+      if (input.action.settled) {
+        if (input.action.delivery !== 'batched' || input.action.targetIds?.length !== 1) throw new CanvasError('VALIDATION', 'Settled events need batched delivery and one block target.');
+        if (!record.document.blocks.some(b => b.id === input.action.targetIds![0])) throw new CanvasError('NOT_FOUND', 'Settled target must be a block.');
+        if (Buffer.byteLength(JSON.stringify(input.action.payload)) > 4096) throw new CanvasError('TOO_LARGE', 'Settled payload exceeds 4 KiB.');
+        const protectedIds = new Set(record.outboundBatches.filter(b => b.status !== 'completed').flatMap(b => b.eventIds));
+        record.events = record.events.filter(e => !(e.status === 'pending' && e.action.settled && e.action.kind === input.action.kind && e.action.targetIds?.[0] === input.action.targetIds![0] && !protectedIds.has(e.id)));
+      }
       if (record.events.filter(event => event.status === "pending" || event.status === "failed").length >= 100) throw new CanvasError("TOO_LARGE", "Too many pending feedback events. Connect an agent and send them first.");
       const { id: _id, workspaceId: _workspace, revision: _revision, createdAt: _created, updatedAt: _updated, ...content } = record.document;
+      if (input.action.settled) {
+        const kept = new Set(input.action.targetIds);
+        for (const id of input.action.targetIds ?? []) {
+          let parent = record.document.blocks.find(b => b.id === id)?.parentGroupId;
+          while (parent) { kept.add(parent); parent = record.document.groups.find(g => g.id === parent)?.parentGroupId; }
+        }
+        content.blocks = content.blocks.filter(b => kept.has(b.id));
+        content.groups = content.groups.filter(g => kept.has(g.id)).map(g => ({ ...g, blockIds: g.blockIds.filter(id => kept.has(id)), groupIds: g.groupIds.filter(id => kept.has(id)) }));
+        content.links = []; content.selectedIds = content.selectedIds.filter(id => kept.has(id));
+      }
       const event: AgentEvent = { id: input.eventId, documentId: input.documentId, agentId: record.connection?.agentId ?? null, workspaceId: input.workspaceId, createdAt: timestamp(), revision: record.document.revision, action: clone(input.action), context: documentContentSchema.parse(content), status: "pending" };
       record.events.push(event);
       const retained = new Set(record.outboundBatches.filter(batch => batch.status !== "completed").flatMap(batch => batch.eventIds));
@@ -254,11 +350,45 @@ export class CanvasService {
       touchRuntime(record);
     });
   }
-  async injection() { return clone((await this.store.read()).injection); }
+  async assertReachable(documentId: string, workspaceId: string, agentId: string) {
+    const state = await this.store.read();
+    if (!reachable(state, documentRecord(state, documentId, workspaceId), agentId)) throw new CanvasError("FORBIDDEN", "This canvas belongs to another agent. This workspace keeps one canvas per agent; use canvas_list for yours or create one.");
+  }
+  /**
+   * Makes the calling agent the feedback recipient. A read only claims a canvas nobody receives; a write takes over,
+   * since the agent editing a canvas is the one the user is talking to. A recipient the user picked by hand stays.
+   * The document revision is untouched, so the caller's next expectedRevision still holds.
+   */
+  autoConnect(documentId: string, workspaceId: string, agentId: string, takeover: boolean) {
+    return this.store.transaction(state => {
+      const record = documentRecord(state, documentId, workspaceId), current = record.connection;
+      if (current?.agentId === agentId || current?.pinned || current && !takeover) return false;
+      record.connection = { agentId, workspaceId }; touchRuntime(record); return true;
+    });
+  }
+  /** Frees every canvas that pointed at an agent that no longer exists, so the next agent to use it becomes the recipient. */
+  releaseAgent(agentId: string) {
+    return this.store.transaction(state => {
+      for (const record of Object.values(state.documents)) if (record.connection?.agentId === agentId) { record.connection = null; touchRuntime(record); }
+    });
+  }
+  /** Agents holding canvas tools, most recently bound first. */
+  async toolAgents() {
+    const state = await this.store.read();
+    return [...new Set(Object.values(state.owners).flatMap(owner => owner.agentId ? [owner.agentId] : []).reverse())];
+  }
+  async sharing(input: RpcInput<typeof rpc.readSharing>) { return { mode: (await this.store.read()).sharing[input.workspaceId] ?? "shared" as const }; }
+  configureSharing(input: RpcInput<typeof rpc.configureSharing>) {
+    return this.store.transaction(state => {
+      if (input.mode === "shared") delete state.sharing[input.workspaceId]; else state.sharing[input.workspaceId] = input.mode;
+      return { mode: input.mode };
+    });
+  }
+  async injection() { return clone(injectionOf(await this.store.read())); }
   configureInjection(input: RpcInput<typeof rpc.configureInjection>) {
     return this.store.transaction(state => {
       if (state.injection.revision !== input.expectedRevision) throw new CanvasError("REVISION_CONFLICT", "Injection preferences changed.", { currentRevision: state.injection.revision });
-      state.injection.workspaceIds = [...state.injection.workspaceIds.filter(id => id !== input.workspaceId), ...(input.enabled ? [input.workspaceId] : [])];
+      state.injection.workspaceIds = [...injectionOf(state).workspaceIds.filter(id => id !== input.workspaceId), ...(input.enabled ? [input.workspaceId] : [])];
       state.injection.revision++; return state.injection;
     });
   }

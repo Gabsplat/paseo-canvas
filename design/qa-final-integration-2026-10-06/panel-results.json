@@ -1,0 +1,77 @@
+{
+  "checks": [
+    {
+      "name": "one node has approved toolbar and Preguntar focuses without sending",
+      "result": "pass"
+    },
+    {
+      "name": "Estado writes through real block.update and keeps authored data",
+      "result": "pass"
+    },
+    {
+      "name": "instruction persists and preserves intent/audience",
+      "result": "pass"
+    },
+    {
+      "name": "Más contains bounded named actions, Conectar selects existing link",
+      "result": "pass"
+    },
+    {
+      "name": "connection label Escape cancels without write, Enter saves link.update",
+      "result": "pass"
+    },
+    {
+      "name": "link type, color automatic and inverse preserve label",
+      "result": "pass"
+    },
+    {
+      "name": "group toolbar layout and add inside use real transactions",
+      "result": "pass"
+    },
+    {
+      "name": "multi-selection groups/ungroups without opening generic details",
+      "result": "pass"
+    },
+    {
+      "name": "inheritance opens group and whole-document instructions with no inspector",
+      "result": "pass"
+    },
+    {
+      "name": "Vaciar clears three fields and undo restores the instruction",
+      "result": "pass"
+    },
+    {
+      "name": "failed data write keeps authored state and shows honest failure",
+      "result": "pass"
+    },
+    {
+      "name": "toolbar arrows move focus; keyboard duplicate remains transactional",
+      "result": "pass"
+    },
+    {
+      "name": "toolbar Reiniciar clears runtime, sends existing settled reset event and preserves scope/authored data",
+      "result": "pass"
+    },
+    {
+      "name": "Datos validates JSON before any write and retains authored values",
+      "result": "pass"
+    },
+    {
+      "name": "toolbar sequencer reset stops local audio, cancels pending pattern and emits exactly one reset",
+      "result": "pass"
+    },
+    {
+      "name": "rejected sequencer reset has visible error and zero live contexts, no success event",
+      "result": "pass"
+    },
+    {
+      "name": "dark theme keeps scoped menus bounded and blank pan passes next to toolbar",
+      "result": "pass"
+    },
+    {
+      "name": "compact docks 48px selection toolbar above composer and opens host sheet",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

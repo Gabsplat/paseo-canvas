@@ -1,0 +1,17 @@
+{
+  "checks": [
+    {
+      "name": "compact papel exposes tools sheet and usable free text creation",
+      "result": "pass"
+    },
+    {
+      "name": "compact tinta exposes tools sheet and usable free text creation",
+      "result": "pass"
+    },
+    {
+      "name": "medium width keeps horizontal style above composer with no dead strip",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

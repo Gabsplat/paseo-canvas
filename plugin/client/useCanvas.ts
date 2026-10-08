@@ -1,3 +1,4 @@
+import { LearningRuntimeStore } from "./learning-state";
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRpc } from '@getpaseo/plugin/client';
 import type { RpcInput } from '@getpaseo/plugin';
@@ -5,6 +6,7 @@ import * as rpc from '../shared/rpc';
 import type { AgentEvent, CanvasCatalog, CanvasOperation, DocumentView } from '../shared/model';
 import { useHostId } from './ui';
 import { initialDocumentId, rememberOpenDocument } from './session';
+import { reuseDocumentEntities } from './logic';
 export type Failure = { message: string; conflict: boolean; revision?: number; retry?: () => Promise<unknown>; affectedIds?: string[]; operationKey?: string };
 export const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 export function useCanvas(workspaceId: string) {
@@ -14,7 +16,7 @@ export function useCanvas(workspaceId: string) {
     undo: useRpc(rpc.undoDocument), redo: useRpc(rpc.redoDocument), watch: useRpc(rpc.watchDocument), selection: useRpc(rpc.setSelection),
     catalog: useRpc(rpc.readCatalog), catalogMutate: useRpc(rpc.mutateCatalog), validate: useRpc(rpc.validatePack), import: useRpc(rpc.importPack), export: useRpc(rpc.exportPack),
     instantiate: useRpc(rpc.instantiatePack), exportGroup: useRpc(rpc.exportGroup), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
-    action: useRpc(rpc.agentAction), events: useRpc(rpc.readAgentEvents), flush: useRpc(rpc.flushAgentEvents), history: useRpc(rpc.readHistory),
+    runtimeSet: useRpc(rpc.setRuntime), action: useRpc(rpc.agentAction), events: useRpc(rpc.readAgentEvents), flush: useRpc(rpc.flushAgentEvents), history: useRpc(rpc.readHistory),
   };
   const apiRef = useRef(api); apiRef.current = api;
   const [view, setView] = useState<DocumentView | null>(null), current = useRef(view);
@@ -29,11 +31,15 @@ export function useCanvas(workspaceId: string) {
   // IDs already seen in this workspace. A document that appears later without being opened here was created elsewhere
   // (normally by the agent through canvas_create), so the panel follows it.
   const knownIds = useRef<Set<string> | null>(null), [arrival, setArrival] = useState<{ id: string; title: string } | null>(null);
+  const learningRef = useRef<LearningRuntimeStore | null>(null);
+  if (!learningRef.current) learningRef.current = new LearningRuntimeStore(request => apiRef.current.runtimeSet(request), error => fail(error));
+  const learning = learningRef.current;
   function accept(next: DocumentView) {
     if (!active.current || scopeRef.current !== scope || next.document.workspaceId !== workspaceId) return;
     const prev = current.current;
     if (prev?.document.id === next.document.id && (next.document.revision < prev.document.revision || next.runtimeVersion < prev.runtimeVersion)) return;
-    current.current = next; setView(next);
+    const shared = { ...next, document: reuseDocumentEntities(prev?.document, next.document) };
+    current.current = shared; learning.sync(shared.document, shared.runtimeVersion, shared.runtime); setView(shared);
     if (prev?.document.id !== next.document.id) rememberOpenDocument(hostId, workspaceId, next.document.id);
     if (desired.current === null) setSelection(next.document.selectedIds);
   }
@@ -48,7 +54,7 @@ export function useCanvas(workspaceId: string) {
   }
   async function refreshList() { const g = generation.current; const result = await apiRef.current.list({ workspaceId }); if (active.current && g === generation.current) setDocuments(result.documents); return result.documents; }
   async function open(id: string) {
-    const g = ++generation.current; desired.current = null; current.current = null; setView(null); setSelection([]); setEvents([]); setLoading(true); setFailure(null);
+    learning.reset(); const g = ++generation.current; desired.current = null; current.current = null; setView(null); setSelection([]); setEvents([]); setLoading(true); setFailure(null);
     try {
       const next = await apiRef.current.read({ workspaceId, documentId: id }); if (g !== generation.current || !active.current) return;
       accept(next); setOffline(false);
@@ -67,10 +73,10 @@ export function useCanvas(workspaceId: string) {
     finally { if (active.current && g === generation.current) setLoading(false); }
   }
   useLayoutEffect(() => {
-    active.current = true; const g = ++generation.current;
+    learning.reset(); active.current = true; const g = ++generation.current;
     current.current = null; desired.current = null; knownIds.current = null; setArrival(null); setView(null); setSelection([]); setEvents([]); setDocuments([]); setCatalog(null); setFailure(null); setOffline(false); setLoading(true);
     void loadInitial(g);
-    return () => { active.current = false; ++generation.current; };
+    return () => { learning.reset(); active.current = false; ++generation.current; };
   }, [hostId, workspaceId]);
   useEffect(() => {
     let stopped = false, timer: ReturnType<typeof setTimeout>;
@@ -161,6 +167,13 @@ export function useCanvas(workspaceId: string) {
     const v = current.current; if (!v) return;
     const g = generation.current;
     const request = { workspaceId, documentId: v.document.id, expectedRevision: v.document.revision, action, eventId };
+    if (action.settled) {
+      try {
+        const result = await apiRef.current.action(request);
+        if (!active.current || g !== generation.current) return undefined;
+        eventEpoch.current++; setEvents(old => [...old.filter(e => e.id !== result.id && !(e.status === 'pending' && e.action.settled && e.action.kind === result.action.kind && e.action.targetIds?.[0] === result.action.targetIds?.[0])), result]); return result;
+      } catch (error) { fail(error); return undefined; }
+    }
     return task(async () => { const result = await apiRef.current.action(request); if (!active.current || g !== generation.current) return undefined; eventEpoch.current++; setEvents(old => [...old.filter(e => e.id !== result.id), result]); return result; }, () => { if (current.current?.document.id !== request.documentId) return Promise.resolve(); return send(action, eventId); });
   }
   async function create(content: RpcInput<typeof rpc.createDocument>['content']) {
@@ -175,6 +188,6 @@ export function useCanvas(workspaceId: string) {
     const v = current.current; if (!v) return;
     try { accept(await apiRef.current.read({ workspaceId, documentId: v.document.id })); setOffline(false); } catch (e) { fail(e, refresh); }
   }
-  return { api, workspaceId, view, current, documents, catalog, setCatalog, events, setEvents: setScopedEvents, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, send, task, create, example, refreshList, settle, arrival };
+  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, events, setEvents: setScopedEvents, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, send, task, create, example, refreshList, settle, arrival };
 }
 export type CanvasController = ReturnType<typeof useCanvas>;

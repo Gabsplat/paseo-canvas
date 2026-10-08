@@ -1,0 +1,117 @@
+# Probar aprendizaje
+
+La rama `aprendizaje` incluye el arrastre libre, resize guardado, onboarding, medios
+interactivos y la pizarra con herramientas flotantes. También incluye Controles,
+Flujo animado y Shader GLSL, además de las anotaciones con Trazos. Es una rama de
+desarrollo para probar el avance.
+
+## Cargarla en Paseo
+
+Ejecuta los comandos en la máquina donde corre el daemon que usas en Paseo. Si entras
+desde una Mac a un daemon Linux, ejecútalos en Linux. Requiere Paseo 0.10.3 y plugins
+habilitados. No hace falta reiniciar el daemon ni resetear los documentos.
+
+Si ya tienes la instalación `canvas`, desactívala y agrega la versión de prueba con un
+ID distinto. Paseo rechaza instalar encima de un ID existente. Conserva la instalación
+anterior y sus preferencias:
+
+```sh
+paseo plugin disable canvas
+paseo plugin install github:Gabsplat/paseo-canvas:plugin --ref aprendizaje --id canvas-aprendizaje
+paseo plugin ls canvas-aprendizaje
+```
+
+Si todavía no tenías Lienzo, omite el primer comando. La última salida debe indicar
+`running`. Luego abre el workspace en Paseo y elige **Abrir Lienzo** en el Command Center,
+o escribe `/lienzo` en un chat. Si tenías el panel abierto, ciérralo y vuelve a abrirlo.
+
+Mantén una sola instalación de Lienzo habilitada. El plugin guarda los documentos en
+`$PASEO_HOME/canvas`, o `~/.paseo/canvas` cuando no hay un home personalizado. Esa ruta
+es compartida por las instalaciones del plugin en el mismo daemon; la versión nueva
+lee los documentos existentes. Las preferencias del onboarding pertenecen al ID de
+instalación, por lo que la guía aparece al estrenar `canvas-aprendizaje`.
+
+Para actualizar después esta instalación Git a la rama de desarrollo:
+
+```sh
+paseo plugin update canvas-aprendizaje --ref aprendizaje --yes
+```
+
+Especifica `--ref aprendizaje`: una actualización Git sin esa opción consulta la rama
+predeterminada del repositorio.
+
+## Probar las interacciones
+
+Abre un lienzo existente o crea uno. Arrastra una tarjeta desde cualquier zona pasiva
+de su cuerpo, agrupa tarjetas y prueba el resize desde la esquina. Un clic corto conserva
+la acción de los controles; mover más de 4 px inicia el arrastre. Los sliders, los puertos
+de enlaces y las asas de resize conservan sus propios gestos.
+
+Prueba las herramientas de la pizarra desde la barra flotante:
+
+- Texto libre: elige Texto, pulsa en el lienzo y guarda el borrador. Escape permite
+  cancelarlo. Selecciona el texto para cambiar color, tamaño, fuente o alineación.
+- Formas: elige Forma y arrastra para fijar sus dimensiones. Cambia relleno y trazo desde
+  el panel de estilo; prueba resize y deshacer.
+- Lápiz y goma: dibuja varios trazos en la misma capa. La goma quita trazos completos;
+  deshacer recupera el último cambio. Empieza sobre una tarjeta para anclar el dibujo:
+  al moverla, sus trazos la acompañan. Tus trazos son continuos y los del asistente son
+  discontinuos, con un rótulo. Borrar mis trazos conserva los del asistente y los del
+  documento original. Escape sale del lápiz y envía un resumen asentado.
+- SVG: abre la biblioteca de arquitectura o importa código, un archivo o una URL. El
+  servidor rechaza contenido activo de forma atómica. La carga por URL necesita CORS.
+- Medios y webs: mueve el bloque mientras está pasivo. Usa Interactuar para seleccionar
+  texto o usar el contenido embebido y el chip de salida para volver al lienzo. Los eventos
+  dentro de un iframe activo pertenecen a esa web.
+
+El botón central y la rueda permiten panear también sobre bloques pasivos. Los atajos
+de herramientas son V para seleccionar, H para mano, T para texto, R para forma, D para
+lápiz y E para goma. Los controles enfocados conservan sus teclas. La ayuda del onboarding
+reúne los controles de cámara, selección, enlaces, medios y posiciones automáticas.
+
+Los bloques de aprendizaje están en el catálogo. Para armar un ejemplo con variables y
+enlaces, crea un agente nuevo después de cargar esta versión y pídele:
+
+> Crea un lienzo de ejemplo de aprendizaje. Consulta canvas_catalog y arma un Shader GLSL
+> sencillo con una variable compartida y un bloque Controles para moverla. Incluye un Flujo
+> animado sobre enlaces reales entre nodos. Etiqueta el documento como ejemplo y crea todo
+> con transacciones confirmadas.
+
+Los contratos y ejemplos de datos están en [learning-blocks.md](learning-blocks.md).
+Las declaraciones de variables son parte del documento; su valor durante la interacción
+usa el canal runtime. El asistente recibe acciones asentadas, sin un evento por frame.
+En clientes nativos los bloques de aprendizaje ofrecen una descripción estática.
+
+## Estado de la entrega
+
+El conjunto integrado pasa typecheck y las pruebas headless (`pnpm test`). Cubren persistencia,
+conflictos, packs, runtime, protección de resultados y validación de los cuatro tipos de
+pizarra. Pasan 24 casos de navegador con el Panel, useCanvas, reducer y esquemas RPC reales
+bajo RN-web en omabox aislado. El host y el transporte son sustitutos. Se probaron texto,
+formas, resize, lápiz/goma, SVG, iframes, compacto claro/oscuro y arrastre de 150 bloques.
+[Informe de pizarra y capturas](../design/qa-whiteboard-2026-10-06/report.md).
+
+Los bloques de aprendizaje conservan la QA anterior en RN-web, incluidos controles
+compartidos y enlaces en movimiento. Shader se comprobó con WebGL real del navegador.
+[Informe de aprendizaje y capturas](../design/qa-learning-2026-10-06/report.md).
+
+Trazos está integrado. Una pasada con el Panel real comprobó los trazos anclados, la
+identificación del autor, el borrado propio y los controles de teclado.
+[Resultados y capturas](../design/qa-cierre-2026-10-06/).
+
+La barra contextual ofrece acciones para bloques, grupos, selección múltiple y enlaces.
+Instrucción permite editar indicaciones propias, consultar las heredadas y vaciar con
+deshacer. Los popovers de Datos y Disposición sustituyen el inspector genérico. Etiqueta
+edita el texto de un enlace en el lienzo; Escape cancela sin escribir. En compacto hay
+Deshacer y Añadir en la cabecera y una barra de 48 px sobre el compositor.
+
+Reiniciar desde la barra utiliza el mismo handler del bloque; un rechazo muestra un error
+y no envía un evento de éxito. Sacar del grupo mueve una tarjeta junto con sus anotaciones;
+si sacas sólo el dibujo, lo desvincula y conserva su posición.
+
+La comprobación final del conjunto volvió a ejecutar en RN-web las acciones contextuales,
+los trazos anclados y la guía. [Informe final y capturas](../design/qa-final-integration-2026-10-06/report.md).
+
+Paseo instalado, dispositivos nativos y nuevas interacciones con un agente real siguen
+sin verificarse. Las pruebas de navegador usan un host y transporte sustitutos, sin
+instalar ni recargar el plugin.

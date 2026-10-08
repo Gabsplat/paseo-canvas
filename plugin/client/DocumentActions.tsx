@@ -1,0 +1,32 @@
+import React, { useEffect, useState } from 'react';
+import { Pressable, View } from 'react-native';
+import { Icon } from '@getpaseo/plugin/client/react-native';
+import type { CanvasGroup } from '../shared/model';
+import type { CanvasController } from './useCanvas';
+import { Button, Field, IconButton, Segments, Txt, useUI } from './ui';
+import { communicationOperation, layoutIcons, layoutOperations } from './panel-actions';
+import { containerMode, pinnedChildren, type Rect } from './logic';
+import { tokens } from './tokens';
+import { Delivery } from './Blocks';
+export function DocumentActions({ controller: c, section, rects, release }: { controller: CanvasController; section: 'document' | 'communication' | 'history' | 'activity'; rects(): Map<string, Rect>; release(ids: string[], label?: string): void }) {
+  const u = useUI(), doc = c.view!.document, disabled = c.busy || c.offline;
+  const [history, setHistory] = useState<Awaited<ReturnType<typeof c.api.history>>['transactions']>([]), [historyError, setHistoryError] = useState(''), [loading, setLoading] = useState(false), [attempt, setAttempt] = useState(0);
+  useEffect(() => { if (section !== 'history') return; let live = true; setLoading(true); setHistoryError(''); void c.api.history({ workspaceId: c.workspaceId, documentId: doc.id }).then(result => { if (live) setHistory(result.transactions); }).catch(() => { if (live) setHistoryError('No se pudo cargar el historial.'); }).finally(() => { if (live) setLoading(false); }); return () => { live = false; }; }, [section, doc.id, doc.revision, attempt]);
+  const saveCommunication = async (instructions: string) => { const id = doc.id; await c.settle(); const latest = c.current.current?.document; if (!latest || latest.id !== id || disabled) return; return c.edit([communicationOperation(latest, null, { instructions })], 'Editar indicaciones para el asistente'); };
+  const layout = doc.layout, mode = containerMode(doc, null, c.catalog), pinned = pinnedChildren(doc, null);
+  const saveLayout = (next: NonNullable<CanvasGroup['layout']>) => { if (disabled) return; try { void c.edit(layoutOperations(doc, null, next, rects(), c.catalog), 'Cambiar disposición del lienzo'); } catch (error) { c.fail(error); } };
+  if (section === 'history') return <View style={{ gap: 12 }}>{loading && <Txt muted>Cargando historial…</Txt>}{historyError && <><Txt muted>{historyError}</Txt><Button label="Reintentar" onPress={() => setAttempt(value => value + 1)} /></>}{!loading && !historyError && !history.length && <Txt muted>Todavía no hay cambios.</Txt>}{history.slice(-8).reverse().map(tx => <View key={tx.id} style={{ gap: 4, flexDirection: 'row' }}><Icon name={tx.actor === 'agent' ? 'Bot' : tx.actor === 'user' ? 'User' : 'Cog'} size={14} color={u.c.foregroundMuted} /><View style={{ flex: 1 }}><Txt muted={tx.kind !== 'edit'}>{tx.label}</Txt><Txt kind="small" muted>{new Date(tx.at).toLocaleString('es')}</Txt></View></View>)}</View>;
+  if (section === 'activity') return <View style={{ gap: 12 }}>{c.events.slice(-5).reverse().map(event => <View key={event.id}><Txt>{event.action.label}</Txt><Delivery event={event} /></View>)}{!c.events.length && <Txt muted>Aún no hay acciones enviadas.</Txt>}{c.events.some(e => e.status === 'pending' || e.status === 'failed') && <Button label="Enviar pendientes" disabled={disabled} onPress={() => { void c.task(async () => { const result = await c.api.flush({ workspaceId: c.workspaceId, documentId: doc.id }); if (c.current.current?.document.id === doc.id) c.setEvents(result.events); }); }} />}</View>;
+  return <View style={{ gap: 12 }}>
+    {section === 'document' && doc.example && <View style={{ backgroundColor: u.wash('aviso'), padding: 12, borderRadius: 6 }}><Txt kind="small">Lienzo de ejemplo. Su contenido es ilustrativo y no viene de un asistente.</Txt></View>}
+    {section === 'document' && <Field label="Descripción" value={doc.description} multiline disabled={disabled} onSave={description => c.edit([{ type: 'document.update', description }], 'Editar descripción')} />}
+    <Field label="Instrucciones para el asistente" value={doc.communication.instructions} multiline inputStyle={{ minHeight: 72 }} disabled={disabled} placeholder="Para qué es este lienzo y cómo debe ayudar el asistente" onSave={saveCommunication} />
+    {!!doc.communication.intent && <Txt kind="small" muted>Intención: {doc.communication.intent}</Txt>}{!!doc.communication.audience && <Txt kind="small" muted>Audiencia: {doc.communication.audience}</Txt>}
+    {section === 'document' && <><Txt kind="small">Disposición</Txt><View style={{ flexDirection: 'row', gap: 4 }}>{(['graph', 'stack', 'grid', 'flow', 'free'] as const).map(next => <Pressable key={next} accessibilityRole="button" accessibilityLabel={tokens.layout.labels[next]} accessibilityState={{ selected: mode === next, disabled }} disabled={disabled} onPress={() => saveLayout({ ...layout, mode: next })} style={{ width: 56, height: 48, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 6, borderWidth: mode === next ? layout ? 1.5 : 1 : 0, borderStyle: layout ? 'solid' : 'dashed', borderColor: layout ? u.c.accent : u.c.border, backgroundColor: mode === next && layout ? u.wash('acento') : 'transparent', opacity: disabled ? .45 : 1 }}><Icon name={layoutIcons[next]} size={20} color={u.c.foreground} /><Txt kind="small">{tokens.layout.labels[next]}</Txt></Pressable>)}</View>
+      {!layout && <Txt kind="small" muted>Automático: se ordena como {tokens.layout.labels[mode === 'rows' ? 'stack' : mode].toLocaleLowerCase()}.</Txt>}
+      {mode === 'graph' && <Segments value={layout?.direction ?? 'down'} options={[{ value: 'down', label: 'Hacia abajo' }, { value: 'right', label: 'Hacia la derecha' }]} disabled={disabled} onChange={direction => saveLayout({ ...layout, mode: 'graph', direction })} />}
+      {mode === 'grid' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Txt>Columnas</Txt><IconButton label="Menos columnas" icon="Minus" disabled={disabled || (layout?.columns ?? 2) <= 1} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) - 1 })} /><Txt>{layout?.columns ?? 2}</Txt><IconButton label="Más columnas" icon="Plus" disabled={disabled || (layout?.columns ?? 2) >= 4} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) + 1 })} /></View>}
+      {!!pinned.length && <Button label="Reordenar automáticamente" disabled={disabled} onPress={() => release(pinned, 'Reordenar automáticamente')} />}
+    </>}
+  </View>;
+}

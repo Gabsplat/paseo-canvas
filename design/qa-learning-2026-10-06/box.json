@@ -1,0 +1,26 @@
+{
+  "name": "lienzo-qa-learning",
+  "mode": "headless",
+  "size": "1920x1080@60",
+  "created": "2026-10-06T15:37:28-03:00",
+  "plugins": [],
+  "net": "isolated",
+  "allow": "",
+  "idle": 7200,
+  "plugin_status": {},
+  "bar": "user",
+  "systemd": false,
+  "hyprland": null,
+  "omarchy": null,
+  "hyprland_version": null,
+  "aquamarine": {
+    "kind": "private",
+    "version": "0.15.1@7bb8bdf4+keys",
+    "fixed": true
+  },
+  "omarchy_version": "4.0.3-1",
+  "theme": "blueridge-dark",
+  "state": "up",
+  "peeking": false,
+  "keys_to_box": false
+}

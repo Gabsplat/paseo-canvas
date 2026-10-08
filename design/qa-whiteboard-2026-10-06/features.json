@@ -1,0 +1,37 @@
+{
+  "checks": [
+    {
+      "name": "floating tools and composer use small islands over the complete canvas",
+      "result": "pass"
+    },
+    {
+      "name": "free text is a local draft until confirmation and saves as an ordinary chrome-free block",
+      "result": "pass"
+    },
+    {
+      "name": "text editing is reversible and Escape cancels an empty new draft",
+      "result": "pass"
+    },
+    {
+      "name": "shape drag creates a box and free placements leave cards unchanged",
+      "result": "pass"
+    },
+    {
+      "name": "shape style changes persist and a corner resize uses one complete transaction",
+      "result": "pass"
+    },
+    {
+      "name": "pencil appends consecutive strokes; eraser removes only the crossed stroke and undo restores it",
+      "result": "pass"
+    },
+    {
+      "name": "architecture library inserts a safe SVG with caption and license; imported markup stays outside DOM",
+      "result": "pass"
+    },
+    {
+      "name": "new text created inside a group stores a parent-relative position",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

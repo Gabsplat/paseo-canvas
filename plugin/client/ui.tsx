@@ -1,13 +1,39 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { Platform, Pressable, Text, View, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, Text, View, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon, Modal as HostModal, ScrollView, TextInput, copyText, useToast } from '@getpaseo/plugin/client/react-native';
 import type { PluginHostProps } from '@getpaseo/plugin/client';
 import { toneColor, withAlpha, type Tone } from './color';
 import { tokens } from './tokens';
 import { downloadJson, useKeyboardFocus } from './web';
+import { usePressScale, useReducedMotion } from './motion';
+import { useContentSelectionAllowed } from './interaction';
+const errorMessages = {
+  REVISION_CONFLICT: 'El lienzo cambió. Vuelve a intentar el cambio sobre la versión actual.',
+  NOT_FOUND: 'Ese contenido ya no está disponible. Vuelve a abrir el lienzo.',
+  VALIDATION: 'Revisa los datos e intenta de nuevo.',
+  INVARIANT: 'El cambio no se puede aplicar. Revisa los elementos seleccionados.',
+  UNKNOWN_TYPE: 'Falta un tipo de bloque. Importa la colección que lo incluye.',
+  UNDO_BLOCKED: 'Hay cambios posteriores que dependen de este. Revisa el historial.',
+  FORBIDDEN: 'No tienes acceso a ese contenido en este espacio.',
+  TOO_LARGE: 'El contenido supera el límite permitido. Reduce su tamaño e intenta de nuevo.',
+  UNAVAILABLE: 'Paseo no está disponible. Vuelve a intentar en un momento.',
+} as const;
+export function friendlyError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = message.match(/\b(REVISION_CONFLICT|NOT_FOUND|VALIDATION|INVARIANT|UNKNOWN_TYPE|UNDO_BLOCKED|FORBIDDEN|TOO_LARGE|UNAVAILABLE)\b/)?.[1] as keyof typeof errorMessages | undefined;
+  if (code) return errorMessages[code];
+  if (Object.values(errorMessages).some(value => value === message)) return message;
+  if (/revision conflict|latest revision|Expected revision|selection version/i.test(message)) return errorMessages.REVISION_CONFLICT;
+  if (error instanceof SyntaxError || /ZodError|Invalid input|invalid_type|invalid_format/.test(message)) return 'Revisa el formato del JSON y los datos obligatorios.';
+  // Only client-authored validation messages may pass through unchanged.
+  const local = ['JSON no válido', 'Número no válido', 'Máximo 200 caracteres.', 'El cambio no se aplicó.', 'El archivo supera 1 MB.', 'El bloque cambió. Vuelve a seleccionarlo.', 'El documento cambió antes de completar la acción.', 'Escribe un título de hasta 300 caracteres.', 'No se guardó el formulario.', 'La capa alcanzó su límite de tamaño. Se conserva el dibujo anterior.'];
+  if (local.includes(message)) return message;
+  if (/network|fetch|connection|offline|socket|timeout/i.test(message)) return 'No se pudo conectar con Paseo. Reintenta en un momento.';
+  return 'No se pudo completar la acción. Vuelve a intentarlo.';
+}
 type Font = keyof typeof tokens.font.style;
 const Context = createContext<PluginHostProps | null>(null);
-export function UIProvider({ children, ...props }: PluginHostProps & { children: React.ReactNode }) { return <Context.Provider value={props}>{children}</Context.Provider>; }
+export function UIProvider({ children, ...props }: PluginHostProps & { children: React.ReactNode }) { useReducedMotion(); return <Context.Provider value={props}>{children}</Context.Provider>; }
 export function useHostId(): string | undefined { return useContext(Context)?.host.id; }
 export function useUI() {
   const props = useContext(Context); if (!props) throw new Error('Lienzo UI context unavailable');
@@ -17,7 +43,7 @@ export function useUI() {
     washStrong: (t: Tone) => withAlpha(toneColor(t, theme), tokens.alpha.toneWashStrong), toneBorder: (t: Tone) => withAlpha(toneColor(t, theme), tokens.alpha.toneBorder), groupFill: (t: Tone) => withAlpha(toneColor(t, theme), tokens.alpha.groupFill), halo: withAlpha(theme.colors.accent, .2),
     font: (f: Font = 'body', muted = false): TextStyle => {
       const s = tokens.font.style[f]; const family = s.family === 'mono' ? Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace' }) : s.family === 'serif' ? Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia, "Iowan Old Style", "Times New Roman", serif' }) : undefined;
-      return { color: muted ? theme.colors.foregroundMuted : theme.colors.foreground, fontFamily: family, fontSize: layout.compact && f === 'body' ? 14 : layout.compact && f === 'button' ? 14 : layout.compact && f === 'small' ? 13 : s.size, lineHeight: layout.compact && f === 'body' ? 21 : layout.compact && f === 'small' ? 18 : s.lineHeight, fontWeight: s.weight, letterSpacing: s.letterSpacing, textTransform: f === 'label' ? 'uppercase' : undefined };
+      return { color: muted ? theme.colors.foregroundMuted : theme.colors.foreground, fontFamily: family, fontSize: layout.compact && f === 'body' ? 14 : layout.compact && f === 'button' ? 14 : layout.compact && f === 'small' ? 13 : s.size, lineHeight: layout.compact && f === 'body' ? 21 : layout.compact && f === 'small' ? 18 : s.lineHeight, fontWeight: s.weight, letterSpacing: s.letterSpacing };
     },
   }), [theme, layout, props.host]);
 }
@@ -33,8 +59,9 @@ export const Modal: typeof HostModal = Object.assign(function ContextModal({ chi
   });
   return <HostModal {...props} icon={props.icon === undefined ? undefined : provide(props.icon)}>{content}</HostModal>;
 }, { Content: HostModal.Content });
-export function Txt({ children, kind = 'body', muted = false, style, ...props }: React.ComponentProps<typeof Text> & { kind?: Font; muted?: boolean }) {
-  const u = useUI(); return <Text {...props} style={[u.font(kind, muted), style]}>{children}</Text>;
+export function Txt({ children, kind = 'body', muted = false, style, selectable, ...props }: React.ComponentProps<typeof Text> & { kind?: Font; muted?: boolean }) {
+  const u = useUI(), selectionAllowed = useContentSelectionAllowed();
+  return <Text {...props} selectable={selectionAllowed ? selectable : false} style={[u.font(kind, muted), style, !selectionAllowed && { userSelect: 'none' }]}>{children}</Text>;
 }
 export function Button({ label, icon, onPress, disabled = false, variant = 'secondary', small = false, active = false, style }: { label: string; icon?: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; small?: boolean; active?: boolean; style?: StyleProp<ViewStyle> }) {
   const u = useUI(), [focused, setFocus] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus; const color = variant === 'primary' ? disabled ? u.c.foregroundMuted : u.c.accentForeground : variant === 'danger' ? u.c.statusDanger : u.c.foreground;
@@ -43,10 +70,21 @@ export function Button({ label, icon, onPress, disabled = false, variant = 'seco
     {icon && <Icon name={icon} size={14} color={color} />}<Txt kind={small ? 'small' : 'button'} style={{ color, fontWeight: '600' }}>{label}</Txt>
   </Pressable>;
 }
+/** One action of a menu: icon, name, and an optional shortcut or state on the right. Rows share one left edge. */
+export function MenuRow({ icon, label, hint, trailing, onPress, disabled = false, danger = false }: { icon: string; label: string; hint?: string; trailing?: React.ReactNode; onPress: () => void; disabled?: boolean; danger?: boolean }) {
+  const u = useUI(), color = danger ? u.c.statusDanger : u.c.foreground;
+  return <Pressable accessibilityRole="menuitem" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }}
+    style={({ pressed, ...state }) => ({ minHeight: u.compact ? 44 : 34, paddingHorizontal: 10, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 10, opacity: disabled ? .4 : 1, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>
+    <Icon name={icon} size={16} color={danger ? color : u.c.foregroundMuted} /><Txt numberOfLines={1} style={{ flex: 1, color }}>{label}</Txt>{trailing}{!!hint && <Txt kind="label" muted style={{ textTransform: 'none', letterSpacing: 0 }}>{hint}</Txt>}
+  </Pressable>;
+}
+export function MenuDivider() { const u = useUI(); return <View style={{ height: 1, marginVertical: 4, marginHorizontal: 10, backgroundColor: u.c.border }} />; }
 export function IconButton({ icon, label, onPress, active, disabled }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
-  const u = useUI(), [focused, setFocus] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus;
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled, selected: !!active }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} hitSlop={6}
-    style={({ pressed, ...state }) => ({ width: u.compact ? 44 : 32, height: u.compact ? 44 : 32, borderRadius: 6, borderWidth: focus ? 2 : 0, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center', opacity: disabled ? .45 : 1, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : active ? u.c.surface2 : (state as { hovered?: boolean }).hovered && !disabled ? withAlpha(u.c.foreground, .06) : 'transparent' })}><Icon name={icon} size={16} color={active ? u.c.foreground : u.c.foregroundMuted} /></Pressable>;
+  const u = useUI(), [focused, setFocus] = useState(false), [hovered, setHovered] = useState(false), [pressed, setPressed] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus, feedback = usePressScale();
+  // The hit area stays put; the visual inside it scales on press (tokens.motion.press).
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled, selected: !!active }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }} onPressIn={() => { setPressed(true); feedback.press(true); }} onPressOut={() => { setPressed(false); feedback.press(false); }} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} hitSlop={6} style={{ width: u.compact ? 44 : 32, height: u.compact ? 44 : 32, opacity: disabled ? .45 : 1 }}>
+    <Animated.View style={{ flex: 1, borderRadius: 6, borderWidth: focus ? 2 : 0, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : active ? u.c.surface2 : hovered && !disabled ? withAlpha(u.c.foreground, .06) : 'transparent', transform: [{ scale: feedback.scale }] }}><Icon name={icon} size={16} color={active ? u.c.foreground : u.c.foregroundMuted} /></Animated.View>
+  </Pressable>;
 }
 export function Chip({ label, tone = 'neutro', icon, center = false, style }: { label: string; tone?: Tone; icon?: string; center?: boolean; style?: StyleProp<ViewStyle> }) {
   const u = useUI(); return <View style={[{ alignSelf: center ? 'center' : 'flex-start', flexShrink: 1, minHeight: 20, paddingHorizontal: 6, borderRadius: 4, backgroundColor: u.wash(tone), flexDirection: 'row', alignItems: 'center', gap: 4 }, style]}>{icon && <Icon name={icon} size={12} color={u.tone(tone)} />}<Txt kind="label" muted numberOfLines={1} style={{ flexShrink: 1 }}>{label}</Txt></View>;
@@ -58,7 +96,7 @@ export function Input({ value, onChange, onBlur, placeholder, multiline = false,
   const u = useUI(), [focused, setFocused] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus;
   return <TextInput accessibilityLabel={label ?? placeholder} value={value} onChangeText={onChange} onBlur={() => { setFocused(false); onBlur?.(); }} onFocus={() => setFocused(true)} placeholder={placeholder} placeholderTextColor={u.c.foregroundMuted} multiline={multiline} editable={!readOnly} selectTextOnFocus={readOnly} autoCapitalize={mono ? 'none' : 'sentences'} autoCorrect={!mono} style={[u.font(mono ? 'code' : 'body'), { minHeight: multiline ? 64 : undefined, height: multiline ? undefined : u.compact ? 44 : 32, textAlignVertical: multiline ? 'top' : 'center', paddingHorizontal: focus ? 9 : 10, paddingVertical: multiline ? focus ? 7 : 8 : 0, backgroundColor: u.c.surface2, borderRadius: 6, borderWidth: focus ? 2 : 1, borderColor: focus ? u.c.accent : u.c.border }, style]} />;
 }
-export function Field({ label, value, onSave, multiline, mono, disabled, helper, placeholder, required, counterMax, onDraft }: { label: string; value: string; onSave: (v: string) => unknown | Promise<unknown>; multiline?: boolean; mono?: boolean; disabled?: boolean; helper?: string; placeholder?: string; required?: boolean; counterMax?: number; onDraft?: (v: string) => void }) {
+export function Field({ label, value, onSave, multiline, mono, disabled, helper, placeholder, required, counterMax, onDraft, hideLabel, inputStyle }: { label: string; value: string; onSave: (v: string) => unknown | Promise<unknown>; multiline?: boolean; mono?: boolean; disabled?: boolean; helper?: string; placeholder?: string; required?: boolean; counterMax?: number; onDraft?: (v: string) => void; hideLabel?: boolean; inputStyle?: StyleProp<TextStyle> }) {
   const u = useUI(), [draft, setDraft] = useState(value), [dirty, setDirty] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState('');
   const saveRef = React.useRef(onSave); saveRef.current = onSave;
   const saving = React.useRef(false), draftRef = React.useRef(draft);
@@ -67,11 +105,11 @@ export function Field({ label, value, onSave, multiline, mono, disabled, helper,
     if (!dirty || draft === value || saving.current || disabled) return;
     saving.current = true; const submitted = draftRef.current; setPending(true); setError('');
     try { const result = await saveRef.current(submitted); if (result === undefined || result === false) throw new Error('El cambio no se aplicó.'); if (draftRef.current === submitted) setDirty(false); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(friendlyError(e)); }
     finally { saving.current = false; setPending(false); }
   };
   React.useEffect(() => { if (!dirty || error || pending) return; const timer = setTimeout(() => { void commit(); }, 600); return () => clearTimeout(timer); }, [draft, dirty, disabled, pending]);
-  return <View style={{ gap: 4 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Txt kind="small" style={{ fontWeight: '600' }}>{label}{required ? ' *' : ''}</Txt>{pending && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: u.c.statusWarning }} />}</View><Input label={label} placeholder={placeholder} value={draft} onChange={s => { setDraft(s); draftRef.current = s; onDraft?.(s); setDirty(true); setError(''); }} readOnly={disabled} multiline={multiline} mono={mono} onBlur={() => { void commit(); }} />{counterMax && <Txt kind="small" muted>{draft.length}/{counterMax}</Txt>}{error ? <View style={{ gap: 4 }}><Txt kind="small" style={{ color: u.c.statusDanger }}>No se guardó · {error}</Txt><Button label="Reintentar" small variant="ghost" onPress={() => { void commit(); }} /></View> : helper ? <Txt kind="small" muted>{helper}</Txt> : null}</View>;
+  return <View style={{ gap: 4 }}>{!hideLabel && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Txt kind="small" style={{ fontWeight: '600' }}>{label}{required ? ' *' : ''}</Txt>{pending && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: u.c.statusWarning }} />}</View>}<Input style={inputStyle} label={label} placeholder={placeholder} value={draft} onChange={s => { setDraft(s); draftRef.current = s; onDraft?.(s); setDirty(true); setError(''); }} readOnly={disabled} multiline={multiline} mono={mono} onBlur={() => { void commit(); }} />{counterMax && <Txt kind="small" muted>{draft.length}/{counterMax}</Txt>}{error ? <View style={{ gap: 4 }}><Txt kind="small" style={{ color: u.c.statusDanger }}>No se guardó · {error}</Txt><Button label="Reintentar" small variant="ghost" onPress={() => { void commit(); }} /></View> : helper ? <Txt kind="small" muted>{helper}</Txt> : null}</View>;
 }
 export function CheckRow({ label, checked, onPress, disabled, tone = 'acento', strike }: { label: string; checked: boolean; onPress: () => void; disabled?: boolean; tone?: Tone; strike?: boolean }) {
   const u = useUI(); return <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked, disabled: !!disabled }} onPress={e => { e.stopPropagation(); onPress(); }} disabled={disabled} style={({ pressed, ...state }) => ({ minHeight: u.compact ? 44 : 28, flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: u.compact ? 11 : 5, paddingHorizontal: 6, marginHorizontal: -6, borderRadius: 6, backgroundColor: pressed ? withAlpha(u.c.foreground, tokens.alpha.pressedFill) : (state as { hovered?: boolean }).hovered && !disabled ? withAlpha(u.c.foreground, tokens.alpha.hoverFill) : 'transparent', opacity: disabled ? .45 : 1 })}><View style={{ width: 16, height: 16, marginTop: 1.5, borderRadius: 4, borderWidth: 1.5, borderColor: checked ? u.tone(tone) : withAlpha(u.c.foregroundMuted, tokens.alpha.glyphRing), backgroundColor: checked ? u.tone(tone) : 'transparent', alignItems: 'center', justifyContent: 'center' }}>{checked && <Icon name="Check" size={12} color={u.c.surface1} />}</View><Txt muted={strike} style={{ flex: 1, textDecorationLine: strike ? 'line-through' : 'none' }}>{label}</Txt></Pressable>;
