@@ -11,8 +11,8 @@ nothing from the plugin, so a plugin update cannot break it.
   "icon": "LayoutGrid", "permissions": ["edit"], "html": "<script>…</script>" }
 ```
 
-- `kind`: `view` is listed under "Cambiar vista" and fills the panel. `tool` is listed under "Herramientas propias"
-  and opens as a floating panel over whatever view is open.
+- `kind`: `tool` is listed in the Extensions section of the + catalog (and in ⌘K) and opens as a tab of the right
+  panel. The client no longer shows `view` extensions: the canvas is the only view.
 - `api`: always `1` today.
 - `permissions`: any of `edit`, `agent`, `network`. Reading the document and changing the selection need none.
 - `html`: up to 300 000 characters. No build step. Without `network` the page may only use inline code and `data:` URLs.

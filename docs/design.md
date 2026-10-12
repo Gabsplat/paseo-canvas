@@ -124,125 +124,75 @@ non-compact layouts: there is no top bar, no side rail, no inspector and no tray
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│ ┌─A─────────────────────┐        ┌─B──────────┐                        │
-│ │ ☰  Título ▾  │  ↶  ↷ │        │ ▭  ◉  ▢  ＋ │                        │
-│ └───────────────────────┘        └────────────┘                        │
-│                              (banners, §11)                            │
-│                                                                        │
-│               ┌─toolbar (only with a selection, §5)─┐                  │
-│               └─────────────────────────────────────┘                  │
-│                        ┏━━━━━━━━━━━━━┓                                 │
-│                        ┃  selection  ┃ ⊕                               │
-│                        ┗━━━━━━━━━━━━━┛                                 │
-│                                                                        │
-│                   ┌─C───────────────────────────┐          ┌─D───────┐ │
-│                   │ ● Escribir al asistente…  ↑ │          │ − 80% + │ │
-│                   └─────────────────────────────┘          └─────────┘ │
+│ [≡ Title ▾ · Example]                                 [ ⌕ ] [ ◧ ]      │  top islands
+│                                                     ┌───────────────┐  │
+│                    canvas                           │ Properties │… │  │  right panel
+│          ┌─────────────────────┐ ← selection bar    │               │  │  (floating)
+│          │ ● ▢ ⧉ ? 🗑          │                    │               │  │
+│                                                     └───────────────┘  │
+│  [Lente]                                                               │
+│  [map]  [ V H │ P ▢ T ↗ E │ M W │ pinned… │ + ]          [ − 100% + ]  │  bottom toolbar
+│                    [ composer ]                                        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-Four persistent islands, each inset `island.inset` 12 from the panel edges. All four use the
-`Island` primitive (§4.1). Nothing else is visible at rest.
+Every island floats over the one canvas with `pointerEvents: "box-none"` around it; nothing reserves space.
 
-**v7 · true overlay.** `Canvas` is `position: absolute; inset: 0` in the panel root. Every island,
-the contextual toolbar and banners are later absolute siblings inside a layer with
-`pointerEvents: "box-none"`. No flex row or column reserves space for them outside compact; the
-canvas is visible and pannable under and between all of them.
+| Island | Position | Content |
+| --- | --- | --- |
+| Top-left | inset 12, 44 tall | `Menu` (main menu, §3.2) · **title** (serif `groupTitle`, max 280, 160 under 880, `ChevronDown` 12 after it; press → Lienzos) · chip "Example" · save dot. Stage 2 adds the Hoja menu after the title. |
+| Top-right | inset 12, 44 tall | `Search` "Search and commands" (⌘K, §31) · `PanelRight` "Properties" (⌘\, active while the right panel shows) |
+| Bottom toolbar | centred, 8 above the composer | §24 |
+| Composer | bottom-centre | §10 |
+| Right panel | right inset 12, under the top islands | §31 |
+| Lente · minimap | bottom-left | §25, §29 |
+| Zoom | bottom-right | `Minus` · percent · `Plus` · fit |
 
-| | Island | Position | Content, left → right |
-| --- | --- | --- | --- |
-| **A** | Lienzo | top-left | `Menu` button → main menu (§3.2) · **title** (serif `groupTitle`, one line, max 280, min 96, pad H 8; `ChevronDown` 12 muted after it) · chip "Ejemplo" if example · save dot (below) · divider · `Undo2` · `Redo2` (disabled by `view.canUndo` / `view.canRedo`) |
-| **B** | Herramientas (v7) | top-centre | Seleccionar · Mano · divider · Texto · Forma · Lápiz · Goma · divider · Biblioteca · `Plus` → block picker (§9.1). Exact icons, keys and behaviour in §20.4. Nota, nodo and grupo are the first three rows of the picker. |
-| **C** | Asistente | bottom-centre | the composer (§10) |
-| **D** | Vista | bottom-right | `Minus` · percent (`value` style, min width 48, centred) · `Plus` |
+- **Save dot.** 6 px, only when it has something to say: `statusWarning` while a write takes over 400 ms,
+  `statusDanger` after a failed one. Labels "Saving" / "Not saved".
+- **Hide all UI** (⌘.) hides every island but the zoom, and a `Minimize2` "Show the interface" appears top-right.
+  Banners stay.
+- **Z-order,** bottom to top: canvas · selection bar · islands · right panel · banners · menus and the + catalog ·
+  command palette · tooltips · host `Modal` and toasts.
 
-- **A · title.** Press → popover "Lienzos" (§5.4). Double-click (or `F2` with nothing selected) →
-  rename in place with the inline editor (§8.1), history label "Renombrar lienzo".
-- **A · save dot.** 6 px, shown only when it has something to say: `statusWarning` while a mutation
-  is in flight for more than 400 ms; `statusDanger` after a failed one (press → the banner, §11).
-  In sync shows nothing. It has an `accessibilityLabel` ("Guardando" / "No se guardó").
-- **B · `Plus` picker row press** creates the block and starts editing its first text (§8.1). Where: inside the group
-  when exactly one group is selected; next to the block when exactly one block is selected (same
-  parent, at `graph.gap.node` to its right, **not** connected); otherwise at the centre of the
-  visible canvas. The camera pans the minimum needed to show it. **B · drag** (pointer devices): a
-  0.92-opacity card of the type's default size follows the pointer from the button and is created
-  where it is dropped, into the group under the pointer (same drop feedback as §6.2).
-- **D · percent.** Press → menu: Ajustar todo (`1`), Ajustar a la selección (`2`, disabled without
-  one), Tamaño real 100 % (`0`), separator, Solo lienzo (`F`). `Minus`/`Plus` step through
-  `canvas.zoomSteps` and disable at the limits.
-- **Solo lienzo** hides A, B and C. D stays and gains a leading `Minimize2` button "Mostrar
-  controles" (`Esc` or `F` also leave). Banners stay visible.
-- **Safe area.** Fit and fit-selection inset the viewport by top 68, bottom 72, left/right 48 so
-  content never comes to rest under an island. Starting an in-place edit pans the minimum needed to
-  bring the edited text inside that area.
-- **Occlusion while dragging.** While an entity is being dragged and the pointer is inside an
-  island's rectangle inflated by 8, that island drops to opacity 0.35 with `pointerEvents: "none"`
-  until the drag ends, so a card can be dropped underneath it. Islands never move.
-- **Z-order,** bottom to top: canvas (§6.1 order) · `+` handles and resize grip · contextual toolbar ·
-  islands · banners · popover or menu · tooltip · host `Modal` and toasts.
-- **At most one popover or menu is open.** Opening another closes the first.
+### 3.2 Main menu (`Menu` on the top-left island)
 
-### 3.2 Main menu (`Menu` on island A)
-
-A `Menu` (§4.5), anchored below-left of the button. Rows, in order:
-
-| Row | Icon | Keys | Does |
-| --- | --- | --- | --- |
-| Lienzos | `Frame` | | Popover "Lienzos" (§5.4) |
-| Nuevo lienzo | `Plus` | | Creates "Lienzo sin título" and opens it, title in edit mode |
-| Duplicar lienzo | `CopyPlus` | | For an example the row reads "Guardar una copia propia" |
-| ; | | | |
-| Ajustes del lienzo | `SlidersHorizontal` | | Popover (§5.3) |
-| Ver como lista / Ver como lienzo | `ListTree` / `Frame` | `⇧L` | Switches view (§9.3) |
-| Historial | `History` | | Popover (§5.4) |
-| ; | | | |
-| Colecciones | `Package` | | Host modal (§9.2) |
-| Asistente | `Bot` | | Same popover as the composer's status button (§10.3) |
-| ; | | | |
-| Atajos de teclado | `Keyboard` | `?` | Popover listing §12 |
-| Guía de Lienzo | `BookOpen` | | The guide (§11.3) |
+Anchored below the button, 288 wide; rows grouped by dividers: New Lienzo · Lienzos · Rename (F2) · Duplicate as
+my own ┃ Undo · Redo · History ┃ Hide all UI · Agent (with its presence) · Instructions for the agent · Activity ┃
+Manage extensions… · Import a collection · Export this Lienzo ┃ Settings · Keyboard shortcuts (?) · Lienzo guide.
+There is no view switcher.
 
 ### 3.3 Narrower panels (not compact)
 
-Nothing docks or undocks; thresholds only resolve collisions. Measure the panel width `w`.
-
-| `w` | Change |
-| --- | --- |
-| ≥ 880 | As above. Composer rest width 360, max 560. |
-| 560 - 879 | Title max 160. Island D shows only the percent button (its menu gains "Acercar" and "Alejar"). Composer max = `w − 2 · (88 + 12)`. |
-| < 560 | Island B shows Seleccionar · Mano · Lápiz · Texto · `Plus` (the picker lists Forma, Goma, Biblioteca and the three quick types first). Island A drops Redo (it moves into the main menu). Composer width = `w − 24 − 88`, left-aligned at 12; D keeps the percent button. |
-
-The title is the element that shrinks first inside A; B is centred on the panel but never closer
-than 8 to A (it then sits to the right of A).
+Nothing docks. Under 880 the title shrinks to 160 and the zoom shows only its percent (a menu holds zoom in, zoom
+out, fit and 100 %). The toolbar stays centred above the composer; the composer is `w − 2 · 100` wide from 560 to
+879 and `w − 24` below 560. The right panel keeps its 300 and covers what is under it; ⌘\ hides it, and the
+selection beacon keeps clear of it.
 
 ### 3.4 Compact (`layout.compact`)
 
-A phone cannot give four islands room, and there is no hover. Compact therefore **docks** the same
-elements and defaults to the **Lista** view (§9.3):
-
 ```
 ┌ Top bar 52 (surface1, bottom border) ───────────┐
-│ ☰   Título ▾ [Ejemplo]              ↶    ＋     │
+│ ☰   Title ▾ [Example]          ↶    ⌕    ◧      │
 ├─────────────────────────────────────────────────┤
-│ Lista (scrolls)                                 │
-├ Action bar 48 ; only with a selection (§5.1) ───┤
+│ Lista (scrolls) — or the canvas while a drawing │
+│ tool or the hand is in use                      │
+├ Selection bar 52, only with a selection ────────┤
+├ Toolbar: one horizontal scroller, 44 buttons ───┤
 ├ Composer, docked, full width (§10) ─────────────┤
 └─────────────────────────────────────────────────┘
 ```
 
-- Top bar: `Menu` · title (press → "Lienzos" sheet) · spacer · `Undo2` · `Plus` (picker sheet). Redo
-  is in the main menu.
-- Every `Popover` and `Menu` is presented as a host `Modal` sheet with the same content.
-- Controls are 44 high, icon buttons 44×44, body text 14/21 (`font.compactBump`).
-- "Ver como lienzo" shows the free canvas read-mostly: pan, island D (above the composer), tap to
-  select, action bar. No dragging, no handles, no in-place editing; "Editar" in the action bar opens
-  the Datos sheet.
+- Lista is what a compact panel shows; nobody chooses it. Picking Pencil, Shape, Text, Arrow, Eraser or Hand shows
+  the canvas (one finger draws, two pan); Select returns to Lista.
+- The right panel is a host sheet, opened from the selection bar's "Properties" or the top bar.
+- Menus are sheets; the + catalog and ⌘K keep their content full width. Controls are 44.
 
 ### 3.5 Touch on a non-compact layout (tablets)
 
 Detected per interaction (`pointerType === "touch"`, or native), not per device.
 
-- No tooltips. Every icon-only action also exists, with its name, in the "Más" menu or main menu.
+- Tooltips come from a long press (§33). Every icon-only action also exists, with its name, in a menu, Properties or ⌘K.
 - Island and toolbar buttons use `sizeTouch` 44. `+` handles use `hitTouch` 44 and appear on
   selection only (there is no hover).
 - Tap selects. Double-tap edits (§8.1). Long-press 500 ms on an entity adds it to the selection;
@@ -283,22 +233,10 @@ The only floating surface. `View` with fill `surface1`, radius 12, padding 4, ro
 
 ### 4.2 `IconButton` (with tooltip)
 
-Replaces the current `IconButton`. One component, three sizes: `island` 36×36 with icon 18,
-`tool` 40×40 with icon 20, `inline` 28×28 with icon 16 (inside cards and popovers). Touch and
-compact: 44×44 hit, visual unchanged. Radius 8. Icon `foregroundMuted`; hover and pressed
-`foreground`; active `accent`.
-
-- Required props: `icon`, `label` (also the `accessibilityLabel` and the tooltip text). Optional:
-  `keys` (shortcut, e.g. `"N"`, `"⌘Z"`), `active`, `disabled`, `tone="danger"` (icon `statusDanger`
-  on hover/pressed only ; a quiet bin, not a red button).
-- **Tooltip.** Appears after 500 ms of hover or immediately on keyboard focus; if another tooltip
-  was visible in the last 300 ms it appears at once (moving along a toolbar reads as one gesture).
-  Fill `foreground`, text `surface1` in `small`, radius 6, pad 4 × 8, then the shortcut in `keys`
-  at 0.7 opacity after a gap of 6. Placed 6 px outside the button on the side away from the nearest
-  panel edge (below for A and B, above for C and D, above for the contextual toolbar unless it is
-  flipped). Fades 80 ms. `pointerEvents: "none"`. Hidden on press, on touch and while any popover is
-  open. Disabled buttons still show their tooltip.
-- A button that opens a popover or menu sets `accessibilityState.expanded`.
+One component (`ui.tsx`): 32 square (36 in the top islands, 44 on compact), radius 6, icon 16 `foregroundMuted`,
+`foreground` when active. Props: `icon`, `label` (accessibility label and tooltip), optional `shortcut`, `detail`
+(a second tooltip line, used for glossary words), `active`, `disabled`. Every IconButton carries the shared tooltip
+(§33); other icon-only controls wrap themselves in `Tooltip` or use `useTooltip`.
 
 ### 4.3 `Toolbar`
 
@@ -852,40 +790,12 @@ share the same host preference. The menu always permits a manual opening.
 
 ## 12. Keyboard
 
-Shortcuts run only when the canvas owns focus. Inputs, sliders, menus, drawing layers and the
-composer handle their own keys. Use Meta on macOS and Ctrl elsewhere; do not intercept Paseo's
-global shortcuts outside the focused panel.
-
-| Action | Shortcut |
-| --- | --- |
-| Open block picker | K or Ctrl/Meta K |
-| Quick-create a note | N |
-| Quick-create a node | I |
-| Start inline editing | Enter or F2, one entity selected |
-| Finish single-line edit | Enter |
-| Finish multiline edit | Ctrl/Meta Enter |
-| Cancel pending edit or connection gesture | Esc |
-| Close menu/popover, then clear selection on another Esc | Esc |
-| Undo / redo content | Ctrl/Meta Z / Ctrl/Meta Shift Z |
-| Duplicate selection | Ctrl/Meta D |
-| Group / ungroup selection | Ctrl/Meta G / Ctrl/Meta Shift G |
-| Delete selection or selected connection | Delete or Backspace |
-| Extend selection | Shift click; touch long-press |
-| Navigate entities | Tab / Shift Tab |
-| Move selection | Arrows, 8 world units; Shift arrows, 32 |
-| Create a connected neighbour | Ctrl/Meta arrow, one entity selected |
-| Connect two entities | L |
-| Focus composer for selected context | A |
-| Send composer | Enter; Shift Enter inserts a line |
-| Show Lista / canvas | Shift L |
-| Fit all / selection / real size | 1 / 2 / 0 |
-| Zoom | + / minus |
-| Solo lienzo / show controls | F |
-| Show keyboard help | ? |
-
-Menu and toolbar arrows move between actions; Home/End reach boundaries. Escape restores focus to
-the trigger. Compact offers named actions for every keyboard-only operation that it supports.
-
+Every shortcut lives in one registry, `plugin/client/shortcuts.ts` (§33): id, label, default keys, group and `when`
+(always, a document, the canvas, a selection). The panel resolves the person's overrides against it and runs what
+a key press spells. Keys typed into a field, a frame or an interactive control are left alone, except ⌘K and ⌘\.
+A few contextual keys stay outside the registry because they depend on focus: Enter / F2 edit a selected text or
+enter interaction mode, Tab / Shift+Tab walk the entities, arrows nudge 8 (Shift 32), ⌘↵ sends the composer,
+0 / + / − zoom. ⌘ on Apple platforms, Ctrl elsewhere.
 
 ## 13. Accessibility and quality
 
@@ -1057,31 +967,31 @@ learner's current experiment layer, preserving assistant and authored strokes. S
 settled summary, never the full point stream, unless the assistant explicitly requests an allowed
 bounded runtime read.
 
-## 19. Spanish copy and event honesty
+## 19. Copy and event honesty
 
-Use sentence case and the following names consistently. User-facing labels never include raw
-IDs, revision numbers or schema names. Technical documentation may use API names.
+English, sentence case, short and concrete, with the five glossary words of §33 (Lienzo, Marco, Hoja, Lente,
+Ventana) used as names and explained where they appear. User-facing labels never include raw IDs, revision numbers
+or schema names. Technical documentation may use API names. Argentine flavour only where nobody needs it to use the
+app: empty states, onboarding, a few confirmations ("Listo.", "Dale.").
 
 | Context | Copy |
 | --- | --- |
-| Document menu/list | Lienzos; Nuevo lienzo; Lienzo sin título; Guardar una copia propia |
-| Creation | Añadir un bloque; Buscar bloques y plantillas; Nada coincide con "{q}" |
-| Views | Ver como lista; Ver como lienzo; Solo lienzo; Mostrar controles |
-| Selection | Preguntar; Editar texto; Datos; Indicaciones para el asistente; Reiniciar; Más |
-| Group | Añadir dentro; Disposición; Desagrupar; Sacar del grupo; Guardar como plantilla |
-| Connection | Etiqueta; Tipo; Color; Flujo; Depende; Referencia; Invertir; Conectar con |
-| Assistant | Asistente; Sin asistente. Se guarda en cola.; Preguntar sobre la selección |
-| Collections | Colecciones; Importar colección; Exportar; Quitar; Copia portable |
-| Learning | Pedir una pista |
-| Playback | Paso {n} de {total}; Reproducir; Pausar; Reiniciar; Activar sonido |
-| Persistence | Guardando; No se guardó; Reintentar; Reaplicar el cambio; Descartar |
-| Delivery | Enviando; En cola; Enviado; Recibido por el asistente; No se envió |
-| Static fallback | Estático; La interacción está disponible en la versión web |
+| Lienzos | Lienzos; New Lienzo; Untitled Lienzo; Duplicate as my own |
+| Adding | More tools; Search tools, embeds, blocks…; Nothing matches “{q}”; Manage extensions… |
+| Selection | Wrap in a Marco; Unwrap Marco; Duplicate; Ask the agent; Delete; Properties |
+| Marco | Add inside; Layout; Take out of the Marco; Save as template… |
+| Link | Label; Kind (Flow, Needs, Mentions); Colour; Reverse |
+| Agent | Agent connected; Connect an agent; No agent yet. Messages wait in a queue.; Ask about the selection… |
+| Collections | Import a collection; Export; Remove; Portable copy |
+| Learning | Ask for a hint |
+| Playback | Play; Pause; Reset |
+| Persistence | Saving; Not saved; Retry; Apply my change again; Discard |
+| Delivery | Sending; Queued; Sent; Received by the agent; Not sent |
+| Static fallback | Static; The interactive version is available on desktop and web. |
 
-Collection replacement uses "Reemplazar la colección existente" and explains what will change.
-Examples always retain the "Ejemplo" chip and explain that the data is illustrative. A result,
-assistant status, successful save or feedback receipt is shown only after a confirmed tool/RPC
-response or live host signal. No renderer fabricates an assistant hint, answer or completed job.
+Examples always keep the "Example" chip and say that the data is illustrative. A result, agent status, successful
+save or feedback receipt is shown only after a confirmed tool/RPC response or live host signal. No renderer
+fabricates an agent hint, answer or completed job.
 
 
 ## 20. Whiteboard: free text, shapes, SVG and freehand (v7)
@@ -1179,71 +1089,31 @@ Seleccionar; held Space is a temporary Mano.
 - New elements go into the innermost open group under the pointer, otherwise the canvas root.
 - Offline or read-only: creation tools are disabled (opacity 0.45); Seleccionar and Mano remain.
 
-### 20.4 Island B, Herramientas
+### 20.4 Drawing tools
 
-Top-centre `Island`, `tool` buttons 40 (touch 44), icon 20, gap 2, dividers as `island.divider`:
+The drawing tools are in the bottom toolbar (§24): Pencil, Shape (its flyout: Rectangle, Ellipse, Diamond, Triangle,
+Line), Text, Arrow, Eraser. Active tool: `accent`@0.14 fill, `accent` icon. A double press on the tool in hand keeps
+it (a 4 px accent dot); Text, Shape and Arrow otherwise return to Select after one use. Rounded rectangle, hexagon
+and cylinder are in the + catalog under Shapes & drawing, with the architecture icons and SVG import.
 
-`MousePointer2` Seleccionar · `Hand` Mano ┃ `Type` Texto · `Shapes` Forma (10 px `ChevronDown` in
-its bottom-right corner; a second press on the active button opens the shapes popover) · `Pencil`
-Lápiz · `Eraser` Goma ┃ `Library` Biblioteca · `Plus` Añadir bloque.
+### 20.5 Style
 
-Tooltips carry the name and key. Active tool: `accent`@0.14 fill, `accent` icon. Width at 40 px
-buttons is 8 × 40 + 7 × 2 + 2 dividers (9 each) + 8 padding = 360; it is centred and yields to
-island A as in §3.3.
-
-- **Formas popover** (width 184): 4 × 2 grid of 40 px buttons with a 20 px drawn preview, then a
-  full-width row "Flecha". Picking sets the shape, activates Forma and closes.
-- **Biblioteca popover** (width 304): label "Arquitectura"; 4-column grid of 68 × 64 cells (28 px
-  icon in `foreground`, `small` muted name): Servidor · Base de datos · Nube · Red · API ·
-  Navegador · Portátil · Móvil · Capas · Paquete · Archivo · Personas. Press inserts at the
-  visible centre (or in the selected group) and selects it; a cell can also be dragged out.
-  Footer: "Importar SVG…" (`Upload`) and `small` muted "Iconos Tabler · licencia MIT". A refused
-  import shows, inside the popover, "Este SVG contiene contenido activo o enlaces externos y no se
-  puede importar." and inserts nothing. No network at run time.
-
-### 20.5 Island E, Estilo
-
-Shown only while the tool is Texto, Forma or Lápiz, or the selection contains whiteboard
-elements; otherwise absent (not disabled). Right edge, inset 12, vertically centred, width 168,
-padding 8, sections 8 apart separated by a 1 px `border` rule. Only the sections that apply:
-
-| Section | Control | Applies to |
-| --- | --- | --- |
-| Color | 4 × 2 swatches, button 32 (touch 40), disc 18; chosen = 2 px `accent` ring with a 2 px gap. Order: Tinta, Gris, Azul, Turquesa, Verde, Naranja, Rojo, Violeta | all |
-| Tamaño | segmented `S M L XL`, 36 × 32 each, `label` 600 | text size, stroke weight |
-| Relleno | three 32 px buttons with a 16 px preview: sin relleno, suave, sólido | shapes except line |
-| Trazo | continuo `Minus`, discontinuo `MoreHorizontal`, punteado `Ellipsis` | shapes, line |
-| Fuente / Alineación | `Sans` `Serif` `Mono` each set in its own family; `AlignLeft` `AlignCenter` `AlignRight` | text |
-| Puntas | sin punta `Minus`, flecha `ArrowRight`, doble `ArrowLeftRight` | line |
-
-A change sets the default for the next element and, when whiteboard elements are selected, edits
-them in one undoable transaction ("Cambiar color", "Cambiar tamaño", "Cambiar relleno", "Cambiar
-trazo", "Cambiar fuente", "Cambiar puntas"). Colour meaning never rests on hue alone: every swatch
-has its name as accessible label and tooltip.
-
-The contextual toolbar for a whiteboard selection keeps only Duplicar · Eliminar · Más (style
-lives in island E, so it is not duplicated there).
+Colour, size, fill, fill colour, stroke, font, alignment and arrowheads are a "Style" section of the right panel
+(§31): in the Properties tab for selected drawings, in the tool's options tab ("Pencil options", "Shape options"…)
+while a drawing tool is in hand. Only the sections that apply show. "Clear my strokes" sits in the Pencil and
+Eraser options. The selection bar's colour button sets the stroke colour of selected drawings.
 
 ### 20.6 Narrow and compact
 
-- 560 to 879: island E turns horizontal, centred, 8 above the composer: Color and Tamaño in one
-  scrollable row plus `SlidersHorizontal` "Más estilo" opening the remaining sections in a host `Modal` titled
-  "Estilo" (same sections and order as the vertical island).
-- Below 560: island B is Seleccionar · Mano · Lápiz · Texto · `Plus`; the rest moves into the
-  picker. Island E as above.
-- Compact: the top bar gains `PenTool` "Herramientas", a host sheet with tools, style and library
-  that switches to "Ver como lienzo". With a creation tool active, one finger creates or draws and
-  two fingers pan. In the sheet the eight tool buttons wrap in a 4 × 2 grid (44, gap 8, no dividers,
-  no horizontal scroll). An `accent` pill "Listo" (height 36) top-centre returns to Seleccionar. Moving
-  and resizing stay off in compact, as for cards.
-- Touch on non-compact: handles use the 44 hit; long-press 500 ms on a whiteboard element adds it
-  to the selection, same as cards.
+Compact draws with one finger and pans with two once a drawing tool is picked from the toolbar scroller; Select
+returns to Lista. Moving and resizing stay off in compact, as for cards. Touch on a wider panel uses the 44 hit and
+long-press 500 ms to add to the selection.
 
-### 20.7 Keyboard additions (extends §12)
+### 20.7 Drawing keys
 
-`V` `H` `T` `R` `D` `E` tools · `Space` held = Mano · `Enter`/`F2` edits a selected text or shape
-label, or enters interaction mode on a card that has one · `Esc` leaves, in order: text editing,
-interaction mode, active tool, selection. None fire while an input has focus.
+From the registry (§33): V Select, H Hand, P Pencil, R Rectangle, O Ellipse, T Text, A Arrow, E Eraser, Space held =
+Hand. Enter / F2 edits a selected text or shape label; Esc leaves, in order: text editing, interaction mode, the
+tool in hand, the selection.
 
 ## 21. Shape labels and dense graphs (v8)
 
@@ -1298,27 +1168,23 @@ alone opens and closes it. While its card is selected the row has a stronger acc
 accent name. Unpaired rows are pressable only when they are directories with children. Verified with `design/whiteboard-harness/tree.cjs`
 (RN-web, isolated omabox); capture `design/qa-shapes-legibility-2026-10-06/file-tree.png`.
 
-## 24. Docked tools and block palette (v11)
+## 24. Bottom toolbar and the + catalog
 
-On a non-compact panel at least 520 tall (`island.dock`), the tool island is a floating column on the
-left edge, vertically centred (never above `bannerTop`), with horizontal dividers. Its popovers (shapes,
-library) open to its right, 8 from the column.
+**Toolbar** (`face.toolbar`, `client/Toolbar.tsx`). A floating island centred above the composer, 8 between them,
+44 tall with 36 buttons (44 on compact), icon 18, 4 apart, 1 × 20 dividers between groups. Order: Select, Hand ┃
+Pencil, Shape (chevron; pressing it again opens the flyout: rectangle R, ellipse O, diamond, triangle, line), Text,
+Arrow, Eraser ┃ Marco, Ventana ┃ pinned tools in pin order, each with its 1–9 badge ┃ `+`. Marco adds an empty
+Marco in the middle of the view (inside the selected Marco, if any); Ventana asks for an address and adds a web
+page, or a player for an image, video or sound link. On compact the toolbar is one horizontal scroller.
 
-The "+" tool opens the block palette (`island.palette`): icon-only columns beside the dock, sharing its
-vertical centre, 6 apart. Column one holds the basic blocks plus group, media by URL and SVG import;
-column two the interactive blocks and, last, "Catálogo completo" (search, templates, collections, custom
-types, as the dialog). Whiteboard types are not repeated: the tools draw them. Buttons are 40 with a 20
-icon in the block's tone. Each column slides out from under the dock: translateX from -16 × (index + 1)
-to 0 with opacity 0 → 1, 180 ms on the `out` curve, each column 40 ms after the previous; instant with
-reduced motion. Pointing at or focusing an icon shows a 232 wide hint to the right of the last column,
-level with that icon: name, then up to three lines of description. Columns never exceed the rows that fit
-between the top and bottom banners; what does not fit stays in the full catalog. Escape, a click outside
-or "+" again closes it. Shorter panels keep the top row of tools and the dialog; compact keeps the sheet.
-
-A click on the canvas (background or a card) closes the shapes and library popovers.
-
-Verified with `design/whiteboard-harness/chrome.cjs`; captures `tools-dock.png` and `block-palette.png`
-in `design/qa-shapes-legibility-2026-10-06/`.
+**`+` catalog** (`face.catalog`, `client/AddMenu.tsx`). A popover anchored to `+` (right edges aligned), 360 wide, up
+to 480 tall. A search field on top, focused on open; then sections Pinned, Shapes & drawing, Embeds (Ventana, image,
+video, audio, mini app, file tree), Blocks (every catalog block type and template), Extensions (tools from
+extensions); "Manage extensions…" at the bottom opens the collections dialog. Rows are 44: a 28 tile in the type's
+tone, the name, one line of description, the shortcut on the right; hovering shows the pin toggle. Pins persist in
+the host's `interface` settings and give keys 1–9. Search matches names fuzzily and keywords and descriptions by
+whole words; arrows move, Enter adds, Esc closes. Verified with `design/whiteboard-harness/face.cjs` and
+`chrome.cjs`; captures in `design/qa-face-2026-10/`.
 
 ## 25. Wayfinding: minimap and selection beacon (v12)
 
@@ -1387,95 +1253,88 @@ cursor shows through them. Buttons keep the system pointer. Verified with
 Verified with `design/whiteboard-harness/windows.cjs` (RN-web, isolated omabox); capture
 `design/qa-shapes-legibility-2026-10-06/windows.png`.
 
-## 29. Lenses (v16)
+## 29. Lenses
 
-The lenses that use history read what the server stores, the 50 most recent changes, and say so.
+Lente (Spanish for lens) is a way to colour the same canvas. The lenses that use history read what the server
+stores, the 50 most recent changes, and say so.
 
-- **Lenses** (`lens`). A control above the minimap names the lens in use; each press moves to the next:
-  none, Autoría, Antigüedad, Conversación. A lens keeps every card in place and lays a mark over it (2 px
-  border, 0.2 fill, radius 12, 2 px outset; neutral states at half fill). Autoría: last author, accent for
-  the person and violet for the assistant, neutral when the stored history has no change. Antigüedad:
-  changed within 2 revisions (risk tone), within 10 (warning), earlier (turquoise), not in the stored history
-  (neutral). Conversación: requests waiting (warning), not delivered (risk), attended (success), never taken
-  up (neutral). The legend counts the cards in each state. Marks hide while cards are being dragged.
+A control above the minimap names the lens in use; each press, or L, moves to the next: none, Who changed it, How
+fresh, Talked about, What the agent has seen. A lens keeps every card in place and lays a mark over it (`lens`:
+2 px border, 0.2 fill, radius 12, 2 px outset; neutral states at half fill). Who changed it: accent for the person,
+violet for the agent, neutral without a stored change. How fresh: changed within 2 revisions (risk tone), within 10
+(warning), earlier (turquoise), not stored (neutral). Talked about: waiting (warning), not delivered (risk), answered
+(success), never discussed (neutral). What the agent has seen: up to date where the agent changed it last or
+answered about it since, behind where you changed it afterwards, no record otherwise; it is derived from stored
+changes and requests and claims nothing more. Marks hide while dragging. Logic in `plugin/client/lenses.ts`, tested
+in `tests/lenses.test.ts`.
 
-Verified with `design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history served by
-the QA host); capture `lens-author.png` in `design/qa-shapes-legibility-2026-10-06/`.
+## 30. One view
 
-## 30. More readings of the same document (v17)
+The canvas is the only way to look at a Lienzo. A compact panel shows Lista (the same document as a scrolling list
+of cards and Marcos) without anyone choosing it, and switches to the canvas while a drawing tool or the hand is in
+use. There is no view switcher, no alternative readings and no extension views.
 
-A "Cambiar vista" button in the title island (and the menu) lists the views: Lienzo, Lista, Foco, Lecturas,
-Matriz. Only the canvas and the list edit; the rest are for looking, never write, and
-return to the canvas with "Ver en el lienzo". The tool column hides in them. Each view states the question
-it answers under its title.
+## 31. Properties, the selection bar and ⌘K
 
-- **Foco.** The selected entity in the middle (accent border), its neighbours placed by what each link
-  means: what it needs above, what needs it below, where the flow comes from on the left and goes on the
-  right, mentions last. `from` needs `to`; `from` flows to `to`. Pressing a neighbour stands on it.
-- **Lecturas.** Every path the flow links spell out from a start to an end, and every chain of needs, at
-  most 12 per kind, loops cut where they close. A reading is picked from a list and walked one card at a
-  time; the label of the link that led to a card is shown above it. A card on several readings is marked
-  as a crossing.
-- **Matriz.** Rows and columns are the entities in reading order (area by area, then areas that end a
-  link); a link is a 22 px cell at (from, to) in its kind's tone. Area bands are shaded, so cells outside a
-  band are coupling between areas. Hovering a cell says the relation in words; pressing selects both ends.
-- **Lens "Lo que ve el asistente".** A fifth lens. Up to date: the assistant changed the card last, or
-  attended a request about it since its last change. Behind: you changed it afterwards. No record:
-  nothing is claimed. This is derived from the stored changes and requests; the assistant's actual reading
-  is not recorded, and the reverse (what you have seen) is not tracked at all.
+**Right panel** (`face.rightPanel`, `client/RightPanel.tsx`). A floating island, 300 wide, right inset 12, its top
+under the top islands, its height to above the zoom. It shows when something is selected, when the tool in hand has
+options, or when an extension tool is open, with a tab per source: Properties (the selection), "<Tool> options", and
+one tab per extension tool; picking a drawing tool brings its tab forward. The pin keeps it open with nothing
+selected, showing the Lienzo (description, instructions for the agent, layout); ⌘\ and the `PanelRight` button hide
+it or bring it back. Sections fold under 12 px headers. A block shows Content (title and every field of its type),
+Style for drawings, Instructions for the agent (with those it inherits), Connect (search a target) and Actions (edit
+on the canvas, interact, reset, duplicate, ask, export, release position, take out of the Marco, move
+earlier/later, automatic size, delete). A Marco adds its title and purpose, Layout and Variables. A link shows label,
+kind, colour, reverse and delete. A result still hidden behind a learning gate is never named. On compact the panel
+is a sheet.
 
-Logic in `plugin/client/view-models.ts`, tested in `tests/views.test.ts`. Verified with
-`design/whiteboard-harness/views.cjs` (RN-web, isolated omabox, stand-in history); captures
-`views-sheet.png` and `lens-agent.png` in `design/qa-shapes-legibility-2026-10-06/`.
+**Selection bar** (`face.selectionBar`). A small bar above the selection, below when there is no room: colour (for
+drawings and links), Wrap in a Marco (Unwrap for a Marco), Duplicate, Ask the agent (focuses the composer), Delete;
+32 buttons. A link gets colour, kind, reverse and delete. Detail lives in the right panel.
 
-## 31. Four worlds and a camera for every view (v19)
+**Command palette** (`face.palette`, `client/CommandPalette.tsx`, model in `client/palette.ts`). ⌘K / Ctrl+K, or the
+top-right button. Centred, 640 wide, its top at 18 % of the panel, a 52 px search field with a leading icon, results
+under small-caps headers in rows of 40 (icon, title, muted subtitle, shortcut chips), the active row in a soft accent
+fill. Footer: "↵ Open · ⌘↵ Run in background · Esc Close" and the active row's verb. Groups: Recent (on an empty
+query), Tools, Actions, Hojas (stage 2), Lienzos, Extensions, Settings, and "Ask the agent: ‹query›" always last,
+which sends through the composer's path with the selection as context. Titles match fuzzily; keywords and subtitles
+by whole words. Keyboard alone works fully; so does the mouse.
 
-Every view other than the canvas now moves like the canvas: the wheel pans, command-wheel or a pinch zooms around
-the pointer, a drag on empty space pans, and a pill in the lower left zooms out, shows the scale (press for 100 %),
-zooms in and returns. The native views (Lista, Foco, Lecturas, Matriz) sit in `plugin/client/Pannable.tsx`; their
-heading stays put while the content moves. The list does not pan on drag, so text can still be selected. Nothing
-about what those four show has changed.
+## 32. Extension tools
 
-The four worlds are drawn on one 2D surface with its own camera (`plugin/client/worlds/Stage.tsx`): each world
-draws in fixed world units, is fitted on entry and by "Encajar" or a double press on nothing, and names itself, the
-question it answers and a legend of how to read it. Marks and words grow when the camera is far (up to 1.75×) so a
-whole world fitted on screen is still readable; a plate shows its text only when it is close enough to read.
-Pointing at anything says what it is in a small card; a panel at the right holds what was chosen. None of them
-writes, and none is about who changed what. Shared drawing in `plugin/client/worlds/kit.ts`.
+A person or their agent can add a tool without touching the plugin (contract in `docs/extensions.md`). Tools are
+listed in the + catalog's Extensions section and open as a tab of the right panel, working on the shared selection;
+several can be open at once. An imported tool that asks for a permission shows a warning-toned strip saying what it
+asks for in words and a single "Allow". "Manage extensions…" opens the collections dialog: what each pack brings, a
+"My extensions" card to remove or export local ones, and an import review that says plainly when a pack brings code.
+Extensions take every colour from the theme they are given. Verified with `design/whiteboard-harness/extensions.cjs`.
 
-- **Órbita — ¿qué tan cerca está todo de esto?** The selected entity is the sun; every other one sits on the ring
-  of its distance in links, labelled on the ring itself (a 1 enlace, a 2, a 3 o más, sin camino). Each area owns a
-  slice of the sky. A thread joins each body to the one before it on the way to the sun, so pointing at a far body
-  lights the chain it is reached through. Links of the sun carry their kind's colour, an arrow and a moving dot in
-  the direction they point. Pressing a body puts it in the centre and the system travels to its new arrangement.
-- **Estratos — ¿qué sostiene a qué?** A cut through the ground: needs and flow stack the entities in layers, the
-  base needs nothing, each layer rests on those below. A block is as wide as what it carries and says how many it
-  holds. Layers settle from the bottom up on entry. Pointing at a block draws what it stands on (solid, down) and
-  what stands on it (dashed, up); pressing it takes a sample: everything above that falls with it, or everything
-  below it needs. Loops are one block; mentions do not stack; entities with no need or flow lie loose above.
-- **Cauce — ¿cuál es el camino más corto para explicar una cosa a partir de otra?** The canvas' own arrangement,
-  with links as rivers: as wide as the number of shortest ways through them, with a current that runs the way the
-  link points. Press what is known: every other thing says how many steps away it is. Press what is wanted: only
-  the shortest way stays lit, numbered, with something travelling it. "Pedir esta explicación" sends that path to
-  the assistant as a real request (`route.explain`); when it is only queued the panel says so.
-- **Relieve — ¿dónde se concentra esto?** The same arrangement as land seen from above: filled height bands with
-  light from the upper left, contour lines, and a flag on the summits (the entities the rest leans on). "Nivel del
-  agua" floods the lowlands step by step and says how many remain in sight, so the most linked are what is left.
+## 33. Shortcuts, tooltips, words and small details
 
-Models in `plugin/client/worlds/{orbit,strata,course,relief}.ts`, tested in `tests/world-*.test.ts`. Verified
-with `design/whiteboard-harness/worlds.cjs` (RN-web, isolated omabox, example data, dark and light): each world
-paints, has a legend, zooms, pans and fits; Órbita re-centres, Estratos takes a sample, Cauce finds a route and
-sends its request, Relieve raises the water; the four native views pan, zoom and return; the document is never
-written. Captures in `design/qa-worlds-2026-10-07/`.
+**Shortcuts** (`client/shortcuts.ts`). Tools: V Select, H Hand, P Pencil, R Rectangle, O Ellipse, T Text, A Arrow,
+E Eraser, M Marco, W Ventana, L next Lente, Space held = Hand, 1–9 pinned tools. Navigation: ⌘K palette, [ / ]
+previous / next Hoja, ⌘J jump to Hoja, F follow the agent, G the agent's latest (these five are registered now and
+wired in stage 2), Shift+1 fit all, Shift+2 fit selection, ⌘\ right panel, ⌘. hide all UI, ? the sheet. Editing: ⌘Z,
+⌘⇧Z, ⌘D duplicate, ⌘G wrap in a Marco, ⌘⇧G unwrap, Delete / Backspace, Esc, ⌘A. The person's overrides win, then
+ours, then extensions' in the order they register; a combination already taken is not assigned and is listed as
+"unassigned" with whose keys they are. The `?` sheet and Settings → Shortcuts list everything and reassign by
+"Change" then the new keys; overrides persist in the host's `interface` settings and show "Reset".
 
-## 32. Extensions: views and tools from outside the plugin (v20)
+**Tooltips** (`tooltip`, `Tooltip` / `useTooltip` / `TooltipLayer` in `ui.tsx`). One layer per panel draws them above
+everything. Name, then the shortcut in muted monospace ("Pencil  P"); a second line for glossary words. They appear
+after 500 ms; once one has shown, the next appears at once for 800 ms. They sit 6 px from the control on the side
+away from the nearest panel edge and never cover it; a press hides them; on touch a long press shows one for 1.6 s.
 
-A person or their assistant can add a view or a tool without touching the plugin (contract in `docs/extensions.md`).
-User views are listed in "Cambiar vista" under the shipped ones, after a divider, and get the same kind of heading
-(name, one line of description) above a frame that fills the panel. User tools are behind a "Herramientas propias"
-button in the title island (in the main menu on a compact panel) and open as a 320 px floating panel that stays over
-any view; one tool is open at a time. An imported extension that asks for a permission shows a warning-toned strip
-saying what it asks for in words and a single "Permitir". The collections tab lists what each pack brings, has a
-"Mis extensiones" card to remove or export the local ones, and the import review says plainly when a pack brings
-code. Extensions take every colour from the theme they are given. Verified with
-`design/whiteboard-harness/extensions.cjs`; captures in `design/qa-extensions-2026-10-08/`.
+**Words.** The interface is in English with five Spanish brand words, each explained in English where it appears in
+a surface: Lienzo (this canvas, and each document), Marco (a frame that holds things together), Hoja (a chapter the
+agent adds while explaining), Lente (a way to colour the same canvas), Ventana (a window onto a web page, a video or
+a mini app). The agent still answers in the person's language.
+
+**Small details** (`face.eggs`, `client/Eggs.tsx`). An empty canvas shows a hand-drawn mate with rising steam and
+"Empty. Pour yourself a mate." Typing "mate" in ⌘K boils a small kettle in the bottom-right corner for 4 s ("80 °C.
+Never boiling, for mate."). A loading Lienzo sometimes shows a small turning Sol de Mayo or a tango step. Some
+confirmations say "Listo." or "Dale.". None of them covers content; under reduced motion the mate stays still and the
+kettle and the loading details do not appear.
+
+Verified with `design/whiteboard-harness/face.cjs` (RN-web, isolated omabox, example data, dark and light); captures
+in `design/qa-face-2026-10/`.
