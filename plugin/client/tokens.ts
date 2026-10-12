@@ -1447,7 +1447,6 @@ const baseTokens = {
     "recommendedMax": 4,
     "neutral": "foreground: parámetros locales no compartidos y la serie de referencia"
   },
-  "views": { "padX": 88, "padBottom": 140, "focusMax": 920, "listWidth": 280, "cell": 22, "rowLabel": 220, "colHead": 22 },
   "lens": { "fill": 0.2, "border": 2, "radius": 12, "outset": 2 },
   "fileTree": { "row": 26, "rowCompact": 36, "indent": 16, "chevron": 12, "icon": 14, "gap": 6, "bleed": 4, "radius": 6, "highlightFill": 0.14, "pointedFill": 0.24, "mutedAlpha": 0.5 },
   "whiteboard": {

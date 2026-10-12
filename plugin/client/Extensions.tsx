@@ -9,7 +9,7 @@ import type { CanvasController } from './useCanvas';
 import { WebExtension, type ExtensionCall } from './web';
 
 const PERMISSION: Record<ExtensionPermission, string> = { edit: 'cambiar el lienzo', agent: 'pedirle cosas al asistente', network: 'cargar cosas de internet' };
-export const extensionIcon = (extension: CatalogExtension) => extension.icon ?? (extension.kind === 'view' ? 'LayoutDashboard' : 'Puzzle');
+export const extensionIcon = (extension: CatalogExtension) => extension.icon ?? 'Puzzle';
 const list = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
 
 /**
@@ -63,15 +63,6 @@ function Grant({ extension, controller: c }: { extension: CatalogExtension; cont
   return <View nativeID={`lienzo-extension-grant-${extension.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.wash('aviso') }}>
     <Txt kind="small" style={{ flex: 1 }}>Vino en la colección «{extension.source}» y pide {list(extension.permissions.map(p => PERMISSION[p]))}. Sin tu permiso solo puede leer y seleccionar.{error ? ` ${error}` : ''}</Txt>
     <Button label="Permitir" small variant="primary" onPress={allow} />
-  </View>;
-}
-/** A view made by the person or their assistant, in the same place and under the same kind of heading as the shipped ones. */
-export function ExtensionView({ extension, controller, onOpen }: { extension: CatalogExtension; controller: CanvasController; onOpen(id: string): void }) {
-  const u = useUI();
-  return <View nativeID={`lienzo-extension-view-${extension.id}`} style={{ flex: 1, backgroundColor: u.c.surface0 }}>
-    <View style={{ paddingLeft: u.compact ? 16 : 20, paddingRight: 16, paddingTop: u.compact ? 12 : 64, paddingBottom: 10, gap: 2 }}><Txt kind="heading">{extension.name}</Txt>{!!extension.description && <Txt kind="small" muted numberOfLines={2} style={{ maxWidth: 560 }}>{extension.description}</Txt>}</View>
-    <Grant extension={extension} controller={controller} />
-    <View style={{ flex: 1, minHeight: 0 }}><ExtensionFrame extension={extension} controller={controller} onOpen={onOpen} /></View>
   </View>;
 }
 /** A tool made by the person or their assistant: a floating panel over whatever view is open, working on the shared selection. */

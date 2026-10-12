@@ -1,6 +1,5 @@
 import type { AgentEvent, CanvasDocument } from '../shared/model';
 import type { Tone } from './color';
-import { agentView } from './view-models';
 
 /** One stored change, as the history RPC returns it. The server keeps the most recent ones, not the whole life. */
 export type Change = { revision: number; actor: 'user' | 'agent' | 'system'; label: string; at: string; changed: readonly string[]; removed: readonly string[]; kind: 'edit' | 'undo' | 'redo' };
@@ -50,4 +49,17 @@ export function lensMarks(lens: LensId, doc: Pick<CanvasDocument, 'blocks' | 're
   }
   const counts = new Map<string, number>(); marks.forEach(key => counts.set(key, (counts.get(key) ?? 0) + 1));
   return { marks, legend: keys[lens].map(([key, label, tone]) => ({ key, label, tone, count: counts.get(key) ?? 0 })) };
+}
+/**
+ * What the agent holds of each block, as far as the stored record shows. It is up to date with a block it
+ * changed last, or whose current state it acknowledged in a request. It is behind on a block the person changed
+ * afterwards. Where the record says nothing, nothing is claimed.
+ */
+export function agentView(doc: Pick<CanvasDocument, 'blocks'>, changes: readonly Change[], events: readonly Pick<AgentEvent, 'status' | 'action' | 'revision'>[]): Map<string, 'current' | 'behind' | 'unknown'> {
+  const last = new Map<string, { revision: number; agent: boolean }>(), acked = new Map<string, number>();
+  for (const c of [...changes].sort((a, b) => a.revision - b.revision)) for (const id of c.changed) last.set(id, { revision: c.revision, agent: c.actor === 'agent' });
+  for (const e of events) if (e.status === 'acked') for (const id of e.action.targetIds ?? []) acked.set(id, Math.max(acked.get(id) ?? -1, e.revision));
+  return new Map(doc.blocks.map(b => { const change = last.get(b.id), seen = acked.get(b.id);
+    if (change?.agent) return [b.id, 'current'] as const; if (change) return [b.id, seen !== undefined && seen >= change.revision ? 'current' : 'behind'] as const;
+    return [b.id, seen !== undefined ? 'current' : 'unknown'] as const; }));
 }
