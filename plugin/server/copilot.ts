@@ -124,8 +124,11 @@ export class CopilotService {
   async set(input: RpcInput<typeof rpc.setCopilot>) {
     const current = settingsOf((await this.service.store.read()).copilot[input.agentId]);
     const attach = input.patch.documentId !== undefined ? input.patch.documentId : current.documentId;
+    const enabled = input.patch.enabled ?? current.enabled, cadence = input.patch.cadence ?? current.cadence, rule = input.patch.rule ?? current.rule;
+    // Refuse before anything is created, so a rejected change leaves no empty Lienzo behind.
+    if (enabled && cadence === "custom" && !rule.trim()) throw new CanvasError("VALIDATION", "A custom cadence needs a rule: say when the agent should draw.");
     let created: string | undefined;
-    if ((input.patch.enabled ?? current.enabled) && !attach) {
+    if (enabled && !attach) {
       const document = await this.service.create({ workspaceId: input.workspaceId, content: documentContentSchema.parse({ title: input.title ?? "Lienzo", description: "This conversation's Lienzo: the agent draws here while the copilot is on.", blocks: [], groups: [], communication: { instructions: "" } }) }, "user", { agentId: input.agentId, workspaceId: input.workspaceId });
       created = document.document.id;
     }

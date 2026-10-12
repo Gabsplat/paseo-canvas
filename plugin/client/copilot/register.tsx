@@ -26,6 +26,8 @@ const icons: Record<PillStatus, ReturnType<typeof pillIcon>> = { off: pillIcon('
  * with the copilot on is running, plus one tail poll so "drawing now" clears.
  */
 export function registerCopilotPills(client: PluginClientContext): () => void {
+  // Hosts older than the composer-pill API (the manifest still admits Paseo 0.10.3) simply get no pill.
+  if (typeof client.addComposerPill !== 'function' || !client.paseo?.agents?.list) return () => {};
   const pills = new Map<string, { registration: PluginButtonRegistration; workspaceId: string; status: PillStatus }>();
   const agents = new Map<string, AgentSeen>();
   const entries = new Map<string, PillEntry>();
