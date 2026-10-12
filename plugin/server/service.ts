@@ -3,14 +3,15 @@ import { safeJson } from "./reducer";
 import type { RpcInput } from "@getpaseo/plugin";
 import * as rpc from "../shared/rpc";
 import {
-  documentContentSchema, documentSchema, catalogMutateInputSchema,
-  type CanvasDocument, type CanvasPack, type DocumentView, type AgentEvent,
+  documentContentSchema, documentSchema, catalogMutateInputSchema, groupSchema,
+  type CanvasDocument, type CanvasPack, type DocumentView, type AgentEvent, type LatestAgent,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
 import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
 import { catalogView, packDiff, packIssues, parsePack, validateExtension, validateTemplate, validateType } from "./catalog";
 import { clone, newId, reduce, validateDocument, normalizeBlock, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
+import { nextSheetPlacement, sheetSummaries } from "./sheets";
 
 const timestamp = () => new Date().toISOString();
 type State = Parameters<Parameters<CanvasStore["transaction"]>[0]>[0];
@@ -25,7 +26,15 @@ const view = (record: DocumentRecord, actor: Actor = "user", agentId?: string): 
   canUndo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && !entry.undone),
   canRedo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && entry.undone),
   selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion, runtime: clone(record.runtime),
+  latestAgent: latestAgent(record),
 });
+/** The agent's most recent transaction, for "go to latest": changed IDs that still exist, and what it removed. */
+export function latestAgent(record: Pick<DocumentRecord, "document" | "history">, agentId?: string): LatestAgent | null {
+  const entry = [...record.history].reverse().find(entry => entry.actor === "agent" && (!agentId || entry.agentId === agentId));
+  if (!entry) return null;
+  const present = new Set([...record.document.blocks, ...record.document.groups, ...record.document.links].map(entity => entity.id));
+  return { transactionId: entry.id, revision: entry.revision, at: entry.at, ...(entry.agentId ? { agentId: entry.agentId } : {}), label: entry.label, kind: entry.kind, ids: entry.changed.filter(id => present.has(id)), removed: [...entry.removed] };
+}
 const touchRuntime = (record: RuntimeRecord) => { record.runtimeVersion++; };
 /** A grant is for the code that was approved: an extension that is new or different in the replacing pack needs approval again. */
 function keptGrants(grants: string[], old: CanvasPack | undefined, next: CanvasPack): string[] {
@@ -83,6 +92,23 @@ export class CanvasService {
       recordEdit(record, next, actor, input.label, "edit", undefined, agentId);
       return view(record, actor, agentId);
     });
+  }
+  /** A new Hoja: the next number, placed right of the last Hoja on the strip, in one undoable transaction. */
+  createSheet(input: RpcInput<typeof rpc.createSheet>, actor: Actor = "user", agentId?: string) {
+    return this.store.transaction(state => {
+      const record = documentRecord(state, input.documentId, input.workspaceId);
+      assertRevision(record, input.expectedRevision);
+      const { number, position } = nextSheetPlacement(record.document), id = input.id ?? newId("hoja");
+      const group = groupSchema.parse({ id, title: input.title, description: input.description ?? "", blockIds: [], groupIds: [], position, ...(input.layout ? { layout: input.layout } : {}), sheet: { number, createdAt: timestamp(), source: actor === "agent" ? "agent" : "user" } });
+      const next = reduce(record.document, [{ type: "group.create", group }], catalogView(state.catalog), actor);
+      if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
+      recordEdit(record, next, actor, `Hoja ${number}: ${input.title}`.slice(0, 300), "edit", undefined, agentId);
+      return { view: view(record, actor, agentId), id, number };
+    });
+  }
+  async sheets(input: RpcInput<typeof rpc.listSheets>) {
+    const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
+    return { revision: record.document.revision, sheets: sheetSummaries(record.document) };
   }
   undo(input: RpcInput<typeof rpc.undoDocument>, actor: Actor = "user", redo = false, agentId?: string) {
     return this.store.transaction(state => {

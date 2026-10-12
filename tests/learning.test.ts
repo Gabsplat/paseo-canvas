@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { CanvasStore } from '../plugin/server/store';
 import { CanvasService } from '../plugin/server/service';
-import { ToolRouter, toolDefinitions, integrationInstructions } from '../plugin/server/tools';
+import { ToolRouter, toolDefinitions, drawingGuide } from '../plugin/server/tools';
 import { feedbackPrompt } from '../plugin/server/feedback';
 import { blockTypeSchema, documentSchema, agentActionInputSchema, type CanvasDocument } from '../plugin/shared/model';
 import { rendererSpecs, legacyRendererNames, getRendererSpec } from '../plugin/shared/renderers';
@@ -40,7 +40,7 @@ test('registry validates registered JSON data, keeps the legacy names and expose
   const router = new ToolRouter(service, async () => ({ workspaceId, agentId: 'a' }));
   const catalog = await router.call('canvas_catalog', { action: 'list' }, 'owner') as any;
   assert.ok(catalog.blockTypes.find((entry: any) => entry.id === 'controls').guidance.includes('data.question'));
-  assert.ok(integrationInstructions.includes('canvas_runtime'));
+  assert.ok(drawingGuide.includes('canvas_runtime'));
   assert.equal(controlsDataSchema.parse({ variables: [] }).question, '¿Cómo cambia el resultado al ajustar estas variables?');
 });
 test('runtime uses last-write-wins without revisions/history/undo, coalesces disk writes and survives reopen', async t => {

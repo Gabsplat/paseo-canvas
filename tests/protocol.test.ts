@@ -7,7 +7,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { CanvasBridge } from "../plugin/server/bridge";
 import { CanvasStore } from "../plugin/server/store";
 import { CanvasService } from "../plugin/server/service";
-import { ToolRouter, integrationInstructions } from "../plugin/server/tools";
+import { ToolRouter, integrationInstructions, drawingGuide } from "../plugin/server/tools";
 import type { CanvasDocument, CanvasLink } from "../plugin/shared/model";
 import { setup, workspaceId, fakeGateway, mutation } from "./helpers";
 
@@ -46,9 +46,10 @@ test("graph contract and guidance cross real MCP stdio, link CRUD/undo and reope
   const apply = definitions.find(tool => tool.name === "canvas_apply")!;
   for (const operation of ["link.create", "link.update", "link.delete"]) assert.ok(JSON.stringify(apply.inputSchema).includes(operation));
   for (const name of ["canvas_create", "canvas_apply", "canvas_group"]) assert.match(definitions.find(tool => tool.name === name)!.description!, /graph/);
-  assert.match(integrationInstructions, /node blocks joined by links/);
-  assert.match(integrationInstructions, /summary\/details/);
-  assert.match(integrationInstructions, /never stack more than a few prose notes/);
+  assert.match(drawingGuide, /node blocks joined by links/);
+  assert.match(drawingGuide, /summary\/details/);
+  assert.match(drawingGuide, /never stack more than a few prose notes/);
+  assert.match(integrationInstructions, /copilot/); assert.ok(integrationInstructions.length < 1500, "the system prompt part stays short");
   const catalog = await call("canvas_catalog", { action: "read", id: "node" });
   assert.equal((catalog.entry as { renderer: string }).renderer, "node");
   const applied = await call("canvas_apply", { documentId: "d", expectedRevision: 0, operations: [

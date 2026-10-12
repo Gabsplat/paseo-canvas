@@ -501,7 +501,7 @@ function Panel({ workspaceId }: { workspaceId: string }) {
   const alt = !['canvas', 'outline'].includes(mode), openOnCanvas = (id: string) => { void c.select([id]); setMode('canvas'); };
   // Views and tools the person or their assistant added. They are read again whenever a menu that lists them opens,
   // so one the assistant has just saved is there without reloading anything.
-  const extensions = c.catalog?.extensions ?? [], extViews = extensions.filter(e => e.kind === 'view'), extTools = extensions.filter(e => e.kind === 'tool');
+  const extensions = c.catalog?.extensions ?? [], extViews: typeof extensions = [], extTools = extensions.filter(e => e.kind === 'tool');
   const extView = mode.startsWith('ext:') ? extViews.find(e => 'ext:' + e.id === mode) : undefined, openTool = extTool ? extTools.find(e => e.id === extTool) : undefined;
   useEffect(() => { if (viewMenu || toolMenu || overflow) void c.api.catalog({}).then(c.setCatalog).catch(() => {}); }, [viewMenu, toolMenu, overflow]);
   useEffect(() => { if (mode.startsWith('ext:') && c.catalog && !extView) setMode('canvas'); }, [mode, c.catalog, !!extView]);

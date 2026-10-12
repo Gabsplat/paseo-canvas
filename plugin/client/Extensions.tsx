@@ -9,7 +9,7 @@ import type { CanvasController } from './useCanvas';
 import { WebExtension, type ExtensionCall } from './web';
 
 const PERMISSION: Record<ExtensionPermission, string> = { edit: 'cambiar el lienzo', agent: 'pedirle cosas al asistente', network: 'cargar cosas de internet' };
-export const extensionIcon = (extension: CatalogExtension) => extension.icon ?? (extension.kind === 'view' ? 'LayoutDashboard' : 'Puzzle');
+export const extensionIcon = (extension: CatalogExtension) => extension.icon ?? 'Puzzle';
 const list = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
 
 /**
