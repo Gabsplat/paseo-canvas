@@ -1,18 +1,20 @@
 # Extensions
 
-An extension adds a view or a tool to Lienzo without changing the plugin. It is one self-contained HTML page with a
+An extension adds a tool to Lienzo without changing the plugin. It is one self-contained HTML page with a
 small manifest. It runs sandboxed in its own frame and reaches the canvas only through `window.lienzo`. It imports
 nothing from the plugin, so a plugin update cannot break it.
 
 ## Manifest
 
 ```json
-{ "id": "mi-vista", "kind": "view", "api": 1, "name": "Mi vista", "description": "Qué responde.",
-  "icon": "LayoutGrid", "permissions": ["edit"], "html": "<script>…</script>" }
+{ "id": "my-tool", "kind": "tool", "api": 1, "name": "My tool", "description": "The job it does.",
+  "icon": "Wrench", "permissions": ["edit"], "html": "<script>…</script>" }
 ```
 
-- `kind`: `tool` is listed in the Extensions section of the + catalog (and in ⌘K) and opens as a tab of the right
-  panel. The client no longer shows `view` extensions: the canvas is the only view.
+- `kind`: `tool`, the only kind. A tool is listed in the Extensions section of the + catalog (and in ⌘K) and opens
+  as a tab of the right panel; it usually acts on the selection. The canvas is the one way to look at a document, so
+  the former kind `view` is retired: catalogs and packs stored with views still load without them, a pack that
+  carries one imports without it, and a view can no longer be saved.
 - `api`: always `1` today.
 - `permissions`: any of `edit`, `agent`, `network`. Reading the document and changing the selection need none.
 - `html`: up to 300 000 characters. No build step. Without `network` the page may only use inline code and `data:` URLs.
@@ -58,7 +60,7 @@ moves the selection (only when `onMove(ids, dx, dy)` is given), a double press o
 shared one. `draw` runs in world units with `view = { scale, width, height, items, selected: { [id]: true }, hover,
 drag, theme, context }`. It returns `{ canvas, fit(), redraw(), items(), selection(), at(x, y) }`.
 
-A view of things should use the kit: it is what keeps interactions the same everywhere.
+A tool that shows things should use the kit: it is what keeps interactions the same everywhere.
 
 ## Trust
 
@@ -77,13 +79,12 @@ what each extension asks for before anything is saved.
 ## Compatibility promise
 
 API 1 only grows. Members and context fields are added, never renamed or removed. A future API 2 would live beside
-it. The shipped examples (`ejemplos.mosaico`, `ejemplos.reemplazar`) are written against API 1 only and are run in
-`design/whiteboard-harness/extensions.cjs`; `tests/extensions.test.ts` runs the runtime itself. If either breaks,
-the contract broke.
+it. The shipped example (`ejemplos.reemplazar`, a find-and-replace tool) is written against API 1 only;
+`tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract broke. (The kind `view` was retired
+with the one-canvas redesign; the frame API itself did not change.)
 
 ## Not in API 1
 
 - Extension-backed block types (a block whose body is an extension, with its own stored data).
-- Pointer tools that act on the canvas surface or on another view (a brush over cards).
-- The built-in views accepting tools. Tools act on the selection and the document, which every view shares.
+- Pointer tools that act on the canvas surface (a brush over cards). Planned for extension API 2.
 - Native (mobile) rendering: extensions run on web and desktop.

@@ -6,8 +6,14 @@ import { ToolRouter } from "../plugin/server/tools";
 import { EXTENSION_GUIDE, EXTENSION_RUNTIME, builtinExtensions, extensionDocument, extensionEvent } from "../plugin/shared/extensions";
 import { extensionSchema, packSchema } from "../plugin/shared/model";
 import { setup, workspaceId } from "./helpers";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { CanvasStore } from "../plugin/server/store";
+import { CanvasService } from "../plugin/server/service";
 
-const view = (id: string, html = "<p>vista</p>", permissions: string[] = []) => ({ id, kind: "view", api: 1, name: "Vista de prueba", description: "Dato de ejemplo.", html, permissions });
+const view = (id: string, html = "<p>vista</p>", permissions: string[] = []) => ({ id, kind: "tool", api: 1, name: "Herramienta de prueba", description: "Dato de ejemplo.", html, permissions });
+const off = { copilot: { enabled: false, cadence: "step", rule: "", documentId: null } };
+const retired = (id: string) => ({ id, kind: "view", api: 1, name: "Vista retirada", description: "Dato de ejemplo.", html: "<p>vista</p>", permissions: [] });
 const pack = (extensions: unknown[], id = "ajeno") => ({ format: "paseo-canvas-pack", version: 1, id, name: "Colección de prueba", description: "Datos de ejemplo.", blockTypes: [], templates: [], documents: [], extensions });
 
 test("a local extension is saved, listed as trusted, replaced by its own ID and removed", async t => {
@@ -21,10 +27,10 @@ test("a local extension is saved, listed as trusted, replaced by its own ID and 
 });
 test("a local extension cannot take a shipped ID, a pack namespace or a repeated permission", async t => {
   const { service } = await setup(t);
-  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(view("ejemplos.mosaico")) } }), /cannot replace|namespace/);
+  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(view("ejemplos.reemplazar")) } }), /cannot replace|namespace/);
   await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(view("ejemplos.nueva")) } }), /namespace/);
   await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(view("doble", "<p/>", ["edit", "edit"])) } }), /repeats/);
-  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.remove", id: "ejemplos.mosaico" } }), /not found/i);
+  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.remove", id: "ejemplos.reemplazar" } }), /not found/i);
   assert.throws(() => extensionSchema.parse({ ...view("v2"), api: 2 })); assert.throws(() => extensionSchema.parse({ ...view("x"), permissions: ["filesystem"] }));
 });
 test("an imported extension holds no permission until granted, and a changed one must be granted again", async t => {
@@ -35,7 +41,7 @@ test("an imported extension holds no permission until granted, and a changed one
   assert.deepEqual(result.catalog.extensions.filter(e => e.source === "ajeno").map(e => e.granted), [false, false]);
   let catalog = await service.catalogMutate({ expectedRevision: result.catalog.revision, action: { type: "extension.grant", id: "ajeno.a", granted: true } });
   assert.equal(catalog.extensions.find(e => e.id === "ajeno.a")!.granted, true);
-  await assert.rejects(service.catalogMutate({ expectedRevision: catalog.revision, action: { type: "extension.grant", id: "ejemplos.mosaico", granted: false } }), /imported pack/);
+  await assert.rejects(service.catalogMutate({ expectedRevision: catalog.revision, action: { type: "extension.grant", id: "ejemplos.reemplazar", granted: false } }), /imported pack/);
   // Same code: the grant stays. Different code: it is gone.
   result = await service.importPack({ expectedRevision: catalog.revision, pack: pack([view("ajeno.a", "<p>1</p>", ["edit"])]), replace: true, dryRun: false });
   assert.equal(result.catalog.extensions.find(e => e.id === "ajeno.a")!.granted, true);
@@ -54,17 +60,35 @@ test("state and packs written before extensions existed still load", () => {
   assert.deepEqual(catalogView(storage).extensions.map(e => [e.id, e.source, e.granted]), builtinExtensions.map(e => [e.id, "builtin", true]));
   assert.deepEqual(packSchema.parse(pack([])).extensions, []);
 });
+test("catalogs and packs stored with the retired view kind still load, without the views", async t => {
+  const storage = catalogStorageSchema.parse({ revision: 4, localTypes: [], localTemplates: [], localExtensions: [retired("vieja"), view("mia")], grants: ["viejo.v"], packs: [{ format: "paseo-canvas-pack", version: 1, id: "viejo", name: "Viejo", description: "", blockTypes: [], templates: [], documents: [], extensions: [retired("viejo.v"), view("viejo.t")] }] });
+  assert.deepEqual(storage.localExtensions.map(e => e.id), ["mia"]);
+  assert.deepEqual(storage.packs[0].extensions.map(e => e.id), ["viejo.t"]);
+  assert.ok(catalogView(storage).extensions.every(e => e.kind === "tool"));
+  assert.throws(() => extensionSchema.parse(retired("nueva")), "a view cannot be saved any more");
+  // A state file written before: it loads, and the next write leaves the views out.
+  const { service, store, directory } = await setup(t);
+  await store.close();
+  const file = JSON.parse(await readFile(join(directory, "state.json"), "utf8"));
+  file.catalog.localExtensions = [retired("vieja"), view("mia")];
+  await writeFile(join(directory, "state.json"), JSON.stringify(file));
+  const reopened = new CanvasStore(directory); t.after(() => reopened.close());
+  const catalog = await new CanvasService(reopened).catalog();
+  assert.deepEqual(catalog.extensions.filter(e => e.source === "local").map(e => e.id), ["mia"]);
+  void service;
+});
 test("the assistant saves and removes an extension through MCP and is told the whole API", async t => {
   const { service } = await setup(t), router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }));
   const listed = await router.call("canvas_catalog", { action: "list" }, "owner") as { revision: number; extensions: { id: string; kind: string; source: string }[]; extensionGuide: string };
-  assert.ok(listed.extensions.some(e => e.id === "ejemplos.mosaico" && e.kind === "view") && listed.extensions.some(e => e.id === "ejemplos.reemplazar" && e.kind === "tool"));
+  assert.ok(listed.extensions.some(e => e.id === "ejemplos.reemplazar" && e.kind === "tool"));
+  assert.ok(listed.extensions.every(e => e.kind === "tool") && !/kind "view"|Cambiar vista|mosaico/.test(listed.extensionGuide), "views are gone from the catalog and the guide");
   for (const word of ["lienzo.onContext", "lienzo.select", "lienzo.edit", "lienzo.ask", "lienzo.kit.stage", "save_extension", "api: 1"]) assert.ok(listed.extensionGuide.includes(word), word);
   assert.equal(listed.extensionGuide, EXTENSION_GUIDE);
-  assert.deepEqual(await router.call("canvas_catalog", { action: "save_extension", expectedRevision: listed.revision, extension: { ...view("del-asistente"), kind: "tool", permissions: ["edit"] } }, "owner"), { revision: listed.revision + 1, committed: true });
+  assert.deepEqual(await router.call("canvas_catalog", { action: "save_extension", expectedRevision: listed.revision, extension: { ...view("del-asistente"), kind: "tool", permissions: ["edit"] } }, "owner"), { revision: listed.revision + 1, committed: true, ...off });
   const read = await router.call("canvas_catalog", { action: "read", id: "del-asistente" }, "owner") as { entry: { html: string; source: string; granted: boolean }; guidance: string };
   assert.deepEqual([read.entry.html, read.entry.source, read.entry.granted, read.guidance], ["<p>vista</p>", "local", true, EXTENSION_GUIDE]);
   await assert.rejects(router.call("canvas_catalog", { action: "save_extension", expectedRevision: 0, extension: view("tarde") }, "owner"), /Catalog changed|REVISION/);
-  assert.deepEqual(await router.call("canvas_catalog", { action: "remove_extension", expectedRevision: listed.revision + 1, id: "del-asistente" }, "owner"), { revision: listed.revision + 2, committed: true });
+  assert.deepEqual(await router.call("canvas_catalog", { action: "remove_extension", expectedRevision: listed.revision + 1, id: "del-asistente" }, "owner"), { revision: listed.revision + 2, committed: true, ...off });
 });
 test("a frame gets the runtime first and no network unless it was asked for and granted", () => {
   const offline = extensionDocument({ html: "<!DOCTYPE html><p>hola</p>", permissions: [] }, true), asked = extensionDocument({ html: "<p>hola</p>", permissions: ["network"] }, true), pending = extensionDocument({ html: "<p>hola</p>", permissions: ["network"] }, false);

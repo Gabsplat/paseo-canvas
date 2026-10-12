@@ -34,6 +34,11 @@ export const blockSchema = z.object({
   data: jsonObjectSchema, position: positionSchema.optional(), size: blockSizeSchema.nullable().optional(),
   parentGroupId: idSchema.nullable().optional(), communication: communicationSchema.optional(),
 }).strict();
+// A Hoja is a chapter the agent adds while explaining: a top-level group that carries this mark. Numbers are unique
+// within a document and never reused; new Hojas sit to the right of the last one on one horizontal strip.
+export const sheetSchema = z.object({
+  number: z.number().int().min(1).max(10_000), createdAt: z.iso.datetime(), source: z.enum(["agent", "user"]),
+}).strict();
 export const groupSchema = z.object({
   id: idSchema, title: z.string().max(300), description: z.string().max(4000).default(""),
   blockIds: z.array(idSchema).max(1000), groupIds: z.array(idSchema).max(200).default([]),
@@ -41,6 +46,7 @@ export const groupSchema = z.object({
   parentGroupId: idSchema.nullable().optional(), position: positionSchema.optional(),
   collapsed: z.boolean().optional(), layout: layoutSchema.optional(),
   communication: communicationSchema.optional(), variables: variablesSchema.optional(),
+  sheet: sheetSchema.optional(),
 }).strict();
 // Zod 4 partial() retains inner defaults. Updates must preserve omitted fields.
 export const groupPatchSchema = z.object({
@@ -84,16 +90,21 @@ export const templateSchema = z.object({
 // An extension is the one kind of pack entry that carries code: a self-contained page that runs sandboxed in its own
 // frame and reaches the canvas only through the versioned `lienzo` API (docs/extensions.md). It never imports plugin code.
 export const extensionPermissionSchema = z.enum(["edit", "agent", "network"]);
+// Only tools remain: the canvas is the one way to look at a document. Stored entries of the retired kind "view" are
+// dropped on read (extensionListSchema), so catalogs and packs written before keep loading.
 export const extensionSchema = z.object({
-  id: idSchema, kind: z.enum(["view", "tool"]), api: z.literal(1),
+  id: idSchema, kind: z.literal("tool"), api: z.literal(1),
   name: z.string().min(1).max(80), description: z.string().max(600).default(""), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(),
   html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(3).default([]),
 }).strict();
+const isRetiredExtension = (entry: unknown) => !!entry && typeof entry === "object" && (entry as { kind?: unknown }).kind === "view";
+/** A list of extensions that silently drops entries of a retired kind. */
+export const extensionListSchema = (max: number) => z.preprocess(value => Array.isArray(value) ? value.filter(entry => !isRetiredExtension(entry)) : value, z.array(extensionSchema).max(max));
 export const packSchema = z.object({
   format: z.literal("paseo-canvas-pack"), version: z.literal(1),
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
   blockTypes: z.array(blockTypeSchema).max(100), templates: z.array(templateSchema).max(100),
-  documents: z.array(documentContentSchema).max(20), extensions: z.array(extensionSchema).max(50).default([]),
+  documents: z.array(documentContentSchema).max(20), extensions: extensionListSchema(50).default([]),
 }).strict();
 // `source` is "local", "builtin" or the ID of the pack that brought it. An imported extension holds no permission
 // until the person grants them; local and shipped ones are trusted.
@@ -108,11 +119,27 @@ export const connectionSchema = z.object({
   pinned: z.boolean().optional(),
 }).strict();
 export const sharingModeSchema = z.enum(["shared", "agent"]);
+// Copilot mode is per agent (one conversation). thinking: after reasoning or each tool use; step: after each step worth
+// showing (default); task: once at the end of a task; custom: follow `rule`.
+export const copilotCadenceSchema = z.enum(["thinking", "step", "task", "custom"]);
+export const copilotSettingsSchema = z.object({
+  enabled: z.boolean().default(false), cadence: copilotCadenceSchema.default("step"), rule: z.string().max(500).default(""),
+  remind: z.boolean().default(false), documentId: idSchema.nullable().default(null),
+}).strict();
+export type CopilotCadence = z.infer<typeof copilotCadenceSchema>;
+export type CopilotSettings = z.infer<typeof copilotSettingsSchema>;
 export type SharingMode = z.infer<typeof sharingModeSchema>;
+// The agent's most recent transaction on a document, from history: where "go to latest" flies. ids are the changed
+// entities that still exist; removed lists what that transaction deleted.
+export const latestAgentSchema = z.object({
+  transactionId: z.string(), revision: revisionSchema, at: z.iso.datetime(), agentId: z.string().optional(),
+  label: z.string(), kind: z.enum(["edit", "undo", "redo"]), ids: z.array(z.string()), removed: z.array(z.string()),
+}).strict();
 export const documentViewSchema = z.object({
   document: documentSchema, connection: connectionSchema.nullable(),
   canUndo: z.boolean(), canRedo: z.boolean(),
   selectionVersion: revisionSchema, runtimeVersion: revisionSchema, runtime: runtimeStateSchema.default({ blocks: {}, scopes: {} }),
+  latestAgent: latestAgentSchema.nullable().optional(),
 }).strict();
 export const documentSummarySchema = documentSchema.pick({
   id: true, workspaceId: true, title: true, description: true, example: true, revision: true, updatedAt: true,
@@ -171,6 +198,8 @@ export const agentEventSchema = z.object({
 export type CanvasBlock = z.infer<typeof blockSchema>;
 export type CanvasLink = z.infer<typeof linkSchema>;
 export type CanvasGroup = z.infer<typeof groupSchema>;
+export type CanvasSheet = z.infer<typeof sheetSchema>;
+export type LatestAgent = z.infer<typeof latestAgentSchema>;
 export type CanvasDocument = z.infer<typeof documentSchema>;
 export type DocumentContent = z.infer<typeof documentContentSchema>;
 export type DocumentView = z.infer<typeof documentViewSchema>;

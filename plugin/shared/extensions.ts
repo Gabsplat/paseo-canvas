@@ -97,49 +97,34 @@ export function extensionEvent(kind: unknown, payload: unknown): { kind: string;
   return text === undefined || text.length > EXTENSION_LIMITS.payload ? null : { kind, payload: JSON.parse(text) };
 }
 
-export const EXTENSION_GUIDE = `An extension adds to Lienzo without changing the plugin: a view (kind "view", listed under "Cambiar vista", fills the panel) or a tool (kind "tool", listed under "Herramientas", opens as a floating panel over any view and usually acts on the selection). Save one with canvas_catalog save_extension { id, kind, api: 1, name, description, icon (a Lucide icon name), permissions, html }. html is one complete self-contained page: any HTML, CSS and JavaScript, no build step, nothing imported from Lienzo. It runs sandboxed in its own frame. A global lienzo object (API 1, stable across plugin updates) is the only way to the canvas:
+export const EXTENSION_GUIDE = `An extension adds a tool to Lienzo without changing the plugin (kind "tool": it opens as a floating panel over the canvas and usually acts on the selection). Save one with canvas_catalog save_extension { id, kind: "tool", api: 1, name, description, icon (a Lucide icon name), permissions, html }. html is one complete self-contained page: any HTML, CSS and JavaScript, no build step, nothing imported from Lienzo. It runs sandboxed in its own frame. A global lienzo object (API 1, stable across plugin updates) is the only way to the canvas:
 - lienzo.onContext(fn): fn(context) now and on every change. context = { api, extension: { id, kind, name, permissions }, theme: { dark, colors: { background, surface, foreground, muted, border, accent, flow, needs, mentions, areas[] } }, document: { id, title, description, revision, blocks: [{ id, title, typeId, renderer, data, parentGroupId }], groups: [{ id, title, description, blockIds, groupIds, parentGroupId }], links: [{ id, from, to, kind, label }] }, layout: { [id]: { x, y, width, height } } (where each thing is on the canvas), selection: [ids] }. Use theme.colors for every colour so it matches light and dark.
-- lienzo.select(ids) sets the shared selection (the same one the canvas and every other view and tool use). lienzo.open(id) goes to the canvas on that thing. lienzo.close() closes a tool panel.
+- lienzo.select(ids) sets the shared selection (the same one the canvas and every tool use). lienzo.open(id) goes to the canvas on that thing. lienzo.close() closes a tool panel.
 - lienzo.edit(operations, label) -> Promise<{ revision }>. Needs permission "edit". operations are the same transactional operations as canvas_update (block.create/update/delete, group.*, link.*, entity.move, entity.duplicate, document.update), so undo and revision conflicts work; selection.set and communication.set are refused.
 - lienzo.ask(kind, payload, label, targetIds) -> Promise. Needs permission "agent". Delivers a request to the connected assistant as an "extension.event" canvas event with payload { extension, event, data }; payload is JSON up to 8000 characters.
 - Permission "network" lets the page load things from the internet; without it only inline code and data: URLs work.
-- lienzo.kit.stage({ layout(context) -> [{ id, x, y, w, h }], draw(g, view), onMove?(ids, dx, dy), onOpen?(id), onHover?(id) }) gives a view the canvas' own behaviour on a 2D canvas it creates: wheel pans, command-wheel zooms, press selects, shift adds, drag on nothing box-selects, drag on a thing moves the selection (only if onMove is given), double press opens, Escape clears. draw runs in world units with view = { scale, selected: { [id]: true }, hover, drag, theme, context, items }. lienzo.kit.card(g, item, view, { title, subtitle, color }) draws a thing with the standard selection and hover look. Prefer the kit for any view of things: it is what keeps interactions consistent.
-Keep ids stable; saving the same id replaces the extension. Give it a clear Spanish name and a one-line description of the question it answers or the job it does. Read the shipped examples with canvas_catalog read { id: "ejemplos.mosaico" } and { id: "ejemplos.reemplazar" }.`;
+- lienzo.kit.stage({ layout(context) -> [{ id, x, y, w, h }], draw(g, view), onMove?(ids, dx, dy), onOpen?(id), onHover?(id) }) gives a tool that draws things the canvas' own behaviour on a 2D canvas it creates: wheel pans, command-wheel zooms, press selects, shift adds, drag on nothing box-selects, drag on a thing moves the selection (only if onMove is given), double press opens, Escape clears. draw runs in world units with view = { scale, selected: { [id]: true }, hover, drag, theme, context, items }. lienzo.kit.card(g, item, view, { title, subtitle, color }) draws a thing with the standard selection and hover look. Prefer the kit whenever a tool shows things: it is what keeps interactions consistent.
+Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. Read the shipped example with canvas_catalog read { id: "ejemplos.reemplazar" }.`;
 
-const MOSAICO = String.raw`<script>
-var W=220,H=56,GAP=14,COL=260;
-lienzo.kit.stage({
- layout:function(c){var out=[],top={},cols=[],byId={};c.document.groups.forEach(function(g){byId[g.id]=g});
-  function root(id){var g=byId[id],n=0;while(g&&g.parentGroupId&&n++<8)g=byId[g.parentGroupId];return g?g.id:''}
-  c.document.blocks.forEach(function(b){var k=b.parentGroupId?root(b.parentGroupId):'';if(!(k in top)){top[k]=cols.length;cols.push({key:k,n:0})}var col=cols[top[k]];out.push({id:b.id,title:b.title||'Sin título',area:top[k],x:top[k]*COL,y:col.n*(H+GAP),w:W,h:H});col.n++});
-  this.cols=cols.map(function(col){return byId[col.key]?byId[col.key].title||'Área':'Sueltos'});return out},
- draw:function(g,view){var c=view.theme.colors,at={};view.items.forEach(function(t){at[t.id]=t});
-  (this.cols||[]).forEach(function(name,i){g.fillStyle=c.areas[i%c.areas.length];g.font='700 13px system-ui,sans-serif';g.textBaseline='alphabetic';g.textAlign='left';g.fillText(name,i*COL+2,-14)});
-  g.lineWidth=1;view.context.document.links.forEach(function(l){var a=at[l.from],b=at[l.to];if(!a||!b)return;var on=view.selected[a.id]||view.selected[b.id]||view.hover===a.id||view.hover===b.id;
-   g.globalAlpha=on?.9:.22;g.strokeStyle=l.kind==='depends'?c.needs:l.kind==='reference'?c.mentions:c.flow;g.lineWidth=on?2:1;g.beginPath();g.moveTo(a.x+a.w,a.y+a.h/2);g.bezierCurveTo(a.x+a.w+30,a.y+a.h/2,b.x-30,b.y+b.h/2,b.x,b.y+b.h/2);g.stroke()});g.globalAlpha=1;
-  view.items.forEach(function(t){lienzo.kit.card(g,t,view,{color:c.areas[t.area%c.areas.length]})})}
-});
-</script>`;
 const REEMPLAZAR = String.raw`<style>
 body{margin:0;padding:12px;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;gap:8px}
 input,button{font:inherit;padding:7px 9px;border-radius:7px;border:1px solid;box-sizing:border-box;width:100%}
 button{cursor:pointer;font-weight:600}button:disabled{opacity:.45;cursor:default}small{opacity:.75}
 </style>
-<label>Buscar en los títulos<input id="find" autocomplete="off"></label>
-<label>Reemplazar por<input id="put" autocomplete="off"></label>
-<small id="scope"></small><button id="go" disabled>Reemplazar</button><small id="note" role="status"></small>
+<label>Find in titles<input id="find" autocomplete="off"></label>
+<label>Replace with<input id="put" autocomplete="off"></label>
+<small id="scope"></small><button id="go" disabled>Replace</button><small id="note" role="status"></small>
 <script>
 var ctx=null,find=document.getElementById('find'),put=document.getElementById('put'),go=document.getElementById('go'),scope=document.getElementById('scope'),note=document.getElementById('note');
 function hits(){if(!ctx||!find.value)return[];var only=ctx.selection.length?ctx.selection:null;return ctx.document.blocks.filter(function(b){return(!only||only.indexOf(b.id)>=0)&&b.title.indexOf(find.value)>=0})}
-function show(){var n=hits().length;scope.textContent=(ctx&&ctx.selection.length?'En lo seleccionado ('+ctx.selection.length+'). ':'En todo el lienzo. ')+(find.value?n+(n===1?' título coincide.':' títulos coinciden.'):'');go.disabled=!n}
+function show(){var n=hits().length;scope.textContent=(ctx&&ctx.selection.length?'In the selection ('+ctx.selection.length+'). ':'In the whole Lienzo. ')+(find.value?n+(n===1?' title matches.':' titles match.'):'');go.disabled=!n}
 lienzo.onContext(function(c){ctx=c;var k=c.theme.colors;document.body.style.background=k.surface;document.body.style.color=k.foreground;[find,put].forEach(function(i){i.style.background=k.background;i.style.color=k.foreground;i.style.borderColor=k.border});go.style.background=k.accent;go.style.color=k.background;go.style.borderColor=k.accent;show()});
 find.oninput=put.oninput=function(){note.textContent='';show()};
 go.onclick=function(){var list=hits();if(!list.length)return;go.disabled=true;
- lienzo.edit(list.map(function(b){return{type:'block.update',id:b.id,patch:{title:b.title.split(find.value).join(put.value)||'Sin título'}}}),'Reemplazar «'+find.value+'» en '+list.length+' títulos')
-  .then(function(){note.textContent='Listo: '+list.length+' títulos cambiados. Se puede deshacer.'},function(e){note.textContent='No se pudo: '+e.message;show()})};
+ lienzo.edit(list.map(function(b){return{type:'block.update',id:b.id,patch:{title:b.title.split(find.value).join(put.value)||'Untitled'}}}),'Replace “'+find.value+'” in '+list.length+' titles')
+  .then(function(){note.textContent='Listo. '+list.length+' titles changed. You can undo it.'},function(e){note.textContent='Could not replace: '+e.message;show()})};
 </script>`;
-/** Shipped examples, labelled as such: a view built on the kit and a tool that edits. They are also the contract test. */
+/** Shipped example, labelled as such: a tool that edits. It is also the contract test. */
 export const builtinExtensions: CanvasExtension[] = [
-  { id: "ejemplos.mosaico", kind: "view", api: 1, name: "Ejemplo · Mosaico", description: "Extensión de ejemplo: cada área como una columna de tarjetas, con sus enlaces.", icon: "LayoutGrid", permissions: [], html: MOSAICO },
-  { id: "ejemplos.reemplazar", kind: "tool", api: 1, name: "Ejemplo · Buscar y reemplazar", description: "Extensión de ejemplo: cambia un texto en los títulos de lo seleccionado, o de todo el lienzo.", icon: "Replace", permissions: ["edit"], html: REEMPLAZAR },
+  { id: "ejemplos.reemplazar", kind: "tool", api: 1, name: "Example · Find and replace", description: "Example extension: changes text in the titles of the selection, or of the whole Lienzo.", icon: "Replace", permissions: ["edit"], html: REEMPLAZAR },
 ];
