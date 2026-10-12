@@ -414,7 +414,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (disabled && !['select', 'hand'].includes(next)) return;
     if (next === 'svg') { setAddOpen(false); setLibraryOpen(true); return; }
     canvas.current?.cancelGesture(); setTool(next); setToolLocked(false); setLibraryOpen(false);
-    setPanel(p => p.hidden ? { ...p, hidden: false } : p);
+    // The tool in hand brings its options to the front of the right panel.
+    setPanel(p => ({ ...p, hidden: false, tab: ['text', 'shape', 'draw', 'eraser'].includes(next) ? 'tool' : p.tab }));
   }
   const toolId: ToolId | null = tool === 'select' ? 'select' : tool === 'hand' ? 'hand' : tool === 'draw' ? 'pencil' : tool === 'text' ? 'text' : tool === 'eraser' ? 'eraser' : tool === 'shape' ? toolStyle.shape === 'line' && toolStyle.heads !== 'none' ? 'arrow' : 'shape' : null;
   function pickShape(shape: WbShape) { if (!doc) { openDocuments(); return; } setShapePick(shape); setToolStyle(previous => ({ ...previous, shape, heads: 'none' })); chooseTool('shape'); }
@@ -533,7 +534,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   if (!tabs.length && (panel.pinned || panel.forced) && documentProperties) tabs.push({ id: 'properties', label: 'Lienzo', icon: 'Frame', content: documentProperties });
   const panelVisible = !!doc && !immersive && !panel.hidden && tabs.length > 0 && (u.compact ? panel.forced : true);
   const activeTab = tabs.some(t => t.id === panel.tab) ? panel.tab : tabs[0]?.id ?? 'properties';
-  const togglePanel = () => setPanel(p => panelVisible ? { ...p, hidden: true, forced: false } : { ...p, hidden: false, forced: true });
+  // ⌘\ hides what is showing; it brings the panel back for the selection or the tool, or for the Lienzo when there is neither.
+  const sources = hasSelection || (toolOptions && !!styleNode) || extTools.length > 0;
+  const togglePanel = () => setPanel(p => panelVisible ? { ...p, hidden: true, forced: false } : { ...p, hidden: false, forced: !sources });
   // ---- ⌘K: everything the panel can do, in one list.
   const paletteItems = (query: string): PaletteItem[] => {
     const items: PaletteItem[] = [
@@ -701,7 +704,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo" description="A canvas you and your agent draw explanations on.">
         <Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Examples</Txt>
         {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-      </EmptyState> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { selectLink(id); }} onInspect={() => showPanel()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} reservedKey={reservedKey} />}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}

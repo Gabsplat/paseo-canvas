@@ -20,7 +20,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');
  await ev(`__panelQA.seed(Array.from({length:148},(_,i)=>({type:'block.create',block:{id:'many-'+i,typeId:'node',title:'Nodo '+i,data:{kind:'MODULE',status:'ready',summary:'Documento de ejemplo con 150 bloques.'},position:{x:64+(i%15)*260,y:96+Math.floor(i/15)*128}}})))`);
- await wait('__panelQA.doc().blocks.length===150&&!!document.querySelector("#lienzo-entity-many-147")');await new Promise(r=>setTimeout(r,800));await click(label('Ajustar al lienzo'));await new Promise(r=>setTimeout(r,700));
+ await wait('__panelQA.doc().blocks.length===150&&!!document.querySelector("#lienzo-entity-many-147")');await new Promise(r=>setTimeout(r,800));await click(label('Fit all'));await new Promise(r=>setTimeout(r,700));
  let measurements;
  await check('150-block scene supports passive body drag with one persistence transaction',async()=>{
   const id='many-80',before=await ev('__panelQA.doc().blocks.find(b=>b.id==="'+id+'").position');

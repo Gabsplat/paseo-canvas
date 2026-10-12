@@ -11,6 +11,8 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const box=async selector=>{const r=await ev(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing '+${JSON.stringify(selector)});const r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);return r;};
  const mouse=(type,x,y,button='left',buttons=0)=>call('Input.dispatchMouseEvent',{type,x,y,button,buttons,clickCount:1});
  const click=async(selector,offset)=>{await wait(`document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-disabled')!=='true'`);await ev('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');const b=await box(selector),x=b.x+(offset?.x??b.w/2),y=b.y+(offset?.y??b.h/2);await mouse('mousePressed',x,y,'left',1);await mouse('mouseReleased',x,y);};
+ // The architecture icons live in the + catalog now: open it, bring the row into view, press it.
+ const openIcons=async()=>{await click('#lienzo-tool-add');await new Promise(r=>setTimeout(r,400));await ev(`document.querySelector('[id="lienzo-add-icons"]').scrollIntoView({block:'center'})`);await new Promise(r=>setTimeout(r,200));await click('[id="lienzo-add-icons"]');};
  const drag=async(selector,dx,dy,button='left',offset)=>{const b=await box(selector),x=b.x+(offset?.x??70),y=b.y+(offset?.y??b.h-20),bits=button==='middle'?4:1;await mouse('mouseMoved',x,y);await mouse('mousePressed',x,y,button,bits);for(let i=1;i<=20;i++){await mouse('mouseMoved',x+dx*i/20,y+dy*i/20,button,bits);await new Promise(r=>setTimeout(r,9));}if(button==='middle')await new Promise(r=>setTimeout(r,120));await mouse('mouseReleased',x+dx,y+dy,button);};
  const key=async(key,code,modifiers=0)=>{await call('Input.dispatchKeyEvent',{type:'keyDown',key,code,modifiers});await call('Input.dispatchKeyEvent',{type:'keyUp',key,code,modifiers});};
  const label=text=>'[aria-label='+JSON.stringify(text)+']';
@@ -20,7 +22,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');
  await check('library drag chooses the release destination instead of an unrelated selected group',async()=>{
-  await click('#lienzo-entity-frame',{x:90,y:20});await wait('__panelQA.doc().selectedIds.includes("frame")');await click(label('Biblioteca'));await wait(`!!document.querySelector(${JSON.stringify(label('Insertar Servidor'))})`);
+  await click('#lienzo-entity-frame',{x:90,y:20});await wait('__panelQA.doc().selectedIds.includes("frame")');await openIcons();await wait(`!!document.querySelector(${JSON.stringify(label('Insert Server'))})`);
   const b=await box('#lienzo-library-icon-server'),x=b.x+b.w/2,y=b.y+20,tx=1480,ty=720;await mouse('mousePressed',x,y,'left',1);for(let i=1;i<=24;i++){await mouse('mouseMoved',x+(tx-x)*i/24,y+(ty-y)*i/24,'left',1);await new Promise(r=>setTimeout(r,8));}await mouse('mouseReleased',tx,ty);await wait('__panelQA.doc().blocks.some(b=>b.typeId==="wb-svg")');assert.equal(await ev('__panelQA.doc().blocks.find(b=>b.typeId==="wb-svg").parentGroupId??null'),null);assert.equal(await ev('__panelQA.log.length'),1);
  });
  await shot('library');

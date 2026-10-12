@@ -4,7 +4,7 @@ import { Icon, ScrollView } from '@getpaseo/plugin/client/react-native';
 import { WB_COLORS, WB_SCALE, type WbShape, type WbRenderer } from '../shared/whiteboard';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
-import { Button, IconButton, Input, Modal, Txt, useUI } from './ui';
+import { Button, IconButton, Input, Modal, Tooltip, Txt, useUI } from './ui';
 import { WebSvg, fetchSvgUrl, pickSvgFile, attachLibraryDrag } from './web';
 import { SVG_LIBRARY } from './SvgLibrary';
 import { islandStyle, wbColor, wbFont } from './whiteboard-visuals';
@@ -21,7 +21,7 @@ export function StyleIsland({ tool, selectionKinds, value, onChange, orientation
   const pencil = tool === 'draw' || tool === 'eraser';
   if (!selectionKinds.size && !['text','shape','draw','eraser'].includes(tool)) return null;
   const reset = pencil && onClearMyStrokes ? <Pressable key="Clear my strokes" accessibilityRole="button" accessibilityLabel="Clear my strokes" accessibilityHint="Keeps the agent's strokes and the author's" accessibilityState={{ disabled: disabled || !myStrokes }} disabled={disabled || !myStrokes} onPress={e => { e.stopPropagation(); onClearMyStrokes(); }} style={{ minHeight: touch ? 44 : 32, paddingHorizontal: 8, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: u.c.border, opacity: disabled || !myStrokes ? .45 : 1 }}><Icon name="RotateCcw" size={14} color={u.c.foreground} /><Txt kind="small" numberOfLines={1} style={{ fontWeight: '600' }}>Clear my strokes</Txt></Pressable> : null;
-  const choose = (label: string, active: boolean, content: React.ReactNode, press: () => void, wide = false) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active, disabled }} disabled={disabled} onPress={e => { e.stopPropagation(); press(); }} style={{ minWidth: wide ? 44 : 32, height: touch ? 44 : 32, paddingHorizontal: wide ? 6 : 0, borderRadius: 6, justifyContent: 'center', alignItems: 'center', backgroundColor: active ? withAlpha(u.c.accent, .14) : 'transparent', opacity: disabled ? .45 : 1 }}>{content}</Pressable>;
+  const choose = (label: string, active: boolean, content: React.ReactNode, press: () => void, wide = false) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active, disabled }} disabled={disabled} onPress={e => { e.stopPropagation(); press(); }} style={{ minWidth: wide ? 44 : 32, height: touch ? 44 : 32, paddingHorizontal: wide ? 6 : 0, borderRadius: 6, justifyContent: 'center', alignItems: 'center', backgroundColor: active ? withAlpha(u.c.accent, .14) : 'transparent', opacity: disabled ? .45 : 1 }}><Tooltip label={label} style={{ alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', flex: 1 }}>{content}</Tooltip></Pressable>;
   const section = (label: string, content: React.ReactNode) => <View key={label} style={{ gap: 4 }}><Txt kind="label" muted>{label}</Txt><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>{content}</View></View>;
   const extras = <>
       {shape && !line && section('Fill', (['none','wash','solid'] as const).map(fill => choose({ none:'No fill',wash:'Soft',solid:'Solid' }[fill], value.fill === fill, <View style={{ width: 16, height: 16, borderRadius: 4, borderWidth: 1.5, borderColor: wbColor(value.color,u), backgroundColor: fill === 'none' ? 'transparent' : withAlpha(wbColor(value.fillColor ?? value.color,u), fill === 'wash' ? .14 : 1) }} />, () => onChange({ fill }))))}

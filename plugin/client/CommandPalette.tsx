@@ -42,7 +42,7 @@ export function CommandPalette({ open, items, recent, onRun, onClose, width, hei
             else if (key === 'Enter') { e.preventDefault(); run(active, !!(event.metaKey || event.ctrlKey)); }
             else if (key === 'Escape') { e.preventDefault(); onClose(); }
           }}
-          style={[u.font('title'), { flex: 1, height: P.search - 8, borderWidth: 0, backgroundColor: 'transparent', ...({ outlineStyle: 'none' } as object) }]} />
+          style={[u.font('body'), { fontSize: 17, flex: 1, height: P.search - 8, borderWidth: 0, backgroundColor: 'transparent', ...({ outlineStyle: 'none' } as object) }]} />
       </View>
       <ScrollView ref={list} showsVerticalScrollIndicator={false} style={{ maxHeight: maxList }} contentContainerStyle={{ padding: 6 }} keyboardShouldPersistTaps="handled">
         {!flat.length && <Txt muted style={{ padding: 16 }}>Type to search.</Txt>}

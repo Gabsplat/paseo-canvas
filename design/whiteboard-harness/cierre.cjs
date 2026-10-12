@@ -28,7 +28,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');await pause(400);
  // ---- Trazos (§18.12) ---------------------------------------------------------------------------------------------
  await soft('pencil strokes are signed as the learner; one that starts on a card is anchored to it',async()=>{
-  await click(label('Lápiz (D)'));const note=await rectOf('note');
+  await click('#lienzo-tool-pencil');const note=await rectOf('note');
   await stroke(note.x+30,note.y+note.h-24,110);await wait('__panelQA.doc().blocks.some(b=>b.typeId==="wb-draw")');
   await stroke(1300,640,140);await wait('__panelQA.doc().blocks.filter(b=>b.typeId==="wb-draw").length===2');
   const list=await draws();assert.deepEqual(list.map(d=>[d.author,d.anchor,d.strokes]),[['learner','note',1],['learner',null,1]]);
@@ -38,9 +38,9 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
   await ev(`__panelQA.seedAgent([{type:'block.create',block:{id:'hint',typeId:'wb-draw',title:'',position:{x:24,y:150},size:{width:140,height:40},data:{extent:{width:140,height:40},strokes:[{points:[0,0,70,40,140,0],color:'azul',weight:'m'}],anchor:'server',author:'learner'}}}])`);
   await wait('!!document.querySelector("#lienzo-entity-hint")');
   assert.equal(await ev('__panelQA.doc().blocks.find(b=>b.id==="hint").data.author'),'assistant');
-  assert.ok(await ev('!!document.querySelector("#lienzo-entity-hint path[stroke-dasharray]")'));assert.ok(await ev('document.querySelector("#lienzo-entity-hint").innerText.includes("Asistente")'));
+  assert.ok(await ev('!!document.querySelector("#lienzo-entity-hint path[stroke-dasharray]")'));assert.ok(await ev('document.querySelector("#lienzo-entity-hint").innerText.includes("Agent")'));
   const mine=(await draws())[0].id;assert.equal(await ev('!!document.querySelector("#lienzo-entity-'+mine+' path[stroke-dasharray]")'),false);
-  assert.equal(await ev('document.querySelector("#lienzo-entity-'+mine+'").innerText.includes("Asistente")'),false);await shot('cierre-strokes-authors');
+  assert.equal(await ev('document.querySelector("#lienzo-entity-'+mine+'").innerText.includes("Agent")'),false);await shot('cierre-strokes-authors');
  });
  await soft('leaving the pencil settles exactly one bounded summary without points',async()=>{
   await key('Escape','Escape');await wait('__panelQA.actions.length===1');await pause(300);
@@ -58,18 +58,18 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
   const ops=await ev('__panelQA.log.at(-1).operations.filter(o=>o.type==="entity.move").map(o=>o.id)');assert.deepEqual(ops,['note']);
   const endCard=await rectOf('note'),endInk=await rectOf(mine);assert.ok(Math.abs((endInk.x-endCard.x)-(ink.x-card.x))<2&&Math.abs((endInk.y-endCard.y)-(ink.y-card.y))<2,'same offset after saving');await shot('cierre-strokes-followed');
  });
- await soft('"Borrar mis trazos" removes only the learner layers in one undoable transaction',async()=>{
-  await click(label('Lápiz (D)'));await wait(`!!document.querySelector(${JSON.stringify(label('Borrar mis trazos'))})`);await shot('cierre-strokes-reset');
-  const count=await ev('__panelQA.log.length');await click(label('Borrar mis trazos'));await wait('__panelQA.log.length>'+count);
-  assert.equal(await ev('__panelQA.log.at(-1).label'),'Borrar mis trazos');assert.deepEqual((await draws()).map(d=>d.id),['hint']);assert.equal(await ev('__panelQA.log.length'),count+1);
-  await wait(`document.querySelector(${JSON.stringify(label('Borrar mis trazos'))})?.getAttribute('aria-disabled')==='true'`);
-  await click(label('Deshacer'));await wait('__panelQA.doc().blocks.filter(b=>b.typeId==="wb-draw").length===3');await key('Escape','Escape');await pause(200);
+ await soft('"Clear my strokes" removes only the learner layers in one undoable transaction',async()=>{
+  await click('#lienzo-tool-pencil');await wait(`!!document.querySelector(${JSON.stringify(label('Clear my strokes'))})`);await shot('cierre-strokes-reset');
+  const count=await ev('__panelQA.log.length');await click(label('Clear my strokes'));await wait('__panelQA.log.length>'+count);
+  assert.equal(await ev('__panelQA.log.at(-1).label'),'Clear my strokes');assert.deepEqual((await draws()).map(d=>d.id),['hint']);assert.equal(await ev('__panelQA.log.length'),count+1);
+  await wait(`document.querySelector(${JSON.stringify(label('Clear my strokes'))})?.getAttribute('aria-disabled')==='true'`);
+  await key('z','KeyZ',2);await wait('__panelQA.doc().blocks.filter(b=>b.typeId==="wb-draw").length===3');await key('Escape','Escape');await pause(200);
  });
  await soft('deleting a card removes its annotations with it, and undo restores both',async()=>{
   const card=await rectOf('note');await mouse('mousePressed',card.x+card.w/2,card.y+18,'left',1);await mouse('mouseReleased',card.x+card.w/2,card.y+18);await wait('__panelQA.doc().selectedIds.includes("note")');
   await key('Delete','Delete');await wait('!__panelQA.doc().blocks.some(b=>b.id==="note")');
   assert.deepEqual((await draws()).map(d=>d.anchor),[null,'server']);
-  await click(label('Deshacer'));await wait('__panelQA.doc().blocks.some(b=>b.id==="note")');assert.equal((await draws()).filter(d=>d.anchor==='note').length,1);
+  await key('z','KeyZ',2);await wait('__panelQA.doc().blocks.some(b=>b.id==="note")');assert.equal((await draws()).filter(d=>d.anchor==='note').length,1);
  });
  await shot('cierre-final');assert.deepEqual(await ev('__panelQA.errors'),[]);
  }finally{checks.push({name:'Uncaught page errors',result:uncaught.length?'fail':'pass',...(uncaught.length?{error:JSON.stringify(uncaught).slice(0,600)}:{})});fs.writeFileSync('/tmp/lienzo-wb-cierre-result.json',JSON.stringify({checks},null,2));console.log(checks.filter(c=>c.result==='pass').length+'/'+checks.length+' checks passed');ws.close();process.exitCode=checks.some(c=>c.result==='fail')?1:0;}

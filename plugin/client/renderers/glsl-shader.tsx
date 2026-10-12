@@ -127,7 +127,7 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
         else save({ values: { ...live.current.state.values, [u.name]: value }, time: clock.current.seconds });
       };
       return <View key={u.name} nativeID={`lienzo-interactive-shader-${block.id}-${u.name}`} style={{ gap: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}><Txt kind="label">{u.label}{variable ? ' · Compartida' : ''}</Txt><Txt kind="code">{Number(value.toPrecision(6))}{(variable?.unit ?? u.unit) ? ` ${variable?.unit ?? u.unit}` : ''}</Txt></View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}><Txt kind="label">{u.label}{variable ? ' · Shared' : ''}</Txt><Txt kind="code">{Number(value.toPrecision(6))}{(variable?.unit ?? u.unit) ? ` ${variable?.unit ?? u.unit}` : ''}</Txt></View>
         <WebRange id={`shader-${block.id}-${u.name}`} label={u.label} min={min} max={max} step={variable?.step ?? u.step ?? 'any'} value={value} color={variable ? ui.c.accent : ui.c.foreground} disabled={readOnly || min === max} onChange={change} onSettle={next => {
           if (live.current.props.readOnly || !Number.isFinite(next)) return;
           change(next); const current = live.current.props.scope.variables[u.name];

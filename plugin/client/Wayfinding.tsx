@@ -6,7 +6,7 @@ import { LENSES, LENS_LABEL, type LensId, type LensKey } from './lenses';
 import { withAlpha } from './color';
 import { NATIVE, easeOut, reducedMotion } from './motion';
 import { tokens } from './tokens';
-import { Txt, useUI } from './ui';
+import { Tooltip, Txt, useUI } from './ui';
 import { islandStyle } from './whiteboard-visuals';
 
 type Camera = { scale: number; offset: Point };
@@ -75,13 +75,14 @@ export function SelectionBeacon({ id, title, box, remote, view, source, inset, o
  * Lenses keep the canvas as it is and tint every card by one thing it does not show. The control names the lens
  * in use and what each tint means; pressing it moves to the next one.
  */
-export function LensControl({ lens, legend, note, bottom, onChange }: { lens: LensId; legend: readonly LensKey[]; note?: string; bottom: number; onChange(next: LensId): void }) {
+export function LensControl({ lens, legend, note, bottom, onChange, shortcut }: { lens: LensId; legend: readonly LensKey[]; note?: string; bottom: number; onChange(next: LensId): void; shortcut?: string }) {
   const u = useUI(), next = LENSES[(LENSES.indexOf(lens) + 1) % LENSES.length], on = lens !== 'none';
   return <View nativeID="lienzo-interactive-lens" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom, maxWidth: 260, padding: on ? 8 : tokens.island.padding, gap: 6 }]}>
+    <Tooltip label={`Lente: ${LENS_LABEL[next]} next`} shortcut={shortcut} detail="A way to colour the same canvas (Spanish for lens).">
     <Pressable accessibilityRole="button" accessibilityLabel={`Lente (lens): ${LENS_LABEL[lens]}. Press for ${LENS_LABEL[next]}`} onPress={e => { e.stopPropagation(); onChange(next); }}
       style={({ pressed, ...state }) => ({ minHeight: 28, paddingHorizontal: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: on ? withAlpha(u.c.accent, .14) : pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>
       <Icon name="Glasses" size={14} color={on ? u.c.accent : u.c.foregroundMuted} /><Txt kind="small" style={{ fontWeight: '600', color: on ? u.c.accent : u.c.foreground }}>{on ? LENS_LABEL[lens] : 'Lente'}</Txt>
-    </Pressable>
+    </Pressable></Tooltip>
     {on && legend.map(entry => <View key={entry.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, opacity: entry.count ? 1 : .45 }}><View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: withAlpha(u.tone(entry.tone), .6), borderWidth: 1.5, borderColor: u.tone(entry.tone) }} /><Txt kind="small" muted style={{ flex: 1 }} numberOfLines={1}>{entry.label}</Txt><Txt kind="label" muted>{entry.count}</Txt></View>)}
     {on && !!note && <Txt kind="label" muted style={{ paddingHorizontal: 8, textTransform: 'none', letterSpacing: 0 }}>{note}</Txt>}
   </View>;

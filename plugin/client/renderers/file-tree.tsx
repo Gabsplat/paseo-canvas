@@ -21,7 +21,7 @@ function FileTree({ data, block, ui, document, selection = [], select }: Rendere
       const open = entry.dir && !closed.has(entry.path), accent = ui.c.accent, foldable = entry.dir && entry.children > 0;
       const target = select ? targets.get(entry.path) : undefined, pointed = !!target && selection.includes(target), lit = entry.highlight || pointed;
       const chevron = <View style={{ width: T.chevron, alignItems: 'center' }}>{foldable && <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={T.chevron} color={ui.c.foregroundMuted} />}</View>;
-      const label = `${entry.dir ? 'Carpeta' : 'Archivo'} ${entry.path}${entry.note ? `: ${entry.note}` : ''}`;
+      const label = `${entry.dir ? 'Folder' : 'File'} ${entry.path}${entry.note ? `: ${entry.note}` : ''}`;
       return <Pressable key={entry.path} nativeID={`lienzo-interactive-tree-${block.id}-${entry.path}`} accessibilityRole={target || foldable ? 'button' : undefined} accessibilityLabel={target ? `${label}. Show its card` : label} accessibilityState={{ selected: pointed, ...(foldable ? { expanded: open } : {}) }} disabled={!target && !foldable}
         onPress={e => { e.stopPropagation(); if (target) select!(pointed ? [] : [target]); else toggle(entry.path); }}
         style={({ pressed, ...state }) => ({ minHeight: row, paddingHorizontal: T.bleed, flexDirection: 'row', alignItems: 'center', gap: T.gap, borderRadius: T.radius, opacity: entry.muted ? T.mutedAlpha : 1,

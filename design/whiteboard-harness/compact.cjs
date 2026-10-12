@@ -21,14 +21,22 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');
  await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
  for(const theme of ['papel','tinta']){
-  await call('Page.navigate',{url:'http://127.0.0.1:8765/?compact&theme='+theme});await wait('!!document.querySelector("[aria-label=Herramientas]")');
-  await check('compact '+theme+' exposes tools sheet and usable free text creation',async()=>{
-   await click(label('Herramientas'));await wait(`!!document.querySelector(${JSON.stringify(label('Texto (T)'))})`);assert.equal(await ev(`document.querySelector('#lienzo-tools').getBoundingClientRect().width`),200);assert.equal(await ev(`document.querySelectorAll('#lienzo-tools [role=button]').length`),8);assert.equal(await ev(`new Set(Array.from(document.querySelectorAll('#lienzo-tools [role=button]'),e=>Math.round(e.getBoundingClientRect().top))).size`),2);await shot('compact-tools-'+theme);await click(label('Texto (T)'));await wait(`!document.querySelector(${JSON.stringify(label('Cerrar modal'))})`);await mouse('mousePressed',200,320,'left',1);await mouse('mouseReleased',200,320);await wait('!!document.querySelector("#lienzo-editor textarea")');await call('Input.insertText',{text:'Texto libre '+theme});await key('Enter','Enter',2);await wait('__panelQA.doc().blocks.some(b=>b.data.text==="Texto libre '+theme+'")');assert.equal(await ev('__panelQA.errors.length'),0);await shot('compact-'+theme);
+  await call('Page.navigate',{url:'http://127.0.0.1:8765/?compact&theme='+theme});await wait('!!document.querySelector("#lienzo-toolbar")&&!!document.querySelector("#lienzo-outline")');
+  await check('compact '+theme+' shows Lista, a scrolling toolbar above the composer, and creates free text',async()=>{
+   const bar=await box('#lienzo-toolbar'),composer=await box('#lienzo-composer');assert.ok(bar.y+bar.h<=composer.y+1,'toolbar above the composer');assert.ok(bar.x>=0&&bar.x+bar.w<=390,'within the panel');
+   assert.equal(await ev(`Math.round(document.querySelector('#lienzo-tool-text').getBoundingClientRect().height)`),44,'touch-sized tools');
+   assert.equal(await ev(`!!document.querySelector('[aria-label="Change view"],[aria-label="Cambiar vista"]')`),false,'no view switcher');
+   await shot('compact-list-'+theme);
+   await click('#lienzo-tool-text');await wait('!!document.querySelector("#lienzo-canvas-viewport")','a drawing tool shows the canvas');
+   await mouse('mousePressed',200,320,'left',1);await mouse('mouseReleased',200,320);await wait('!!document.querySelector("#lienzo-editor textarea")');await call('Input.insertText',{text:'Free text '+theme});await key('Enter','Enter',2);await wait('__panelQA.doc().blocks.some(b=>b.data.text==="Free text '+theme+'")');assert.equal(await ev('__panelQA.errors.length'),0);await shot('compact-'+theme);
+   await click('#lienzo-tool-select');await wait('!!document.querySelector("#lienzo-outline")','Select goes back to Lista');
   });
  }
- await call('Emulation.setDeviceMetricsOverride',{width:760,height:920,deviceScaleFactor:1,mobile:false});await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-tools")');await click(label('Forma (R)'));
- await check('medium width keeps horizontal style above composer with no dead strip',async()=>{
-  const tool=await box('#lienzo-tools'),composer=await box('#lienzo-composer');assert.ok(tool.x>=0&&tool.x+tool.w<=760);assert.ok(composer.x>=0&&composer.x+composer.w<=760);await click(label('Más estilo'));await wait(`!!document.querySelector(${JSON.stringify(label('Sin relleno'))})`);await click(label('Cerrar modal'));const zoom=await box('#lienzo-tools-zoom');assert.ok(zoom.w<64);assert.ok(composer.x+composer.w<zoom.x);await click(label('Opciones de zoom'));await wait(`!!document.querySelector(${JSON.stringify(label('Acercar'))})`);await click(label('Acercar'));await wait('!document.querySelector("#lienzo-interactive-zoom-menu")');await shot('medium');
+ await call('Emulation.setDeviceMetricsOverride',{width:760,height:920,deviceScaleFactor:1,mobile:false});await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-toolbar")');await click('#lienzo-tool-shape');
+ await check('medium width keeps the toolbar and composer inside, the shape options in Properties, and a reduced zoom',async()=>{
+  const tool=await box('#lienzo-toolbar'),composer=await box('#lienzo-composer');assert.ok(tool.x>=0&&tool.x+tool.w<=760);assert.ok(composer.x>=0&&composer.x+composer.w<=760);
+  await wait('!!document.querySelector("#lienzo-tool-options")','shape options in the right panel');assert.ok(await ev(`!!document.querySelector('#lienzo-right-panel [aria-label="No fill"]')`));
+  const zoom=await box('#lienzo-tools-zoom');assert.ok(zoom.w<64);await click(label('Zoom options'));await wait(`!!document.querySelector(${JSON.stringify(label('Zoom in'))})`);await click(label('Zoom in'));await wait('!document.querySelector("#lienzo-interactive-zoom-menu")');await shot('medium');
  });
  await call('Emulation.clearDeviceMetricsOverride');
  fs.writeFileSync('/tmp/lienzo-wb-compact.json',JSON.stringify({checks,uncaught},null,2));assert.deepEqual(uncaught,[]);
