@@ -90,9 +90,9 @@ test('WebGL context cap degrades in Spanish and freeing a context permits anothe
   try {
     for (let i = 0; i < MAX_LIVE_GL_CONTEXTS; i++) held.push(harness('webgl', { draw() {} }, fakeGL()));
     const overflow = harness('webgl', { draw() {} }, fakeGL());
-    assert.ok(updates.some(message => String(message).includes('demasiados gráficos WebGL'))); overflow.close();
+    assert.ok(updates.some(message => String(message).includes('Too many WebGL drawings'))); overflow.close();
     held.pop()!.close();
-    const next = harness('webgl', { draw() {} }, fakeGL()); assert.ok(!updates.some(message => String(message).includes('demasiados'))); next.close();
+    const next = harness('webgl', { draw() {} }, fakeGL()); assert.ok(!updates.some(message => String(message).includes('Too many'))); next.close();
   } finally { held.reverse().forEach(h => h.close()); }
 });
 test('shader compilation/link diagnostics return without throwing and release temporary resources', () => {
@@ -108,7 +108,7 @@ test('native wrappers return static Spanish fallback without touching the browse
     const node = Component(props) as unknown as Element;
     assert.equal(node.type, NativeLearningFallback); assert.equal(node.props.summary, 'Resultado estático');
     const fallback = NativeLearningFallback(node.props as any) as unknown as Element;
-    assert.equal(children(fallback)[1].props.children, 'La versión interactiva está disponible en escritorio/web.');
+    assert.equal(children(fallback)[1].props.children, 'The interactive version is available on desktop and web.');
   }
   const web = WebCanvasSurface(props) as unknown as Element; assert.equal((web.type as Function)(web.props), null);
   assert.equal(WebRange({ id: 'r', label: 'r', min: 0, max: 1, value: 0, step: 1, disabled: false, color: '#000', onChange() {}, onSettle() {} }), null);
@@ -119,6 +119,6 @@ test('controls presents its guiding question and visible reset, removes override
   const component = controlsRenderer.Component as Function;
   const node = component({ data: { question: '¿Cómo cambia la amplitud?', variables: ['amplitude'] }, block: { id: 'b' }, ui: { layout: { platform: 'web' }, c: { accent: '#246', statusDanger: '#933' } }, scope: { variables: { amplitude: { label: 'Amplitud', value: 1, current: 3, min: 0, max: 4, scopeId: 'g' } }, get: () => 3, set: (...args: unknown[]) => writes.push(args) }, runtime: { settle: async (...args: unknown[]) => { events.push(args); } } }) as Element;
   assert.equal(children(node)[0].props.children, '¿Cómo cambia la amplitud?');
-  const button = find(node, 'Button')!; assert.equal(button.props.label, 'Reiniciar'); button.props.onPress(); await Promise.resolve();
-  assert.deepEqual(writes, [['amplitude', null]]); assert.deepEqual(events, [['controls.reset', { values: { amplitude: 1 } }, 'Reiniciar controles']]);
+  const button = find(node, 'Button')!; assert.equal(button.props.label, 'Reset'); button.props.onPress(); await Promise.resolve();
+  assert.deepEqual(writes, [['amplitude', null]]); assert.deepEqual(events, [['controls.reset', { values: { amplitude: 1 } }, 'Reset controls']]);
 });

@@ -19,7 +19,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  try{
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');
- await check('real Panel starts with example data and no transport schema errors',async()=>{assert.deepEqual(await ev('__panelQA.errors'),[]);assert.ok(await ev('document.body.innerText.includes("Ejemplo")'));});
+ await check('real Panel starts with example data and no transport schema errors',async()=>{assert.deepEqual(await ev('__panelQA.errors'),[]);assert.ok(await ev('document.body.innerText.includes("Example")'));});
  await check('click selects without moving; dragging passive note body commits once',async()=>{
    await click('#lienzo-entity-note');await wait('__panelQA.doc().selectedIds.includes("note")');assert.equal(await ev('__panelQA.log.length'),0);
    const before=await ev('__panelQA.doc().blocks.find(b=>b.id==="note").position');await drag('#lienzo-entity-note',104,64);await wait('__panelQA.log.length===1');

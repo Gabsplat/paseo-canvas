@@ -342,8 +342,8 @@ const baseTokens = {
       "icon": "Pin",
       "iconSize": 10,
       "offset": -7,
-      "label": "Soltar posición",
-      "container": "Reordenar automáticamente"
+      "label": "Release position",
+      "container": "Arrange automatically"
     },
     "resize": {
       "hit": 28,
@@ -462,7 +462,7 @@ const baseTokens = {
     },
     "tooltip": {
       "delayMs": 500,
-      "warmMs": 300,
+      "warmMs": 800,
       "fadeMs": 80
     },
     "reveal": {
@@ -609,17 +609,17 @@ const baseTokens = {
       "unplacedShelfOffsetY": 64
     },
     "labels": {
-      "stack": "Pila",
-      "grid": "Rejilla",
-      "flow": "Flujo",
-      "graph": "Grafo",
-      "free": "Libre"
+      "stack": "Stack",
+      "grid": "Grid",
+      "flow": "Flow",
+      "graph": "Graph",
+      "free": "Free"
     },
     "graph": {
       "direction": "down",
       "directions": {
-        "down": "Hacia abajo",
-        "right": "Hacia la derecha"
+        "down": "Downwards",
+        "right": "To the right"
       },
       "unlinked": "filas debajo del grafo",
       "positioned": "conservan su position; después se resuelven solapes"
@@ -803,14 +803,14 @@ const baseTokens = {
       "fillAlpha": 0.025
     },
     "kinds": {
-      "flow": "Flujo",
-      "depends": "Depende",
-      "reference": "Referencia"
+      "flow": "Flow",
+      "depends": "Needs",
+      "reference": "Mentions"
     },
     "kindHelp": {
-      "flow": "Sigue o envía a",
-      "depends": "Necesita a",
-      "reference": "Menciona a"
+      "flow": "Goes on to, or sends to",
+      "depends": "Needs",
+      "reference": "Mentions"
     },
     "tones": [
       "neutro",
@@ -1078,9 +1078,20 @@ const baseTokens = {
       "minWidth": 96,
       "paddingH": 8
     },
-    "bannerTop": 64,
-    "dock": { "minPanelHeight": 520, "width": 48, "height": 372 },
-    "palette": { "button": 40, "icon": 20, "gap": 6, "hintGap": 8, "hintWidth": 232, "enterMs": 180, "staggerMs": 40, "offset": 16 }
+    "bannerTop": 64
+  },
+  "face": {
+    "$doc": "Stage 1 layout (docs/redesign-2026-10.md, docs/design.md §33). Islands float over the one canvas.",
+    "top": { "height": 44, "islandGap": 8 },
+    "toolbar": { "height": 44, "button": 36, "buttonTouch": 44, "gap": 4, "icon": 18, "radius": 8, "activeWash": 0.14, "divider": { "width": 1, "height": 20, "marginH": 4 }, "aboveComposer": 8, "chevron": 10, "pinBadge": 9, "maxPinned": 9 },
+    "shapes": { "width": 208, "row": 32 },
+    "catalog": { "width": 360, "maxHeight": 480, "search": 36, "row": 44, "tile": 28, "tileIcon": 16, "sectionHeader": 28, "offset": 8, "pinIcon": 14 },
+    "rightPanel": { "width": 300, "inset": 12, "tabs": 36, "header": 40, "sectionHeader": 32, "sectionLabel": 12, "padding": 12, "gap": 12, "bottomClearance": 64 },
+    "selectionBar": { "button": 32, "buttonTouch": 44, "offset": 10, "swatch": 18 },
+    "palette": { "width": 640, "top": 0.18, "search": 52, "row": 40, "header": 28, "footer": 36, "maxHeight": 440, "perGroup": 6, "recent": 6, "activeWash": 0.12, "scrim": 0.24 },
+    "sheet": { "width": 560, "row": 36, "keyChip": 22 },
+    "hojas": { "$doc": "Hoja menu and following the agent (stage 2).", "button": 32, "menuWidth": 280, "row": 34, "glow": 6 },
+    "eggs": { "$doc": "Small, discreet, never over content; off under reduced motion.", "mate": 84, "steamMs": 2400, "kettle": 44, "kettleMs": 4200, "loader": 20, "loaderMs": 1800, "loaderChance": 0.25 }
   },
   "toolbar": {
     "$doc": "Barra contextual sobre la selección (§5). Usa island + elevation.popover.",
@@ -1152,13 +1163,14 @@ const baseTokens = {
     "paddingV": 4,
     "offset": 6,
     "delayMs": 500,
-    "warmMs": 300,
+    "warmMs": 800,
+    "maxWidth": 260,
     "key": {
       "style": "keys",
       "gap": 6,
       "alpha": 0.7
     },
-    "touch": "no se muestra"
+    "touch": "long-press"
   },
   "contextChip": {
     "height": 24,
@@ -1394,7 +1406,7 @@ const baseTokens = {
     },
     "static": {
       "icon": "Image",
-      "chip": "Estático"
+      "chip": "Static"
     }
   },
   "viz": {
@@ -1447,7 +1459,6 @@ const baseTokens = {
     "recommendedMax": 4,
     "neutral": "foreground: parámetros locales no compartidos y la serie de referencia"
   },
-  "views": { "padX": 88, "padBottom": 140, "focusMax": 920, "listWidth": 280, "cell": 22, "rowLabel": 220, "colHead": 22 },
   "lens": { "fill": 0.2, "border": 2, "radius": 12, "outset": 2 },
   "fileTree": { "row": 26, "rowCompact": 36, "indent": 16, "chevron": 12, "icon": 14, "gap": 6, "bleed": 4, "radius": 6, "highlightFill": 0.14, "pointedFill": 0.24, "mutedAlpha": 0.5 },
   "whiteboard": {
@@ -1455,60 +1466,60 @@ const baseTokens = {
     "types": {
       "wb-text": {
         "icon": "Type",
-        "name": "Texto libre"
+        "name": "Free text"
       },
       "wb-shape": {
         "icon": "Shapes",
-        "name": "Forma"
+        "name": "Shape"
       },
       "wb-svg": {
         "icon": "ImagePlus",
-        "name": "Imagen SVG"
+        "name": "SVG image"
       },
       "wb-draw": {
         "icon": "Pencil",
-        "name": "Dibujo"
+        "name": "Drawing"
       }
     },
     "colors": [
       {
         "id": "tinta",
-        "label": "Tinta",
+        "label": "Ink",
         "value": "host:foreground"
       },
       {
         "id": "gris",
-        "label": "Gris",
+        "label": "Grey",
         "value": "host:foregroundMuted"
       },
       {
         "id": "azul",
-        "label": "Azul",
+        "label": "Blue",
         "value": "viz:azul"
       },
       {
         "id": "turquesa",
-        "label": "Turquesa",
+        "label": "Teal",
         "value": "viz:turquesa"
       },
       {
         "id": "verde",
-        "label": "Verde",
+        "label": "Green",
         "value": "viz:verde"
       },
       {
         "id": "naranja",
-        "label": "Naranja",
+        "label": "Orange",
         "value": "viz:naranja"
       },
       {
         "id": "rojo",
-        "label": "Rojo",
+        "label": "Red",
         "value": "host:statusDanger"
       },
       {
         "id": "violeta",
-        "label": "Violeta",
+        "label": "Violet",
         "value": "viz:violeta"
       }
     ],
@@ -1655,7 +1666,7 @@ const baseTokens = {
         "inside": true
       },
       "chip": {
-        "label": "Interactuando · Esc",
+        "label": "Interacting · Esc",
         "height": 24,
         "paddingH": 8,
         "radius": 12,
@@ -1686,17 +1697,17 @@ const baseTokens = {
       "items": {
         "select": {
           "icon": "MousePointer2",
-          "label": "Seleccionar",
+          "label": "Select",
           "key": "V"
         },
         "hand": {
           "icon": "Hand",
-          "label": "Mano",
+          "label": "Hand",
           "key": "H"
         },
         "text": {
           "icon": "Type",
-          "label": "Texto",
+          "label": "Text",
           "key": "T"
         },
         "shape": {
@@ -1710,21 +1721,21 @@ const baseTokens = {
         },
         "draw": {
           "icon": "Pencil",
-          "label": "Lápiz",
+          "label": "Pencil",
           "key": "D"
         },
         "eraser": {
           "icon": "Eraser",
-          "label": "Goma",
+          "label": "Eraser",
           "key": "E"
         },
         "library": {
           "icon": "Library",
-          "label": "Biblioteca"
+          "label": "Icons"
         },
         "add": {
           "icon": "Plus",
-          "label": "Añadir bloque"
+          "label": "More tools"
         }
       },
       "narrowOrder": [
@@ -1742,10 +1753,10 @@ const baseTokens = {
       "compact": {
         "button": {
           "icon": "PenTool",
-          "label": "Herramientas"
+          "label": "Tools"
         },
         "done": {
-          "label": "Listo",
+          "label": "Done",
           "height": 36,
           "paddingH": 16,
           "radius": 18,
@@ -1827,13 +1838,13 @@ const baseTokens = {
       },
       "labels": {
         "color": "Color",
-        "size": "Tamaño",
+        "size": "Size",
         "fill": "Relleno",
         "stroke": "Trazo",
         "font": "Fuente",
-        "align": "Alineación",
+        "align": "Alignment",
         "heads": "Puntas",
-        "more": "Más estilo"
+        "more": "More style"
       }
     },
     "shapes": {
@@ -1845,48 +1856,48 @@ const baseTokens = {
       "items": [
         {
           "id": "rect",
-          "label": "Rectángulo",
+          "label": "Rectangle",
           "icon": "Square"
         },
         {
           "id": "rounded",
-          "label": "Redondeado",
+          "label": "Rounded rectangle",
           "icon": "SquareRoundCorner",
           "fallbackIcon": "Square"
         },
         {
           "id": "ellipse",
-          "label": "Elipse",
+          "label": "Ellipse",
           "icon": "Circle"
         },
         {
           "id": "diamond",
-          "label": "Rombo",
+          "label": "Diamond",
           "icon": "Diamond"
         },
         {
           "id": "triangle",
-          "label": "Triángulo",
+          "label": "Triangle",
           "icon": "Triangle"
         },
         {
           "id": "hexagon",
-          "label": "Hexágono",
+          "label": "Hexagon",
           "icon": "Hexagon"
         },
         {
           "id": "cylinder",
-          "label": "Cilindro",
+          "label": "Cylinder",
           "icon": "Cylinder"
         },
         {
           "id": "line",
-          "label": "Línea",
+          "label": "Line",
           "icon": "Minus"
         }
       ],
       "arrow": {
-        "label": "Flecha",
+        "label": "Arrow",
         "icon": "MoveUpRight",
         "shape": "line",
         "heads": "end"
@@ -1905,30 +1916,30 @@ const baseTokens = {
       },
       "section": "Arquitectura",
       "license": "MIT · Tabler Icons",
-      "credit": "Iconos Tabler · licencia MIT",
+      "credit": "Tabler icons · MIT licence",
       "import": {
         "icon": "Upload",
-        "label": "Importar SVG…",
-        "pasteLabel": "Pegar código SVG"
+        "label": "Import SVG…",
+        "pasteLabel": "Paste SVG code"
       },
-      "rejected": "Este SVG contiene contenido activo o enlaces externos y no se puede importar.",
-      "tooLarge": "El SVG supera el límite de 64 KiB.",
+      "rejected": "This SVG has active content or external links and cannot be imported.",
+      "tooLarge": "The SVG is larger than 64 KiB.",
       "items": [
         {
           "id": "server",
-          "label": "Servidor"
+          "label": "Server"
         },
         {
           "id": "database",
-          "label": "Base de datos"
+          "label": "Database"
         },
         {
           "id": "cloud",
-          "label": "Nube"
+          "label": "Cloud"
         },
         {
           "id": "network",
-          "label": "Red"
+          "label": "Network"
         },
         {
           "id": "api",
@@ -1936,31 +1947,31 @@ const baseTokens = {
         },
         {
           "id": "browser",
-          "label": "Navegador"
+          "label": "Browser"
         },
         {
           "id": "device-laptop",
-          "label": "Portátil"
+          "label": "Laptop"
         },
         {
           "id": "device-mobile",
-          "label": "Móvil"
+          "label": "Phone"
         },
         {
           "id": "stack-2",
-          "label": "Capas"
+          "label": "Layers"
         },
         {
           "id": "box",
-          "label": "Paquete"
+          "label": "Package"
         },
         {
           "id": "file",
-          "label": "Archivo"
+          "label": "File"
         },
         {
           "id": "users",
-          "label": "Personas"
+          "label": "People"
         }
       ]
     },

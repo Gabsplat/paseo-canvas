@@ -18,7 +18,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await ev(`__panelQA.seed([{type:'block.create',block:{id:'app',typeId:'html',title:'Ejemplo: contador',position:{x:900,y:380},data:{html:${JSON.stringify(app)},height:220}}},
   {type:'block.create',block:{id:'web',typeId:'preview',title:'',position:{x:900,y:700},data:{url:'http://127.0.0.1:8765/fixtures/frame.html'}}}])`);
  await wait('!!document.querySelector("#lienzo-entity-app iframe")&&!!document.querySelector("#lienzo-entity-web")');await new Promise(r=>setTimeout(r,900));
- {const f=await rect('[aria-label="Ajustar al lienzo"]');await mouse('mousePressed',f.x+f.w/2,f.y+f.h/2,1);await mouse('mouseReleased',f.x+f.w/2,f.y+f.h/2);await new Promise(r=>setTimeout(r,900));}
+ {const f=await rect('[aria-label="Fit all"]');await mouse('mousePressed',f.x+f.w/2,f.y+f.h/2,1);await mouse('mouseReleased',f.x+f.w/2,f.y+f.h/2);await new Promise(r=>setTimeout(r,900));}
  const text=id=>ev(`document.querySelector('#lienzo-entity-${id}').innerText`);
  assert.ok(!/Mini app|Vista previa/.test(await text('app')+await text('web')),'no type label on windows');assert.ok((await text('app')).includes('Ejemplo: contador'));assert.ok((await text('web')).includes('127.0.0.1'),'an untitled page is named by its host');
  const frame=await ev(`(()=>{const f=document.querySelector('#lienzo-entity-app iframe');return{sandbox:f.getAttribute('sandbox'),w:f.getBoundingClientRect().width,cardW:document.querySelector('#lienzo-entity-app').getBoundingClientRect().width}})()`);

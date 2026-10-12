@@ -1,20 +1,23 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { canvasPreferences } from './shared/preferences';
+import { canvasPreferences, interfacePreferences } from './shared/preferences';
 import * as rpc from "./shared/rpc";
 import { CanvasStore } from "./server/store";
 import { CanvasService } from "./server/service";
 import { CanvasBridge } from "./server/bridge";
-import { ToolRouter } from "./server/tools";
+import { ToolRouter, toolNames } from "./server/tools";
+import { CopilotService } from "./server/copilot";
 import { AgentGateway, managedMcp, ownerEnvironment, prepareCreation } from "./server/agent-integration";
 import { FeedbackDispatcher } from "./server/feedback";
 
 export default function contribute(server: PluginServerContext) {
   server.registerSettings(canvasPreferences);
+  server.registerSettings(interfacePreferences);
   const directory = join(process.env.PASEO_HOME || join(homedir(), ".paseo"), "canvas");
   const store = new CanvasStore(directory), service = new CanvasService(store), gateway = new AgentGateway(service);
-  const bridge = new CanvasBridge(directory, new ToolRouter(service, owner => gateway.scope(owner)));
+  const copilot = new CopilotService(service, toolNames);
+  const bridge = new CanvasBridge(directory, new ToolRouter(service, owner => gateway.scope(owner), copilot));
   const feedback = new FeedbackDispatcher(service, gateway);
   // The bridge starts with the plugin so agents that are already open keep their tools across a reload.
   // It is not awaited and fails quietly: handlers and hooks retry it, and a daemon startup is never blocked.
@@ -40,6 +43,14 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.readAgentEvents, input => service.events(input));
   server.handle(rpc.readSharing, input => service.sharing(input));
   server.handle(rpc.configureSharing, input => service.configureSharing(input));
+  server.handle(rpc.createSheet, input => service.createSheet(input));
+  server.handle(rpc.listSheets, input => service.sheets(input));
+  server.handle(rpc.readCopilot, input => copilot.read(input));
+  server.handle(rpc.listCopilot, input => copilot.list(input));
+  server.handle(rpc.setCopilot, async (input, { paseo }) => {
+    gateway.bind(paseo); await gateway.verify(input.agentId, input.workspaceId);
+    return copilot.set(input);
+  });
   server.handle(rpc.readInjection, () => service.injection());
   server.handle(rpc.configureInjection, input => service.configureInjection(input));
   server.handle(rpc.connectAgent, async (input, { paseo }) => {
@@ -55,7 +66,7 @@ export default function contribute(server: PluginServerContext) {
     gateway.bind(paseo); await gateway.verify(input.agentId, input.workspaceId); await bridge.ensure();
     const owner = await service.allocateOwner(input.agentId), entry = managedMcp(bridge, owner);
     const configuration = input.provider === "codex" ? `[mcp_servers.paseo-canvas]\ncommand = ${JSON.stringify(entry.command)}\nargs = ${JSON.stringify(entry.args)}\nenv = { ELECTRON_RUN_AS_NODE = "1" }\n` : JSON.stringify(input.provider === "opencode" ? { mcp: { "paseo-canvas": { type: "local", command: [entry.command, ...entry.args], environment: entry.env, enabled: true } } } : { mcpServers: { "paseo-canvas": entry } }, null, 2);
-    return { configuration, requiresReload: true, instructions: "Merge this entry into this agent's provider/project MCP configuration, then reload the idle agent. This snippet is private to this agent. The plugin does not edit provider configuration or reload sessions itself. New agents can receive tools automatically after enabling canvas.injection for their workspace." };
+    return { configuration, requiresReload: true, instructions: "Merge this entry into this agent's provider/project MCP configuration, then reload the idle agent. This snippet is private to this agent. The plugin does not edit provider configuration or reload sessions itself. Agents created from now on get the tools automatically." };
   });
   server.handle(rpc.agentAction, async (input, { paseo }) => {
     gateway.bind(paseo);
@@ -89,16 +100,18 @@ export default function contribute(server: PluginServerContext) {
     } catch { console.error("Canvas session preparation unavailable; opening the agent unchanged."); }
   });
   // A tool call always happens inside a turn, so this is where a freshly reloaded backend gets its SDK handle back.
-  const removeTurnStart = server.on("agent.turn_started", async (_event, { paseo }) => {
-    gateway.bind(paseo);
+  const removeTurnStart = server.on("agent.turn_started", async (event, { paseo }) => {
+    gateway.bind(paseo); copilot.activity.turn(event.agent.id);
     try { await bridge.ensure(); } catch { console.error("Canvas bridge unavailable at turn start."); }
   });
   const removeTurn = server.on("agent.turn_ended", async (event, { paseo }) => {
     gateway.bind(paseo);
     try { await feedback.drain(event.agent.id); } catch { console.error("Canvas feedback remains pending; retry from the canvas panel."); }
+    // After feedback: if feedback just started a new turn, the reminder sees a busy agent and stays quiet.
+    try { await copilot.turnEnded(event, gateway); } catch { console.error("Lienzo copilot reminder skipped."); }
   });
   const removeArchived = server.on("agent.archived", async event => {
-    try { await service.releaseAgent(event.agent.id); } catch { console.error("Canvas could not release an archived agent's canvases."); }
+    try { await service.releaseAgent(event.agent.id); await copilot.forget(event.agent.id); } catch { console.error("Canvas could not release an archived agent's canvases."); }
   });
   return async () => { removeArchived(); removeCreate(); removeSession(); removeTurnStart(); removeTurn(); await feedback.close(); await bridge.close(); await store.close(); };
 }

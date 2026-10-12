@@ -175,64 +175,64 @@ test('copy remapping touches only internal reference fields, preserves external 
 });
 test('real range scrubs update every input frame before acknowledgement; only release settles once with explored interval', async () => clock(async advance => {
   const h = harness(); const initial = JSON.stringify(h.props.document); let node = h.render();
-  assert.match(text(node), /¿Cómo cambia/); assert.equal(h.writes.length, 0); assert.equal(h.events.length, 0);
+  assert.match(text(node), /How does/); assert.equal(h.writes.length, 0); assert.equal(h.events.length, 0);
   const range = WebRange(find(node, WebRange).props as any) as unknown as Element;
   const input = (value: number) => range.props.onInput({ currentTarget: { value: String(value) } });
   for (const value of [100, 800, 300]) {
-    input(value); const probe = h.draw(node, 99_999); assert.ok(probe.texts.includes(`Tiempo: ${value} ms`));
+    input(value); const probe = h.draw(node, 99_999); assert.ok(probe.texts.includes(`Time: ${value} ms`));
     assert.equal(motionAt(h.props.data, h.props.runtime.state, h.props.document, Date.now())[0].progress, value / 1000);
     assert.equal(h.events.length, 0);
   }
   range.props.onPointerUp({ currentTarget: { value: '300' } }); await Promise.resolve();
   assert.equal(h.events.length, 1); assert.deepEqual(h.events[0][1].visited, [0, 800]); assert.equal(h.events[0][1].playhead, 300);
   range.props.onPointerUp({ currentTarget: { value: '300' } }); assert.equal(h.events.length, 1);
-  node = h.render(); assert.match(text(node), /Señal: 2, de Origen a Destino/);
+  node = h.render(); assert.match(text(node), /Signal: 2, from Origen to Destino/);
   const keyboard = WebRange(find(node, WebRange).props as any) as unknown as Element;
   input(500); keyboard.props.onKeyUp({ key: 'ArrowRight', currentTarget: { value: '500' } }); assert.equal(h.events.length, 2);
-  advance(200); node = h.render(); button(node, 'Reiniciar').props.onPress(); await Promise.resolve();
+  advance(200); node = h.render(); button(node, 'Reset').props.onPress(); await Promise.resolve();
   assert.equal(h.writes.at(-1)[0], null); assert.deepEqual(h.events.at(-1)![1].visited, [0, 0]); assert.equal(h.events.at(-1)![0], 'animated-flow.reset');
   assert.deepEqual(motionAt(h.props.data, h.props.runtime.state, h.props.document, Date.now()), []);
-  assert.match(text(h.render()), /Sin empezar/); assert.equal(JSON.stringify(h.props.document), initial);
+  assert.match(text(h.render()), /Not started/); assert.equal(JSON.stringify(h.props.document), initial);
   for (const [state] of h.writes) if (state) { assert.ok(runtimeBlockStateSchema.safeParse(state).success); assert.ok(Buffer.byteLength(JSON.stringify(state), 'utf8') <= 4096); }
   for (const args of h.events) assert.ok(Buffer.byteLength(JSON.stringify(args[1]), 'utf8') <= 4096);
   h.close();
 }));
 test('play/pause/ended use epoch time, frames never write or settle, and duplicate end frames are harmless', async () => clock(async advance => {
   const h = harness(base({ duration: 2000, events: [event()] })); let node = h.render();
-  button(node, 'Reproducir').props.onPress(); assert.equal(h.events.length, 0);
+  button(node, 'Play').props.onPress(); assert.equal(h.events.length, 0);
   const anchor = h.props.runtime.state.anchorMs; assert.equal(anchor, Date.now()); assert.equal(h.writes.length, 1);
-  for (const value of [100, 250, 500]) { advance(value); const probe = h.draw(node, 3); assert.ok(probe.texts.includes(`Tiempo: ${value} ms`)); assert.equal(h.writes.length, 1); assert.equal(h.events.length, 0); }
-  node = h.render(); button(node, 'Pausar').props.onPress(); await Promise.resolve();
+  for (const value of [100, 250, 500]) { advance(value); const probe = h.draw(node, 3); assert.ok(probe.texts.includes(`Time: ${value} ms`)); assert.equal(h.writes.length, 1); assert.equal(h.events.length, 0); }
+  node = h.render(); button(node, 'Pause').props.onPress(); await Promise.resolve();
   assert.equal(h.events.length, 1); assert.equal(h.events[0][0], 'animated-flow.pause'); assert.equal(h.events[0][1].playhead, 500); assert.deepEqual(h.events[0][1].visited, [0, 500]);
-  button(node, 'Pausar').props.onPress(); assert.equal(h.events.length, 1);
-  advance(1000); node = h.render(); assert.match(text(node), /Tiempo: 500/); button(node, 'Reproducir').props.onPress();
+  button(node, 'Pause').props.onPress(); assert.equal(h.events.length, 1);
+  advance(1000); node = h.render(); assert.match(text(node), /Time: 500/); button(node, 'Play').props.onPress();
   advance(2700); h.draw(node, 0); h.draw(node, 0); await Promise.resolve();
   assert.equal(h.events.length, 2); assert.equal(h.events[1][0], 'animated-flow.ended'); assert.equal(h.events[1][1].playhead, 2000); assert.equal(h.props.runtime.state.playing, false);
   assert.equal(find(h.render(), CanvasSurface).props.animated, false); h.close();
 }));
 test('visibility, reduced motion and unmount pause playback; stored state never autoplays', async () => clock(async advance => {
   const h = harness(); let node = h.render(); const surface = find(node, CanvasSurface);
-  button(node, 'Reproducir').props.onPress(); advance(300); surface.props.onVisibilityChange(false); await Promise.resolve();
+  button(node, 'Play').props.onPress(); advance(300); surface.props.onVisibilityChange(false); await Promise.resolve();
   assert.equal(h.props.runtime.state.playing, false); assert.equal(h.events.length, 1); assert.equal(h.events[0][1].reason, 'hidden');
   surface.props.onVisibilityChange(false); surface.props.onVisibilityChange(true); assert.equal(h.events.length, 1);
-  advance(1000); assert.ok(h.draw(node).texts.includes('Tiempo: 300 ms'));
-  node = h.render(); button(node, 'Reproducir').props.onPress(); reducedMotion.current = true; advance(1100); h.draw(node); assert.equal(h.props.runtime.state.playing, false);
-  node = h.render(); assert.equal(button(node, 'Reproducir').props.disabled, true); assert.match(text(node), /Movimiento reducido/);
-  reducedMotion.current = false; node = h.render(); button(node, 'Reproducir').props.onPress(); advance(1300); const before = h.events.length; h.close();
+  advance(1000); assert.ok(h.draw(node).texts.includes('Time: 300 ms'));
+  node = h.render(); button(node, 'Play').props.onPress(); reducedMotion.current = true; advance(1100); h.draw(node); assert.equal(h.props.runtime.state.playing, false);
+  node = h.render(); assert.equal(button(node, 'Play').props.disabled, true); assert.match(text(node), /Reduced motion/);
+  reducedMotion.current = false; node = h.render(); button(node, 'Play').props.onPress(); advance(1300); const before = h.events.length; h.close();
   assert.equal(h.props.runtime.state.playing, false); assert.equal(h.events.length, before, 'departure flushes final runtime, without a fabricated interaction');
   const restored = harness(undefined, false, 'web', { playhead: 250, playing: true, anchorMs: Date.now() - 50_000 });
   node = restored.render(); assert.equal(find(node, CanvasSurface).props.animated, false); assert.equal(restored.props.runtime.state.playing, false);
-  assert.ok(restored.draw(node).texts.includes('Tiempo: 250 ms')); assert.equal(restored.events.length, 0); restored.close();
+  assert.ok(restored.draw(node).texts.includes('Time: 250 ms')); assert.equal(restored.events.length, 0); restored.close();
 }));
 test('actual renderer handles missing routes, readOnly, native fallback and empty defaults honestly', () => {
-  const missing = harness(base({ events: [event({ to: 'deleted' })] })); let node = missing.render(); assert.match(text(node), /La ruta ya no existe en este lienzo/);
-  assert.equal(button(node, 'Reproducir').props.disabled, true); button(node, 'Reproducir').props.onPress(); assert.equal(missing.writes.length, 0); missing.close();
+  const missing = harness(base({ events: [event({ to: 'deleted' })] })); let node = missing.render(); assert.match(text(node), /The route no longer exists in this Lienzo/);
+  assert.equal(button(node, 'Play').props.disabled, true); button(node, 'Play').props.onPress(); assert.equal(missing.writes.length, 0); missing.close();
   const frozen = harness(undefined, true); node = frozen.render(); find(node, WebRange).props.onChange(300); find(node, WebRange).props.onSettle(300);
   for (const b of all(node).filter(n => n.type === Button)) { assert.equal(b.props.disabled, true); b.props.onPress(); }
   assert.equal(frozen.writes.length, 0); assert.equal(frozen.events.length, 0); frozen.close();
-  const native = harness(undefined, false, 'ios'); node = native.render(); assert.ok(find(node, NativeLearningFallback)); assert.equal(find(node, CanvasSurface), undefined); assert.equal(find(node, WebRange), undefined); assert.match(text(node), /Estático/);
+  const native = harness(undefined, false, 'ios'); node = native.render(); assert.ok(find(node, NativeLearningFallback)); assert.equal(find(node, CanvasSurface), undefined); assert.equal(find(node, WebRange), undefined); assert.match(text(node), /Static/);
   for (const b of all(node).filter(n => n.type === Button)) { assert.equal(b.props.disabled, true); b.props.onPress(); } assert.equal(native.writes.length, 0); assert.equal(native.events.length, 0); native.close();
-  const empty = harness(base()); node = empty.render(); assert.match(text(node), /Añade eventos entre nodos conectados/); assert.equal(button(node, 'Reproducir').props.disabled, true); empty.close(); Platform.OS = 'web';
+  const empty = harness(base()); node = empty.render(); assert.match(text(node), /Add events between connected nodes/); assert.equal(button(node, 'Play').props.disabled, true); empty.close(); Platform.OS = 'web';
 });
 test('real service blocks feedback on flush failure, deduplicates a lost-response retry and persists bounded runtime', async t => {
   const { service } = await setup(t), reference = { documentId: 'd', workspaceId };
@@ -256,10 +256,10 @@ test('real service blocks feedback on flush failure, deduplicates a lost-respons
     let node = h.render(); find(node, WebRange).props.onChange(400); find(node, WebRange).props.onSettle(400);
     await assert.rejects(flight, /offline/); await Promise.resolve();
     assert.equal((await service.events(reference)).events.length, 0);
-    node = h.render(); assert.match(text(node), /No se pudo guardar la interacción/); assert.ok(!text(node).includes('/private'));
-    failFlush = false; button(node, 'Reintentar').props.onPress(); await assert.rejects(flight, /lost response/); await Promise.resolve();
+    node = h.render(); assert.match(text(node), /The interaction could not be saved/); assert.ok(!text(node).includes('/private'));
+    failFlush = false; button(node, 'Retry').props.onPress(); await assert.rejects(flight, /lost response/); await Promise.resolve();
     assert.equal((await service.events(reference)).events.length, 1);
-    button(h.render(), 'Reintentar').props.onPress(); await flight; await Promise.resolve();
+    button(h.render(), 'Retry').props.onPress(); await flight; await Promise.resolve();
     assert.deepEqual(calls[0], calls[1]); assert.deepEqual(calls[1], calls[2]);
     const events = (await service.events(reference)).events;
     assert.equal(events.length, 1); assert.equal(events[0].action.settled, true);
@@ -267,7 +267,7 @@ test('real service blocks feedback on flush failure, deduplicates a lost-respons
     const persisted = await service.read(reference);
     assert.equal(persisted.runtime.blocks.b.playhead, 400); assert.equal(persisted.document.revision, view.document.revision);
     assert.deepEqual(persisted.document, view.document);
-    button(h.render(), 'Reiniciar').props.onPress(); await flight;
+    button(h.render(), 'Reset').props.onPress(); await flight;
     assert.equal((await service.read(reference)).runtime.blocks.b, undefined);
     assert.equal((await service.events(reference)).events.length, 2);
   } finally { h.close(); }
@@ -290,7 +290,7 @@ test('real surface adapter pauses renderer on hidden tab, caps pixels and stops 
     assert.equal(frames.size, 0); observers.intersection([{ isIntersecting: true }]);
     const frame = () => { const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn(123)); };
     frame(); assert.equal(canvas.width, 1024); assert.ok(canvas.height <= 1024);
-    node = h.render(); button(node, 'Reproducir').props.onPress(); node = h.render();
+    node = h.render(); button(node, 'Play').props.onPress(); node = h.render();
     host = owned; cursor = 0; (wrapper.type as Function)({ ...find(node, CanvasSurface).props, kind: '2d' }); commit(owned);
     advance(200); const writes = h.writes.length; frame(); assert.equal(h.writes.length, writes); assert.equal(h.events.length, 0); assert.ok(frames.size > 0);
     doc.hidden = true; listeners.get('visibilitychange')!(); assert.equal(frames.size, 0); assert.equal(h.props.runtime.state.playing, false); assert.equal(h.events.length, 1);

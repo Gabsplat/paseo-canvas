@@ -23,38 +23,28 @@ addresses the coordinator's browser QA finding that the former full-width row
 intercepted clicks beside the toolbar. The former docked top bar, catalog rail, inspector
 rail and context tray no longer reserve canvas space.
 
-The document island is top-left and contains the main menu, title, persisted
-example marker, save warning indicator, undo and redo. The title opens the real
-document picker. Renaming is available through the main menu and F2 with no
-selection. The save indicator appears after 400 ms of a pending edit or after a
-reported failure. Tools sit at the top centre and yield to the measured document
-island. When both cannot fit on the same row, tools use the next floating row.
-Below 560 px they use the frontend's reduced tool set; redo remains in the menu.
+The top-left island holds the main menu, the title (it opens Lienzos), the persisted example chip and the save
+indicator; stage 2 adds the Hoja menu there. Renaming is in the menu and on F2 with no selection; undo and redo are
+in the menu, ⌘Z / ⌘⇧Z and ⌘K. The top-right island holds the command palette button and the right-panel toggle.
 
-The assistant composer floats at the bottom centre. Below 560 px it aligns left
-and leaves space for Canvas's zoom control. Its selection chips, queue actions,
-errors and delivery receipt use the actual controller data. The style island is
-168 px wide and vertically centred on wide panels. Below 880 px it becomes
-horizontal, eight pixels above the measured composer. It appears for text,
-shape or draw tools or a whiteboard selection. Shapes and library use the
-frontend's real popover components. Canvas alone owns zoom.
+The bottom toolbar is centred eight pixels above the measured composer and never overlaps it; the + catalog opens
+above it, right-aligned to `+`. The composer floats at the bottom centre; below 560 px it aligns left. Its
+selection chips, queue actions, errors and delivery receipt use the actual controller data. The right panel floats
+at the right under the top islands and holds what the inspector, the selection popovers and the style island used
+to: Properties of the selection, the tool's options and extension tool tabs. The selection bar reaches Canvas
+through `selectionToolbar`. Canvas alone owns zoom; it also receives `reservedKey` and `obscuredRight`.
 
-Compact hosts retain a docked compact header, default to outline, and expose
-Herramientas in a host Modal. Opening it switches to Canvas. Choosing a creation
-tool closes the sheet; Listo returns to selection. The compact tool set uses
-`ToolIsland grid`: four columns and two rows of
-44 px buttons, with 8 px gaps, no dividers and no horizontal tool scroller. Its
-200 px grid is centred in the sheet. Applicable style controls follow the tools,
-then an explicit Biblioteca row opens the existing library picker. Noncompact
-tool dialogs retain the normal horizontal island. The catalog uses a host Modal. Selection popovers become host sheets in compact mode. Document settings, history and activity have dedicated content in host dialogs. The local Modal wrapper carries the UI context through host
-portals. Solo lienzo hides the Panel controls while retaining Canvas zoom and
-save, conflict and connection notices.
+Compact hosts keep a docked header (menu, title, undo, ⌘K, Properties), show Lista, and put the toolbar in one
+horizontal scroller above the docked composer; a drawing tool or the hand shows the canvas and Select returns to
+Lista. The selection bar docks above the toolbar with a Properties button; the right panel, menus and dialogs are
+host sheets. The local Modal wrapper carries the UI context through host portals. Hide all UI (⌘.) hides the Panel
+controls while retaining Canvas zoom and save, conflict and connection notices.
 
 The main menu and dialogs preserve document creation and copies, labelled
 examples, history, communication instructions, agent connection, activity,
 settings, guide, undo/redo, grouping, duplication, deletion and collections.
-Catalog tabs retain every learning block, template and pack. Its quick actions
-add notes, nodes and empty groups, accept media URLs, or import SVG. Existing
+The + catalog lists every block type, template, embed and extension tool; "Manage extensions…" opens the
+collections dialog. Ventana accepts web pages and media URLs; the icons and SVG import live under Shapes & drawing. Existing
 group template save and collection import/export use the actual RPCs. No UI
 claims that an assistant answered or a write succeeded before a response.
 
@@ -106,17 +96,17 @@ connection label point, measures its width, clamps it to the viewport and flips
 it away from the last selection pointer. It unmounts during drag, resize, pan,
 zoom, connection gestures, drawing, editing and interaction. It returns after
 120 ms with the approved 100 ms fade and 4 px movement, respecting reduced motion.
-In compact mode Panel docks the same actions in a 48 px bar above the composer.
-The compact header exposes Deshacer and Añadir.
+In compact mode Panel docks the same bar above the toolbar, with a Properties button.
+The compact header exposes Undo, ⌘K and Properties.
 
-The toolbar offers type-specific data edits, communication instructions,
-grouping, connections and group operations directly. Más includes scoped text
-editing, data, variables, collapse, templates, selection export, leaving a group,
+The selection bar offers colour, wrapping in a Marco, duplicate, ask the agent and delete. The right panel's
+Properties hold type-specific data, instructions, connections, layout and variables, and its Actions section
+includes editing on the canvas, interaction, reset, collapse, templates, selection export, leaving a Marco,
 releasing positions, automatic sizing and ordering where applicable. These
 operations use the current controller and existing RPCs. Numeric fields validate
 before saving, JSON validates on blur, failed edits retain their draft, and
 missing collections show the unknown-type message. Instruction edits preserve
-intent and audience; Vaciar clears all three local fields. Ancestor instruction
+intent and audience; Clear empties all three local fields. Ancestor instruction
 rows reopen this same form at the group or document level. Hidden results and
 the blocks that hide them retain their presentation restrictions.
 
@@ -124,10 +114,10 @@ Layout changes to Libre freeze drawn child positions in the same transaction.
 Leaving a group preserves world positions. Connection controls edit labels,
 kind, tone and direction; inline Escape cancels without a transaction. All
 writes use `c.edit` and retain revision conflicts and undo. Deletion and clearing
-instructions also show a temporary Deshacer receipt. The pinned SDK toast API
+instructions also show a temporary Undo receipt. The pinned SDK toast API
 has no action callback, so the receipt carries the working undo button.
 
-On web, Reiniciar calls `activateRendererReset(panelRoot, blockId, guard)` after
+On web, Reset calls `activateRendererReset(panelRoot, blockId, guard)` after
 pending writes settle. The adapter searches only within the mounted Panel root,
 checks the current document, workspace, single selection and enabled button,
 then activates the renderer's existing handler. It does not add a generic reset
@@ -137,14 +127,13 @@ produce a visible failure. Native supports an explicit runtime fallback for
 controls; other learning resets remain disabled there.
 
 Enter/F2 opens scoped ordinary text fields or delegates whiteboard editing to
-Canvas. Interactuar remains reachable through Más where content interaction is
+Canvas. Interact remains reachable in Properties → Actions where content interaction is
 needed. The separate `LinkLabelEditor` uses the existing controller transaction;
 Canvas still owns free drag, middle-button pan, resizing and interaction shields.
 
-Existing undo/redo, group, delete, connect, send, selection traversal, arrow
-nudges, zoom, catalog and immersive shortcuts remain reachable. Panel also
-routes V/H/T/R/D/E and Shift+L. Escape closes tool popovers, leaves interaction,
-cancels a creation tool, or clears selection as appropriate. Focused inputs
+Registered shortcuts go through `client/shortcuts.ts` with the person's overrides; selection traversal, arrow
+nudges, ⌘↵ send and zoom keys stay contextual in Panel. Escape closes the catalog or the icons, leaves Hide all UI
+or interaction, cancels a creation tool, or clears selection as appropriate. Focused inputs
 remain protected by the frontend keyboard helper. The guide still claims and
 persists `guideSeen` once and can be reopened from the main menu.
 

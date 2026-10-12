@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -30,7 +32,7 @@ test('all gates must open; presentation hides title, data, hints and link labels
   const f = fixture(), original = JSON.stringify(f.document);
   let view = f.present();
   assert.deepEqual(view.hiddenBy.get('result'), ['g1', 'g2']);
-  assert.equal(view.document.blocks[2].title, 'Resultado oculto');
+  assert.equal(view.document.blocks[2].title, 'Hidden result');
   assert.deepEqual(view.document.blocks[2].data, {});
   assert.equal(view.document.blocks[2].communication, undefined);
   assert.equal(view.document.links[0].label, '');
@@ -52,7 +54,7 @@ test('missing and self references cannot mask unrelated blocks', () => {
 });
 
 function headless(presentation: ReturnType<typeof canvasPresentation>, document: CanvasDocument, catalog: CanvasCatalog, selection: string[]) {
-  const controller = { view: { document }, catalog, selection, events: [], pendingIds: [], api: {}, busy: false, offline: false, failure: null };
+  const controller = { view: { document }, current: { current: { document } }, catalog, selection, events: [], pendingIds: [], api: {}, busy: false, offline: false, failure: null };
   const rendered: unknown[] = [];
   const react = { createElement: (type: unknown, props: unknown, ...children: unknown[]) => { rendered.push(type); return { type, props: { ...(props as object), children } }; }, useEffect() {}, useState: (v: unknown) => [v, () => {}], useRef: (v: unknown) => ({ current: v }) };
   const modules: Record<string, unknown> = {
@@ -72,7 +74,7 @@ function headless(presentation: ReturnType<typeof canvasPresentation>, document:
     runInNewContext(compiled, { exports, require: (id: string) => { assert.ok(id in modules, `Unhandled module ${id}`); return modules[id]; } });
     return exports;
   }
-  return { controller, rendered, load };
+  return { controller, rendered, load, modules };
 }
 function nodes(tree: unknown): Element[] {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
@@ -87,15 +89,20 @@ test('canvas and list cards do not dispatch a hidden node or reveal it in access
     assert.ok(nodes(tree).some(node => node.type === 'HiddenResult'));
     assert.ok(!h.rendered.includes('RegisteredRenderer'));
     assert.ok(!JSON.stringify(tree).includes('SECRET'));
-    assert.equal(nodes(tree).find(node => node.type === 'Pressable')!.props.accessibilityLabel, 'Resultado oculto');
+    assert.equal(nodes(tree).find(node => node.type === 'Pressable')!.props.accessibilityLabel, 'Hidden result');
   }
 });
-test('details replaces hidden target fields, and shows gate controls rather than its raw outcome editor', () => {
-  const f = fixture(), h = headless(f.present(), f.document, f.catalog, ['result']), { Inspector } = h.load('Inspector');
-  const props = { controller: h.controller, linkId: null, onLink() {}, rects: () => new Map(), release() {}, reorder() {}, groupSelection() {}, onTemplate() {}, onExportSelection() {} };
-  let tree = Inspector(props);
+test('Properties replaces hidden target fields, and shows gate controls rather than its raw outcome editor', () => {
+  const f = fixture(), h = headless(f.present(), f.document, f.catalog, ['result']);
+  Object.assign(h.modules, { './ui': { ...(h.modules['./ui'] as object), CheckRow: 'CheckRow', Field: 'Field', Segments: 'Segments', useTooltip: () => ({ ref: {}, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} }) },
+    './logic': require('../plugin/client/logic'), './panel-actions': require('../plugin/client/panel-actions'), '../shared/learning': require('../plugin/shared/learning'), '../shared/whiteboard': require('../plugin/shared/whiteboard'),
+    './NumberPropertyField': { NumberPropertyField: 'NumberPropertyField' }, './interaction': { needsContentInteraction: () => false }, './Links': { linkTone: () => 'neutro' }, './RightPanel': { PanelSection: 'PanelSection' }, './web': { activateRendererReset: () => false } });
+  (h.modules['./ui'] as any).useUI = () => ({ compact: false, layout: { platform: 'web' }, font: () => ({}), c: { surface1: '#fff', border: '#888', accent: '#268' }, wash: () => '', tone: () => '' });
+  const { SelectionProperties } = h.load('SelectionActions');
+  const props = { controller: h.controller, panelRoot: { current: null }, disabled: false, linkId: null, onLink() {}, rects: () => new Map(), release() {}, ask() {}, add() {}, duplicate() {}, remove() {}, groupSelection() {}, connectSelection() {}, template() {}, exportSelection() {}, editText() {}, interact() {}, undoNotice() {} };
+  let tree = SelectionProperties(props);
   assert.ok(nodes(tree).some(node => node.type === 'HiddenResult')); assert.ok(!JSON.stringify(tree).includes('SECRET'));
-  h.controller.selection = ['g1']; tree = Inspector(props);
+  h.controller.selection = ['g1']; tree = SelectionProperties(props);
   assert.ok(nodes(tree).some(node => node.type === 'RegisteredRenderer'));
   assert.ok(!nodes(tree).some(node => node.type === 'Field'));
 });

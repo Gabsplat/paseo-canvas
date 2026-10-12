@@ -1,8 +1,8 @@
 # Lienzo frontend
 
 The native Paseo plugin entry is `plugin/index.client.tsx`. It registers the workspace
-and Explorer panel as **canvas**, titled **Lienzo**. The Command Center action is
-"Abrir Lienzo", and `/lienzo` opens that same panel. Both opening paths call
+and Explorer panel as **canvas**, titled **Lienzo**. The Command Center action and
+`/lienzo` open that same panel. Both opening paths call
 `openPanel("canvas")`. The contributed Papel and Tinta themes are optional and are
 not activated by the plugin.
 
@@ -18,20 +18,19 @@ runtime import crosses into `design/`, `architecture/`, or `server/`.
 
 ## Working with a document
 
-Documentos opens a list of your documents and labelled examples. Nuevo lienzo creates
-and opens an empty document titled "Lienzo sin título" with empty communication;
-there is no creation form. The workspace empty state uses that same action.
-The title opens Documentos. Renombrar lienzo in Más acciones edits it in place, saving after idle or blur. Document rows show their
-last update time without revision numbers. Duplication and document export live in
-Más acciones. Duplicating as your own document clears the example flag.
-An empty canvas offers the local block and template catalog.
+The UI is in English with five Spanish brand words (Lienzo, Marco, Hoja, Lente, Ventana), each explained where it
+appears; `docs/design.md` §19 and §33 have the copy. The title opens Lienzos, a list of your documents and labelled
+examples. New Lienzo creates and opens an empty document titled "Untitled Lienzo" with empty communication; there
+is no creation form. Rename in the menu (or F2) edits the title in place, saving after idle or blur. Duplicate as
+my own and Export this Lienzo are in the menu; duplicating clears the example flag. An empty canvas shows the
+mate, "Add something" (the + catalog) and "Use a template".
 
 The guide uses the SDK's host-scoped `onboarding` settings document, registered by
 the server and read with `useSettings`. It waits for ready settings and a loaded
 catalog, then saves `guideSeen: true` before opening. A failed save does not open the
 modal; it offers retry. Concurrent clients cannot both claim the same settings
 revision. Paseo persists and broadcasts this preference across workspaces, web and
-native clients, and restarts. Guía de Lienzo always opens it manually. The legacy
+native clients, and restarts. Lienzo guide in the menu always opens it manually. The legacy
 exports in `web.ts` remain only for the isolated design harness's session memory.
 
 The last successfully opened document is remembered for this process session,
@@ -41,10 +40,10 @@ unavailable IDs are forgotten. A full client reload can reset this session memor
 
 The free canvas supports background drag to pan, zoom controls, fit, and browser
 wheel pan or Ctrl/Command wheel zoom. First open centres content horizontally at
-80–100% scale with its top at 76 px on desktop and 48 px in compact mode; Ajustar al lienzo still fits all content.
+80–100% scale with its top at 76 px on desktop and 48 px in compact mode; Fit all (Shift+1) still fits all content.
 Cards use their measured content heights.
-In the browser, left dragging beyond 4 px moves a block or group from any passive content or control. Short clicks still activate controls. Range sliders, learning surfaces, editing inputs, resize and connection handles retain their own drag. Children in stack, grid, or flow groups also offer Subir/Bajar. Dragging moves elements between groups. Compact
-clients default to Lista and support pan/zoom but do not drag cards. Group movement
+In the browser, left dragging beyond 4 px moves a block or group from any passive content or control. Short clicks still activate controls. Range sliders, learning surfaces, editing inputs, resize and connection handles retain their own drag. Children in stack, grid, or flow Marcos also offer Move earlier / Move later. Dragging moves elements between Marcos.
+Compact clients show Lista, switch to the canvas while a drawing tool or the hand is in use, and do not drag cards. Group movement
 uses parent-relative persisted positions; collapse hides descendants and preserves
 their membership. Card and whiteboard resize gestures persist block size through transactions. Group frames expand around their children.
 
@@ -54,21 +53,22 @@ separate selection version, and never sends an agent message. Grouping and delet
 operate on the highest selected ancestors so selecting a group and its child does
 not delete the same subtree twice.
 
-Detalles appears only with selected blocks, groups or a link. Multiple selection
-shows shared actions without an item list. Document settings, history and activity
-open in a modal from Más acciones. The catalog and details start closed. The assistant composer remains visible and receives the current selection; a contextual toolbar floats above selected bounds. Details opens explicitly from Más.
+The right panel (Properties) appears with a selected block, Marco or link, with the options of the tool in hand,
+or with an open extension tool; the pin or ⌘\ keeps it open on the Lienzo itself. Multiple selection shows shared
+actions without an item list. History and activity open in a modal from the menu. The composer remains visible and
+receives the current selection; the selection bar floats above selected bounds.
 
-Detalles edits typed properties and one "Indicaciones para el asistente" field.
+Properties edits typed properties and one "Instructions for the agent" field.
 Editing that field preserves existing `intent` and `audience`; those keys remain
 available to MCP and JSON but have no UI editor. Fields commit after 600 ms idle or
 on blur, preserve rejected drafts, and offer retry. IDs, type IDs, numeric dimensions,
 pin coordinates, parent-group radios and link endpoint controls are absent.
 Manual block sizes retain Tamaño automático; resize handles remain on the canvas.
-Soltar posición remains available for pinned ordinary entities. Whiteboard entities always retain a position and are excluded from automatic release. In compact/list mode, where
+Release position remains available for pinned ordinary entities. Whiteboard entities always retain a position and are excluded from automatic release. In compact/list mode, where
 there are no resize or drag handles, numeric resizing and moving into an existing
 group no longer have a direct UI path. MCP can still perform those operations.
 
-Known server error codes map to short Spanish messages, with a generic fallback.
+Known server error codes map to short English messages, with a generic fallback.
 Raw server messages are not rendered by the panel, catalog, settings or agent modal.
 The panel also translates feedback errors before passing them to canvas/block
 components. The conflict banner describes the rejected change and offers reapply
@@ -97,16 +97,16 @@ Explicit sends use a generated event ID retained for retry:
 
 | Control | Action | Delivery |
 | --- | --- | --- |
-| Enviar al asistente | `selection.send`, selection IDs and note | Immediate |
-| Enviar respuesta | `block.answer`, answer and block ID | Immediate |
-| Form Enviar | `block.submit`, committed typed values and block ID | Immediate |
-| Ver pista | `block.hint`, block ID | Batched |
+| Send to the agent, or ⌘K "Ask the agent: …" | `selection.send`, selection IDs and note | Immediate |
+| Send answer | `block.answer`, answer and block ID | Immediate |
+| Form Send | `block.submit`, committed typed values and block ID | Immediate |
+| Show hint | `block.hint`, block ID | Batched |
 
 Checklist toggles, text edits, dragging, collapse, and selection only persist data.
 Form submission waits for previous edits, commits all current typed field values,
 then sends the values returned by that committed view. Boolean fields use native
 checkbox controls. Pending, sent, acknowledged, and failed labels come from returned
-or polled `AgentEvent.status`. A request in flight says Enviando. The UI does not
+or polled `AgentEvent.status`. A request in flight says Sending. The UI does not
 invent a reply, teaching result, or agent activity. Failed persisted deliveries use
 the backend flush path instead of generating a duplicate event.
 
@@ -117,8 +117,8 @@ declarative JSON properties and defaults. Saving a group as a template first cal
 `exportGroup`, then stores that returned template with `template.put`; the export
 RPC itself does not save it. Inserting a template uses a fresh ID prefix.
 
-Paste JSON on every platform. Browsers also offer Elegir archivo with a 1 MiB limit.
-Revisar runs the real validator and a noncommitting dry run against a freshly read
+Paste JSON on every platform. Browsers also offer Choose a file with a 1 MiB limit.
+Check runs the real validator and a noncommitting dry run against a freshly read
 catalog revision. The review lists added and replaced entries by their display
 names; unchanged entries collapse to a count. Catalog rows hide type and pack IDs. Replacing an existing pack requires
 the explicit checkbox and explains why the import button remains disabled;
@@ -141,7 +141,7 @@ dragging never silently converts an automatic layout to free.
 ## Previews and references
 
 `preview` blocks with a valid URL embed that actual URL on the web with the
-Opus-specified `allow-scripts allow-forms` sandbox. A transparent shield covers the frame until explicit interaction mode starts. Selection alone keeps the shield. Double click, Enter/F2 or Interactuar removes it; a visible Interactuando · Esc chip exits the mode. The
+Opus-specified `allow-scripts allow-forms` sandbox. A transparent shield covers the frame until explicit interaction mode starts. Selection alone keeps the shield. Double click, Enter/F2 or Interact removes it; a visible Interacting · Esc chip exits the mode. The
 external-open action always remains available. Slow or blocked embeds get the
 eight-second explanatory hint. A browser can reject framing or mixed HTTP content;
 use the actual external link in that case. Native clients show a labeled browser
@@ -277,18 +277,28 @@ whiteboard editor or an appropriate card's interaction mode. The selection toolb
 is supplied by Panel and anchored by Canvas with animated camera values, without
 camera state updates in Panel. Interaction mode hides the contextual toolbar while its exit chip is visible. Below 880 px on desktop, zoom shows only the percent button; its anchored menu contains zoom, fit and reset actions.
 
-`FloatingTools.tsx` exports the controlled components `ToolIsland`, `StyleIsland`,
-`ShapePopover`, `LibraryPopover` and `SvgImportDialog` and their props types.
-ToolIsland takes tool/onToolChange, locked/onLockChange, shape, onOpenShapes,
-onOpenLibrary, onOpenPicker, width, touch, disabled and optional grid. In grid mode it renders all eight actions in four columns with 44 px buttons, 8 px gaps and 200 px width. Select and Hand stay available
-when mutations are disabled. Only a double click on an already active tool toggles
-its lock; a rapid click on an inactive tool always activates it.
+The face (`docs/design.md` §3, §24, §31–33) is made of controlled components that hold no document controller;
+Panel commits every change through `c.edit` or `c.send`:
 
-StyleIsland takes tool, selectionKinds, value, onChange, orientation, touch and
-disabled. On narrow layouts Más estilo opens the remaining controls in the host dialog Estilo, keeping the horizontal island limited to Color and Tamaño. ShapePopover takes value, heads, onPick and onClose. LibraryPopover takes
-onInsert, onImport, error, busy and onClose. SvgImportDialog takes open, onClose and
-an asynchronous onInsert returning a boolean. These components hold no document
-controller; Panel commits selected-object style patches through `c.edit`.
+- `Toolbar.tsx`: `Toolbar` takes active, shape, locked, disabled, onTool, onShape, onLock, pinned, onAdd, addOpen,
+  keyLabel (registry id → formatted keys), scroll (compact) and addRef. Select and Hand stay available while
+  writes are disabled. Only a double press on the tool in hand toggles its lock; Marco and Ventana never lock.
+- `AddMenu.tsx`: `AddMenu` takes entries (`ToolEntry`: id, section, name, description, icon, tone, shortcut,
+  keywords, run), pinned ids, onPin, onClose, onManage and maxHeight. The same entries feed pinned tools, keys 1–9
+  and ⌘K.
+- `RightPanel.tsx`: `RightPanel` takes tabs, active, onTab, pinned, onPin, onClose, top, maxHeight and focusSection;
+  `PanelSection` is its collapsible section. `SelectionActions.tsx` exports `SelectionBar` and `SelectionProperties`.
+- `CommandPalette.tsx` with the model in `palette.ts` (`fuzzyScore`, `itemScore`, `paletteSections`, `remember`).
+- `shortcuts.ts`: `DEFAULT_SHORTCUTS`, `ShortcutRegistry` (and the `shortcutRegistry` instance extensions register
+  into), `resolveShortcuts`, `eventCombo`, `normalizeCombo`, `formatCombo`. `ShortcutSheet.tsx` lists and reassigns.
+  Pins and overrides are saved in the host-scoped `interface` settings (`shared/preferences.ts`).
+- `ui.tsx`: `Tooltip`, `useTooltip`, `TooltipProvider` and `TooltipLayer`; `IconButton` takes `shortcut` and `detail`.
+- `FloatingTools.tsx`: `StyleIsland` (with `bare` inside the right panel), `LibraryPopover` and `SvgImportDialog`.
+- `Eggs.tsx`: `EmptyMate`, `Kettle` and `LoadingEgg`, all still or absent under reduced motion.
+
+Canvas takes `reservedKey` (keys the registry owns, so typing on a selected label does not swallow them),
+`lensShortcut` and `obscuredRight` (the right panel's width, kept clear by the selection beacon); `CanvasApi` adds
+`cycleLens()`.
 
 ## Content interaction boundaries
 

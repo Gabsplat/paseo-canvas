@@ -3,7 +3,7 @@ import { mkdir, open, readFile, rename, rm, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { agentEventSchema, connectionSchema, documentSchema, sharingModeSchema, type CanvasDocument } from "../shared/model";
+import { agentEventSchema, connectionSchema, copilotSettingsSchema, documentSchema, sharingModeSchema, type CanvasDocument } from "../shared/model";
 import { catalogStorageSchema, catalogView } from "./catalog";
 import { CanvasError } from "../shared/errors";
 import { clone, validateDocument } from "./reducer";
@@ -30,18 +30,29 @@ const recordSchema = z.object({
   // Agent that created the document through MCP. Scopes access when the workspace keeps one canvas per agent.
   ownerAgentId: z.string().optional(),
 }).strict();
+// Private per-agent copilot record: the settings the person chose plus what the reminder rule needs to remember.
+const copilotRecordSchema = copilotSettingsSchema.extend({
+  workspaceId: z.string().min(1).max(200).optional(),
+  // The previous ended turn got a reminder; the next one never does ("never twice in a row").
+  reminded: z.boolean().default(false),
+  updatedAt: z.iso.datetime().optional(),
+}).strict();
 const stateSchema = z.object({
   format: z.literal("paseo-canvas-state/1"), commit: z.number().int().nonnegative(),
   documents: z.record(z.string(), recordSchema), catalog: catalogStorageSchema,
   owners: z.record(z.string(), z.object({ agentId: z.string().nullable() }).strict()),
   injection: z.object({ revision: z.number().int().nonnegative(), workspaceIds: z.array(z.string()) }).strict(),
   sharing: z.record(z.string(), sharingModeSchema).default({}),
+  // Copilot mode per agent. Absent in state written before the copilot existed; an agent without an entry is off.
+  copilot: z.record(z.string(), copilotRecordSchema).default({}),
 }).strict();
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
 export type OutboundBatch = z.infer<typeof outboundBatchSchema>;
 export type DocumentRecord = z.infer<typeof recordSchema>;
 export type RuntimeRecord = Pick<DocumentRecord, "document" | "runtime" | "runtimeVersion">;
 export type CanvasState = z.infer<typeof stateSchema>;
+export type CopilotRecord = z.infer<typeof copilotRecordSchema>;
+export { copilotRecordSchema };
 export type Actor = HistoryEntry["actor"];
 
 export async function atomicWrite(path: string, data: string): Promise<void> {
@@ -116,7 +127,7 @@ export class CanvasStore {
     try { this.state = stateSchema.parse(JSON.parse(await readFile(this.file, "utf8"))); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new CanvasError("UNAVAILABLE", "Canvas state is unreadable or invalid; it was not overwritten.");
-      this.state = { format: "paseo-canvas-state/1", commit: 0, documents: {}, catalog: { revision: 0, localTypes: [], localTemplates: [], packs: [], localExtensions: [], grants: [] }, owners: {}, injection: { revision: 0, workspaceIds: [] }, sharing: {} };
+      this.state = { format: "paseo-canvas-state/1", commit: 0, documents: {}, catalog: { revision: 0, localTypes: [], localTemplates: [], packs: [], localExtensions: [], grants: [] }, owners: {}, injection: { revision: 0, workspaceIds: [] }, sharing: {}, copilot: {} };
       await this.persist(this.state);
     }
     for (const record of Object.values(this.state.documents)) validateDocument(record.document);

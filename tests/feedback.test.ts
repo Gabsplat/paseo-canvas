@@ -36,7 +36,7 @@ test("graph guidance reaches Codex without altering its preapproval visibility w
   const request = { config: { provider: "codex", cwd: "/workspace/a", systemPrompt: "Original task", toolPolicy: { preapproved: [{ kind: "mcp", server: "paseo-canvas", tool: "canvas_apply" }, { kind: "mcp", server: "other", tool: "read" }] } } } as PluginBeforeRequests["agent.create"];
   const result = injectAgent(request, { script: "/private/canvas.cjs", endpoint: "/private/bridge.json" }, "owner");
   assert.equal(result.config.systemPrompt, `Original task\n\n${integrationInstructions}`);
-  assert.match(result.config.systemPrompt!, /node blocks joined by links/);
+  assert.match(result.config.systemPrompt!, /copilot/);
   assert.deepEqual(result.config.toolPolicy?.preapproved, [{ kind: "mcp", server: "other", tool: "read" }]);
   assert.equal(request.config.toolPolicy?.preapproved?.length, 2);
 });
@@ -177,7 +177,7 @@ test("Codex injection avoids the SDK visibility allowlist and preserves unrelate
   }
 });
 
-test("new agents get the tools by default; opting out and per-workspace choices are respected; hook failure preserves the request", async t => {
+test("every new agent gets the tools, whatever the legacy injection preference says; hook failure preserves the request", async t => {
   const { directory, service } = await setup(t), mock = fakeGateway(service);
   const bridge = new CanvasBridge(directory, new ToolRouter(service, owner => mock.gateway.scope(owner))); t.after(() => bridge.close());
   const request: PluginBeforeRequests["agent.create"] = { config: { provider: "codex", cwd: "/workspace/a" } };
@@ -187,10 +187,10 @@ test("new agents get the tools by default; opting out and per-workspace choices 
   assert.ok(entry && entry.type === "stdio");
   assert.equal(entry.env?.ELECTRON_RUN_AS_NODE, "1");
   assert.deepEqual(await service.configureInjection({ workspaceId: "*", enabled: false, expectedRevision: 0 }), { revision: 1, workspaceIds: [] });
-  assert.equal(await prepareCreation(request, mock.gateway, bridge), request);
-  await service.configureInjection({ workspaceId, enabled: true, expectedRevision: 1 });
-  assert.ok((await prepareCreation(request, mock.gateway, bridge)).config.mcpServers?.["paseo-canvas"]);
-  assert.equal(await prepareCreation(elsewhere, mock.gateway, bridge), elsewhere);
+  const created = await prepareCreation(request, mock.gateway, bridge);
+  assert.ok(created.config.mcpServers?.["paseo-canvas"] && created.config.systemPrompt?.includes("copilot"), "opting out no longer filters agents");
+  assert.ok((await prepareCreation(elsewhere, mock.gateway, bridge)).config.mcpServers?.["paseo-canvas"]);
+  assert.equal(await prepareCreation({ config: { ...request.config, internal: true } }, mock.gateway, bridge).then(next => next.config.mcpServers?.["paseo-canvas"]), undefined);
   await service.store.close();
   assert.equal(await prepareCreation(request, mock.gateway, bridge), request);
 });

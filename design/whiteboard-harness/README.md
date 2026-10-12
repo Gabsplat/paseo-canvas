@@ -34,6 +34,8 @@ omabox run -- node "$PWD/dist/panel-qa/frames.cjs"
 omabox run -- node "$PWD/dist/panel-qa/library.cjs"
 omabox run -- node "$PWD/dist/panel-qa/compact.cjs"
 omabox run -- node "$PWD/dist/panel-qa/many.cjs"
+omabox run -- node "$PWD/dist/panel-qa/face.cjs"          # the stage 1 face; add `papel` for light
+omabox run -- node "$PWD/dist/panel-qa/extensions.cjs"
 ```
 
 The scripts drive the browser through its private debugging port, assert document
@@ -44,4 +46,5 @@ isolated box; no external site is required. The web fixture has a real form and
 scroll area inside the production iframe sandbox.
 
 Copy wanted results before `omabox down`. Evidence for the October 6 verification
-is in `design/qa-whiteboard-2026-10-06/`.
+is in `design/qa-whiteboard-2026-10-06/`; the stage 1 face is in `design/qa-face-2026-10/`. Scenarios that set a
+viewport (`face.cjs`, `guide.cjs`, `compact.cjs`) clear it when they end, so the others run at the window's size.

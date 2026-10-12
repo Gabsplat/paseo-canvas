@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { packSchema, blockTypeSchema, templateSchema, extensionSchema, idSchema, type CanvasExtension, type CatalogExtension, type CanvasPack, type CanvasCatalog, type BlockType, type GroupTemplate } from "../shared/model";
+import { packSchema, blockTypeSchema, templateSchema, extensionListSchema, idSchema, type CanvasExtension, type CatalogExtension, type CanvasPack, type CanvasCatalog, type BlockType, type GroupTemplate } from "../shared/model";
 import { builtinPacks, builtinTemplates, builtinTypes } from "../shared/builtins";
 import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasError } from "../shared/errors";
@@ -9,7 +9,7 @@ export const catalogStorageSchema = z.object({
   revision: z.number().int().nonnegative(),
   localTypes: z.array(blockTypeSchema), localTemplates: z.array(templateSchema), packs: z.array(packSchema),
   // Absent in state written before extensions existed.
-  localExtensions: z.array(extensionSchema).default([]), grants: z.array(idSchema).default([]),
+  localExtensions: extensionListSchema(1000).default([]), grants: z.array(idSchema).default([]),
 }).strict();
 export type CatalogStorage = z.infer<typeof catalogStorageSchema>;
 export function catalogView(storage: CatalogStorage): CanvasCatalog {

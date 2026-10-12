@@ -5,22 +5,22 @@ const property = (key: string, kind: 'text' | 'number' | 'json', required = fals
 export const whiteboardSpecs: RendererSpec[] = [
   {
     id: 'wb-text', dataSchema: wbTextDataSchema, interactive: false, minSize: { width: 24, height: 8 }, guidance,
-    blockType: { id: 'wb-text', renderer: 'wb-text', name: 'Texto libre', description: 'Rótulo persistente sin tarjeta, situado libremente en el lienzo o un grupo.',
+    blockType: { id: 'wb-text', renderer: 'wb-text', name: 'Free text', description: 'A label without a card, placed freely on the Lienzo or in a Marco.',
       properties: [property('text', 'text', true), property('color', 'text'), property('scale', 'text'), property('font', 'text'), property('align', 'text'), property('width', 'number')], defaults: { text: '' } },
   },
   {
     id: 'wb-shape', dataSchema: wbShapeDataSchema, interactive: false, minSize: { width: 24, height: 24 }, defaultSize: { width: 160, height: 104 }, guidance,
-    blockType: { id: 'wb-shape', renderer: 'wb-shape', name: 'Forma', description: 'Forma o línea persistente con color, trazo y rótulo opcional.',
+    blockType: { id: 'wb-shape', renderer: 'wb-shape', name: 'Shape', description: 'A shape or line with colour, stroke and an optional label.',
       properties: ['shape', 'color', 'fill', 'fillColor', 'stroke', 'weight', 'text', 'from', 'heads'].map(key => property(key, 'text')), defaults: { shape: 'rect' } },
   },
   {
     id: 'wb-svg', dataSchema: wbSvgDataSchema, interactive: false, minSize: { width: 24, height: 24 }, defaultSize: { width: 96, height: 96 }, guidance,
-    blockType: { id: 'wb-svg', renderer: 'wb-svg', name: 'Imagen SVG', description: 'SVG estático local saneado en el servidor. Conserva atribución y licencia.',
+    blockType: { id: 'wb-svg', renderer: 'wb-svg', name: 'SVG image', description: 'A static SVG, cleaned on the server. Keeps its attribution and licence.',
       properties: [property('svg', 'text', true), property('viewBox', 'json'), property('color', 'text'), property('caption', 'text'), property('source', 'text'), property('license', 'text')], defaults: { svg: '<svg viewBox="0 0 24 24"/>' } },
   },
   {
     id: 'wb-draw', dataSchema: wbDrawDataSchema, interactive: false, minSize: { width: 8, height: 8 }, guidance, remapReferences: remapDrawAnchor,
-    blockType: { id: 'wb-draw', renderer: 'wb-draw', name: 'Dibujo', description: 'Trazos libres persistentes, acotados y simplificados. Crear solo por petición explícita.',
+    blockType: { id: 'wb-draw', renderer: 'wb-draw', name: 'Drawing', description: 'Freehand strokes, bounded and simplified. Create only when asked.',
       properties: [property('extent', 'json', true), property('strokes', 'json', true), property('author', 'text'), property('anchor', 'text')], defaults: { extent: { width: 8, height: 8 }, strokes: [{ points: [0, 0, 0, 0], color: 'tinta', weight: 'm' }] } },
   },
 ];

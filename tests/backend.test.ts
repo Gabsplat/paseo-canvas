@@ -196,7 +196,7 @@ test("node type has four optional text properties; built-in graph example explai
   await service.mutate(mutation(1, [{ type: "block.update", id: "n", patch: { data: { kind: "MODULE", status: "ready", summary: "Short", details: "Long" } } }]));
   const example = (await service.instantiatePack({ workspaceId, packId: "graph", documentIndex: 0 })).document;
   assert.equal(example.example, true);
-  assert.match(example.title, /Ejemplo.*Lienzo/);
+  assert.match(example.title, /Example.*Lienzo/);
   assert.ok(example.blocks.every(block => block.typeId === "node"));
   assert.ok(example.groups.length >= 2 && example.groups.length <= 3);
   assert.ok(example.groups.every(group => group.layout?.mode === "graph"));
@@ -485,7 +485,7 @@ test("MCP large create and library write succeed with compact truthful acknowled
   assert.equal(response.documentId, "large");
   assert.equal((await service.read({ workspaceId, documentId: "large" })).document.blocks[0].data.text, large.blocks[0].data.text);
   const blockType = { ...userPack().blockTypes[0], id: "huge-local", defaults: { text: "x".repeat(30000) } };
-  assert.deepEqual(await router.call("canvas_catalog", { action: "save_type", expectedRevision: 0, blockType }, "owner"), { revision: 1, committed: true });
+  assert.deepEqual(await router.call("canvas_catalog", { action: "save_type", expectedRevision: 0, blockType }, "owner"), { revision: 1, committed: true, copilot: { enabled: false, cadence: "step", rule: "", documentId: null } });
   const full = await router.call("canvas_read", { documentId: "large", view: "full" }, "owner") as { truncated: boolean };
   assert.equal(full.truncated, true);
 });

@@ -109,6 +109,7 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
   safeJson(document);
   validateTree(document.blocks, document.groups);
   validateLinks(document.blocks, document.groups, document.links);
+  validateSheets(document.groups);
   const ids = new Set([...document.blocks, ...document.groups].map(entity => entity.id));
   if (new Set(document.selectedIds).size !== document.selectedIds.length || document.selectedIds.some(id => !ids.has(id)))
     throw new CanvasError("INVARIANT", "Selection must contain unique existing entity IDs.");
@@ -119,6 +120,16 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
   }
 }
 
+/** A Hoja is a top-level group, and its number is unique in the document. */
+export function validateSheets(groups: CanvasGroup[]): void {
+  const numbers = new Set<number>();
+  for (const group of groups) {
+    if (!group.sheet) continue;
+    if (group.parentGroupId) throw new CanvasError("INVARIANT", `Hoja ${group.id} must stay at the top level; it cannot go inside another group.`);
+    if (numbers.has(group.sheet.number)) throw new CanvasError("INVARIANT", `Two Hojas share number ${group.sheet.number}.`);
+    numbers.add(group.sheet.number);
+  }
+}
 export function validateLinks(blocks: CanvasBlock[], groups: CanvasGroup[], links: CanvasLink[]): void {
   const endpoints = new Set([...blocks, ...groups].map(entity => entity.id));
   const ids = new Set<string>(), triples = new Set<string>();
@@ -213,7 +224,8 @@ function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefi
     document.blocks.push({ ...cloned, data: spec?.remapReferences?.(cloned.data, ids) ?? cloned.data,
       id: remap(block.id), parentGroupId: block.parentGroupId ? remap(block.parentGroupId) : null });
   }
-  for (const group of template.groups) document.groups.push({ ...clone(group), id: remap(group.id), parentGroupId: group.parentGroupId ? remap(group.parentGroupId) : null, blockIds: group.blockIds.map(remap), groupIds: group.groupIds.map(remap), templateId: template.id });
+  // A copy of a Hoja is an ordinary group: the chapter mark and its number stay with the original.
+  for (const { sheet: _sheet, ...group } of template.groups) document.groups.push({ ...clone(group), id: remap(group.id), parentGroupId: group.parentGroupId ? remap(group.parentGroupId) : null, blockIds: group.blockIds.map(remap), groupIds: group.groupIds.map(remap), templateId: template.id });
   for (const link of template.links) if (copied.has(link.from) && copied.has(link.to)) document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) });
 }
 
@@ -391,7 +403,7 @@ export function effectiveInstructions(document: CanvasDocument, id: string) {
 
 export function exportGroup(document: CanvasDocument, groupId: string, templateId: string, name: string): GroupTemplate {
   const ids = new Set(groupSubtree(document, groupId));
-  const groups = clone(document.groups.filter(group => ids.has(group.id)));
+  const groups = clone(document.groups.filter(group => ids.has(group.id))).map(({ sheet: _sheet, ...group }) => group);
   const root = groups.find(group => group.id === groupId)!;
   root.parentGroupId = null;
   return { id: templateId, name, description: root.description, blocks: clone(document.blocks.filter(block => ids.has(block.id))), groups, links: clone(document.links.filter(link => ids.has(link.from) && ids.has(link.to))) };

@@ -30,7 +30,7 @@ test('a settled attempt retries a lost response with the same event ID and creat
   } as unknown as CanvasController;
   const { runtime } = useLearning(block, controller);
   const payload = { attemptId: 'attempt-one', guess: 2, outcome: 3 };
-  await assert.rejects(runtime.settle('attempt.attempt-one', payload, 'Comparar intento', 'evt_attempt-one'), /No se guardó/);
+  await assert.rejects(runtime.settle('attempt.attempt-one', payload, 'Comparar intento', 'evt_attempt-one'), /not saved/);
   await runtime.settle('attempt.attempt-one', payload, 'Comparar intento', 'evt_attempt-one');
   assert.deepEqual(ids, ['evt_attempt-one', 'evt_attempt-one']);
   assert.equal(flushes, 2);

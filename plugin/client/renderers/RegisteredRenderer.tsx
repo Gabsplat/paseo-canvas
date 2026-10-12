@@ -27,7 +27,7 @@ export function RegisteredRenderer({ block, id, controller, readOnly, send }: {
     return () => { lifetime.current.active = false; };
   }, []);
   if (gates?.length) return <HiddenResult gateIds={gates} open={target => { void controller.select([target]); }} />;
-  if (!entry || !parsed?.success || !controller.view) return <Txt kind="small" style={{ color: ui.c.statusDanger }}>No se puede mostrar este bloque. Revisa sus datos en Detalles.</Txt>;
+  if (!entry || !parsed?.success || !controller.view) return <Txt kind="small" style={{ color: ui.c.statusDanger }}>This block cannot be shown. Check its data in Properties.</Txt>;
   const Component = entry.Component;
   // Discard local renderer state when switching documents or closing a gate.
   // Effects reconcile runtime after commit; they cannot conceal a stale reveal
@@ -43,7 +43,7 @@ export function RegisteredRenderer({ block, id, controller, readOnly, send }: {
     set: (...args: Parameters<typeof runtime.set>) => { if (active()) runtime.set(...args); },
     async settle(...args: Parameters<typeof runtime.settle>) {
       await runtime.flush();
-      if (!active()) throw new Error('El documento o el bloque cambió antes de completar la interacción.');
+      if (!active()) throw new Error('The Lienzo or the block changed before the interaction finished.');
       return runtime.settle(...args);
     },
   };

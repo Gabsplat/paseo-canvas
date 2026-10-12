@@ -26,9 +26,9 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme='+(process.argv[2]||'papel')});await wait('!!document.querySelector("#lienzo-entity-note")');
  let id;
  await check('a new shape opens its label editor at its own centre, transparent and borderless',async()=>{
-  await click(label('Forma (R)'));await mouse('mousePressed',1050,290,'left',1);for(let i=1;i<=16;i++)await mouse('mouseMoved',1050+i*14,290+i*10,'left',1);await mouse('mouseReleased',1274,450);
+  await click('#lienzo-tool-shape');await mouse('mousePressed',1050,290,'left',1);for(let i=1;i<=16;i++)await mouse('mouseMoved',1050+i*14,290+i*10,'left',1);await mouse('mouseReleased',1274,450);
   await wait(shape+'&&__panelQA.doc().selectedIds.includes('+shape+'.id)');id=await ev(shape+'.id');
-  await click(label('Naranja'));await wait(shape+'.data.color==="naranja"');
+  await click(label('Orange'));await wait(shape+'.data.color==="naranja"');
   await key('Enter','Enter');await wait('!!document.querySelector("#lienzo-editor textarea")');
   const e=await ev(editorInfo),s=await box('#lienzo-entity-'+id);
   assert.ok(Math.abs(centre(e).x-centre(s).x)<=1.5,'editor x centre '+JSON.stringify([e,s]));assert.ok(Math.abs(centre(e).y-centre(s).y)<=1.5,'editor y centre '+JSON.stringify([e,s]));
@@ -42,11 +42,11 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  });
  await check('fill colour is chosen separately from the outline and the label stays readable',async()=>{
   await click('#lienzo-entity-'+id);await wait('__panelQA.doc().selectedIds.includes("'+id+'")');
-  await wait('!!document.querySelector('+JSON.stringify(label('Relleno Verde'))+')');await click(label('Relleno Verde'));
+  await wait('!!document.querySelector('+JSON.stringify(label('Fill Green'))+')');await click(label('Fill Green'));
   await wait(shape+'.data.fillColor==="verde"');const data=await ev(shape+'.data');assert.equal(data.fill,'solid');assert.equal(data.color,'naranja');
   const fills=await ev(`[...document.querySelectorAll('#lienzo-entity-${id} path')].map(p=>[p.getAttribute('fill'),p.getAttribute('stroke')])`);
   assert.ok(fills.some(([fill,stroke])=>fill&&fill!=='none'&&fill!==stroke),'interior differs from outline '+JSON.stringify(fills));
-  await click(label('Suave'));await wait(shape+'.data.fill==="wash"');assert.equal(await ev(shape+'.data.fillColor'),'verde');await click(label('Sólido'));await wait(shape+'.data.fill==="solid"');
+  await click(label('Soft'));await wait(shape+'.data.fill==="wash"');assert.equal(await ev(shape+'.data.fillColor'),'verde');await click(label('Solid'));await wait(shape+'.data.fill==="solid"');
   await shot('filled');
  });
  await check('size steps scale the label with the outline, and editing matches the saved label exactly',async()=>{

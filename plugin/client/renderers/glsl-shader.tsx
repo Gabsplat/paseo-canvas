@@ -11,7 +11,7 @@ export function boundedShaderMessage(message: string): string {
   const clean = message.slice(0, 4096).replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').replace(/(?:https?:\/\/|\/home\/|\/tmp\/|[A-Z]:\\)[^\s]+/g, '[ruta omitida]');
   let result = '', bytes = 0;
   for (const char of clean) { const size = glslUtf8Length(char); if (bytes + size > 1021) return result + '…'; result += char; bytes += size; }
-  return result || 'El compilador no proporcionó más detalles.';
+  return result || 'The compiler gave no more detail.';
 }
 type Resources = { gl: GLContext; program: object; buffer: object; locations: Record<string, object | null>; dispose(): void };
 // All allocations belong to this bundle, including failed initialization. Disposal is idempotent.
@@ -21,10 +21,10 @@ export function prepareShader(gl: GLContext, data: GlslShaderData): { resources?
   const program = result.program; let buffer: object | null = null, disposed = false;
   const dispose = () => { if (disposed) return; disposed = true; try { if (buffer) gl.deleteBuffer(buffer); } finally { gl.deleteProgram(program); } };
   try {
-    buffer = gl.createBuffer(); if (!buffer) throw new Error('No se pudo crear el buffer de dibujo.');
+    buffer = gl.createBuffer(); if (!buffer) throw new Error('The drawing buffer could not be created.');
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    if (gl.getAttribLocation(program, 'a_position') < 0) throw new Error('No se pudo preparar la posición del dibujo.');
+    if (gl.getAttribLocation(program, 'a_position') < 0) throw new Error('The drawing position could not be prepared.');
     const names = [...data.uniforms.map(u => u.name), ...(data.builtins.resolution ? ['u_resolution'] : []), ...(data.builtins.time ? ['u_time'] : [])];
     const locations = Object.fromEntries(names.map(name => [name, gl.getUniformLocation(program, name)]));
     return { resources: { gl, program, buffer, locations, dispose } };
@@ -46,16 +46,16 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     return [u.name, Object.hasOwn(scope.variables, u.name) ? scope.get(u.name) : live.current.state.values[u.name] ?? u.value];
   }));
   const settle = (kind: string, payload: RendererProps['block']['data'], label: string) => {
-    setEventError(''); void live.current.props.runtime.settle(kind, payload, label).catch(() => setEventError('No se pudo guardar el ajuste. Revisa la conexión del lienzo y vuelve a intentarlo.'));
+    setEventError(''); void live.current.props.runtime.settle(kind, payload, label).catch(() => setEventError('The setting could not be saved. Check the connection and try again.'));
   };
   const pause = (reason: string) => {
     if (!clock.current.playing) return;
     clock.current.playing = false; clock.current.last = null; setPlaying(false);
     save({ ...live.current.state, time: clock.current.seconds });
-    settle('glsl-shader.pause', { time: clock.current.seconds, visited: clock.current.visited, values: valuesNow(), reason }, 'Pausar shader');
+    settle('glsl-shader.pause', { time: clock.current.seconds, visited: clock.current.visited, values: valuesNow(), reason }, 'Pause shader');
   };
-  useEffect(() => { if (readOnly) pause('solo lectura'); }, [readOnly]);
-  useEffect(() => () => { pause('salir del bloque'); clearResources(); }, []);
+  useEffect(() => { if (readOnly) pause('read only'); }, [readOnly]);
+  useEffect(() => () => { pause('left the block'); clearResources(); }, []);
   // Recompile programs inside the same context. Changing initialize would tear down the adapter
   // and lose its WebGL context on the same canvas, so the host initializer stays stable.
   const signature = JSON.stringify([data.fragmentSource, data.uniforms.map(u => u.name), data.builtins]);
@@ -65,7 +65,7 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     clearResources(); failed.current = false; setCompileError(''); setSurfaceError('');
     compilation.current.built = compilation.current.wanted; compilation.current.builtAttempt = compilation.current.attempt;
     const prepared = prepareShader(gl, live.current.props.data);
-    if (prepared.error) { failed.current = true; setCompileError(prepared.error); pause('error de compilación'); }
+    if (prepared.error) { failed.current = true; setCompileError(prepared.error); pause('compile error'); }
     bundle.current = prepared.resources ?? null;
     const owned = prepared.resources;
     // Keep the adapter active on compile failure so its generic overlay does not hide diagnostics.
@@ -87,12 +87,12 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
       if (live.current.props.data.builtins.resolution) gl.uniform2f(resource.locations.u_resolution, Math.max(1, Math.round(frame.width * frame.pixelRatio)), Math.max(1, Math.round(frame.height * frame.pixelRatio)));
       if (live.current.props.data.builtins.time) gl.uniform1f(resource.locations.u_time, clock.current.seconds);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
-      if (clock.current.seconds === GLSL_TIME_MAX) pause('límite de tiempo');
-    } catch { setSurfaceError('No se pudo dibujar el shader. Reinicia el experimento.'); pause('error de dibujo'); clearResources(); failed.current = true; }
+      if (clock.current.seconds === GLSL_TIME_MAX) pause('time limit');
+    } catch { setSurfaceError('The shader could not be drawn. Reset the experiment.'); pause('drawing error'); clearResources(); failed.current = true; }
   };
   const onVisibilityChange = (drawable: boolean) => {
     visible.current = drawable;
-    if (!drawable) { pause('fuera de vista'); clearResources(); }
+    if (!drawable) { pause('out of view'); clearResources(); }
   };
   const reset = () => {
     if (live.current.props.readOnly || ui.layout.platform !== 'web') return;
@@ -100,20 +100,20 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     if (failed.current) setAttempt(attempt + 1);
     live.current.state = { values: {}, time: 0 }; live.current.props.runtime.set(null);
     // Shared variables are owned by their own control. This reset clears local values and time only.
-    settle('glsl-shader.reset', { time: 0, values: valuesNow() }, 'Reiniciar shader');
+    settle('glsl-shader.reset', { time: 0, values: valuesNow() }, 'Reset shader');
   };
-  const summary = data.staticSummary ?? 'Shader sin referencia estática declarada. No se ha ejecutado en este dispositivo.';
+  const summary = data.staticSummary ?? 'Shader without a declared static reference. It has not run on this device.';
   const native = ui.layout.platform !== 'web';
-  if (native) return <View nativeID={`lienzo-interactive-shader-${block.id}-static`} style={{ gap: 8 }}><Txt>{data.question}</Txt><Txt kind="label" muted>Estático</Txt><NativeLearningFallback summary={summary} /><Button label="Reiniciar" small variant="ghost" disabled onPress={reset} /></View>;
+  if (native) return <View nativeID={`lienzo-interactive-shader-${block.id}-static`} style={{ gap: 8 }}><Txt>{data.question}</Txt><Txt kind="label" muted>Static</Txt><NativeLearningFallback summary={summary} /><Button label="Reset" small variant="ghost" disabled onPress={reset} /></View>;
   return <View style={{ gap: 12 }}><Txt>{data.question}</Txt>
     <View style={{ backgroundColor: ui.c.surface0, borderRadius: 8, borderWidth: 1, borderColor: ui.c.border, overflow: 'hidden' }}>
       <GLSurface id={`glsl-${block.id}`} label={data.question} summary={summary} height={Math.max(160, Math.min(420, (availableWidth || 360) * 9 / 16))} maxPixelSize={data.maxPixelSize}
         animated={playing} initialize={initialize} draw={draw} onVisibilityChange={onVisibilityChange} onError={message => {
-          pause('error del gráfico');
-          setSurfaceError(message.includes('no ofrece este contexto') ? 'WebGL no está disponible' : message.includes('demasiados') ? 'Hay demasiados gráficos WebGL abiertos. Cierra otro gráfico y vuelve a abrir este bloque.' : message.includes('perdió') ? 'El contexto WebGL se perdió. Esperando restauración.' : 'No se pudo iniciar el shader. Vuelve a abrir el bloque.');
+          pause('drawing error');
+          setSurfaceError(message.includes('does not offer this drawing context') ? 'WebGL is not available' : message.includes('Too many') ? 'Too many WebGL drawings are open. Close another one and open this block again.' : message.includes('was lost') ? 'The WebGL context was lost. Waiting for it to come back.' : 'The shader could not start. Open the block again.');
         }} />
     </View>
-    {!!compileError && <View style={{ gap: 4 }}><Txt style={{ color: ui.c.statusDanger }}>No se pudo compilar el shader</Txt><Txt kind="code">{compileError}</Txt></View>}
+    {!!compileError && <View style={{ gap: 4 }}><Txt style={{ color: ui.c.statusDanger }}>The shader did not compile</Txt><Txt kind="code">{compileError}</Txt></View>}
     {!!surfaceError && <View style={{ gap: 4 }}><Txt style={{ color: ui.c.statusDanger }}>{surfaceError}</Txt><Txt kind="small" muted>{summary}</Txt></View>}
     {data.uniforms.map(u => {
       const variable = props.scope.variables[u.name], value = valuesNow()[u.name], min = variable?.min ?? u.min, max = variable?.max ?? u.max;
@@ -127,7 +127,7 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
         else save({ values: { ...live.current.state.values, [u.name]: value }, time: clock.current.seconds });
       };
       return <View key={u.name} nativeID={`lienzo-interactive-shader-${block.id}-${u.name}`} style={{ gap: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}><Txt kind="label">{u.label}{variable ? ' · Compartida' : ''}</Txt><Txt kind="code">{Number(value.toPrecision(6))}{(variable?.unit ?? u.unit) ? ` ${variable?.unit ?? u.unit}` : ''}</Txt></View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}><Txt kind="label">{u.label}{variable ? ' · Shared' : ''}</Txt><Txt kind="code">{Number(value.toPrecision(6))}{(variable?.unit ?? u.unit) ? ` ${variable?.unit ?? u.unit}` : ''}</Txt></View>
         <WebRange id={`shader-${block.id}-${u.name}`} label={u.label} min={min} max={max} step={variable?.step ?? u.step ?? 'any'} value={value} color={variable ? ui.c.accent : ui.c.foreground} disabled={readOnly || min === max} onChange={change} onSettle={next => {
           if (live.current.props.readOnly || !Number.isFinite(next)) return;
           change(next); const current = live.current.props.scope.variables[u.name];
@@ -138,15 +138,15 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
       </View>;
     })}
     <View nativeID={`lienzo-interactive-shader-${block.id}-transport`} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      {data.builtins.time && <Button label={playing ? 'Pausar' : 'Reproducir'} small disabled={readOnly || !!compileError || !!surfaceError} onPress={() => {
+      {data.builtins.time && <Button label={playing ? 'Pause' : 'Play'} small disabled={readOnly || !!compileError || !!surfaceError} onPress={() => {
         if (live.current.props.readOnly || !visible.current || failed.current) return;
-        if (clock.current.playing) pause('pausa del usuario');
+        if (clock.current.playing) pause('paused by the person');
         else { clock.current.playing = true; clock.current.last = null; clock.current.visited = [clock.current.seconds, clock.current.seconds]; setPlaying(true); }
       }} />}
-      <Button label="Reiniciar" small variant="ghost" disabled={readOnly} onPress={reset} />
-      <Button label="Pedir una pista" small variant="ghost" disabled={readOnly} onPress={() => {
+      <Button label="Reset" small variant="ghost" disabled={readOnly} onPress={reset} />
+      <Button label="Ask for a hint" small variant="ghost" disabled={readOnly} onPress={() => {
         if (live.current.props.readOnly) return;
-        settle('glsl-shader.hint', { request: 'Da una pista sobre el efecto de los parámetros en la imagen, sin revelar la solución.', values: valuesNow(), time: clock.current.seconds }, 'Pedir una pista');
+        settle('glsl-shader.hint', { request: 'Give a hint about how the parameters change the image, without giving the answer away.', values: valuesNow(), time: clock.current.seconds }, 'Ask for a hint');
       }} />
     </View>
     {!!eventError && <Txt kind="small" style={{ color: ui.c.statusDanger }}>{eventError}</Txt>}

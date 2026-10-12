@@ -24,12 +24,12 @@ export function useLearning(block: CanvasBlock, controller: CanvasController): {
       state: snapshot.blocks[block.id] ?? {},
       set: (state, settled = false) => controller.learning.setBlock(block.id, state, settled),
       flush: () => controller.learning.flush(),
-      async settle(kind, payload, label = 'Interacción completada', eventId = newId('evt')) {
+      async settle(kind, payload, label = 'Interaction completed', eventId = newId('evt')) {
         const documentId = controller.current.current?.document.id;
         await controller.learning.flush();
         if (documentId !== controller.current.current?.document.id) return;
         const result = await controller.send({ kind, payload, label, delivery: 'batched', settled: true, targetIds: [block.id] }, eventId);
-        if (!result) throw new Error('No se guardó la interacción.');
+        if (!result) throw new Error('The interaction was not saved.');
       },
     },
     scope: { variables, values, get: name => values[name] ?? NaN, set: (name, value, settled = false) => controller.learning.setVariable(block.id, name, value, settled) },

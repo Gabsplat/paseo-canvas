@@ -39,7 +39,7 @@ export type AnimatedFlowDocument = {
 };
 export type FlowRuntime = { playhead: number; playing: boolean; anchorMs: number; visited: [number, number] };
 export type MotionToken = { linkId: string; progress: number; kind: AnimatedFlowEvent['kind']; label: string; sign?: 1 | -1; delay?: number };
-export const MISSING_FLOW_ROUTE = 'La ruta ya no existe en este lienzo';
+export const MISSING_FLOW_ROUTE = 'The route no longer exists in this Lienzo';
 
 /** Only declared IDs are remapped. Payloads and external references stay intact. */
 export function remapAnimatedFlowReferences(data: CanvasBlock['data'], ids: ReadonlyMap<string, string>): CanvasBlock['data'] {
@@ -55,16 +55,16 @@ export const animatedFlowSpec = {
   remapReferences: remapAnimatedFlowReferences,
   guidance: 'Set question, duration/travelMs in milliseconds, events [{t,from,to,payload,kind,linkId?}] over existing directed document blocks/groups and links. Kinds: message/signal/value; payload: bounded number or text. Parallel routes require linkId. Optional links {realLinkId:{sign:1|-1,delay:ms}} and propagation {maxEvents:1..256,horizon:ms} propagate numeric arrivals only along declared links. Arrival=t+delay+travelMs. Runtime is local transport; reset preserves the graph. Request hints, not solutions.',
   blockType: {
-    id: 'animated-flow', renderer: 'animated-flow', name: 'Flujo animado', description: 'Tiempo y propagación causal sobre las conexiones reales del lienzo.',
+    id: 'animated-flow', renderer: 'animated-flow', name: 'Animated flow', description: 'Time and cause travelling along the real links of the Lienzo.',
     properties: [
-      { key: 'question', label: 'Pregunta guía', kind: 'text', required: true },
-      { key: 'events', label: 'Eventos declarados', kind: 'json', required: true },
-      { key: 'duration', label: 'Duración en milisegundos', kind: 'number', required: true },
-      { key: 'travelMs', label: 'Tiempo de recorrido en milisegundos', kind: 'number', required: false },
-      { key: 'links', label: 'Signo y demora por conexión', kind: 'json', required: false },
-      { key: 'propagation', label: 'Límites de propagación', kind: 'json', required: false },
+      { key: 'question', label: 'Guiding question', kind: 'text', required: true },
+      { key: 'events', label: 'Declared events', kind: 'json', required: true },
+      { key: 'duration', label: 'Duration in milliseconds', kind: 'number', required: true },
+      { key: 'travelMs', label: 'Travel time in milliseconds', kind: 'number', required: false },
+      { key: 'links', label: 'Sign and delay per link', kind: 'json', required: false },
+      { key: 'propagation', label: 'Propagation limits', kind: 'json', required: false },
     ],
-    defaults: { question: '¿Cómo cambia la señal al recorrer las conexiones?', events: [], duration: 10_000, travelMs: 1000, links: {} },
+    defaults: { question: 'How does the signal change as it travels along the links?', events: [], duration: 10_000, travelMs: 1000, links: {} },
   },
 } satisfies RendererSpec;
 
@@ -164,8 +164,8 @@ export function flowActivityAt(simulation: FlowSimulation, time: number): { acti
   for (const e of completed) if (typeof e.delivered === 'number') values[e.to] = (values[e.to] ?? 0) + e.delivered;
   return { active: tokensAt(simulation, time).length, completed: completed.length, values };
 }
-const kindLabels = { message: 'Mensaje', signal: 'Señal', value: 'Valor' };
+const kindLabels = { message: 'Message', signal: 'Signal', value: 'Value' };
 export function flowEventText(event: ResolvedFlowEvent, document: AnimatedFlowDocument): string {
-  const title = (id: string) => [...document.blocks, ...document.groups].find(n => n.id === id)?.title || 'Nodo sin título';
-  return `${kindLabels[event.kind]}: ${flowPayloadLabel(event.payload)}, de ${title(event.from)} a ${title(event.to)}${event.sign === undefined ? '' : `; signo ${event.sign === 1 ? '+' : '−'}, demora ${flowNumber(event.delay ?? 0)} ms`}.`;
+  const title = (id: string) => [...document.blocks, ...document.groups].find(n => n.id === id)?.title || 'Untitled node';
+  return `${kindLabels[event.kind]}: ${flowPayloadLabel(event.payload)}, from ${title(event.from)} to ${title(event.to)}${event.sign === undefined ? '' : `; sign ${event.sign === 1 ? '+' : '−'}, delay ${flowNumber(event.delay ?? 0)} ms`}.`;
 }

@@ -11,7 +11,7 @@ import type { LinkMotionSample } from './renderers/types';
 const L = tokens.graph.link;
 /** The link schema says `peligro`; Lienzo's tone system calls the same colour `riesgo`. */
 export const linkTone = (link: Pick<CanvasLink, 'kind' | 'tone'>): Tone => link.tone ? (link.tone === 'peligro' ? 'riesgo' : link.tone) : L.defaultTone[link.kind];
-export const linkTitle = (route: Pick<LinkRoute, 'label' | 'count' | 'kind'>) => route.label || (route.count > 1 ? `${route.count} enlaces` : tokens.graph.kinds[route.kind]);
+export const linkTitle = (route: Pick<LinkRoute, 'label' | 'count' | 'kind'>) => route.label || (route.count > 1 ? `${route.count} links` : tokens.graph.kinds[route.kind]);
 export type LinkFocus = { routes: Set<string> } | null;
 /**
  * Connectors between frames. At rest every link is quiet ink; a link with an explicit tone keeps a hint of it.
@@ -82,7 +82,7 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
       return <React.Fragment key={route.key}>
         {route.elbow.map((s, i) => { const horizontal = s.from.y === s.to.y; return <View key={i} pointerEvents="none" style={{ position: 'absolute', left: Math.min(s.from.x, s.to.x) - origin.x, top: Math.min(s.from.y, s.to.y) - origin.y, width: horizontal ? Math.abs(s.to.x - s.from.x) : dashed ? 0 : width, height: horizontal ? dashed ? 0 : width : Math.abs(s.to.y - s.from.y), opacity, backgroundColor: dashed ? 'transparent' : color, borderStyle: route.kind === 'reference' ? 'dotted' : dashed ? 'dashed' : 'solid', borderColor: color, borderTopWidth: dashed && horizontal ? width : 0, borderLeftWidth: dashed && !horizontal ? width : 0 }} />; })}
         <View pointerEvents="none" style={{ position: 'absolute', left: route.end.x - origin.x - 3 + (route.endSide === 'left' ? -4 : route.endSide === 'right' ? 4 : 0), top: route.end.y - origin.y - 3 + (route.endSide === 'top' ? -4 : route.endSide === 'bottom' ? 4 : 0), width: 6, height: 6, opacity, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderColor: color, transform: [{ rotate }] }} />
-        <Pressable accessibilityRole="button" accessibilityLabel={`Enlace: ${linkTitle(route)}`} hitSlop={10} onPress={e => { e.stopPropagation(); onPress(route.key); }} style={{ position: 'absolute', left: route.labelPoint.x - origin.x - 80, top: route.labelPoint.y - origin.y - 10, width: 160, height: 20, alignItems: 'center', justifyContent: 'center', opacity: Math.min(1, opacity * 1.6) }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Link: ${linkTitle(route)}`} hitSlop={10} onPress={e => { e.stopPropagation(); onPress(route.key); }} style={{ position: 'absolute', left: route.labelPoint.x - origin.x - 80, top: route.labelPoint.y - origin.y - 10, width: 160, height: 20, alignItems: 'center', justifyContent: 'center', opacity: Math.min(1, opacity * 1.6) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: 160, paddingHorizontal: 5, minHeight: 16, borderRadius: 8, backgroundColor: u.c.surface0, borderWidth: active ? 1 : 0, borderColor: color }}>
             {!text && route.count < 2 && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />}
             {!!text && <Txt kind="small" numberOfLines={1} muted={!active} style={{ fontSize: L.label.size, lineHeight: L.label.lineHeight, flexShrink: 1 }}>{text}</Txt>}

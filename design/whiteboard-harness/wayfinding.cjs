@@ -26,12 +26,12 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const rev=await ev('__panelQA.doc().revision'),log=await ev('__panelQA.log.length');
  assert.equal(await onScreen('#lienzo-entity-far'),false);
  // A row whose card is in sight: no chip, the card is selected.
- await click('[aria-label^="Carpeta ui"]');await wait('__panelQA.doc().selectedIds.includes("near")');assert.equal(await rect('[aria-label^="Ir a"]'),null);
+ await click('[aria-label^="Folder ui"]');await wait('__panelQA.doc().selectedIds.includes("near")');assert.equal(await rect('[aria-label^="Go to"]'),null);
  // A row whose card is far away: the chip appears on the edge and takes you there.
- await click('[aria-label^="Carpeta lib"]');await wait('__panelQA.doc().selectedIds.includes("far")');await wait('!!document.querySelector("[aria-label^=\\"Ir a\\"]")');
- const chip=await rect('[aria-label^="Ir a"]');assert.ok(chip.x>innerWidthGuess()/2,'chip on the side the card lies '+JSON.stringify(chip));await shot('chip');
- await click('[aria-label^="Ir a"]');await new Promise(r=>setTimeout(r,700));assert.equal(await onScreen('#lienzo-entity-far'),true);
- await wait('getComputedStyle(document.querySelector("[aria-label^=\\"Ir a\\"]").parentElement).opacity==="0"||!document.querySelector("[aria-label^=\\"Ir a\\"]")');
+ await click('[aria-label^="Folder lib"]');await wait('__panelQA.doc().selectedIds.includes("far")');await wait('!!document.querySelector("[aria-label^=\\"Go to\\"]")');
+ const chip=await rect('[aria-label^="Go to"]');assert.ok(chip.x>innerWidthGuess()/2,'chip on the side the card lies '+JSON.stringify(chip));await shot('chip');
+ await click('[aria-label^="Go to"]');await new Promise(r=>setTimeout(r,700));assert.equal(await onScreen('#lienzo-entity-far'),true);
+ await wait('getComputedStyle(document.querySelector("[aria-label^=\\"Go to\\"]").parentElement).opacity==="0"||!document.querySelector("[aria-label^=\\"Go to\\"]")');
  // The minimap carries the view: pressing its top-left corner brings the first cards back.
  const map=await rect('#lienzo-interactive-minimap');await press(map.x+24,map.y+24);await new Promise(r=>setTimeout(r,500));
  assert.equal(await onScreen('#lienzo-entity-far'),false,'view moved away from the far card');await shot('map');

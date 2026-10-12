@@ -29,7 +29,7 @@ test('file tree data rejects absolute, parent-relative, duplicate and too-deep p
 });
 test('a file tree block is created and patched through the real service, and bad data rolls back', async t => {
   const { service } = await setup(t), spec = getRendererSpec('file-tree')!;
-  assert.equal(spec.blockType.name, 'Árbol de archivos'); assert.match(spec.guidance, /never draw a tree with ASCII/);
+  assert.equal(spec.blockType.name, 'File tree'); assert.match(spec.guidance, /never draw a tree with ASCII/);
   const created = await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'tree', typeId: 'file-tree', title: 'El repo', data: { entries: [{ path: 'lib/' }, { path: 'lib/db.mjs' }] } } }]));
   assert.equal(created.document.blocks.find(b => b.id === 'tree')!.typeId, 'file-tree');
   await assert.rejects(service.mutate(mutation(1, [{ type: 'block.update', id: 'tree', patch: { data: { entries: [{ path: '../x' }] } } }])));
@@ -38,7 +38,7 @@ test('a file tree block is created and patched through the real service, and bad
 test('entries pair with the cards that explain them: explicit ref first, then a title that is the path', async () => {
   const { fileTreeTargets, fileTreeSpec } = await import('../plugin/shared/renderers/file-tree');
   const tree = fileTreeDataSchema.parse({ entries: [{ path: 'lib/', ref: 'engine' }, { path: 'bin/' }, { path: 'db/migrations/' }, { path: 'spine/' }, { path: 'bases/' }, { path: 'ui/', ref: 'gone' }, { path: 'docs/' }] });
-  const document = { blocks: [{ id: 'self', title: 'docs/' }, { id: 'engine', title: 'Motor' }, { id: 'door', title: 'bin/' }, { id: 'sql', title: 'db/migrations/' }, { id: 'rules', title: 'spine/ · bases/' }, { id: 'screen', title: 'UI/' }], groups: [{ id: 'g', title: 'Entradas' }] };
+  const document = { blocks: [{ id: 'self', title: 'docs/' }, { id: 'engine', title: 'Motor' }, { id: 'door', title: 'bin/' }, { id: 'sql', title: 'db/migrations/' }, { id: 'rules', title: 'spine/ · bases/' }, { id: 'screen', title: 'UI/' }], groups: [{ id: 'g', title: 'Entries' }] };
   assert.deepEqual(Object.fromEntries(fileTreeTargets(fileTreeRows(tree), document, 'self')), { lib: 'engine', bin: 'door', 'db/migrations': 'sql', spine: 'rules', bases: 'rules', ui: 'screen' });
   const copied = fileTreeSpec.remapReferences!(tree as never, new Map([['engine', 'copy-engine']])) as typeof tree;
   assert.equal(copied.entries[0].ref, 'copy-engine'); assert.equal(copied.entries[5].ref, 'gone');

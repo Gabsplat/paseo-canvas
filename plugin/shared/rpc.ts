@@ -5,6 +5,7 @@ import {
   idSchema, revisionInputSchema, revisionSchema, createInputSchema, mutateInputSchema,
   documentViewSchema, documentSummarySchema, catalogSchema, catalogMutateInputSchema,
   packSchema, templateSchema, agentActionInputSchema, agentEventSchema, connectionSchema, sharingModeSchema,
+  copilotCadenceSchema, copilotSettingsSchema, latestAgentSchema, layoutSchema,
 } from "./model";
 
 export const scopeSchema = z.object({ workspaceId: z.string().min(1).max(200) }).strict();
@@ -33,7 +34,7 @@ export const importPack = defineRpc({ name: "canvas.pack.import", input: z.objec
 export const readHistory = defineRpc({ name: "canvas.history", input: readInputSchema, output: z.object({ revision: revisionSchema, transactions: z.array(z.object({ id: idSchema, revision: revisionSchema, actor: z.enum(["user", "agent", "system"]), agentId: z.string().optional(), label: z.string(), at: z.iso.datetime(), changed: z.array(z.string()), removed: z.array(idSchema), kind: z.enum(["edit", "undo", "redo"]) })) }) });
 export const agentSetup = defineRpc({ name: "canvas.agent.setup", input: scopeSchema.extend({ agentId: z.string().min(1).max(200), provider: z.enum(["codex", "claude", "opencode"]) }), output: z.object({ configuration: z.string(), instructions: z.string(), requiresReload: z.boolean() }) });
 export const flushAgentEvents = defineRpc({ name: "canvas.agent.events.flush", input: readInputSchema, output: readAgentEvents.output });
-// On for every workspace ("*") until the user turns it off. Affects agents created afterwards.
+// Legacy: every new agent now gets the Lienzo tools at creation, whatever this says. Kept so older panels keep working.
 export const configureInjection = defineRpc({ name: "canvas.injection", input: z.object({ workspaceId: z.string().min(1).max(200), enabled: z.boolean(), expectedRevision: revisionSchema }).strict(), output: z.object({ revision: revisionSchema, workspaceIds: z.array(z.string()) }) });
 // One canvas set per workspace ("shared") or documents private to the agent that created or received them ("agent").
 export const readSharing = defineRpc({ name: "canvas.sharing.read", input: scopeSchema, output: z.object({ mode: sharingModeSchema }) });
@@ -48,3 +49,35 @@ export const runtimeSetInputSchema = readInputSchema.extend({
 export const runtimeOutputSchema = z.object({ runtimeVersion: revisionSchema, runtime: runtimeStateSchema });
 export const readRuntime = defineRpc({ name: 'canvas.runtime.read', input: runtimeReadInputSchema, output: runtimeOutputSchema });
 export const setRuntime = defineRpc({ name: 'canvas.runtime.set', input: runtimeSetInputSchema, output: runtimeOutputSchema });
+
+// Copilot: per agent (one conversation). Every new agent has the Lienzo tools; the copilot decides whether it draws.
+const agentScopeSchema = scopeSchema.extend({ agentId: z.string().min(1).max(200) });
+export const copilotLatestSchema = latestAgentSchema.extend({ documentId: idSchema, titles: z.array(z.string()).max(3) });
+export const copilotViewSchema = z.object({
+  agentId: z.string(), copilot: copilotSettingsSchema,
+  // False for agents created before the plugin gave every agent its tools: the copilot cannot draw for them.
+  hasTools: z.boolean(),
+  // A Lienzo tool call is in flight, or ended less than 3 s ago.
+  drawing: z.boolean(), lastToolAt: z.iso.datetime().nullable(),
+  document: z.object({ id: idSchema, title: z.string() }).nullable(),
+  latest: copilotLatestSchema.nullable(),
+});
+export const readCopilot = defineRpc({ name: "canvas.copilot.read", input: agentScopeSchema, output: copilotViewSchema });
+export const setCopilot = defineRpc({
+  name: "canvas.copilot.set",
+  input: agentScopeSchema.extend({
+    patch: z.object({ enabled: z.boolean().optional(), cadence: copilotCadenceSchema.optional(), rule: z.string().max(500).optional(), remind: z.boolean().optional(), documentId: idSchema.nullable().optional() }).strict(),
+    // Title for the conversation's Lienzo when turning on creates it.
+    title: z.string().min(1).max(300).optional(),
+  }),
+  output: copilotViewSchema,
+});
+// Cheap status for composer pills: one call for every agent the client shows.
+export const listCopilot = defineRpc({
+  name: "canvas.copilot.list", input: z.object({ agentIds: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+  output: z.object({ agents: z.record(z.string(), z.object({ enabled: z.boolean(), drawing: z.boolean(), hasTools: z.boolean() })) }),
+});
+export const sheetSummarySchema = z.object({ id: idSchema, number: z.number().int(), title: z.string(), description: z.string(), createdAt: z.iso.datetime(), source: z.enum(["agent", "user"]), position: z.object({ x: z.number(), y: z.number() }), blockCount: z.number().int(), groupCount: z.number().int() });
+export const createSheetInputSchema = revisionInputSchema.extend({ id: idSchema.optional(), title: z.string().min(1).max(300), description: z.string().max(4000).optional(), layout: layoutSchema.optional() });
+export const createSheet = defineRpc({ name: "canvas.sheet.create", input: createSheetInputSchema, output: z.object({ view: documentViewSchema, id: idSchema, number: z.number().int() }) });
+export const listSheets = defineRpc({ name: "canvas.sheet.list", input: readInputSchema, output: z.object({ revision: revisionSchema, sheets: z.array(sheetSummarySchema) }) });

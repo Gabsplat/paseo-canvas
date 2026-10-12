@@ -14,12 +14,12 @@ function HtmlApp({ data, block, ui, document, selection = [], select, send }: Re
     block: { id: block.id, title: block.title }, document: { id: document.id, title: document.title },
     selection: selection.slice(0, 20).map(id => ({ id, title: [...document.blocks, ...document.groups].find(e => e.id === id)?.title ?? '' })),
   }), [ui.c, block.id, block.title, document.id, document.title, document.blocks, document.groups, selection]);
-  if (ui.layout.platform !== 'web') return <View style={{ padding: 12, gap: 4 }}><Txt kind="bodyStrong">{block.title || 'Mini app'}</Txt><Txt kind="small" muted>Esta mini app se ejecuta en la versión web o de escritorio.</Txt></View>;
+  if (ui.layout.platform !== 'web') return <View style={{ padding: 12, gap: 4 }}><Txt kind="bodyStrong">{block.title || 'Mini app'}</Txt><Txt kind="small" muted>This mini app runs in the web and desktop apps.</Txt></View>;
   return <View style={{ height: block.size ? block.size.height - 28 : height }}>
     <WebHtml id={block.id} html={data.html} title={block.title || 'Mini app'} surface={ui.c.surface0} context={context} onMessage={message => {
       if (message.type === 'resize' && typeof message.height === 'number' && Number.isFinite(message.height)) setAsked(Math.max(HTML_APP_LIMITS.minHeight, Math.min(HTML_APP_LIMITS.maxHeight, Math.round(message.height))));
       else if (message.type === 'select' && typeof message.id === 'string' && [...document.blocks, ...document.groups].some(e => e.id === message.id)) select?.([message.id]);
-      else if (message.type === 'event') { const event = htmlAppEvent(message.kind, message.payload); if (event) void send('html.event', { event: event.kind, data: event.payload as never }, `Mini app «${block.title || block.id}»: ${event.kind}`, 'batched').catch(() => {}); }
+      else if (message.type === 'event') { const event = htmlAppEvent(message.kind, message.payload); if (event) void send('html.event', { event: event.kind, data: event.payload as never }, `Mini app “${block.title || block.id}”: ${event.kind}`, 'batched').catch(() => {}); }
     }} />
   </View>;
 }
