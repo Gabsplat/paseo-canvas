@@ -142,12 +142,13 @@ verification are coordinator-owned and were not performed by this engineering ta
 ## Tools, storage and scope
 
 MCP server name is `paseo-canvas`; plugin ID is `canvas`. The final MCP names are
-`canvas_list`, `canvas_create`, `canvas_example`, `canvas_read`, `canvas_apply`, `canvas_group`,
+`canvas_list`, `canvas_sheet`, `canvas_create`, `canvas_example`, `canvas_read`, `canvas_apply`, `canvas_group`,
 `canvas_catalog`, `canvas_selection`, `canvas_events`, `canvas_history`, `canvas_undo`, `canvas_redo`, `canvas_runtime`.
+Every response also carries the caller's `copilot` (see Copilot below).
 
 Storage is `$PASEO_HOME/canvas/`, falling back to `~/.paseo/canvas/`. `state.json` is the single
 atomic aggregate containing documents, up to 50 retained history entries per document, selection,
-feedback events, catalog and owner bindings. `writer.lock` rejects a second live writer.
+feedback events, catalog, owner bindings and per-agent copilot state. `writer.lock` rejects a second live writer.
 `canvas-mcp.cjs` is a dependency-free generated stdio shim. `bridge.json` contains the current
 loopback port and random bearer token. Files are mode 0600; the directory is mode 0700.
 This replaces architecture v1's separate per-document snapshots and journal. A failed batch never
@@ -159,8 +160,9 @@ Paseo SDK. A connection selects the feedback recipient; it is not a document ACL
 can read/edit any document in its workspace, including documents connected to another agent.
 Unknown owners and other-workspace documents are refused. UI RPCs are trusted host plugin RPCs
 and require an explicit workspace ID. Shared catalog writes are separate from document access
-and are not automatically preapproved. New-agent injection is on for every workspace
-(`"*"`) until the user turns it off in the agent dialog; an explicit choice is stored and respected.
+and are not automatically preapproved. Every new agent (Codex, Claude, OpenCode; not internal agents)
+gets the tools at creation, with the copilot off. The stored injection preference is legacy and no
+longer filters agents.
 
 Connection is automatic. A document-scoped tool call makes the caller the feedback recipient: a
 read claims a document nobody receives, a write takes it over, and neither changes the document
@@ -210,7 +212,15 @@ ID and namespace every exported type/template ID as `newPackId.entry`, updating 
 | `agentSetup` | `canvas.agent.setup` | Workspace, agent ID and provider return a private manual MCP snippet |
 | `agentAction` | `canvas.agent.action` | Scoped document, revision, stable event ID and action persist real feedback |
 | `readAgentEvents`, `flushAgentEvents` | `canvas.agent.events`, `canvas.agent.events.flush` | Scoped document lists events or retries/flushes queued events |
-| `readInjection`, `configureInjection` | `canvas.injection.read`, `canvas.injection` | Read enabled workspace IDs (`"*"` by default); change with preferences revision |
+| `readInjection`, `configureInjection` | `canvas.injection.read`, `canvas.injection` | Legacy: still stored and readable, but every new agent gets the tools regardless |
+| `readCopilot`, `setCopilot` | `canvas.copilot.read`, `canvas.copilot.set` | `{workspaceId,agentId}` (+ `patch`, optional `title`) return the agent's copilot view |
+| `listCopilot` | `canvas.copilot.list` | `{agentIds}` returns `{enabled,drawing,hasTools}` per agent, for composer pills |
+| `createSheet`, `listSheets` | `canvas.sheet.create`, `canvas.sheet.list` | Create a Hoja (user source) with revision, or list Hojas in order |
+
+`DocumentView.latestAgent` is the agent's most recent transaction from history, or `null`:
+`{transactionId, revision, at, agentId?, label, kind, ids, removed}`. `ids` are the changed
+entities that still exist (blocks, groups, links; `$document` excluded); `removed` is what it deleted.
+It is what "go to latest" flies to. A user edit afterwards does not move it.
 
 `DocumentView.document` contains content, workspace and revision. `connection` is separate runtime
 metadata; connecting advances document revision but undo never changes connections. `selectedIds`
@@ -249,8 +259,7 @@ an acknowledgement means the agent acknowledged the event, not that all user goa
 
 ## Connection, delivery and reload
 
-Enable `configureInjection({workspaceId,enabled:true,expectedRevision})` before creating new
-agents in that workspace. The create hook preserves existing MCP entries and task policies,
+The create hook preserves existing MCP entries and task policies,
 excludes internal/unsupported providers, and catches failures without blocking agent creation.
 The owner token allocated before creation is bound to the real agent ID in the session-open hook.
 The bridge resolves that ID through the SDK for every tool call. It does not trust caller-supplied
@@ -470,9 +479,72 @@ selection }`; `lienzo.select(id)`; `lienzo.resize(height)`; `lienzo.onFrame(fn)`
 screen pixels, this window and the other mini apps, on every move. Update the page with `block.update` on
 `data.html`. For projects with several files or a server, run them and use a `preview` block with `data.url`.
 
+## Copilot
+
+Lienzo is the visual copilot of a conversation. Every new agent gets the tools and short system
+instructions (`integrationInstructions`): draw only when the copilot is on for this conversation, read
+the mode from any canvas tool response, one Hoja per new explanation and revisit a Hoja for the same
+topic. The longer drawing guide (`drawingGuide`) is returned by `canvas_list` as `guide` instead of
+living in every system prompt.
+
+State is per agent, in `state.json` under `copilot[agentId]`; state files written before it load with
+every agent off. Fields: `enabled` (default false), `cadence` (`thinking` after reasoning or each tool
+use, `step` after each step worth showing — default, `task` once at the end of a task, `custom` with
+`rule`, up to 500 characters and required while custom is on), `remind` (default false), `documentId`
+(the conversation's Lienzo). Private fields: `reminded` (the last ended turn got a reminder),
+`workspaceId`, `updatedAt`. Archiving an agent deletes its entry.
+
+- `canvas.copilot.read {workspaceId, agentId}` returns `{agentId, copilot, hasTools, drawing,
+  lastToolAt, document: {id,title}|null, latest}`. `hasTools` is false for an agent with no bound
+  owner token (created before the plugin gave every agent its tools). `drawing` is true while a Lienzo
+  tool call of that agent is in flight or ended less than 3 s ago (in memory, not persisted). `latest`
+  is the agent's `latestAgent` on its Lienzo plus `documentId` and up to three entity titles.
+- `canvas.copilot.set {workspaceId, agentId, patch, title?}` verifies the agent belongs to the
+  workspace. Turning on without a `documentId` creates the conversation's Lienzo (titled `title`) and
+  connects it to the agent; attaching an existing `documentId` moves that document's connection to the
+  agent. Turning on, or changing cadence, rule or Lienzo while on, queues one batched `copilot.mode`
+  canvas event on that Lienzo with a one-line label ("Lienzo copilot is on: draw after each step worth
+  showing in Lienzo …") and payload `{enabled, cadence, rule, documentId}`. It replaces an older notice
+  that has not left yet and starts no turn: it rides along with the next feedback delivery (an immediate
+  UI action or a flush) and shows in `canvas_events`. Turning off drops a pending notice.
+- `canvas.copilot.list {agentIds}` is the cheap status for composer pills.
+
+Every successful canvas MCP response, truncated acknowledgements included, carries
+`copilot: {enabled, cadence, rule, documentId}` for the calling agent. Errors keep their error shape.
+
+The client registers a "Lienzo" composer pill per agent (`plugin/client/copilot/`). "Go to latest" and
+"Open Lienzo" open the `canvas` workspace panel and leave a `CanvasIntent` (`workspaceId`, `documentId`,
+`kind`, `ids`) in `copilot/intent.ts`; the panel takes it with `takeCanvasIntent(workspaceId)` and
+listens with `onCanvasIntent`. Intents expire after 60 s.
+
+Reminder: on `agent.turn_ended`, after feedback delivery, one short follow-up is sent through
+`agents.ref(id).send` only when the copilot is on, `remind` is true, the cadence is `step` or `task`,
+the turn completed, its timeline has a tool call that is not a Lienzo tool (Claude
+`mcp__paseo-canvas__canvas_*`, `paseo-canvas.canvas_*` or a bare `canvas_*` name; a Lienzo call seen
+by the bridge during the turn also counts as drawing), and the agent is not busy with another turn
+(a send would interrupt it). Never for `thinking` or `custom`, and never twice in a row: the turn after
+a reminder never gets one.
+
+### Hojas
+
+A Hoja is a chapter the agent adds while explaining: a top-level group with
+`sheet: {number, createdAt, source: "agent"|"user"}`. Validation keeps Hojas top-level and numbers
+unique; a duplicate or a template copy of a Hoja is an ordinary group. New Hojas take the next number
+(never reused while higher ones exist) and sit to the right of the last Hoja at the same `y`, one
+horizontal strip. The server estimates widths (explicit child positions, else a grid guess, at least
+1200) plus a 320 gap; the first Hoja goes to the right of existing loose content, or at the origin.
+
+`canvas_sheet` actions: `create {documentId, expectedRevision, title, description?, id?, layout?}`
+returns `{documentId, revision, id, number}`; `list {documentId}` returns `{revision, sheets: [{id,
+number, title, description, createdAt, source, position, blockCount, groupCount}]}` in number order;
+`update {documentId, expectedRevision, id, title?, description?}` retitles one. Content goes into a Hoja
+with ordinary `canvas_apply` operations using `parentGroupId`. Outline reads include `sheet` on groups.
+
 ## Extensions
 
 `canvas_catalog` also lists, reads, saves and removes extensions: `list` returns `extensions` (ID, kind, name,
 description, permissions, source) and `extensionGuide`, the whole frame API as text; `read { id }` returns one with
 its page; `save_extension { expectedRevision, extension }` adds or replaces a local one; `remove_extension` deletes a
 local one. Like every catalog write it needs the person's approval. The contract is in `docs/extensions.md`.
+Only kind `tool` exists; catalogs and packs stored with the retired kind `view` still load and drop those
+entries.
