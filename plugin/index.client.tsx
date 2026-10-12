@@ -1,6 +1,7 @@
 import type { PluginClientContext } from '@getpaseo/plugin/client';
 import { LienzoPanel } from './client/Panel';
 import { tokens } from './client/tokens';
+import { registerCopilotPills } from './client/copilot/register';
 export default function contribute(client: PluginClientContext) {
   const cleanup = [
     client.addWorkspacePanel({ id: 'canvas', title: 'Lienzo', icon: 'Frame', context: 'workspace', locations: ['workspace', 'explorer'], Component: LienzoPanel }),
@@ -9,6 +10,8 @@ export default function contribute(client: PluginClientContext) {
     // and the text would be sent to the agent instead.
     client.addSlashCommand({ name: 'lienzo', description: 'Abrir el lienzo de este espacio', argumentHint: '', context: 'agent', onSubmit({ openPanel }) { openPanel('canvas', { location: 'explorer' }); } }),
     ...Object.entries(tokens.contributedThemes).map(([id, theme]) => client.addTheme({ id, ...theme })),
+    // A "Lienzo" pill in every agent's composer: copilot on/off, cadence, go to the agent's latest drawing.
+    registerCopilotPills(client),
   ];
   return () => { cleanup.reverse().forEach(remove => { void remove(); }); };
 }
