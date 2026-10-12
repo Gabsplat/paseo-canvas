@@ -1296,7 +1296,7 @@ drawings and links), Wrap in a Marco (Unwrap for a Marco), Duplicate, Ask the ag
 top-right button. Centred, 640 wide, its top at 18 % of the panel, a 52 px search field with a leading icon, results
 under small-caps headers in rows of 40 (icon, title, muted subtitle, shortcut chips), the active row in a soft accent
 fill. Footer: "↵ Open · ⌘↵ Run in background · Esc Close" and the active row's verb. Groups: Recent (on an empty
-query), Tools, Actions, Hojas (stage 2), Lienzos, Extensions, Settings, and "Ask the agent: ‹query›" always last,
+query), Tools, Actions, Hojas (every Hoja, the agent's latest, follow), Lienzos, Extensions, Settings, and "Ask the agent: ‹query›" always last,
 which sends through the composer's path with the selection as context. Titles match fuzzily; keywords and subtitles
 by whole words. Keyboard alone works fully; so does the mouse.
 
@@ -1314,7 +1314,7 @@ Extensions take every colour from the theme they are given. Verified with `desig
 **Shortcuts** (`client/shortcuts.ts`). Tools: V Select, H Hand, P Pencil, R Rectangle, O Ellipse, T Text, A Arrow,
 E Eraser, M Marco, W Ventana, L next Lente, Space held = Hand, 1–9 pinned tools. Navigation: ⌘K palette, [ / ]
 previous / next Hoja, ⌘J jump to Hoja, F follow the agent, G the agent's latest (these five are registered now and
-wired in stage 2), Shift+1 fit all, Shift+2 fit selection, ⌘\ right panel, ⌘. hide all UI, ? the sheet. Editing: ⌘Z,
+Hojas and the agent, see §34), Shift+1 fit all, Shift+2 fit selection, ⌘\ right panel, ⌘. hide all UI, ? the sheet. Editing: ⌘Z,
 ⌘⇧Z, ⌘D duplicate, ⌘G wrap in a Marco, ⌘⇧G unwrap, Delete / Backspace, Esc, ⌘A. The person's overrides win, then
 ours, then extensions' in the order they register; a combination already taken is not assigned and is listed as
 "unassigned" with whose keys they are. The `?` sheet and Settings → Shortcuts list everything and reassign by
@@ -1338,3 +1338,17 @@ kettle and the loading details do not appear.
 
 Verified with `design/whiteboard-harness/face.cjs` (RN-web, isolated omabox, example data, dark and light); captures
 in `design/qa-face-2026-10/`.
+
+## 34. Following the agent and Hojas (copilot, canvas side)
+
+The top-left island ends, after a divider, with "Hoja 3 of 7 ▾" (only when the Lienzo has Hojas) and a magnet. A
+Hoja is a top-level Marco the agent added as a chapter; its header shows "Hoja N" instead of an ordinal. The menu
+lists every Hoja (number, title, the current one washed in the accent); `[` `]` step and ⌘J opens the menu; ⌘K lists
+them under Hojas. The current Hoja is the one holding the centre of the view, read live from the camera.
+
+The magnet is on by default: each new transaction of the agent flies the camera to what it changed, and that glows
+for 3 s (2 px accent ring with a soft accent shadow, 6 px outside the entity). Moving the camera yourself (wheel,
+middle button, Hand, two fingers) or jumping to a Hoja lets go. While not following, the agent's next change shows
+a pill above the toolbar, "● Agent's latest · ‹label› →"; it and `G` take you there and follow again; `F` toggles.
+The conversation chip's "Go to latest" and "Open Lienzo" open this panel on the right document and land the same
+way. Logic in `plugin/client/Hojas.tsx` and `hojas-model.ts`; verified with `design/whiteboard-harness/copilot.cjs`.

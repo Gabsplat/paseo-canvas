@@ -83,7 +83,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const asked=await ev('JSON.stringify(__panelQA.actions.at(-1))');assert.ok(asked.includes('"kind":"selection.send"')&&asked.includes('Explain this note')&&asked.includes('"targetIds":["note"]'),asked);
  await key('k','KeyK',2);await wait('!!document.querySelector("#lienzo-palette")');assert.match(await text('#lienzo-palette'),/RECENT[\s\S]*Pencil/i,'Recent remembers');await key('Escape','Escape');
  // 7. The ? sheet.
- await background();await key('?','Slash',8,'?');await wait('!!document.querySelector("#lienzo-shortcuts")');assert.match(await text('#lienzo-shortcuts'),/Follow the agent[\s\S]*coming with Hojas/);await shot('sheet');await key('Escape','Escape');await pause(300);
+ await background();await key('?','Slash',8,'?');await wait('!!document.querySelector("#lienzo-shortcuts")');{const sheet=await text('#lienzo-shortcuts');assert.ok(sheet.includes('Follow the agent')&&sheet.includes('Previous Hoja'),sheet.slice(0,200));}await shot('sheet');await key('Escape','Escape');await pause(300);
  // 8. Settings → Shortcuts: give Text the key Q; T stops, Q works; Reset.
  await click('#lienzo-document-island [aria-label="Menu"]');await click('[aria-label="Settings"]');await wait('!!document.querySelector("#lienzo-settings")');
  await click('#lienzo-settings [id="lienzo-shortcut-tool.text"] [aria-label="Change"]');await key('q','KeyQ');await wait(`!!document.querySelector('#lienzo-settings [id="lienzo-shortcut-tool.text"] [aria-label="Reset"]')`,'overridden');

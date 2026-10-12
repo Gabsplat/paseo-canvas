@@ -59,6 +59,6 @@ export const guideSections: readonly { id: string; title: string; icon: string; 
 ];
 /** The cheat sheet in the guide, from the shortcut registry so it never disagrees with the keys. */
 export const guideShortcuts: readonly (readonly [string, string])[] = [
-  ...DEFAULT_SHORTCUTS.filter(s => !s.id.startsWith('pinned.') || s.id === 'pinned.1').map(s => [s.id === 'pinned.1' ? '1–9' : s.keys.map(k => formatCombo(k, false)).join(' / '), s.id === 'pinned.1' ? 'Pinned tools' : s.label + (s.later ? ' (with Hojas)' : '')] as const),
+  ...DEFAULT_SHORTCUTS.filter(s => !s.id.startsWith('pinned.') || s.id === 'pinned.1').map(s => [s.id === 'pinned.1' ? '1–9' : s.keys.map(k => formatCombo(k, false)).join(' / '), s.id === 'pinned.1' ? 'Pinned tools' : s.label] as const),
   ['Shift + click', 'Add to or remove from the selection'], ['Arrows / Shift + arrows', 'Move 8 / 32 px'], ['Enter / F2', 'Edit text or interact with content'], ['Tab / Shift + Tab', 'Go through things'], ['Ctrl/⌘ + Enter', 'Send to the agent'], ['0 / + / −', '100% / zoom in / zoom out'],
 ];

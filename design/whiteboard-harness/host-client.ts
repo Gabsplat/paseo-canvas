@@ -17,10 +17,13 @@ let doc: CanvasDocument = {
 };
 let selectionVersion=0, runtimeVersion=0, runtime={blocks:{},scopes:{}}, fail=false;
 const undo:CanvasDocument[]=[], redo:CanvasDocument[]=[], log:any[]=[], errors:any[]=[], actions:any[]=[], history:any[]=[];
-const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime}));
+// What the agent's last transaction changed, as the server derives it from history (stand-in: the ids the operations name).
+let latestAgent:any=null,agentTx=0;
+const opIds=(operations:any[])=>[...new Set(operations.map((o:any)=>o.block?.id??o.group?.id??o.link?.from??o.id).filter((id:any)=>typeof id==='string'&&[...doc.blocks,...doc.groups].some((e:any)=>e.id===id)))];
+const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime,latestAgent}));
 // `seed` stands in for another author; `seedAgent` runs the reducer as the assistant actor. `actions` records what
 // would be delivered: nothing here reaches an assistant.
-(globalThis as any).__panelQA={setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};},view:snapshot};
+(globalThis as any).__panelQA={setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};agentTx++;latestAgent={transactionId:'qa-tx-'+agentTx,revision:doc.revision,at:new Date().toISOString(),label:'Example agent edit '+agentTx,kind:'edit',ids:opIds(operations),removed:[]};},view:snapshot};
 async function invoke(contract:any, raw:any) {
  const input=contract.input.parse(raw), name=contract.name;
  let output:any;

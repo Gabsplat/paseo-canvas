@@ -23,7 +23,7 @@ export function ShortcutList({ list, chips, onAssign, onReset, editable = true }
         <Txt kind="label" muted style={{ paddingVertical: 4 }}>{group}</Txt>
         {rows.map(s => <View key={s.id} nativeID={`lienzo-shortcut-${s.id}`} style={{ minHeight: tokens.face.sheet.row, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderColor: u.c.border, paddingVertical: 4 }}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt numberOfLines={1}>{s.label}{s.later ? <Txt kind="small" muted>  · coming with Hojas</Txt> : null}</Txt>
+            <Txt numberOfLines={1}>{s.label}</Txt>
             {s.id === 'hoja.previous' && <Txt kind="small" muted numberOfLines={2}>A Hoja is a chapter the agent adds while explaining (Spanish for sheet).</Txt>}
             {s.unassigned && <Txt kind="small" muted numberOfLines={1}>{s.conflictWith ? `Unassigned · its keys belong to ${label(s.conflictWith)}` : 'Unassigned'}</Txt>}
           </View>

@@ -14,8 +14,6 @@ export type ShortcutDef = {
   source?: string;
   /** Shown but not reassignable (Space held for the hand). */
   fixed?: boolean;
-  /** Registered now, wired in a later stage. */
-  later?: boolean;
 };
 export type Overrides = Readonly<Record<string, string>>;
 export type ResolvedShortcut = ShortcutDef & { assigned: string[]; overridden: boolean; unassigned: boolean; conflictWith?: string };
@@ -30,12 +28,11 @@ export const DEFAULT_SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'tool.space', label: 'Hand while held', group: 'Tools', keys: ['space'], when: 'canvas', fixed: true },
   ...Array.from({ length: 9 }, (_, i): ShortcutDef => ({ id: `pinned.${i + 1}`, label: `Pinned tool ${i + 1}`, group: 'Tools', keys: [String(i + 1)], when: 'document' })),
   { id: 'palette.open', label: 'Command palette', group: 'Navigation', keys: ['mod+k'], when: 'always' },
-  // TODO(stage 2): Hojas, following the agent and the agent's latest are wired by the copilot work.
-  { id: 'hoja.previous', label: 'Previous Hoja', group: 'Navigation', keys: ['['], when: 'document', later: true },
-  { id: 'hoja.next', label: 'Next Hoja', group: 'Navigation', keys: [']'], when: 'document', later: true },
-  { id: 'hoja.jump', label: 'Jump to Hoja', group: 'Navigation', keys: ['mod+j'], when: 'document', later: true },
-  { id: 'agent.follow', label: 'Follow the agent', group: 'Navigation', keys: ['f'], when: 'document', later: true },
-  { id: 'agent.latest', label: "Go to the agent's latest", group: 'Navigation', keys: ['g'], when: 'document', later: true },
+  { id: 'hoja.previous', label: 'Previous Hoja', group: 'Navigation', keys: ['['], when: 'document' },
+  { id: 'hoja.next', label: 'Next Hoja', group: 'Navigation', keys: [']'], when: 'document' },
+  { id: 'hoja.jump', label: 'Jump to Hoja', group: 'Navigation', keys: ['mod+j'], when: 'document' },
+  { id: 'agent.follow', label: 'Follow the agent', group: 'Navigation', keys: ['f'], when: 'document' },
+  { id: 'agent.latest', label: "Go to the agent's latest", group: 'Navigation', keys: ['g'], when: 'document' },
   { id: 'view.fitAll', label: 'Fit all', group: 'Navigation', keys: ['shift+1'], when: 'canvas' },
   { id: 'view.fitSelection', label: 'Fit selection', group: 'Navigation', keys: ['shift+2'], when: 'selection' },
   { id: 'panel.right', label: 'Properties panel', group: 'Navigation', keys: ['mod+\\'], when: 'document' },

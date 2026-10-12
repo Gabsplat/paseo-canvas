@@ -1090,6 +1090,7 @@ const baseTokens = {
     "selectionBar": { "button": 32, "buttonTouch": 44, "offset": 10, "swatch": 18 },
     "palette": { "width": 640, "top": 0.18, "search": 52, "row": 40, "header": 28, "footer": 36, "maxHeight": 440, "perGroup": 6, "recent": 6, "activeWash": 0.12, "scrim": 0.24 },
     "sheet": { "width": 560, "row": 36, "keyChip": 22 },
+    "hojas": { "$doc": "Hoja menu and following the agent (stage 2).", "button": 32, "menuWidth": 280, "row": 34, "glow": 6 },
     "eggs": { "$doc": "Small, discreet, never over content; off under reduced motion.", "mate": 84, "steamMs": 2400, "kettle": 44, "kettleMs": 4200, "loader": 20, "loaderMs": 1800, "loaderChance": 0.25 }
   },
   "toolbar": {

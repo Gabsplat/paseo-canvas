@@ -34,6 +34,7 @@ import { EmptyMate, Kettle, LoadingEgg } from './Eggs';
 import { applies, comboParts, eventCombo, formatCombo, shortcutRegistry } from './shortcuts';
 import { remember, type PaletteItem } from './palette';
 import { getClientRenderer } from './renderers';
+import { HojaControls, HojaMenu, LatestPill, useCopilotCanvas } from './Hojas';
 
 type ViewMode = 'canvas' | 'outline';
 type CatalogTab = 'types' | 'templates' | 'packs';
@@ -211,6 +212,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     void prefs.save({ pinned: patch.pinned ?? pinnedIds, shortcuts: patch.shortcuts ?? overrides }, prefs.revision).then(saved => { if (!saved) toast.error('Your choice was not saved for next time. It still applies now.'); });
   };
   const resolved = shortcutRegistry.resolve(overrides);
+  const copilot = useCopilotCanvas({ c, fly: ids => canvas.current?.flyToIds(ids), geometry, center: () => canvas.current?.viewportCenter(), active: !(u.compact && ['select', 'svg'].includes(tool)) && !!c.view });
   const keyLabel = (id: string) => { const combo = resolved.list.find(s => s.id === id)?.assigned[0]; return combo ? formatCombo(combo, mac) : undefined; };
   const chips = (combo: string) => comboParts(combo, mac);
   useEffect(() => { if (c.arrival) toast.show(`New Lienzo: “${c.arrival.title}”`, { variant: 'info' }); }, [c.arrival?.id]);
@@ -566,6 +568,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         { id: 'action.exportDocument', group: 'Lienzos', title: 'Export this Lienzo', subtitle: 'As a collection file', icon: 'FileOutput', disabled: !c.catalog, run: exportDocument },
       );
     }
+    copilot.hojas.forEach((h, i) => items.push({ id: 'hoja.' + h.id, group: 'Hojas', title: `Hoja ${h.number}: ${h.title}`, subtitle: i === copilot.current ? 'You are here' : undefined, icon: 'BookOpen', verb: 'Go', run: () => { copilot.goToHoja(i); } }));
+    if (c.view?.latestAgent?.ids.length) items.push({ id: 'agent.latest', group: 'Hojas', title: "Go to the agent's latest", subtitle: c.view.latestAgent.label, icon: 'Sparkles', verb: 'Go', run: () => { copilot.goToLatest(); } });
+    items.push({ id: 'agent.follow', group: 'Hojas', title: copilot.follow ? 'Stop following the agent' : 'Follow the agent', subtitle: 'The camera goes wherever the agent draws', icon: 'Magnet', run: () => copilot.toggleFollow() });
     items.push({ id: 'lienzo.new', group: 'Lienzos', title: 'New Lienzo', subtitle: GLOSSARY.lienzo, icon: 'Plus', disabled, run: () => { void newCanvas(); } });
     for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: (d.example ? 'Example · ' : '') + relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy || sending, run: () => { void c.open(d.id); } });
     items.push(
@@ -603,7 +608,11 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       case 'edit.unwrap': ungroupSelection(); return true;
       case 'edit.delete': removeLinkOrSelection(); return true;
       case 'edit.selectAll': if (!doc) return false; void c.select([...doc.groups.filter(g => !g.parentGroupId), ...doc.blocks.filter(b => !b.parentGroupId)].map(e => e.id)); return true;
-      // TODO(stage 2): Hojas ([ ] ⌘J), follow the agent (F) and the agent's latest (G) are registered and wired by the copilot.
+      case 'hoja.previous': return copilot.step(-1);
+      case 'hoja.next': return copilot.step(1);
+      case 'hoja.jump': if (!copilot.hojas.length) return false; copilot.setMenuOpen(true); return true;
+      case 'agent.follow': copilot.toggleFollow(); return true;
+      case 'agent.latest': return copilot.goToLatest();
       default: return false;
     }
   };
@@ -704,7 +713,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo" description="A canvas you and your agent draw explanations on.">
         <Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Examples</Txt>
         {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-      </EmptyState> : <Canvas key={doc.id} api={canvas} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}
@@ -713,7 +722,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         <View style={{ flexShrink: 1, minWidth: 0, maxWidth: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth, ...(rename ? { width: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth } : {}) }}>{title}</View>
         {doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center style={{ marginRight: 6 }} />}
         {(saveSlow || c.failure) && <View accessibilityLabel={c.failure ? 'Not saved' : 'Saving'} style={{ width: 6, height: 6, borderRadius: 3, marginRight: 8, backgroundColor: c.failure ? u.c.statusDanger : u.c.statusWarning }} />}
-        {/* TODO(stage 2): the Hoja menu ("Hoja 3 of 7 ▾") goes here. */}
+        {!!doc && <><View style={{ width: 1, height: 20, marginHorizontal: 4, backgroundColor: u.c.border }} /><HojaControls copilot={copilot} shortcut={keyLabel} /></>}
       </View></View>}
       {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, right: tokens.island.inset }}><View nativeID="lienzo-top-right" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
         <IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} detail="Tools, actions, Lienzos, or ask the agent." size={36} onPress={() => { setAddOpen(false); setPaletteOpen(true); }} />
@@ -734,6 +743,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
           {reload && !(c.failure && c.offline) && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected and will get your actions as messages, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => setReload(false)} /></Banner>}
           {c.failure && c.offline && reload && <Button label="+1 notice" small variant="ghost" onPress={() => setShowAllWarnings(true)} />}
         </View>}</View>
+      {doc && !immersive && <LatestPill copilot={copilot} bottom={(u.compact ? composerHeight + 72 : toolbarBottom + F.toolbar.height + 12)} label={c.view?.latestAgent?.label} />}
+      {doc && !u.compact && <HojaMenu copilot={copilot} left={tokens.island.inset} top={tokens.island.inset + F.top.height + 6} maxHeight={Math.max(200, panelHeight - 220)} />}
       {libraryOpen && !immersive && <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: 8 + composerHeight + 60, alignItems: 'center' } : { position: 'absolute', bottom: toolbarBottom + F.toolbar.height + 8, left: 0, right: 0, alignItems: 'center' }}>
         <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} />
       </View>}

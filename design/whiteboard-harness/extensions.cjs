@@ -31,16 +31,16 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await wait('!!document.querySelector("#lienzo-entity-c2")');await pause(800);const rev0=await ev('__panelQA.doc().revision');
  // 1. No views: the shipped example view is not offered anywhere; the catalog lists extension tools only.
  await click('#lienzo-tool-add');await wait('!!document.querySelector("#lienzo-add-menu")');const listed=await ev(`document.querySelector('#lienzo-add-menu').innerText`);
- assert.ok(listed.includes('Extensions')&&listed.includes('Ejemplo · Buscar y reemplazar'),'the example tool is in the Extensions section');assert.ok(!listed.includes('Ejemplo · Mosaico'),'no extension view is offered');
+ assert.ok(listed.includes('Extensions')&&listed.includes('Example · Find and replace'),'the example tool is in the Extensions section');assert.ok(!listed.includes('Example · Mosaic'),'no extension view is offered');
  await shot('catalog');await click('[aria-label="Close the catalog"]');
  // 2. A shipped example tool edits through the same transactions as everything else, as a tab of the right panel.
  await tool('ejemplos.reemplazar');await wait(`!!document.querySelector('[id="lienzo-extension-ejemplos.reemplazar"] iframe')`);await pause(700);
  const t=await frame('ejemplos.reemplazar');await tap(t.x+t.w/2,t.y+44);await call('Input.insertText',{text:'Ejemplo'});await tap(t.x+t.w/2,t.y+100);await call('Input.insertText',{text:'Caso'});await pause(300);await shot('tool');
  const logged=await ev('__panelQA.log.length');let done=false;for(const dy of [164,150,178,136,192]){await tap(t.x+t.w/2,t.y+dy);await pause(500);if(await ev('__panelQA.log.length')>logged){done=true;break;}}
  assert.ok(done,'the tool wrote one transaction');const titles=await ev('__panelQA.doc().blocks.map(b=>b.title).join("|")');assert.ok(titles.includes('Caso a0')&&!titles.includes('Ejemplo a0'),titles);
- const entry=await ev('JSON.stringify(__panelQA.log.at(-1))');assert.ok(entry.includes('Ejemplo · Buscar y reemplazar: ')&&entry.includes('block.update'),entry.slice(0,300));await pause(500);await shot('tool-done');
+ const entry=await ev('JSON.stringify(__panelQA.log.at(-1))');assert.ok(entry.includes('Example · Find and replace: ')&&entry.includes('block.update'),entry.slice(0,300));await pause(500);await shot('tool-done');
  await click('#lienzo-document-island [aria-label="Menu"]');await click('#lienzo-interactive-menu [aria-label="Undo"]');await pause(500);await click('[aria-label="Close the menu"]');assert.ok((await ev('__panelQA.doc().blocks.map(b=>b.title).join("|")')).includes('Ejemplo a0'),'what a tool did can be undone');
- await click('[aria-label="Close Ejemplo · Buscar y reemplazar"]');
+ await click('[aria-label="Close Example · Find and replace"]');
  // 3. One the assistant has just saved is there the next time the menu opens, and its request is a real canvas action.
  const big=inner=>'<button style="position:fixed;inset:0;width:100%;height:100%;font:16px system-ui" onclick="'+inner+'">Probar</button>';
  await ev('__panelQA.addExtension('+JSON.stringify({id:'qa-pedir',kind:'tool',api:1,name:'QA · Pedir',permissions:['agent'],html:big("lienzo.ask('hecho',{n:1},'Pedido de prueba')")})+')');
