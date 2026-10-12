@@ -145,17 +145,17 @@ test('real component shows bounded compile/link code while retaining controls an
     const h = harness(), p = fakeGL(); p.settings[failure] = false; p.settings.log = 'ERROR: 0:3: invalid token\n/home/private/file ' + 'é'.repeat(3000);
     const a = adapter(h, p);
     try {
-      const node = a.render(); assert.match(text(node), /No se pudo compilar el shader/); assert.match(text(node), /ERROR: 0:3/); assert.ok(!text(node).includes('/home/private'));
+      const node = a.render(); assert.match(text(node), /The shader did not compile/); assert.match(text(node), /ERROR: 0:3/); assert.ok(!text(node).includes('/home/private'));
       const diagnostic = all(node).find(n => n.type === 'Txt' && n.props.kind === 'code' && String(n.props.children).startsWith('ERROR:'))!;
       assert.ok(Buffer.byteLength(diagnostic.props.children, 'utf8') <= 1024);
-      assert.ok(find(node, WebRange)); assert.equal(button(node, 'Reiniciar').props.disabled, false);
+      assert.ok(find(node, WebRange)); assert.equal(button(node, 'Reset').props.disabled, false);
       find(node, WebRange).props.onChange(8); assert.equal(h.props.runtime.state.values && (h.props.runtime.state.values as any).frequency, 8);
-      button(a.render(), 'Reiniciar').props.onPress(); assert.equal(h.writes.at(-1), null);
+      button(a.render(), 'Reset').props.onPress(); assert.equal(h.writes.at(-1), null);
       a.show(true); a.frame(); assert.equal(p.settings.draws, 0);
     } finally { a.close(); }
     p.assertFreed();
   }
-  assert.equal(boundedShaderMessage(''), 'El compilador no proporcionó más detalles.');
+  assert.equal(boundedShaderMessage(''), 'The compiler gave no more detail.');
 });
 
 test('actual WebRange pointer/input frames draw local values immediately and release settles only final explored range', async () => {
@@ -166,7 +166,7 @@ test('actual WebRange pointer/input frames draw local values immediately and rel
     for (const value of [7, 2, 9]) { input.props.onInput({ currentTarget: { value: String(value) } }); node = a.render(); a.frame(20); assert.deepEqual(p.uniforms.frequency, [value]); assert.equal(h.events.length, 0); }
     input.props.onPointerUp({ currentTarget: { value: '6' } }); await Promise.resolve();
     assert.deepEqual(h.events[0].slice(0, 2), ['glsl-shader.uniform.frequency', { name: 'frequency', value: 6, visited: [2, 9] }]);
-    button(a.render(), 'Reiniciar').props.onPress(); a.render(); a.frame(); assert.deepEqual(p.uniforms.frequency, [4]); assert.equal(h.events.at(-1)![0], 'glsl-shader.reset');
+    button(a.render(), 'Reset').props.onPress(); a.render(); a.frame(); assert.deepEqual(p.uniforms.frequency, [4]); assert.equal(h.events.at(-1)![0], 'glsl-shader.reset');
     for (const payload of [...h.writes.filter(Boolean), ...h.events.map(e => e[1])]) assert.ok(Buffer.byteLength(JSON.stringify(payload), 'utf8') < 4096);
   } finally { a.close(); }
   p.assertFreed();
@@ -189,7 +189,7 @@ test('real scope store binds before transport acknowledgement, including sibling
       for (const value of [20, 2, 18]) { find(sibling, WebRange).props.onChange(value); h.props.scope = scopeFor('shader'); a.render(); a.frame(); assert.deepEqual(p.uniforms.frequency, [value]); assert.equal(requests, 0); }
       void store.flush(); assert.equal(requests, 1);
       shaderControl.props.onChange(22); h.props.scope = scopeFor('shader'); a.render(); a.frame(); assert.deepEqual(p.uniforms.frequency, [22]); assert.equal(h.events.length, 0);
-      button(a.render(), 'Reiniciar').props.onPress(); assert.equal(store.getSnapshot().scopes[scopeId].frequency, 22); assert.equal(h.scopeWrites.length, 0);
+      button(a.render(), 'Reset').props.onPress(); assert.equal(store.getSnapshot().scopes[scopeId].frequency, 22); assert.equal(h.scopeWrites.length, 0);
       shaderControl.props.onSettle(23); assert.equal(h.events.at(-1)![1].value, 23); assert.equal(h.events.at(-1)![1].scopeId, scopeId);
     } finally { a.close(); store.reset(); }
     p.assertFreed();
@@ -200,12 +200,12 @@ test('time starts only by play gesture, pauses offscreen/tab/unmount and never s
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p);
   try {
     a.show(true); a.render(); a.frame(1000); a.render(); a.frame(2000); assert.deepEqual(p.uniforms.u_time, [0]); assert.equal(h.events.length, 0);
-    button(a.render(), 'Reproducir').props.onPress(); a.render(); a.frame(3000); a.frame(3100); a.frame(3200); assert.deepEqual(p.uniforms.u_time, [.2]); assert.equal(h.writes.length, 0); assert.equal(h.events.length, 0);
+    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(3000); a.frame(3100); a.frame(3200); assert.deepEqual(p.uniforms.u_time, [.2]); assert.equal(h.writes.length, 0); assert.equal(h.events.length, 0);
     a.show(false); assert.equal(h.events.length, 1); assert.equal(h.events[0][1].time, .2); assert.deepEqual(h.events[0][1].visited, [0, .2]); assert.equal(a.frames.size, 0);
     a.show(true); a.render(); a.frame(10000); assert.deepEqual(p.uniforms.u_time, [.2]); assert.equal(find(a.render(), GLSurface).props.animated, false);
-    button(a.render(), 'Reproducir').props.onPress(); a.render(); a.frame(11000); a.frame(11100); a.hideTab(true); assert.equal(h.events.length, 2);
+    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(11000); a.frame(11100); a.hideTab(true); assert.equal(h.events.length, 2);
     a.hideTab(false); a.render(); a.frame(20000); assert.ok(Math.abs(p.uniforms.u_time[0] - .3) < 1e-9);
-    button(a.render(), 'Reproducir').props.onPress(); a.render(); a.frame(21000); a.frame(21100);
+    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(21000); a.frame(21100);
   } finally { a.close(); }
   assert.equal(h.events.length, 3); assert.equal(h.events.at(-1)![0], 'glsl-shader.pause'); p.assertFreed();
 });
@@ -213,7 +213,7 @@ test('time starts only by play gesture, pauses offscreen/tab/unmount and never s
 test('visibility cleanup plus core dispose, context restoration, recompilation and unmount free each resource once', () => {
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p);
   try {
-    a.show(true); a.render(); a.frame(); button(a.render(), 'Reproducir').props.onPress(); a.render(); a.frame(100); a.frame(200);
+    a.show(true); a.render(); a.frame(); button(a.render(), 'Play').props.onPress(); a.render(); a.frame(100); a.frame(200);
     a.lost(); assert.equal(a.frames.size, 0); assert.equal(h.events.length, 1); p.assertFreed();
     a.restored(); a.render(); a.frame(300); assert.equal(find(a.render(), GLSurface).props.animated, false); assert.deepEqual(p.uniforms.u_time, [.1]);
     const initializer = find(a.render(), GLSurface).props.initialize, losses = p.settings.lost, programs = p.created.program.length;
@@ -234,24 +234,24 @@ test('physical resolution honors default 512 and explicit 1024, even under DPR 3
 
 test('no WebGL and native fallback are honest, controls/reset remain visible and readOnly callbacks cannot write', () => {
   const h = harness(), p = fakeGL(), a = adapter(h, p, false);
-  try { const node = a.render(); assert.match(text(node), /WebGL no está disponible/); assert.match(text(node), /Referencia estática/); assert.ok(find(node, WebRange)); assert.ok(button(node, 'Reiniciar')); assert.equal(p.created.program.length, 0); } finally { a.close(); }
+  try { const node = a.render(); assert.match(text(node), /WebGL is not available/); assert.match(text(node), /Static reference/); assert.ok(find(node, WebRange)); assert.ok(button(node, 'Reset')); assert.equal(p.created.program.length, 0); } finally { a.close(); }
   const frozen = harness(timed(), true), node = frozen.render();
   for (const control of all(node).filter(n => n.type === Button)) { assert.equal(control.props.disabled, true); control.props.onPress(); }
   const range = find(node, WebRange); assert.equal(range.props.disabled, true); range.props.onChange(10); range.props.onSettle(10); assert.equal(frozen.writes.length, 0); assert.equal(frozen.events.length, 0); frozen.close();
-  const native = harness(base(), false, 'ios'), fallback = native.render(); assert.match(text(fallback), /Estático/); assert.ok(find(fallback, NativeLearningFallback)); assert.equal(find(fallback, GLSurface), undefined); assert.equal(button(fallback, 'Reiniciar').props.disabled, true);
-  button(fallback, 'Reiniciar').props.onPress(); assert.equal(native.writes.length, 0); native.close(); Platform.OS = 'web';
+  const native = harness(base(), false, 'ios'), fallback = native.render(); assert.match(text(fallback), /Static/); assert.ok(find(fallback, NativeLearningFallback)); assert.equal(find(fallback, GLSurface), undefined); assert.equal(button(fallback, 'Reset').props.disabled, true);
+  button(fallback, 'Reset').props.onPress(); assert.equal(native.writes.length, 0); native.close(); Platform.OS = 'web';
 });
 
 test('reset returns locals and time to defaults, preserves authored data, and hints do not pretend to solve', async () => {
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p), authored = JSON.stringify(h.props.data);
   try {
     a.show(true); a.render(); a.frame(); find(a.render(), WebRange).props.onChange(10); a.render(); a.frame();
-    button(a.render(), 'Reproducir').props.onPress(); a.render(); a.frame(100); a.frame(200);
-    button(a.render(), 'Reiniciar').props.onPress(); a.render(); a.frame(300); assert.deepEqual(p.uniforms.frequency, [4]); assert.deepEqual(p.uniforms.u_time, [0]); assert.equal(find(a.render(), GLSurface).props.animated, false);
+    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(100); a.frame(200);
+    button(a.render(), 'Reset').props.onPress(); a.render(); a.frame(300); assert.deepEqual(p.uniforms.frequency, [4]); assert.deepEqual(p.uniforms.u_time, [0]); assert.equal(find(a.render(), GLSurface).props.animated, false);
     assert.deepEqual(h.events.map(e => e[0]), ['glsl-shader.reset']); assert.equal(JSON.stringify(h.props.data), authored);
-    button(a.render(), 'Pedir una pista').props.onPress(); assert.match(h.events.at(-1)![1].request, /sin revelar la solución/);
+    button(a.render(), 'Ask for a hint').props.onPress(); assert.match(h.events.at(-1)![1].request, /without giving the answer away/);
     h.props.runtime.settle = async () => { throw new Error('/private/transport/path'); };
-    find(a.render(), WebRange).props.onSettle(6); await Promise.resolve(); await Promise.resolve(); assert.match(text(a.render()), /No se pudo guardar el ajuste/); assert.ok(!text(a.render()).includes('/private'));
+    find(a.render(), WebRange).props.onSettle(6); await Promise.resolve(); await Promise.resolve(); assert.match(text(a.render()), /The setting could not be saved/); assert.ok(!text(a.render()).includes('/private'));
   } finally { a.close(); }
   p.assertFreed();
 });
@@ -259,12 +259,12 @@ test('reset returns locals and time to defaults, preserves authored data, and hi
 test('reset recovers a transient draw failure and never leaves playback running after a failed frame', () => {
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p);
   try {
-    a.show(true); a.render(); a.frame(); button(a.render(), 'Reproducir').props.onPress(); a.render();
+    a.show(true); a.render(); a.frame(); button(a.render(), 'Play').props.onPress(); a.render();
     const working = p.gl.drawArrays; p.gl.drawArrays = () => { throw new Error('/private/GPU/path'); };
-    a.frame(100); assert.match(text(a.render()), /No se pudo dibujar el shader/); assert.ok(!text(a.render()).includes('/private'));
+    a.frame(100); assert.match(text(a.render()), /The shader could not be drawn/); assert.ok(!text(a.render()).includes('/private'));
     assert.equal(find(a.render(), GLSurface).props.animated, false); p.assertFreed();
-    p.gl.drawArrays = working; button(a.render(), 'Reiniciar').props.onPress(); a.render(); a.show(true); a.frame(200);
-    assert.ok(!text(a.render()).includes('No se pudo dibujar')); assert.ok(p.settings.draws > 1); assert.deepEqual(p.uniforms.u_time, [0]);
+    p.gl.drawArrays = working; button(a.render(), 'Reset').props.onPress(); a.render(); a.show(true); a.frame(200);
+    assert.ok(!text(a.render()).includes('could not be drawn')); assert.ok(p.settings.draws > 1); assert.deepEqual(p.uniforms.u_time, [0]);
   } finally { a.close(); }
   p.assertFreed();
 });
@@ -272,12 +272,12 @@ test('reset recovers a transient draw failure and never leaves playback running 
 test('play is rejected offscreen, manual pause settles once, and readOnly transition stops existing playback', () => {
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p);
   try {
-    button(a.render(), 'Reproducir').props.onPress(); assert.equal(find(a.render(), GLSurface).props.animated, false);
-    a.show(true); a.frame(0); button(a.render(), 'Reproducir').props.onPress(); a.render(); a.frame(100); a.frame(200);
-    button(a.render(), 'Pausar').props.onPress(); assert.equal(h.events.length, 1); assert.equal(h.events[0][1].reason, 'pausa del usuario');
+    button(a.render(), 'Play').props.onPress(); assert.equal(find(a.render(), GLSurface).props.animated, false);
+    a.show(true); a.frame(0); button(a.render(), 'Play').props.onPress(); a.render(); a.frame(100); a.frame(200);
+    button(a.render(), 'Pause').props.onPress(); assert.equal(h.events.length, 1); assert.equal(h.events[0][1].reason, 'paused by the person');
     a.render(); a.frame(10000); assert.deepEqual(p.uniforms.u_time, [.1]);
-    button(a.render(), 'Reproducir').props.onPress(); a.render(); a.frame(10100); a.frame(10200); h.props.readOnly = true; a.render();
-    assert.equal(h.events.length, 2); assert.equal(h.events[1][1].reason, 'solo lectura'); assert.equal(find(a.render(), GLSurface).props.animated, false);
+    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(10100); a.frame(10200); h.props.readOnly = true; a.render();
+    assert.equal(h.events.length, 2); assert.equal(h.events[1][1].reason, 'read only'); assert.equal(find(a.render(), GLSurface).props.animated, false);
   } finally { a.close(); }
   p.assertFreed();
 });

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, Text, View, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon, Modal as HostModal, ScrollView, TextInput, copyText, useToast } from '@getpaseo/plugin/client/react-native';
 import type { PluginHostProps } from '@getpaseo/plugin/client';
@@ -8,15 +8,15 @@ import { downloadJson, useKeyboardFocus } from './web';
 import { usePressScale, useReducedMotion } from './motion';
 import { useContentSelectionAllowed } from './interaction';
 const errorMessages = {
-  REVISION_CONFLICT: 'El lienzo cambió. Vuelve a intentar el cambio sobre la versión actual.',
-  NOT_FOUND: 'Ese contenido ya no está disponible. Vuelve a abrir el lienzo.',
-  VALIDATION: 'Revisa los datos e intenta de nuevo.',
-  INVARIANT: 'El cambio no se puede aplicar. Revisa los elementos seleccionados.',
-  UNKNOWN_TYPE: 'Falta un tipo de bloque. Importa la colección que lo incluye.',
-  UNDO_BLOCKED: 'Hay cambios posteriores que dependen de este. Revisa el historial.',
-  FORBIDDEN: 'No tienes acceso a ese contenido en este espacio.',
-  TOO_LARGE: 'El contenido supera el límite permitido. Reduce su tamaño e intenta de nuevo.',
-  UNAVAILABLE: 'Paseo no está disponible. Vuelve a intentar en un momento.',
+  REVISION_CONFLICT: 'The Lienzo changed. Try the change again on the current version.',
+  NOT_FOUND: 'That is no longer available. Open the Lienzo again.',
+  VALIDATION: 'Check the data and try again.',
+  INVARIANT: 'That change cannot be applied. Check what is selected.',
+  UNKNOWN_TYPE: 'A block type is missing. Import the collection that has it.',
+  UNDO_BLOCKED: 'Later changes depend on this one. Check the history.',
+  FORBIDDEN: 'You have no access to that in this workspace.',
+  TOO_LARGE: 'That is over the size limit. Make it smaller and try again.',
+  UNAVAILABLE: 'Paseo is not available. Try again in a moment.',
 } as const;
 export function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -24,12 +24,12 @@ export function friendlyError(error: unknown): string {
   if (code) return errorMessages[code];
   if (Object.values(errorMessages).some(value => value === message)) return message;
   if (/revision conflict|latest revision|Expected revision|selection version/i.test(message)) return errorMessages.REVISION_CONFLICT;
-  if (error instanceof SyntaxError || /ZodError|Invalid input|invalid_type|invalid_format/.test(message)) return 'Revisa el formato del JSON y los datos obligatorios.';
+  if (error instanceof SyntaxError || /ZodError|Invalid input|invalid_type|invalid_format/.test(message)) return 'Check the JSON format and the required fields.';
   // Only client-authored validation messages may pass through unchanged.
-  const local = ['JSON no válido', 'Número no válido', 'Máximo 200 caracteres.', 'El cambio no se aplicó.', 'El archivo supera 1 MB.', 'El bloque cambió. Vuelve a seleccionarlo.', 'El documento cambió antes de completar la acción.', 'Escribe un título de hasta 300 caracteres.', 'No se guardó el formulario.', 'La capa alcanzó su límite de tamaño. Se conserva el dibujo anterior.'];
+  const local = ['Invalid JSON', 'Invalid number', 'Up to 200 characters.', 'The change was not applied.', 'The file is larger than 1 MB.', 'The block changed. Select it again.', 'The Lienzo changed before the action finished.', 'Write a title of up to 300 characters.', 'The form was not saved.', 'The layer reached its size limit. The previous drawing is kept.', 'Not reset: the document or the selection changed.', 'Not reset: open the Marco and wait for the block to appear.'];
   if (local.includes(message)) return message;
-  if (/network|fetch|connection|offline|socket|timeout/i.test(message)) return 'No se pudo conectar con Paseo. Reintenta en un momento.';
-  return 'No se pudo completar la acción. Vuelve a intentarlo.';
+  if (/network|fetch|connection|offline|socket|timeout/i.test(message)) return 'Could not reach Paseo. Try again in a moment.';
+  return 'That did not work. Try again.';
 }
 type Font = keyof typeof tokens.font.style;
 const Context = createContext<PluginHostProps | null>(null);
@@ -70,6 +70,86 @@ export function Button({ label, icon, onPress, disabled = false, variant = 'seco
     {icon && <Icon name={icon} size={14} color={color} />}<Txt kind={small ? 'small' : 'button'} style={{ color, fontWeight: '600' }}>{label}</Txt>
   </Pressable>;
 }
+/**
+ * Tooltips (docs/redesign-2026-10.md, "Tooltips"). One layer per panel draws them above everything, so a control
+ * never clips its own label. Name first, then the shortcut in muted monospace. They appear after 500 ms; once one
+ * has shown, the next appears at once for 800 ms. They sit away from the nearest panel edge and never cover the
+ * control. On touch, a long press shows one.
+ */
+export type TooltipContent = { label: string; shortcut?: string; detail?: string };
+type Measurable = { measureInWindow?(callback: (x: number, y: number, width: number, height: number) => void): void };
+type TipRect = { x: number; y: number; width: number; height: number };
+type TipState = (TooltipContent & { rect: TipRect; root: { width: number; height: number }; key: number }) | null;
+type TipStore = { get(): TipState; subscribe(listener: () => void): () => void; enter(content: TooltipContent, target: unknown): void; leave(): void; touch(content: TooltipContent, target: unknown): void; dismiss(): void };
+const T = tokens.tooltip;
+function createTipStore(root: React.RefObject<View | null>): TipStore {
+  let state: TipState = null, timer: ReturnType<typeof setTimeout> | undefined, warmUntil = 0, serial = 0;
+  const listeners = new Set<() => void>(), emit = () => listeners.forEach(l => l());
+  const clear = () => { if (timer) clearTimeout(timer); timer = undefined; };
+  const show = (content: TooltipContent, target: unknown, ttl?: number) => {
+    const node = target as Measurable | null, frame = root.current as unknown as Measurable | null, id = ++serial;
+    if (!node?.measureInWindow || !frame?.measureInWindow) return;
+    frame.measureInWindow((rx, ry, rw, rh) => node.measureInWindow!((x, y, width, height) => {
+      if (id !== serial || !width || !height) return;
+      state = { ...content, rect: { x: x - rx, y: y - ry, width, height }, root: { width: rw, height: rh }, key: id }; emit();
+      if (ttl) { clear(); timer = setTimeout(() => { state = null; warmUntil = Date.now() + T.warmMs; emit(); }, ttl); }
+    }));
+  };
+  return {
+    get: () => state,
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    enter: (content, target) => { clear(); if (state || Date.now() < warmUntil) show(content, target); else { const id = serial; timer = setTimeout(() => { if (id === serial) show(content, target); }, T.delayMs); } },
+    leave: () => { clear(); serial++; if (state) { state = null; warmUntil = Date.now() + T.warmMs; emit(); } },
+    touch: (content, target) => { clear(); show(content, target, 1600); },
+    dismiss: () => { clear(); serial++; if (state) { state = null; emit(); } },
+  };
+}
+const TooltipContext = createContext<TipStore | null>(null);
+/** Wrap the panel's root once. `root` is the view the tooltips are positioned in. */
+export function TooltipProvider({ root, children }: { root: React.RefObject<View | null>; children: React.ReactNode }) {
+  const store = useRef<TipStore | null>(null); store.current ??= createTipStore(root);
+  return <TooltipContext.Provider value={store.current}>{children}</TooltipContext.Provider>;
+}
+/** Handlers for a Pressable that should show a tooltip: spread them on it and attach `ref`. */
+export function useTooltip(content: TooltipContent | null) {
+  const store = useContext(TooltipContext), ref = useRef<View | null>(null), latest = useRef(content); latest.current = content;
+  useEffect(() => () => { store?.leave(); }, [store]);
+  return useMemo(() => ({
+    ref,
+    onHoverIn: () => { if (latest.current) store?.enter(latest.current, ref.current); },
+    onHoverOut: () => store?.leave(),
+    onPressIn: () => store?.dismiss(),
+    onLongPress: () => { if (latest.current) store?.touch(latest.current, ref.current); },
+  }), [store]);
+}
+/** The shared tooltip for any icon-only control that is not an IconButton. Wraps one control. */
+export function Tooltip({ label, shortcut, detail, children, style }: TooltipContent & { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  const tip = useTooltip({ label, shortcut, detail }), press = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const touch = (e: { nativeEvent?: { pointerType?: string } }) => e.nativeEvent?.pointerType === 'touch';
+  return <View ref={tip.ref} collapsable={false} style={style}
+    onPointerEnter={e => { if (!touch(e)) tip.onHoverIn(); }} onPointerLeave={e => { if (!touch(e)) tip.onHoverOut(); }}
+    onPointerDown={e => { if (touch(e)) { clearTimeout(press.current); press.current = setTimeout(tip.onLongPress, 500); } else tip.onPressIn(); }}
+    onPointerUp={() => clearTimeout(press.current)} onPointerCancel={() => clearTimeout(press.current)}>{children}</View>;
+}
+/** Draws the current tooltip. Render it last inside the provider's root view. */
+export function TooltipLayer() {
+  const store = useContext(TooltipContext), u = useUI(), [tip, setTip] = useState<TipState>(null), [size, setSize] = useState<{ key: number; width: number; height: number } | null>(null);
+  useEffect(() => store?.subscribe(() => setTip(store.get())), [store]);
+  if (!tip) return null;
+  const { rect, root } = tip, gap = T.offset, measured = size?.key === tip.key ? size : null, w = measured?.width ?? 0, h = measured?.height ?? 0;
+  // Away from the nearest edge: a control at the bottom gets its label above, one at the right edge to its left.
+  const edges = { top: rect.y, bottom: root.height - rect.y - rect.height, left: rect.x, right: root.width - rect.x - rect.width };
+  const nearest = (Object.keys(edges) as (keyof typeof edges)[]).sort((a, b) => edges[a] - edges[b])[0];
+  const clampX = (x: number) => Math.max(4, Math.min(root.width - w - 4, x)), clampY = (y: number) => Math.max(4, Math.min(root.height - h - 4, y));
+  const cx = rect.x + rect.width / 2 - w / 2, cy = rect.y + rect.height / 2 - h / 2;
+  const at = nearest === 'bottom' ? { left: clampX(cx), top: rect.y - gap - h } : nearest === 'top' ? { left: clampX(cx), top: rect.y + rect.height + gap }
+    : nearest === 'right' ? { left: rect.x - gap - w, top: clampY(cy) } : { left: rect.x + rect.width + gap, top: clampY(cy) };
+  return <View pointerEvents="none" nativeID="lienzo-tooltip" accessibilityRole="none" onLayout={e => { const { width, height } = e.nativeEvent.layout; if (size?.key !== tip.key || size.width !== width || size.height !== height) setSize({ key: tip.key, width, height }); }}
+    style={{ position: 'absolute', ...at, zIndex: 300, maxWidth: T.maxWidth, opacity: measured ? 1 : 0, backgroundColor: u.c.foreground, borderRadius: T.radius, paddingHorizontal: T.paddingH, paddingVertical: T.paddingV, gap: 2 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: T.key.gap }}><Txt kind="small" style={{ color: u.c.surface1, fontWeight: '600', flexShrink: 1 }}>{tip.label}</Txt>{!!tip.shortcut && <Txt kind="keys" style={{ color: withAlpha(u.c.surface1, T.key.alpha) }}>{tip.shortcut}</Txt>}</View>
+    {!!tip.detail && <Txt kind="small" style={{ color: withAlpha(u.c.surface1, .82) }}>{tip.detail}</Txt>}
+  </View>;
+}
 /** One action of a menu: icon, name, and an optional shortcut or state on the right. Rows share one left edge. */
 export function MenuRow({ icon, label, hint, trailing, onPress, disabled = false, danger = false }: { icon: string; label: string; hint?: string; trailing?: React.ReactNode; onPress: () => void; disabled?: boolean; danger?: boolean }) {
   const u = useUI(), color = danger ? u.c.statusDanger : u.c.foreground;
@@ -79,10 +159,11 @@ export function MenuRow({ icon, label, hint, trailing, onPress, disabled = false
   </Pressable>;
 }
 export function MenuDivider() { const u = useUI(); return <View style={{ height: 1, marginVertical: 4, marginHorizontal: 10, backgroundColor: u.c.border }} />; }
-export function IconButton({ icon, label, onPress, active, disabled }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
+export function IconButton({ icon, label, onPress, active, disabled, shortcut, detail, tooltip = true, size }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean; shortcut?: string; detail?: string; tooltip?: boolean; size?: number }) {
   const u = useUI(), [focused, setFocus] = useState(false), [hovered, setHovered] = useState(false), [pressed, setPressed] = useState(false), keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), focus = focused && keyboardFocus, feedback = usePressScale();
+  const tip = useTooltip(tooltip ? { label, shortcut, detail } : null), box = u.compact ? 44 : size ?? 32;
   // The hit area stays put; the visual inside it scales on press (tokens.motion.press).
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled, selected: !!active }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }} onPressIn={() => { setPressed(true); feedback.press(true); }} onPressOut={() => { setPressed(false); feedback.press(false); }} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} hitSlop={6} style={{ width: u.compact ? 44 : 32, height: u.compact ? 44 : 32, opacity: disabled ? .45 : 1 }}>
+  return <Pressable ref={tip.ref} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={detail} accessibilityState={{ disabled: !!disabled, selected: !!active }} disabled={disabled} onPress={e => { e.stopPropagation(); onPress(); }} onLongPress={u.compact && tooltip ? tip.onLongPress : undefined} onPressIn={() => { tip.onPressIn(); setPressed(true); feedback.press(true); }} onPressOut={() => { setPressed(false); feedback.press(false); }} onHoverIn={() => { setHovered(true); tip.onHoverIn(); }} onHoverOut={() => { setHovered(false); tip.onHoverOut(); }} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} hitSlop={6} style={{ width: box, height: box, opacity: disabled ? .45 : 1 }}>
     <Animated.View style={{ flex: 1, borderRadius: 6, borderWidth: focus ? 2 : 0, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : active ? u.c.surface2 : hovered && !disabled ? withAlpha(u.c.foreground, .06) : 'transparent', transform: [{ scale: feedback.scale }] }}><Icon name={icon} size={16} color={active ? u.c.foreground : u.c.foregroundMuted} /></Animated.View>
   </Pressable>;
 }
@@ -104,12 +185,12 @@ export function Field({ label, value, onSave, multiline, mono, disabled, helper,
   const commit = async () => {
     if (!dirty || draft === value || saving.current || disabled) return;
     saving.current = true; const submitted = draftRef.current; setPending(true); setError('');
-    try { const result = await saveRef.current(submitted); if (result === undefined || result === false) throw new Error('El cambio no se aplicó.'); if (draftRef.current === submitted) setDirty(false); }
+    try { const result = await saveRef.current(submitted); if (result === undefined || result === false) throw new Error('The change was not applied.'); if (draftRef.current === submitted) setDirty(false); }
     catch (e) { setError(friendlyError(e)); }
     finally { saving.current = false; setPending(false); }
   };
   React.useEffect(() => { if (!dirty || error || pending) return; const timer = setTimeout(() => { void commit(); }, 600); return () => clearTimeout(timer); }, [draft, dirty, disabled, pending]);
-  return <View style={{ gap: 4 }}>{!hideLabel && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Txt kind="small" style={{ fontWeight: '600' }}>{label}{required ? ' *' : ''}</Txt>{pending && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: u.c.statusWarning }} />}</View>}<Input style={inputStyle} label={label} placeholder={placeholder} value={draft} onChange={s => { setDraft(s); draftRef.current = s; onDraft?.(s); setDirty(true); setError(''); }} readOnly={disabled} multiline={multiline} mono={mono} onBlur={() => { void commit(); }} />{counterMax && <Txt kind="small" muted>{draft.length}/{counterMax}</Txt>}{error ? <View style={{ gap: 4 }}><Txt kind="small" style={{ color: u.c.statusDanger }}>No se guardó · {error}</Txt><Button label="Reintentar" small variant="ghost" onPress={() => { void commit(); }} /></View> : helper ? <Txt kind="small" muted>{helper}</Txt> : null}</View>;
+  return <View style={{ gap: 4 }}>{!hideLabel && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Txt kind="small" style={{ fontWeight: '600' }}>{label}{required ? ' *' : ''}</Txt>{pending && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: u.c.statusWarning }} />}</View>}<Input style={inputStyle} label={label} placeholder={placeholder} value={draft} onChange={s => { setDraft(s); draftRef.current = s; onDraft?.(s); setDirty(true); setError(''); }} readOnly={disabled} multiline={multiline} mono={mono} onBlur={() => { void commit(); }} />{counterMax && <Txt kind="small" muted>{draft.length}/{counterMax}</Txt>}{error ? <View style={{ gap: 4 }}><Txt kind="small" style={{ color: u.c.statusDanger }}>Not saved · {error}</Txt><Button label="Retry" small variant="ghost" onPress={() => { void commit(); }} /></View> : helper ? <Txt kind="small" muted>{helper}</Txt> : null}</View>;
 }
 export function CheckRow({ label, checked, onPress, disabled, tone = 'acento', strike }: { label: string; checked: boolean; onPress: () => void; disabled?: boolean; tone?: Tone; strike?: boolean }) {
   const u = useUI(); return <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked, disabled: !!disabled }} onPress={e => { e.stopPropagation(); onPress(); }} disabled={disabled} style={({ pressed, ...state }) => ({ minHeight: u.compact ? 44 : 28, flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: u.compact ? 11 : 5, paddingHorizontal: 6, marginHorizontal: -6, borderRadius: 6, backgroundColor: pressed ? withAlpha(u.c.foreground, tokens.alpha.pressedFill) : (state as { hovered?: boolean }).hovered && !disabled ? withAlpha(u.c.foreground, tokens.alpha.hoverFill) : 'transparent', opacity: disabled ? .45 : 1 })}><View style={{ width: 16, height: 16, marginTop: 1.5, borderRadius: 4, borderWidth: 1.5, borderColor: checked ? u.tone(tone) : withAlpha(u.c.foregroundMuted, tokens.alpha.glyphRing), backgroundColor: checked ? u.tone(tone) : 'transparent', alignItems: 'center', justifyContent: 'center' }}>{checked && <Icon name="Check" size={12} color={u.c.surface1} />}</View><Txt muted={strike} style={{ flex: 1, textDecorationLine: strike ? 'line-through' : 'none' }}>{label}</Txt></Pressable>;
@@ -122,6 +203,6 @@ export function Section({ title, children, onLayout }: { title: string; children
 }
 export function JsonPreview({ value, filename = 'lienzo.json' }: { value: unknown; filename?: string }) {
   const u = useUI(), toast = useToast(), text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-  const copy = () => { void copyText(text).then(() => toast.show('Copiado al portapapeles', { variant: 'success' })).catch(() => toast.error('No se pudo copiar. Selecciona el texto y cópialo a mano.')); };
-  return <View style={{ gap: 8 }}><View style={{ backgroundColor: u.c.surface2, borderRadius: 6, padding: 10 }}><ScrollView style={{ maxHeight: 220 }}><Txt kind="code" selectable>{text}</Txt></ScrollView></View><Txt kind="label" muted>{(encodeURIComponent(text).replace(/%[A-F\d]{2}|./gi, 'x').length / 1024).toFixed(1).replace('.', ',')} KB</Txt>{u.layout.platform === 'web' && <Button label="Descargar JSON" variant="primary" icon="Download" onPress={() => { if (!downloadJson(value, filename)) copy(); }} />}<Button label={u.layout.platform === 'web' ? 'Copiar' : 'Copiar JSON'} variant={u.layout.platform === 'web' ? 'secondary' : 'primary'} icon="Copy" onPress={copy} />{u.layout.platform !== 'web' && <Txt kind="small" muted>En el móvil no se descargan archivos: copia el JSON o selecciónalo.</Txt>}</View>;
+  const copy = () => { void copyText(text).then(() => toast.show('Copied', { variant: 'success' })).catch(() => toast.error('Could not copy. Select the text and copy it by hand.')); };
+  return <View style={{ gap: 8 }}><View style={{ backgroundColor: u.c.surface2, borderRadius: 6, padding: 10 }}><ScrollView style={{ maxHeight: 220 }}><Txt kind="code" selectable>{text}</Txt></ScrollView></View><Txt kind="label" muted>{(encodeURIComponent(text).replace(/%[A-F\d]{2}|./gi, 'x').length / 1024).toFixed(1)} KB</Txt>{u.layout.platform === 'web' && <Button label="Download JSON" variant="primary" icon="Download" onPress={() => { if (!downloadJson(value, filename)) copy(); }} />}<Button label={u.layout.platform === 'web' ? 'Copy' : 'Copy JSON'} variant={u.layout.platform === 'web' ? 'secondary' : 'primary'} icon="Copy" onPress={copy} />{u.layout.platform !== 'web' && <Txt kind="small" muted>Phones do not download files here: copy the JSON or select it.</Txt>}</View>;
 }

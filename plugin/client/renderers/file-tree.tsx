@@ -15,21 +15,21 @@ function FileTree({ data, block, ui, document, selection = [], select }: Rendere
   const [closed, setClosed] = useState(() => new Set((data.collapsed ?? []).map(path => path.replace(/\/$/, ''))));
   const visible = visibleFileTreeRows(rows, closed), row = ui.compact ? T.rowCompact : T.row;
   const toggle = (path: string) => setClosed(current => { const next = new Set(current); if (!next.delete(path)) next.add(path); return next; });
-  return <View accessibilityRole="list" accessibilityLabel={`Árbol de archivos${data.root ? ` de ${data.root}` : ''}`} style={{ marginHorizontal: -T.bleed }}>
+  return <View accessibilityRole="list" accessibilityLabel={`File tree${data.root ? ` of ${data.root}` : ''}`} style={{ marginHorizontal: -T.bleed }}>
     {!!data.root && <View style={{ minHeight: row, paddingHorizontal: T.bleed, flexDirection: 'row', alignItems: 'center', gap: T.gap }}><Icon name="FolderRoot" size={T.icon} color={ui.c.foregroundMuted} /><Txt kind="code" numberOfLines={1} style={{ fontWeight: '600', color: ui.c.foregroundMuted }}>{data.root}</Txt></View>}
     {visible.map(entry => {
       const open = entry.dir && !closed.has(entry.path), accent = ui.c.accent, foldable = entry.dir && entry.children > 0;
       const target = select ? targets.get(entry.path) : undefined, pointed = !!target && selection.includes(target), lit = entry.highlight || pointed;
       const chevron = <View style={{ width: T.chevron, alignItems: 'center' }}>{foldable && <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={T.chevron} color={ui.c.foregroundMuted} />}</View>;
       const label = `${entry.dir ? 'Carpeta' : 'Archivo'} ${entry.path}${entry.note ? `: ${entry.note}` : ''}`;
-      return <Pressable key={entry.path} nativeID={`lienzo-interactive-tree-${block.id}-${entry.path}`} accessibilityRole={target || foldable ? 'button' : undefined} accessibilityLabel={target ? `${label}. Ver su tarjeta` : label} accessibilityState={{ selected: pointed, ...(foldable ? { expanded: open } : {}) }} disabled={!target && !foldable}
+      return <Pressable key={entry.path} nativeID={`lienzo-interactive-tree-${block.id}-${entry.path}`} accessibilityRole={target || foldable ? 'button' : undefined} accessibilityLabel={target ? `${label}. Show its card` : label} accessibilityState={{ selected: pointed, ...(foldable ? { expanded: open } : {}) }} disabled={!target && !foldable}
         onPress={e => { e.stopPropagation(); if (target) select!(pointed ? [] : [target]); else toggle(entry.path); }}
         style={({ pressed, ...state }) => ({ minHeight: row, paddingHorizontal: T.bleed, flexDirection: 'row', alignItems: 'center', gap: T.gap, borderRadius: T.radius, opacity: entry.muted ? T.mutedAlpha : 1,
           backgroundColor: pointed ? withAlpha(accent, T.pointedFill) : entry.highlight ? withAlpha(accent, T.highlightFill) : pressed ? withAlpha(ui.c.foreground, .1) : (state as { hovered?: boolean }).hovered && (target || foldable) ? withAlpha(ui.c.foreground, .06) : 'transparent' })}>
         {/* One thin guide per level keeps deep entries attached to their folder. */}
         {Array.from({ length: entry.depth + (data.root ? 1 : 0) }, (_, level) => <View key={level} pointerEvents="none" style={{ width: T.indent, alignSelf: 'stretch', alignItems: 'center' }}><View style={{ width: 1, flex: 1, backgroundColor: ui.c.border }} /></View>)}
         {/* On a linked folder the row selects its card, so the chevron is the part that opens and closes it. */}
-        {target && foldable ? <Pressable accessibilityRole="button" accessibilityLabel={`${open ? 'Cerrar' : 'Abrir'} ${entry.path}`} hitSlop={8} onPress={e => { e.stopPropagation(); toggle(entry.path); }}>{chevron}</Pressable> : chevron}
+        {target && foldable ? <Pressable accessibilityRole="button" accessibilityLabel={`${open ? 'Close' : 'Open'} ${entry.path}`} hitSlop={8} onPress={e => { e.stopPropagation(); toggle(entry.path); }}>{chevron}</Pressable> : chevron}
         <Icon name={entry.dir ? open && entry.children ? 'FolderOpen' : 'Folder' : 'File'} size={T.icon} color={lit ? accent : ui.c.foregroundMuted} />
         <Txt kind="code" numberOfLines={1} style={{ flexShrink: 0, maxWidth: entry.note ? '62%' : '100%', fontWeight: entry.dir || lit ? '600' : '400', color: lit ? accent : ui.c.foreground }}>{entry.name}{entry.dir ? '/' : ''}</Txt>
         {!!entry.note && <Txt kind="small" muted numberOfLines={1} style={{ flex: 1, minWidth: 0 }}>{entry.note}</Txt>}

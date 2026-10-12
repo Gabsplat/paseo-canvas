@@ -196,7 +196,7 @@ test("node type has four optional text properties; built-in graph example explai
   await service.mutate(mutation(1, [{ type: "block.update", id: "n", patch: { data: { kind: "MODULE", status: "ready", summary: "Short", details: "Long" } } }]));
   const example = (await service.instantiatePack({ workspaceId, packId: "graph", documentIndex: 0 })).document;
   assert.equal(example.example, true);
-  assert.match(example.title, /Ejemplo.*Lienzo/);
+  assert.match(example.title, /Example.*Lienzo/);
   assert.ok(example.blocks.every(block => block.typeId === "node"));
   assert.ok(example.groups.length >= 2 && example.groups.length <= 3);
   assert.ok(example.groups.every(group => group.layout?.mode === "graph"));

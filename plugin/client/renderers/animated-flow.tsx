@@ -20,7 +20,7 @@ export function drawFlowTimeline(ctx: Canvas2DContext, frame: SurfaceFrame, data
   ctx.clearRect(0, 0, frame.width, frame.height); ctx.fillStyle = ink.surface0; ctx.fillRect(0, 0, frame.width, frame.height);
   ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(frame.width, 0); ctx.lineTo(frame.width, frame.height); ctx.lineTo(0, frame.height); ctx.closePath(); ctx.clip();
   ctx.fillStyle = ink.foreground; ctx.font = '14px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(`Tiempo: ${flowNumber(time)} ms`, left, 26);
+  ctx.fillText(`Time: ${flowNumber(time)} ms`, left, 26);
   ctx.strokeStyle = ink.border; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + width, y); ctx.stroke();
   ctx.strokeStyle = ink.foregroundMuted; ctx.lineWidth = 1;
   // At most 64 authored ticks, rather than hundreds of loop-generated marks.
@@ -29,7 +29,7 @@ export function drawFlowTimeline(ctx: Canvas2DContext, frame: SurfaceFrame, data
   ctx.font = '12px monospace'; ctx.fillStyle = ink.foregroundMuted;
   ctx.fillText('0 ms', left, y + 26); ctx.textAlign = 'right'; ctx.fillText(`${flowNumber(data.duration)} ms`, left + width, y + 26); ctx.textAlign = 'left';
   const activity = flowActivityAt(simulation, time);
-  ctx.fillText(started ? `En tránsito: ${activity.active}; llegadas: ${activity.completed}` : 'Sin empezar', left, 136);
+  ctx.fillText(started ? `In transit: ${activity.active}; arrived: ${activity.completed}` : 'Not started', left, 136);
   ctx.restore();
 }
 
@@ -48,7 +48,7 @@ function AnimatedFlow(props: RendererProps<AnimatedFlowData>) {
   const visible = useRef(true), mounted = useRef(true), scrub = useRef(false), pending = useRef<Report | null>(null);
   const [error, setError] = useState(''), [, refresh] = useState(0);
   const canChange = () => !live.current.props.readOnly && live.current.props.ui.layout.platform === 'web';
-  const fail = () => { if (mounted.current) setError('No se pudo guardar la interacción. Revisa la conexión y vuelve a intentarlo.'); };
+  const fail = () => { if (mounted.current) setError('The interaction could not be saved. Check the connection and try again.'); };
   const write = (next: FlowRuntime, settled = false, reset = false) => {
     state.current = next; armed.current = next.playing; started.current = !reset;
     live.current.props.runtime.set(reset ? null : { ...next }, settled);
@@ -67,7 +67,7 @@ function AnimatedFlow(props: RendererProps<AnimatedFlowData>) {
       write(next, true, reset);
       deliver({ kind: `animated-flow.${kind}`, payload: { playhead: next.playhead, visited: next.visited, reason,
         active: reset ? 0 : activity.active, completed: reset ? 0 : activity.completed, unresolved: live.current.simulation.issues.length, limitedBy: [...live.current.simulation.limitedBy] },
-        label: reset ? 'Reiniciar flujo' : 'Explorar el flujo',
+        label: reset ? 'Reset flow' : 'Explore the flow',
         eventId: `flow.${Date.now().toString(36)}.${(++interactionSequence).toString(36)}.${Math.random().toString(36).slice(2, 10)}` });
     } catch { fail(); }
   };
@@ -122,31 +122,31 @@ function AnimatedFlow(props: RendererProps<AnimatedFlowData>) {
   };
   const time = flowTimeAt(data, state.current, Date.now()), activity = flowActivityAt(simulation, time);
   const currentEvent = (time < simulation.horizon ? simulation.events.find(e => time >= e.t && time < e.arrival) : undefined) ?? [...simulation.events].reverse().find(e => e.arrival <= Math.min(time, simulation.horizon));
-  const eventRow = !data.events.length ? 'Añade eventos entre nodos conectados de este lienzo.' : !started.current ? 'Sin empezar. Recorre el tiempo para observar los eventos.'
-    : currentEvent ? flowEventText(currentEvent, document) : 'No hay eventos en este instante.';
+  const eventRow = !data.events.length ? 'Add events between connected nodes of this Lienzo.' : !started.current ? 'Not started. Move through time to watch the events.'
+    : currentEvent ? flowEventText(currentEvent, document) : 'No events at this moment.';
   const wasPlaying = state.current.playing;
   return <View nativeID={`lienzo-interactive-animated-flow-${block.id}`} style={{ gap: 8 }}>
     <Txt>{data.question}</Txt>
     {isWeb ? <View style={{ backgroundColor: ui.c.surface0, borderRadius: 8, borderWidth: 1, borderColor: ui.c.border, overflow: 'hidden' }}>
-      <CanvasSurface id={`animated-flow-${block.id}`} label="Tiempo y actividad del flujo" height={160} summary={eventRow}
+      <CanvasSurface id={`animated-flow-${block.id}`} label="Flow time and activity" height={160} summary={eventRow}
         animated={state.current.playing} maxPixelSize={1024} draw={draw}
         onVisibilityChange={value => { visible.current = value; if (!value) pause('hidden'); }}
-        onError={() => { pause('surface-error'); if (mounted.current) setError('No se pudo dibujar el tiempo. Usa el control de tiempo para recorrer los eventos.'); }} />
-    </View> : <View style={{ gap: 4 }}><Txt kind="label" muted>Estático</Txt><NativeLearningFallback summary={`${flowNumber(time)} ms. ${eventRow}`} /></View>}
+        onError={() => { pause('surface-error'); if (mounted.current) setError('The timeline could not be drawn. Use the time control to step through the events.'); }} />
+    </View> : <View style={{ gap: 4 }}><Txt kind="label" muted>Static</Txt><NativeLearningFallback summary={`${flowNumber(time)} ms. ${eventRow}`} /></View>}
     <View nativeID={`lienzo-interactive-animated-flow-time-${block.id}`} style={{ gap: 4 }}>
-      <Txt kind="code">Tiempo: {flowNumber(time)} de {flowNumber(data.duration)} ms</Txt>
-      {isWeb && <View style={{ minHeight: 44, justifyContent: 'center' }}><WebRange id={`animated-flow-${block.id}`} label="Tiempo del flujo en milisegundos" min={0} max={data.duration} step="any"
+      <Txt kind="code">Time: {flowNumber(time)} of {flowNumber(data.duration)} ms</Txt>
+      {isWeb && <View style={{ minHeight: 44, justifyContent: 'center' }}><WebRange id={`animated-flow-${block.id}`} label="Flow time in milliseconds" min={0} max={data.duration} step="any"
         value={time} disabled={readOnly} color={ui.c.accent} onChange={seek} onSettle={release} /></View>}
     </View>
     <Txt kind="small">{eventRow}</Txt>
-    {started.current && <Txt kind="small" muted>En tránsito: {activity.active}. Llegadas: {activity.completed}.
-      {Object.entries(activity.values).slice(0, 4).map(([id, value]) => ` ${[...document.blocks, ...document.groups].find(n => n.id === id)?.title || 'Nodo sin título'}: ${flowNumber(value)}.`).join('')}</Txt>}
+    {started.current && <Txt kind="small" muted>In transit: {activity.active}. Arrived: {activity.completed}.
+      {Object.entries(activity.values).slice(0, 4).map(([id, value]) => ` ${[...document.blocks, ...document.groups].find(n => n.id === id)?.title || 'Untitled node'}: ${flowNumber(value)}.`).join('')}</Txt>}
     {!!simulation.issues.length && <Txt kind="small" style={{ color: ui.c.statusDanger }}>{[...new Set(simulation.issues.map(issue => issue.message))].join(' ')}. Ese evento queda pausado.</Txt>}
-    {!!simulation.limitedBy.length && <Txt kind="small" muted>Simulación acotada{simulation.limitedBy.includes('events') ? ` a ${data.propagation?.maxEvents ?? 64} eventos` : ''}{simulation.limitedBy.includes('horizon') ? ` hasta ${flowNumber(simulation.horizon)} ms` : ''}. La actividad posterior no se calcula.</Txt>}
-    <Txt kind="small" muted>Los eventos recorren las conexiones del lienzo. El tiempo de llegada incluye la demora y el recorrido. Reiniciar conserva los nodos y conexiones.</Txt>
-    {reducedMotion.current && <Txt kind="small" muted>Movimiento reducido. Recorre los eventos con el control de tiempo.</Txt>}
+    {!!simulation.limitedBy.length && <Txt kind="small" muted>Simulation bounded{simulation.limitedBy.includes('events') ? ` to ${data.propagation?.maxEvents ?? 64} events` : ''}{simulation.limitedBy.includes('horizon') ? ` up to ${flowNumber(simulation.horizon)} ms` : ''}. Later activity is not computed.</Txt>}
+    <Txt kind="small" muted>Events travel along the links of the Lienzo. Arrival time includes the delay and the journey. Reset keeps the nodes and links.</Txt>
+    {reducedMotion.current && <Txt kind="small" muted>Reduced motion. Step through the events with the time control.</Txt>}
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-      <Button label={state.current.playing ? 'Pausar' : 'Reproducir'} disabled={readOnly || !isWeb || !simulation.events.length || (!state.current.playing && (time >= data.duration || reducedMotion.current))}
+      <Button label={state.current.playing ? 'Pause' : 'Play'} disabled={readOnly || !isWeb || !simulation.events.length || (!state.current.playing && (time >= data.duration || reducedMotion.current))}
         style={{ minHeight: 44 }} onPress={() => {
           if (!canChange()) return;
           if (wasPlaying) { pause('user'); return; }
@@ -155,13 +155,13 @@ function AnimatedFlow(props: RendererProps<AnimatedFlowData>) {
           scrub.current = false; setError('');
           try { write({ ...state.current, playing: true, anchorMs: Date.now() }, true); void live.current.props.runtime.flush().catch(fail); } catch { fail(); }
         }} />
-      <Button label="Reiniciar" variant="ghost" disabled={readOnly || !isWeb} style={{ minHeight: 44 }} onPress={() => {
+      <Button label="Reset" variant="ghost" disabled={readOnly || !isWeb} style={{ minHeight: 44 }} onPress={() => {
         if (!canChange()) return;
         scrub.current = false; report('reset', { playhead: 0, playing: false, anchorMs: 0, visited: [0, 0] }, 'reset', true);
       }} />
     </View>
     {!!error && <View style={{ gap: 4 }}><Txt kind="small" style={{ color: ui.c.statusDanger }}>{error}</Txt>
-      {pending.current && <Button label="Reintentar" disabled={readOnly || !isWeb} onPress={() => { if (canChange() && pending.current) deliver(pending.current); }} />}
+      {pending.current && <Button label="Retry" disabled={readOnly || !isWeb} onPress={() => { if (canChange() && pending.current) deliver(pending.current); }} />}
     </View>}
   </View>;
 }

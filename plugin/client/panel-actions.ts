@@ -7,16 +7,16 @@ export const layoutIcons = { graph: 'Workflow', stack: 'Rows3', grid: 'Grid2x2',
 export const inlineKeys = (renderer?: string): string[] => ({ note: ['text'], text: ['text'], callout: ['text'], step: ['text'], node: ['summary', 'details'], code: ['code'], checklist: ['items'], quiz: ['question', 'options'], metric: ['value', 'label'], 'image-ref': ['caption'], 'preview-frame': ['description'] }[renderer ?? ''] ?? []);
 export function dataProperties(type: BlockType | undefined, compact = false) { return type?.properties.filter(p => compact || !inlineKeys(type.renderer).includes(p.key)) ?? []; }
 export function typeSlot(type?: BlockType): { label: string; icon: string; kind: 'url' | 'language' | 'status' | 'reset' | 'data' } | undefined {
-  if (!type) return { label: 'Datos', icon: 'SlidersHorizontal', kind: 'data' };
-  if (['preview-frame', 'image-ref'].includes(type.renderer ?? '')) return { label: 'Cambiar enlace', icon: 'Link', kind: 'url' };
-  if (type.renderer === 'code') return { label: 'Lenguaje', icon: 'Code', kind: 'language' };
-  if (type.renderer === 'node') return { label: 'Estado', icon: 'CircleDot', kind: 'status' };
-  if (getRendererSpec(type.renderer)?.interactive && !type.renderer?.startsWith('wb-')) return { label: 'Reiniciar', icon: 'RotateCcw', kind: 'reset' };
-  if (dataProperties(type).length) return { label: 'Datos', icon: 'SlidersHorizontal', kind: 'data' };
+  if (!type) return { label: 'Data', icon: 'SlidersHorizontal', kind: 'data' };
+  if (['preview-frame', 'image-ref'].includes(type.renderer ?? '')) return { label: 'Change link', icon: 'Link', kind: 'url' };
+  if (type.renderer === 'code') return { label: 'Language', icon: 'Code', kind: 'language' };
+  if (type.renderer === 'node') return { label: 'Status', icon: 'CircleDot', kind: 'status' };
+  if (getRendererSpec(type.renderer)?.interactive && !type.renderer?.startsWith('wb-')) return { label: 'Reset', icon: 'RotateCcw', kind: 'reset' };
+  if (dataProperties(type).length) return { label: 'Data', icon: 'SlidersHorizontal', kind: 'data' };
 }
 export function communicationOperation(doc: CanvasDocument, id: string | null, patch: Partial<CanvasDocument['communication']>): CanvasOperation {
   const entity = id ? [...doc.blocks, ...doc.groups].find(e => e.id === id) : undefined;
-  if (id && !entity) throw new Error('El bloque cambió. Vuelve a seleccionarlo.');
+  if (id && !entity) throw new Error('The block changed. Select it again.');
   const communication = { instructions: '', intent: '', audience: '', ...(entity?.communication ?? (!id ? doc.communication : undefined)), ...patch };
   return entity ? { type: 'groupIds' in entity ? 'group.update' : 'block.update', id: entity.id, patch: { communication } } as CanvasOperation : { type: 'communication.set', communication };
 }
@@ -24,7 +24,7 @@ export function layoutOperations(doc: CanvasDocument, groupId: string | null, ne
   const group = groupId ? doc.groups.find(g => g.id === groupId) : undefined;
   if (groupId && !group) return [];
   const frozen = next.mode === 'free' && !manual(containerMode(doc, groupId, catalog)) ? freezeOperations(doc, rects, groupId) : [];
-  if (frozen.length > 199) throw new Error('El cambio supera las 200 operaciones de una transacción.');
+  if (frozen.length > 199) throw new Error('The change needs more than the 200 operations of one transaction.');
   return [...frozen, group ? { type: 'group.update', id: group.id, patch: { layout: next } } : { type: 'document.update', layout: next }];
 }
 /** Leave the parent without changing the drawn world position, including nested group frames. */
@@ -32,7 +32,7 @@ export function leaveGroupOperations(doc: CanvasDocument, ids: string[], rects: 
   const items = topSelection(doc, ids);
   if (!items.length || !items[0].parentGroupId || !items.every(e => e.parentGroupId === items[0].parentGroupId)) return [];
   const parent = doc.groups.find(g => g.id === items[0].parentGroupId), to = parent?.parentGroupId ?? null, origin = to ? rects.get(to) : undefined;
-  if (items.length > 200) throw new Error('El cambio supera las 200 operaciones de una transacción.');
+  if (items.length > 200) throw new Error('The change needs more than the 200 operations of one transaction.');
   const moving = new Set(items.map(item => item.id)), operations: CanvasOperation[] = [];
   for (const item of items) {
     const rect = rects.get(item.id); if (!rect) continue;
@@ -42,7 +42,7 @@ export function leaveGroupOperations(doc: CanvasDocument, ids: string[], rects: 
     if (card) operations.push({ type: 'block.update', id: item.id, patch: { data: { anchor: null } } });
     operations.push({ type: 'entity.move', id: item.id, parentGroupId: to, position: { x: rect.x - (origin?.x ?? 0), y: rect.y - (origin?.y ?? 0) } });
   }
-  if (operations.length > 200) throw new Error('El cambio supera las 200 operaciones de una transacción.');
+  if (operations.length > 200) throw new Error('The change needs more than the 200 operations of one transaction.');
   return operations;
 }
 export function reorderOperation(doc: CanvasDocument, id: string, direction: number): CanvasOperation[] {

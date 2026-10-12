@@ -114,7 +114,7 @@ test('callbacks pending during reset or document switch cannot restore old runti
     old.props.runtime.set(f.runtime.blocks.gate);
     old.props.scope.set('x', 7);
     release();
-    await assert.rejects(pending, /cambió/);
+    await assert.rejects(pending, /changed/);
     assert.equal(h.writes.length, 0); assert.equal(h.events.length, 0);
   }
 });

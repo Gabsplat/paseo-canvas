@@ -28,10 +28,11 @@ interface BrowserElement extends BrowserEventTarget {
   getBoundingClientRect(): { left: number; top: number; width?: number; height?: number };
   setAttribute(name: string, value: string): void;
 }
-interface BrowserKeyEvent { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; target: BrowserElement | null; preventDefault(): void; stopPropagation(): void; deltaX: number; deltaY: number; clientX: number; clientY: number }
+interface BrowserKeyEvent { key: string; code?: string; altKey?: boolean; repeat?: boolean; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; target: BrowserElement | null; preventDefault(): void; stopPropagation(): void; deltaX: number; deltaY: number; clientX: number; clientY: number }
 interface BrowserHost {
   document?: BrowserEventTarget & { hidden?: boolean; body: BrowserElement; createElement(tag: string): BrowserElement; getElementById?(id: string): BrowserElement | null };
   location?: { origin: string };
+  navigator?: { platform?: string; userAgent?: string };
   Blob: new (parts: string[], options: { type: string }) => unknown;
   URL: { createObjectURL(blob: unknown): string; revokeObjectURL(url: string): void };
 }
@@ -41,7 +42,7 @@ export function activateRendererReset(root: unknown, id: string, isCurrent: () =
   const panel = root as BrowserElement | null;
   if (!browser().document || !panel || panel.isConnected === false || !isCurrent()) return false;
   const renderer = Array.from(panel.querySelectorAll?.('[id^="lienzo-interactive-renderer-"]') ?? []).find(node => node.getAttribute?.('id') === 'lienzo-interactive-renderer-' + id);
-  const action = renderer?.querySelector('[aria-label="Reiniciar"]');
+  const action = renderer?.querySelector('[aria-label="Reset"]');
   if (!action || action.getAttribute?.('aria-disabled') === 'true' || action.getAttribute?.('disabled') != null || !isCurrent()) return false;
   action.click();
   return true;
@@ -74,7 +75,7 @@ export function WebFrame({ url, title, border, height, surface, player = false, 
   useEffect(() => { if (Platform.OS !== 'web') return; setLoaded(false); const timer = setTimeout(() => onTimeout?.(), 8000); return () => clearTimeout(timer); }, [safe]);
   if (Platform.OS !== 'web' || !safe) return null;
   return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-frame-${title}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height, width: '100%', border: bare ? 0 : `1px solid ${border}`, borderRadius: bare ? 0 : 6, overflow: 'hidden', backgroundColor: surface } },
-    React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0, pointerEvents: interacting ? 'auto' : 'none' }, 'aria-label': loaded ? title : `Cargando ${title}` }), !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
+    React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0, pointerEvents: interacting ? 'auto' : 'none' }, 'aria-label': loaded ? title : `Loading ${title}` }), !interacting && React.createElement('div', { 'aria-label': 'Double-click to interact', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 /**
  * What every mini app gets before its own code: a `lienzo` object that talks to the canvas through messages. It only
@@ -122,7 +123,7 @@ export function WebHtml({ id, html, title, surface, context, onMessage }: { id: 
   if (Platform.OS !== 'web') return null;
   return React.createElement('div', { id: `lienzo-${interacting ? 'interactive' : 'passive'}-html-${id}`, 'data-lienzo-interacting': interacting ? 'true' : 'false', style: { position: 'relative', height: '100%', width: '100%', overflow: 'hidden', backgroundColor: surface } },
     React.createElement('iframe', { key: html, ref: frame, srcDoc: HTML_APP_BRIDGE + html, title, 'data-lienzo-app': 'true', sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups', referrerPolicy: 'no-referrer', allow: 'fullscreen', style: { width: '100%', height: '100%', border: 0, display: 'block', pointerEvents: interacting ? 'auto' : 'none' } }),
-    !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
+    !interacting && React.createElement('div', { 'aria-label': 'Double-click to interact', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 export type ExtensionCall = { method: string; args: Record<string, unknown> };
 /**
@@ -164,7 +165,7 @@ export function WebMedia({ url, title, kind, height, surface, onError }: { url: 
     return () => { observer?.disconnect(); doc.removeEventListener('visibilitychange', visibility); media.pause(); };
   }, [safe, kind]);
   if (Platform.OS !== 'web' || !safe) return null;
-  return React.createElement('div', { style: { position: 'relative', height: kind === 'audio' ? tokens.media.audio.height : height, width: '100%' } }, React.createElement(kind, { key: safe, ref: element, src: safe, controls: true, preload: tokens.media[kind].preload, playsInline: true, 'aria-label': title, onError, style: { display: 'block', width: '100%', height: kind === 'audio' ? tokens.media.audio.height : height, borderRadius: 6, backgroundColor: surface, objectFit: 'contain', pointerEvents: interacting ? 'auto' : 'none' } }), !interacting && React.createElement('div', { 'aria-label': 'Doble clic para interactuar', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
+  return React.createElement('div', { style: { position: 'relative', height: kind === 'audio' ? tokens.media.audio.height : height, width: '100%' } }, React.createElement(kind, { key: safe, ref: element, src: safe, controls: true, preload: tokens.media[kind].preload, playsInline: true, 'aria-label': title, onError, style: { display: 'block', width: '100%', height: kind === 'audio' ? tokens.media.audio.height : height, borderRadius: 6, backgroundColor: surface, objectFit: 'contain', pointerEvents: interacting ? 'auto' : 'none' } }), !interacting && React.createElement('div', { 'aria-label': 'Double-click to interact', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 // Legacy exports for the isolated design harness only. The plugin uses host settings.
 const harnessGuideDismissals = new Set<string>();
@@ -182,7 +183,7 @@ export function pickJsonFile(maxBytes = 1048576): Promise<string | null> {
     const input = host.document!.createElement('input'); input.type = 'file'; input.accept = '.json,application/json';
     const cleanup = () => input.remove();
     input.addEventListener('cancel', () => { cleanup(); resolve(null); });
-    input.addEventListener('change', () => { const file = input.files?.[0]; if (!file) { cleanup(); resolve(null); } else if (file.size > maxBytes) { cleanup(); reject(new Error('El archivo supera 1 MB.')); } else void file.text().then(text => { cleanup(); resolve(text); }).catch(error => { cleanup(); reject(error); }); });
+    input.addEventListener('change', () => { const file = input.files?.[0]; if (!file) { cleanup(); resolve(null); } else if (file.size > maxBytes) { cleanup(); reject(new Error('The file is larger than 1 MB.')); } else void file.text().then(text => { cleanup(); resolve(text); }).catch(error => { cleanup(); reject(error); }); });
     input.click();
   });
 }
@@ -194,7 +195,7 @@ export function pickSvgFile(): Promise<string | null> {
     input.addEventListener('change', () => {
       const file = input.files?.[0]; input.remove();
       if (!file) { resolve(null); return; }
-      if (file.size > SVG_LIMITS.bytes) { reject(new Error('El SVG supera 64 KB.')); return; }
+      if (file.size > SVG_LIMITS.bytes) { reject(new Error('The SVG is larger than 64 KB.')); return; }
       void file.text().then(text => resolve(sanitizeSvg(text).svg)).catch(reject);
     });
     input.click();
@@ -202,17 +203,17 @@ export function pickSvgFile(): Promise<string | null> {
 }
 /** Browser fetch only. Read a bounded body, then validate with the same static dialect as the server. */
 export async function fetchSvgUrl(value: string): Promise<string> {
-  const url = safeUrl(value); if (!browser().document || !url) throw new Error('Usá una URL HTTP o HTTPS válida en el navegador.');
+  const url = safeUrl(value); if (!browser().document || !url) throw new Error('Use a valid HTTP or HTTPS address in the browser.');
   type Response = { ok: boolean; url?: string; headers: { get(name: string): string | null }; body?: { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel(): Promise<void> } } | null };
   const host = globalThis as unknown as { fetch(url: string, options: { credentials: string; signal: unknown }): Promise<Response>; AbortController: new () => { signal: unknown; abort(): void }; TextDecoder: new () => { decode(value: Uint8Array): string } };
   const abort = new host.AbortController(), timeout = setTimeout(() => abort.abort(), 10000);
   try {
     const response = await host.fetch(url, { credentials: 'omit', signal: abort.signal });
-    if (!response.ok || response.url && !safeUrl(response.url)) throw new Error('No se pudo cargar el SVG.');
-    if (Number(response.headers.get('content-length')) > SVG_LIMITS.bytes) throw new Error('El SVG supera 64 KB.');
-    const reader = response.body?.getReader(); if (!reader) throw new Error('No se pudo leer el SVG.');
+    if (!response.ok || response.url && !safeUrl(response.url)) throw new Error('The SVG could not be loaded.');
+    if (Number(response.headers.get('content-length')) > SVG_LIMITS.bytes) throw new Error('The SVG is larger than 64 KB.');
+    const reader = response.body?.getReader(); if (!reader) throw new Error('The SVG could not be read.');
     const chunks: Uint8Array[] = []; let bytes = 0;
-    for (;;) { const part = await reader.read(); if (part.done) break; if (!part.value) continue; bytes += part.value.byteLength; if (bytes > SVG_LIMITS.bytes) { await reader.cancel(); throw new Error('El SVG supera 64 KB.'); } chunks.push(part.value); }
+    for (;;) { const part = await reader.read(); if (part.done) break; if (!part.value) continue; bytes += part.value.byteLength; if (bytes > SVG_LIMITS.bytes) { await reader.cancel(); throw new Error('The SVG is larger than 64 KB.'); } chunks.push(part.value); }
     const content = new Uint8Array(bytes); let offset = 0; for (const chunk of chunks) { content.set(chunk, offset); offset += chunk.byteLength; }
     return sanitizeSvg(new host.TextDecoder().decode(content)).svg;
   } finally { clearTimeout(timeout); }
@@ -275,15 +276,34 @@ function listenKeys(node: BrowserElement, listener: (event: BrowserKeyEvent) => 
   node.addEventListener('keydown', listener, capture); doc.addEventListener('keydown', unfocused, capture);
   return () => { node.removeEventListener('keydown', listener, capture); doc.removeEventListener('keydown', unfocused, capture); if (!--keyScopes) { stopPressTracking?.(); stopPressTracking = undefined; } };
 }
-export function keyboard(element: unknown, handler: (event: { key: string; shift: boolean; command: boolean }) => boolean): () => void {
+export type PanelKey = { key: string; code?: string; shift: boolean; command: boolean; alt: boolean; repeat: boolean; typing: boolean };
+const keyOf = (event: BrowserKeyEvent, typing: boolean): PanelKey => ({ key: event.key, code: event.code, shift: event.shiftKey, command: event.ctrlKey || event.metaKey, alt: !!event.altKey, repeat: !!event.repeat, typing });
+const FIELDS = 'input,textarea,select,[contenteditable="true"],iframe,video,audio';
+/**
+ * Panel keys. Keys typed into a field, a frame or an interactive control are left alone, except the ones `global`
+ * accepts (the command palette's ⌘K works from the composer too); those arrive with `typing: true`.
+ */
+export function keyboard(element: unknown, handler: (event: PanelKey) => boolean, global?: (event: PanelKey) => boolean): () => void {
   const node = element as BrowserElement | null;
   if (!browser().document || !node?.addEventListener) return () => {};
   const listener = (event: BrowserKeyEvent) => {
     const target = event.target;
-    if (target?.closest('input,textarea,select,[contenteditable="true"],iframe,video,audio,[id^="lienzo-interactive-"]')) return;
-    if (handler({ key: event.key, shift: event.shiftKey, command: event.ctrlKey || event.metaKey })) { event.preventDefault(); event.stopPropagation(); }
+    if (target?.closest(FIELDS + ',[id^="lienzo-interactive-"]')) { if (global && !target.closest('iframe') && global(keyOf(event, true))) { event.preventDefault(); event.stopPropagation(); } return; }
+    if (handler(keyOf(event, false))) { event.preventDefault(); event.stopPropagation(); }
   };
   return listenKeys(node, listener, false);
+}
+/** The next key combination pressed anywhere in the page, for reassigning a shortcut. Modifier-only presses wait. */
+export function captureKeys(handler: (event: PanelKey) => boolean): () => void {
+  const doc = browser().document; if (!doc) return () => {};
+  const listener = (event: BrowserKeyEvent) => { if (['Shift', 'Control', 'Meta', 'Alt'].includes(event.key)) return; if (handler(keyOf(event, false))) { event.preventDefault(); event.stopPropagation(); } };
+  doc.addEventListener('keydown', listener, true);
+  return () => doc.removeEventListener('keydown', listener, true);
+}
+/** ⌘ on Apple platforms, Ctrl elsewhere. Native clients ask React Native. */
+export function isMacPlatform(): boolean {
+  if (Platform.OS === 'ios' || Platform.OS === 'macos') return true;
+  const nav = browser().navigator; return /mac|iphone|ipad/i.test(nav?.platform ?? nav?.userAgent ?? '');
 }
 /**
  * After a drag or a pan the browser still sends a click to whatever is under the pointer when the button comes up,
@@ -486,7 +506,7 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
       node.group.setAttribute('data-kind', token.kind); node.group.setAttribute('data-link-id', token.linkId);
       node.symbol.setAttribute('d', token.kind === 'message' ? 'M-6 -4 H6 V4 H-6 Z M-6 -4 L0 0 L6 -4' : token.kind === 'signal' ? 'M0 -6 L6 5 H-6 Z' : 'M-5 0 A5 5 0 1 0 5 0 A5 5 0 1 0 -5 0');
       node.symbol.setAttribute('fill', current.halo); node.symbol.setAttribute('stroke', path.draw.color); node.symbol.setAttribute('stroke-width', '2');
-      const kind = token.kind === 'message' ? 'Mensaje' : token.kind === 'signal' ? 'Señal' : 'Valor';
+      const kind = token.kind === 'message' ? 'Message' : token.kind === 'signal' ? 'Signal' : 'Value';
       node.label.textContent = `${kind}: ${Array.from(token.label).slice(0, 40).join('')}${token.sign === undefined ? '' : ` · ${token.sign === 1 ? '+' : '−'}`}${token.delay === undefined ? '' : ` · ${n(token.delay)} ms`}`;
       node.label.setAttribute('fill', path.draw.color); node.label.setAttribute('stroke', current.halo); node.label.setAttribute('stroke-width', '4');
       node.label.setAttribute('font-family', current.font); node.label.setAttribute('font-size', n(current.labelSize)); count++;
@@ -589,13 +609,13 @@ export function compileGLProgram(gl: GLContext, vertexSource: string, fragmentSo
   const shaders: object[] = []; let program: object | null = null;
   try {
     for (const [type, source] of [[gl.VERTEX_SHADER, vertexSource], [gl.FRAGMENT_SHADER, fragmentSource]] as const) {
-      const shader = gl.createShader(type); if (!shader) throw new Error('No se pudo crear el shader.'); shaders.push(shader);
+      const shader = gl.createShader(type); if (!shader) throw new Error('The shader could not be created.'); shaders.push(shader);
       gl.shaderSource(shader, source); gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'Error al compilar el shader.');
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'The shader did not compile.');
     }
-    program = gl.createProgram(); if (!program) throw new Error('No se pudo crear el programa.');
+    program = gl.createProgram(); if (!program) throw new Error('The program could not be created.');
     shaders.forEach(shader => gl.attachShader(program!, shader)); gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Error al enlazar el programa.');
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'The program did not link.');
     return { program };
   } catch (error) { if (program) gl.deleteProgram(program); return { error: error instanceof Error ? error.message : String(error) }; }
   finally { shaders.forEach(shader => gl.deleteShader(shader)); }
@@ -635,17 +655,17 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
     const report = (message: string) => { setError(message); latest.current.onError?.(message); };
     const initialize = () => {
       try {
-        if (kind === 'webgl' && !allocated && liveGLContexts >= MAX_LIVE_GL_CONTEXTS) { report('Hay demasiados gráficos WebGL abiertos. Cierra otro gráfico y vuelve a abrir este bloque.'); return; }
+        if (kind === 'webgl' && !allocated && liveGLContexts >= MAX_LIVE_GL_CONTEXTS) { report('Too many WebGL drawings are open. Close another one and open this block again.'); return; }
         context = canvas.getContext(kind) as typeof context;
-        if (!context) { report('El navegador no ofrece este contexto de dibujo.'); return; }
+        if (!context) { report('The browser does not offer this drawing context.'); return; }
         if (kind === 'webgl') {
           if (!allocated) { allocated = true; liveGLContexts++; }
           allocatedContext = context as GLContext;
           const result = (latest.current as GLSurfaceProps).initialize?.(context as GLContext);
-          dispose = result?.dispose; if (result?.error) { report('No se pudo preparar el gráfico. Revisa el shader o su configuración.'); latest.current.onError?.(result.error); context = null; return; }
+          dispose = result?.dispose; if (result?.error) { report('The drawing could not be prepared. Check the shader or its settings.'); latest.current.onError?.(result.error); context = null; return; }
         }
         setError('');
-      } catch (error) { report('No se pudo iniciar el gráfico. Revisa su configuración y vuelve a abrir el bloque.'); context = null; }
+      } catch (error) { report('The drawing could not start. Check its settings and open the block again.'); context = null; }
     };
     const active = () => !stopped && visible && !doc.hidden && !lost && !!context;
     let notified: boolean | undefined;
@@ -666,7 +686,7 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
           const ctx = context as Canvas2DContext; ctx.save();
           try { ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0); (latest.current as CanvasSurfaceProps).draw(ctx, frame); } finally { ctx.restore(); }
         } else { const gl = context as GLContext; gl.viewport(0, 0, w, h); (latest.current as GLSurfaceProps).draw(gl, frame); }
-      } catch (error) { report('No se pudo dibujar el gráfico. Revisa los parámetros y vuelve a intentarlo.'); return; }
+      } catch (error) { report('The drawing could not be drawn. Check the parameters and try again.'); return; }
       if (latest.current.animated) schedule();
     };
     const stop = () => { if (frameId) host.cancelAnimationFrame(frameId); frameId = 0; };
@@ -674,7 +694,7 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
     const onLost = (event: { preventDefault(): void }) => {
       event.preventDefault(); lost = true; stop(); notifyVisibility();
       const cleanup = dispose; dispose = undefined; context = null;
-      try { cleanup?.(); } finally { report('El contexto WebGL se perdió. Esperando restauración.'); }
+      try { cleanup?.(); } finally { report('The WebGL context was lost. Waiting for it to come back.'); }
     };
     const onRestored = () => { lost = false; initialize(); notifyVisibility(); schedule(); };
     initialize(); invalidate.current = schedule;

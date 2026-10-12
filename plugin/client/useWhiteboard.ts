@@ -30,7 +30,7 @@ export function useWhiteboard(environment:Environment) {
     const session=strokes.current,{e,c,doc}=context();if(!session||['draw','eraser'].includes(e.tool()))return;
     strokes.current=null;if(!doc||doc.id!==session.documentId||c.offline)return;
     const isDraw=(b:{typeId:string})=>c.catalog?.blockTypes.find(t=>t.id===b.typeId)?.renderer==='wb-draw',mine=learnerLayerIds(strokeLayers(doc.blocks,isDraw));
-    void c.send({kind:'whiteboard.strokes',label:'Trazos del aprendiz',payload:strokeSummary(doc.blocks,isDraw),delivery:'batched',settled:true,...(mine.length?{targetIds:mine.slice(0,20)}:{})},newId('evt')).catch(error=>c.fail(error));
+    void c.send({kind:'whiteboard.strokes',label:'Learner strokes',payload:strokeSummary(doc.blocks,isDraw),delivery:'batched',settled:true,...(mine.length?{targetIds:mine.slice(0,20)}:{})},newId('evt')).catch(error=>c.fail(error));
   },[environment.tool()]);
   const context=()=>{const e=env.current,c=e.controller,doc=c.view?.document;return {e,c,doc};};
   const parentPoint=(point:Point,parent:string|null)=>{const r=parent?env.current.layout.rects.get(parent):null;return{x:point.x-(r?.x??0),y:point.y-(r?.y??0)};};
@@ -48,7 +48,7 @@ export function useWhiteboard(environment:Environment) {
     else if(session.blockId)operations=value===String(session.block.data.text??'')?[]:[{type:'block.update',id:session.blockId,patch:{data:{text:value}}}];
     else operations=[{type:'block.create',block:{...session.block,data:wbTextDataSchema.parse(data)}}];
     if(!operations.length){setEditor(null);if(!session.blockId)env.current.choose('select');return true;}
-    setSaving(true);setEditorError('');try{const result=await c.edit(operations,session.kind==='wb-text'&&!value.trim()?'Eliminar texto':session.blockId?'Editar texto':'Crear texto');if(!result){setEditorError('No se guardó. Reintentá o cancelá la edición.');return false;}if(env.current.controller.view?.document.id===session.documentId){setEditor(null);if(!session.blockId)afterCreate(session.block.id);}return true;}catch{setEditorError('No se guardó. Reintentá o cancelá la edición.');return false;}finally{setSaving(false);}
+    setSaving(true);setEditorError('');try{const result=await c.edit(operations,session.kind==='wb-text'&&!value.trim()?'Delete text':session.blockId?'Edit text':'Create text');if(!result){setEditorError('Not saved. Try again or cancel the edit.');return false;}if(env.current.controller.view?.document.id===session.documentId){setEditor(null);if(!session.blockId)afterCreate(session.block.id);}return true;}catch{setEditorError('Not saved. Try again or cancel the edit.');return false;}finally{setSaving(false);}
   }
   async function insertSvg(svg:string,options:SvgInsertOptions={}):Promise<boolean>{
     const {e,c,doc}=context();if(!doc||c.busy||c.offline)return false;
@@ -94,7 +94,7 @@ export function useWhiteboard(environment:Environment) {
         if(!layerFits(doc,next,1024*1024,id||undefined))throw new Error(WB_LAYER_LIMIT_MESSAGE);
         if(!id)id=newId('draw');operations=old?.id===id?[{type:'block.update',id,patch:next}]:[{type:'block.create',block:{id,typeId:'wb-draw',title:'',parentGroupId:g.parent,...next}}];
       }else if(g.tool==='eraser'){erase(g,at);for(const [blockId,removed]of g.erased){const b=doc.blocks.find(b=>b.id===blockId);if(!b)continue;const data=wbDrawDataSchema.parse(b.data),strokes=data.strokes.filter((_,i)=>!removed.has(i));operations.push(strokes.length?{type:'block.update',id:blockId,patch:{data:{strokes}}}:{type:'block.delete',id:blockId});}}
-      if(!operations.length)return;const result=await c.edit(operations,g.tool==='draw'?'Dibujar trazo':g.tool==='eraser'?'Borrar trazos':'Crear forma');if(!result)return;
+      if(!operations.length)return;const result=await c.edit(operations,g.tool==='draw'?'Draw stroke':g.tool==='eraser'?'Erase strokes':'Create shape');if(!result)return;
       if(env.current.controller.view?.document.id!==doc.id)return;if(g.tool==='draw')drawing.current={id,parent:g.parent,anchor:g.anchor,documentId:doc.id};if(g.tool==='draw'||g.tool==='eraser')strokes.current={documentId:doc.id,tool:g.tool};if(id)afterCreate(id);
     }catch(error){c.fail(g.tool==='draw'?new Error(WB_LAYER_LIMIT_MESSAGE):error);}
   }

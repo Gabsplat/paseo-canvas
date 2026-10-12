@@ -39,7 +39,7 @@ export function Minimap({ items, content, view, source, onNavigate }: { items: r
   const marks = useMemo(() => items.map(item => { const b = item.box, style = { position: 'absolute' as const, left: b.x * fit.k + fit.x, top: b.y * fit.k + fit.y, width: Math.max(2, b.width * fit.k), height: Math.max(2, b.height * fit.k) };
     return item.group ? <View key={item.id} style={{ ...style, borderWidth: 1, borderColor: item.lit ? u.c.accent : withAlpha(u.c.foregroundMuted, M.groupAlpha), borderRadius: 2 }} />
       : <View key={item.id} style={{ ...style, borderRadius: 1, backgroundColor: item.lit ? u.c.accent : withAlpha(u.c.foregroundMuted, M.cardAlpha) }} />; }), [items, fit, u.c.accent, u.c.foregroundMuted]);
-  return <View nativeID="lienzo-interactive-minimap" accessibilityRole="adjustable" accessibilityLabel="Mapa del lienzo. Pulsa o arrastra para moverte" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom: tokens.island.inset, padding: M.padding }]}>
+  return <View nativeID="lienzo-interactive-minimap" accessibilityRole="adjustable" accessibilityLabel="Map of the Lienzo. Press or drag to move around" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom: tokens.island.inset, padding: M.padding }]}>
     <View {...responder.panHandlers} style={{ width: M.width, height: M.height, overflow: 'hidden', borderRadius: 6, backgroundColor: u.c.surface0, ...({ cursor: 'pointer' } as object) }}>
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}>{marks}<Frame fit={fit} view={view} source={source} /></View>
     </View>
@@ -62,10 +62,10 @@ export function SelectionBeacon({ id, title, box, remote, view, source, inset, o
     {!away && <Animated.View pointerEvents="none" style={{ position: 'absolute', left: screen.x - B.ringOutset, top: screen.y - B.ringOutset, width: screen.width + 2 * B.ringOutset, height: screen.height + 2 * B.ringOutset, borderRadius: 14, borderWidth: 2, borderColor: u.c.accent, zIndex: 19,
       opacity: ring.interpolate({ inputRange: [0, .15, 1], outputRange: [0, B.ringAlpha, 0] }), transform: [{ scale: ring.interpolate({ inputRange: [0, 1], outputRange: [1, B.ringScale] }) }] }} />}
     {at && <Animated.View pointerEvents={away ? 'box-none' : 'none'} style={{ position: 'absolute', left: at.x, top: at.y, zIndex: 21, opacity: shown, transform: [{ translateX: '-50%' as unknown as number }, { translateY: '-50%' as unknown as number }, { scale: shown.interpolate({ inputRange: [0, 1], outputRange: [B.chipScale, 1] }) }] }}>
-      <Pressable nativeID="lienzo-interactive-beacon" accessibilityRole="button" accessibilityLabel={`Ir a «${title}», fuera de la vista`} onPress={e => { e.stopPropagation(); onGo(); }}
+      <Pressable nativeID="lienzo-interactive-beacon" accessibilityRole="button" accessibilityLabel={`Go to “${title}”, out of view`} onPress={e => { e.stopPropagation(); onGo(); }}
         style={({ pressed, ...state }) => [islandStyle(u, true), { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 6, paddingRight: 10, minHeight: B.chipHeight, maxWidth: B.chipMaxWidth, borderColor: u.c.accent, backgroundColor: pressed || (state as { hovered?: boolean }).hovered ? u.c.surface2 : u.c.surface1 }]}>
         <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: withAlpha(u.c.accent, .16), transform: [{ rotate: `${at.angle}deg` }] }}><Icon name="ArrowUp" size={12} color={u.c.accent} /></View>
-        <Txt kind="small" numberOfLines={1} style={{ flexShrink: 1, fontWeight: '600' }}>{title || 'Selección'}</Txt>
+        <Txt kind="small" numberOfLines={1} style={{ flexShrink: 1, fontWeight: '600' }}>{title || 'Selection'}</Txt>
       </Pressable>
     </Animated.View>}
   </>;
@@ -78,7 +78,7 @@ export function SelectionBeacon({ id, title, box, remote, view, source, inset, o
 export function LensControl({ lens, legend, note, bottom, onChange }: { lens: LensId; legend: readonly LensKey[]; note?: string; bottom: number; onChange(next: LensId): void }) {
   const u = useUI(), next = LENSES[(LENSES.indexOf(lens) + 1) % LENSES.length], on = lens !== 'none';
   return <View nativeID="lienzo-interactive-lens" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom, maxWidth: 260, padding: on ? 8 : tokens.island.padding, gap: 6 }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Lente: ${LENS_LABEL[lens]}. Pulsa para ${LENS_LABEL[next]}`} onPress={e => { e.stopPropagation(); onChange(next); }}
+    <Pressable accessibilityRole="button" accessibilityLabel={`Lente (lens): ${LENS_LABEL[lens]}. Press for ${LENS_LABEL[next]}`} onPress={e => { e.stopPropagation(); onChange(next); }}
       style={({ pressed, ...state }) => ({ minHeight: 28, paddingHorizontal: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: on ? withAlpha(u.c.accent, .14) : pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>
       <Icon name="Glasses" size={14} color={on ? u.c.accent : u.c.foregroundMuted} /><Txt kind="small" style={{ fontWeight: '600', color: on ? u.c.accent : u.c.foreground }}>{on ? LENS_LABEL[lens] : 'Lente'}</Txt>
     </Pressable>

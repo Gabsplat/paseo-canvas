@@ -64,7 +64,7 @@ test('the pencil signs strokes as the learner and anchors them to the card they 
   assert.equal(onA.data.anchor, 'a'); assert.equal(onA.data.strokes.length, 2, 'Consecutive strokes on the same card share one drawing.'); assert.deepEqual(onA.position, { x: 50, y: 50 }, 'Stored relative to the card corner, not to the canvas.');
   assert.equal(onB.data.anchor, 'b'); assert.deepEqual(onB.position, { x: 50, y: 50 });
   assert.deepEqual(h.rect(onA.id), { ...h.rect(onA.id), x: 250, y: 150 }, 'It is drawn exactly where it was drawn.');
-  assert.ok(h.transactions.every(t => t.label === 'Dibujar trazo')); assert.equal(h.transactions.length, 4, 'One transaction, one undo step, per stroke.');
+  assert.ok(h.transactions.every(t => t.label === 'Draw stroke')); assert.equal(h.transactions.length, 4, 'One transaction, one undo step, per stroke.');
 });
 test('an anchored drawing follows its card through moves, automatic layouts and grouping; moving it alone changes only its offset', async () => {
   const h = harness(); await h.stroke([[250, 150], [350, 190]]); const id = draws(h.doc())[0].id;
@@ -95,7 +95,7 @@ test('the eraser works on anchored drawings where they are shown, and appending 
   const h = harness(); await h.stroke([[250, 150], [350, 150]]); await h.stroke([[250, 200], [350, 200]]);
   h.apply([{ type: 'entity.move', id: 'a', parentGroupId: null, position: { x: 900, y: 400 } }]);
   await h.setTool('eraser'); h.wb.begin(pointer(1000, 450)); await h.wb.finish(pointer(1000, 450), false);
-  assert.equal(draws(h.doc())[0].data.strokes.length, 1, 'The stroke under the pointer at the card\'s new place is the one erased.'); assert.equal(h.transactions.at(-1).label, 'Borrar trazos');
+  assert.equal(draws(h.doc())[0].data.strokes.length, 1, 'The stroke under the pointer at the card\'s new place is the one erased.'); assert.equal(h.transactions.at(-1).label, 'Erase strokes');
   const kept = draws(h.doc())[0], next = appendStroke({ position: kept.position, size: kept.size, data: kept.data }, [60, 60, 90, 90], { color: 'rojo', weight: 'l' });
   assert.deepEqual([next.data.author, next.data.anchor, next.data.strokes.length], ['learner', 'a', 2]);
 });

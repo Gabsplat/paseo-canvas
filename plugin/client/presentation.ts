@@ -22,7 +22,7 @@ export function canvasPresentation(document: CanvasDocument, catalog: CanvasCata
     hiddenBy, activeGates,
     document: { ...document,
       blocks: document.blocks.map(block => hiddenBy.has(block.id)
-        ? { ...block, title: 'Resultado oculto', data: {}, communication: undefined } : block),
+        ? { ...block, title: 'Hidden result', data: {}, communication: undefined } : block),
       links: document.links.map(link => hiddenBy.has(link.from) || hiddenBy.has(link.to) ? { ...link, label: '' } : link),
     },
   };

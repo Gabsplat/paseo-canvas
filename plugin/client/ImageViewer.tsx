@@ -30,8 +30,8 @@ export function ImageViewer({ url, title, open, close }: { url: string; title: s
       <IconButton icon="Maximize" label="Ajustar imagen" onPress={reset} />
     </View>
     <View nativeID="lienzo-interactive-image-viewer" {...pan.panHandlers} onLayout={e => { size.current = e.nativeEvent.layout; }} style={{ height: u.compact ? V.heightCompact : V.height, overflow: 'hidden', borderRadius: tokens.radius.control, backgroundColor: u.c.surface0 }}>
-      {failed ? <Txt style={{ padding: 16 }} muted>No se pudo cargar la imagen.</Txt> : <Animated.View style={{ flex: 1, transform: [{ translateX: x }, { translateY: y }, { scale: zoom }] }}><Image source={{ uri: url }} accessibilityLabel={title || 'Imagen'} resizeMode="contain" onError={() => setFailed(true)} style={{ width: '100%', height: '100%' }} /></Animated.View>}
+      {failed ? <Txt style={{ padding: 16 }} muted>The image could not be loaded.</Txt> : <Animated.View style={{ flex: 1, transform: [{ translateX: x }, { translateY: y }, { scale: zoom }] }}><Image source={{ uri: url }} accessibilityLabel={title || 'Imagen'} resizeMode="contain" onError={() => setFailed(true)} style={{ width: '100%', height: '100%' }} /></Animated.View>}
     </View>
-    <Txt kind="small" muted>Acerca la imagen y arrastra para explorarla.</Txt>
+    <Txt kind="small" muted>Zoom in and drag to explore the image.</Txt>
   </Modal.Content></Modal>;
 }

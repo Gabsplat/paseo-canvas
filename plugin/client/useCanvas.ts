@@ -161,7 +161,7 @@ export function useCanvas(workspaceId: string) {
   async function settle(): Promise<void> {
     const g = generation.current;
     while ((locked.current || selecting.current && selectionScope.current === g) && g === generation.current && active.current) await new Promise<void>(resolve => setTimeout(resolve, 20));
-    if (g !== generation.current || !active.current) throw new Error('El documento cambió antes de completar la acción.');
+    if (g !== generation.current || !active.current) throw new Error('The Lienzo changed before the action finished.');
   }
   async function send(action: RpcInput<typeof rpc.agentAction>['action'], eventId: string): Promise<AgentEvent | undefined> {
     const v = current.current; if (!v) return;

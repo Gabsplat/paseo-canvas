@@ -177,20 +177,46 @@ test('eraser sweeps between sparse pointer events and keeps one transaction per 
   h.setTool('eraser'); h.wb.begin(pointer(55, 0)); h.wb.move(pointer(55, 120)); await h.wb.finish(pointer(55, 120), false);
   assert.equal(h.transactions.length, 2); assert.equal(h.doc().blocks.length, 0);
 });
-test('automatic return to select never makes a fast repeated inactive tool click only toggle its lock', () => {
-  const { readFileSync } = require('node:fs'), { runInNewContext } = require('node:vm'), ts = require('typescript');
-  const { tokens } = require('../plugin/client/tokens'); let ref: any, now = 100;
-  const react = { createElement: (type: any, props: any, ...children: any[]) => ({ type, props: { ...props, children } }), useRef: (initial: any) => ref ??= { current: initial } };
-  const modules: Record<string, any> = { react, 'react-native': { Pressable: 'Pressable', View: 'View' }, '@getpaseo/plugin/client/react-native': { Icon: 'Icon', ScrollView: 'ScrollView' }, '../shared/whiteboard': require('../plugin/shared/whiteboard'), './tokens': { tokens }, './color': { withAlpha: () => '' }, './ui': { useUI: () => ({ c: {} }) }, './web': {}, './SvgLibrary': {}, './whiteboard-visuals': { islandStyle: () => ({}) } };
-  const output = ts.transpileModule(readFileSync('plugin/client/FloatingTools.tsx', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText;
-  const exports: any = {}; runInNewContext(output, { exports, require: (id: string) => modules[id], Date: { now: () => now } });
-  const picked: string[] = [], locks: boolean[] = [];
-  const press = (tool: string) => {
-    const tree = exports.ToolIsland({ tool, onToolChange: (t: string) => picked.push(t), onLockChange: (lock: boolean) => locks.push(lock), onOpenShapes() {}, onOpenLibrary() {}, onOpenPicker() {}, width: 1200 });
-    const children = tree.props.children.flat(Infinity); const text = children.find((node: any) => node?.props?.accessibilityLabel === 'Texto (T)'); assert.ok(text); text.props.onPress({ stopPropagation() {} }); now += 50;
-  };
-  press('select'); press('select'); assert.deepEqual(picked, ['text', 'text']); assert.deepEqual(locks, [false, false]);
-  press('text'); assert.deepEqual(picked, ['text', 'text']); assert.deepEqual(locks, [false, false, true]);
+function toolbarHarness() {
+  const { readFileSync } = require('node:fs'), { runInNewContext } = require('node:vm'), ts = require('typescript'), { tokens } = require('../plugin/client/tokens');
+  let cursor = 0, now = 100; const slots: any[] = [];
+  const react = { Fragment: 'Fragment', createElement: (type: any, props: any, ...children: any[]) => ({ type, props: { ...props, children } }), useRef: (value: any) => slots[cursor++] ??= { current: value }, useState: (initial: any) => { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], (v: any) => { slots[i] = typeof v === 'function' ? v(slots[i]) : v; }]; } };
+  const tip = { ref: { current: null }, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} };
+  const modules: Record<string, any> = { react, 'react-native': { Pressable: 'Pressable', View: 'View' }, '@getpaseo/plugin/client/react-native': { Icon: 'Icon', ScrollView: 'ScrollView' }, './tokens': { tokens }, './color': { withAlpha: () => '' }, './ui': { Txt: 'Txt', useUI: () => ({ c: {}, compact: false }), useTooltip: () => tip }, './whiteboard-visuals': { islandStyle: () => ({}) } };
+  const exports: any = {}, output = ts.transpileModule(readFileSync('plugin/client/Toolbar.tsx', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText;
+  runInNewContext(output, { exports, require: (id: string) => modules[id], Date: { now: () => now } });
+  const mount = (tree: any): any => Array.isArray(tree) ? tree.map(mount) : !tree?.props ? tree : typeof tree.type === 'function' ? mount(tree.type(tree.props)) : { ...tree, props: { ...tree.props, children: mount(tree.props.children) } };
+  const nodes = (tree: any): any[] => Array.isArray(tree) ? tree.flatMap(nodes) : !tree?.props ? [] : [tree, ...nodes(tree.props.children)];
+  return { exports, render: (props: any) => { cursor = 0; return nodes(mount(exports.Toolbar(props))); }, tick: (ms = 50) => { now += ms; } };
+}
+test('the toolbar orders its tools as the brief, and a fast press on an inactive tool never only toggles its lock', () => {
+  const h = toolbarHarness(), picked: string[] = [], locks: boolean[] = [];
+  const props = (active: string, extra: any = {}) => ({ active, shape: 'rect', locked: false, disabled: false, onTool: (t: string) => picked.push(t), onShape() {}, onLock: (v: boolean) => locks.push(v), pinned: [], onAdd() {}, addOpen: false, keyLabel: (id: string) => ({ 'tool.pencil': 'P', 'tool.select': 'V' } as any)[id], ...extra });
+  const tools = (tree: any[]) => tree.filter(n => n.type === 'Pressable' && String(n.props.nativeID).startsWith('lienzo-tool-'));
+  let tree = h.render(props('select'));
+  assert.deepEqual(tools(tree).map(n => n.props.nativeID.slice(12)), ['select', 'hand', 'pencil', 'shape', 'text', 'arrow', 'eraser', 'marco', 'ventana', 'add']);
+  assert.deepEqual(tools(tree).map(n => n.props.accessibilityLabel), ['Select', 'Hand', 'Pencil', 'Shape', 'Text', 'Arrow', 'Eraser', 'Marco', 'Ventana', 'More tools']);
+  assert.match(tools(tree)[7].props.accessibilityHint, /Spanish for frame/); assert.match(tools(tree)[8].props.accessibilityHint, /Spanish for window/);
+  const press = (active: string, id: string) => { const t = tools(h.render(props(active))).find(n => n.props.nativeID === 'lienzo-tool-' + id); t.props.onPress({ stopPropagation() {} }); h.tick(); };
+  press('select', 'text'); press('select', 'text'); assert.deepEqual(picked, ['text', 'text']); assert.deepEqual(locks, []);
+  press('text', 'text'); assert.deepEqual(locks, [true], 'a double press on the tool in hand keeps it');
+  press('select', 'marco'); press('select', 'marco'); assert.deepEqual(picked.slice(-2), ['marco', 'marco']); assert.deepEqual(locks, [true], 'Marco acts once and never locks');
+  const blocked = tools(h.render(props('select', { disabled: true }))).map(n => [n.props.nativeID.slice(12), n.props.disabled]);
+  assert.deepEqual(blocked, [['select', false], ['hand', false], ['pencil', true], ['shape', true], ['text', true], ['arrow', true], ['eraser', true], ['marco', true], ['ventana', true], ['add', false]]);
+});
+test('pressing Shape again opens its flyout, and pinned tools follow with their 1–9 badges', () => {
+  const h = toolbarHarness(), shapes: string[] = [], ran: string[] = [];
+  const props = { active: 'shape', shape: 'ellipse', locked: false, disabled: false, onTool() {}, onShape: (s: string) => shapes.push(s), onLock() {}, onAdd() {}, addOpen: false, keyLabel: () => undefined, pinned: [{ id: 'type.note', label: 'Note', icon: 'StickyNote', onPress: () => ran.push('note') }, { id: 'ventana', label: 'Ventana', icon: 'AppWindow', onPress: () => ran.push('ventana') }] };
+  let tree = h.render(props); h.tick(500);
+  tree.find(n => n.props?.nativeID === 'lienzo-tool-shape').props.onPress({ stopPropagation() {} });
+  tree = h.render(props);
+  const flyout = tree.filter(n => n.props?.accessibilityRole === 'menuitem');
+  assert.deepEqual(flyout.map(n => n.props.accessibilityLabel), ['Rectangle', 'Ellipse', 'Diamond', 'Triangle', 'Line']);
+  flyout[2].props.onPress({ stopPropagation() {} }); assert.deepEqual(shapes, ['diamond']);
+  const pinned = tree.filter(n => String(n.props?.nativeID).startsWith('lienzo-pinned-'));
+  assert.deepEqual(pinned.map(n => n.props.accessibilityLabel), ['Note', 'Ventana']);
+  assert.deepEqual(tree.filter(n => n.type === 'Txt' && /^[1-9]$/.test(String(n.props.children))).map(n => String(n.props.children)), ['1', '2']);
+  pinned[1].props.onPress({ stopPropagation() {} }); assert.deepEqual(ran, ['ventana']);
 });
 
 test('library drag keeps short clicks, drops at page coordinates inside Canvas and cancels Escape/outside without insertion', () => {
@@ -240,7 +266,7 @@ test('Canvas imperative editSelection routes whiteboard editing and deep card in
   const modules:Record<string,any>={
     react,'react-native':{Animated:{Value,View:'Animated.View',add:()=>0,subtract:()=>0,multiply:()=>0,divide:()=>1},PanResponder:{create:(handlers:any)=>({panHandlers:handlers})},Pressable:'Pressable',View:'View'},'@getpaseo/plugin/client/react-native':{},
     './SelectionOverlay': {}, './ZoomControl':{ZoomControl:()=>null},'./logic':logic,'./tokens':{tokens},'./color':{isDark:()=>false,withAlpha:()=>''},'./Blocks':{},'./usePresentation':{usePresentation:()=>undefined},'./link-motion':{prepareLinkMotion:()=>undefined},'./renderers':{},'./Links':{},'./MagnetCue':{},'./ui':{useUI:()=>({layout:{platform:'web'},c:{surface0:'#fff'},font:()=>({})})},'./web':{},
-    './motion':{NATIVE:false,reducedMotion:{current:true},useReducedMotion:()=>{}},'./Wayfinding':{Minimap:'Minimap',SelectionBeacon:'SelectionBeacon'},'./cursors':{canvasCursors:()=>({}),cursorForTool:()=>undefined},'./lenses':{lensMarks:()=>({marks:new Map(),legend:[]})},'./useHistory':{useHistory:()=>({changes:null,failed:false})},'./whiteboard-tools':{DEFAULT_TOOL_STYLE},'../shared/whiteboard':wb,'./useWhiteboard':{useWhiteboard:()=>({editor:null,store:{},edit:(id:string)=>edits.push(id)})},'./WhiteboardContent':{},'./WhiteboardOverlay':{},'./interaction':require('../plugin/client/interaction'),'./whiteboard-geometry':require('../plugin/client/whiteboard-geometry'),'./whiteboard-visuals':{islandStyle:()=>({})},
+    './motion':{NATIVE:false,reducedMotion:{current:true},useReducedMotion:()=>{}},'./Wayfinding':{Minimap:'Minimap',SelectionBeacon:'SelectionBeacon'},'./cursors':{canvasCursors:()=>({}),cursorForTool:()=>undefined},'./lenses':{LENSES:['none'],lensMarks:()=>({marks:new Map(),legend:[]})},'./useHistory':{useHistory:()=>({changes:null,failed:false})},'./whiteboard-tools':{DEFAULT_TOOL_STYLE},'../shared/whiteboard':wb,'./useWhiteboard':{useWhiteboard:()=>({editor:null,store:{},edit:(id:string)=>edits.push(id)})},'./WhiteboardContent':{},'./WhiteboardOverlay':{},'./interaction':require('../plugin/client/interaction'),'./whiteboard-geometry':require('../plugin/client/whiteboard-geometry'),'./whiteboard-visuals':{islandStyle:()=>({})},
   };
   const output=ts.transpileModule(readFileSync('plugin/client/Canvas.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const exports:any={};runInNewContext(output,{exports,require:(id:string)=>{assert.ok(id in modules,id);return modules[id];},Date,Map,Set});
@@ -294,24 +320,6 @@ test('real Txt suppresses native text dragging only in passive cards and restore
   assert.equal(interaction.useContentInteraction(),false); assert.equal(interaction.useContentSelectionAllowed(),true);
 });
 
-test('ToolIsland grid contract keeps all eight actions in 4x2 geometry and preserves callbacks and locking', () => {
-  const { readFileSync } = require('node:fs'), { runInNewContext } = require('node:vm'), ts = require('typescript'), { tokens } = require('../plugin/client/tokens');
-  let cursor=0;const slots:any[]=[],calls:string[]=[];
-  const react={createElement:(type:any,props:any,...children:any[])=>({type,props:{...props,children}}),useRef:(value:any)=>slots[cursor++]??=( {current:value} )};
-  const modules:Record<string,any>={react,'react-native':{Pressable:'Pressable',View:'View'},'@getpaseo/plugin/client/react-native':{Icon:'Icon',ScrollView:'ScrollView'},'../shared/whiteboard':require('../plugin/shared/whiteboard'),'./tokens':{tokens},'./color':{withAlpha:()=>''},'./ui':{useUI:()=>({c:{}})},'./web':{},'./SvgLibrary':{},'./whiteboard-visuals':{islandStyle:()=>({})}};
-  const exports:any={},output=ts.transpileModule(readFileSync('plugin/client/FloatingTools.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  runInNewContext(output,{exports,require:(id:string)=>modules[id],Date:{now:()=>100}});
-  const render=(tool='select',disabled=false)=>{cursor=0;return exports.ToolIsland({tool,grid:true,width:320,disabled,onToolChange:(t:string)=>calls.push(t),onLockChange:(v:boolean)=>calls.push(`lock:${v}`),onOpenShapes:()=>calls.push('shapes'),onOpenLibrary:()=>calls.push('library'),onOpenPicker:()=>calls.push('picker')});};
-  let tree=render();assert.equal(tree.props.style.width,200);assert.equal(tree.props.style.flexWrap,'wrap');assert.equal(tree.props.style.gap,8);
-  const buttons=tree.props.children.flat(Infinity);assert.equal(buttons.length,8);assert.ok(buttons.every((b:any)=>b.type==='Pressable'));
-  assert.deepEqual(Array.from(buttons,(b:any)=>b.props.accessibilityLabel),['Seleccionar (V)','Mano (H)','Texto (T)','Forma (R)','Lápiz (D)','Goma (E)','Biblioteca','Añadir bloque']);
-  for(const button of buttons){const style=button.props.style({pressed:false});assert.equal(style.width,44);assert.equal(style.height,44);}
-  const press=(b:any)=>b.props.onPress({stopPropagation(){}});press(buttons[3]);assert.deepEqual(calls,['lock:false','shape']);
-  tree=render('shape');press(tree.props.children.flat(Infinity)[3]);assert.equal(calls.at(-1),'lock:true');
-  press(buttons[6]);press(buttons[7]);assert.deepEqual(calls.slice(-2),['library','picker']);
-  const disabled=render('select',true).props.children.flat(Infinity);assert.deepEqual(Array.from(disabled,(b:any)=>b.props.disabled),[false,false,true,true,true,true,true,true]);
-});
-
 test('narrow ZoomControl keeps only the percent trigger and exposes functional fit and zoom actions in its menu', () => {
   const { readFileSync } = require('node:fs'), { runInNewContext } = require('node:vm'), ts = require('typescript'), { tokens } = require('../plugin/client/tokens');
   let cursor=0;const slots:any[]=[],calls:any[]=[];
@@ -321,23 +329,23 @@ test('narrow ZoomControl keeps only the percent trigger and exposes functional f
   runInNewContext(output,{exports,require:(id:string)=>modules[id]});
   const render=(width:number)=>{cursor=0;return exports.ZoomControl({width,camera:{current:{scale:1}},subscribe:()=>()=>{},onStep:(d:number)=>calls.push(d),onFit:()=>calls.push('fit'),onReset:()=>calls.push('reset')});};
   const nodes=(tree:any):any[]=>Array.isArray(tree)?tree.flatMap(nodes):!tree?.props?[]:[tree,...nodes(tree.props.children)];
-  for(const width of [560,760,879]){const tree=render(width);assert.equal(nodes(tree).filter(n=>n.type==='IconButton').length,0);assert.equal(nodes(tree).filter(n=>n.props.accessibilityLabel==='Opciones de zoom').length,1);}
-  let tree=render(760);nodes(tree).find(n=>n.props.accessibilityLabel==='Opciones de zoom').props.onPress();tree=render(760);
-  const actions=nodes(tree).filter(n=>n.props.accessibilityRole==='menuitem');assert.deepEqual(actions.map(n=>n.props.accessibilityLabel),['Acercar','Alejar','Ajustar al lienzo','Tamaño real 100 %']);
+  for(const width of [560,760,879]){const tree=render(width);assert.equal(nodes(tree).filter(n=>n.type==='IconButton').length,0);assert.equal(nodes(tree).filter(n=>n.props.accessibilityLabel==='Zoom options').length,1);}
+  let tree=render(760);nodes(tree).find(n=>n.props.accessibilityLabel==='Zoom options').props.onPress();tree=render(760);
+  const actions=nodes(tree).filter(n=>n.props.accessibilityRole==='menuitem');assert.deepEqual(actions.map(n=>n.props.accessibilityLabel),['Zoom in','Zoom out','Fit all','Actual size, 100 %']);
   for(const action of actions)action.props.onPress({stopPropagation(){}});assert.deepEqual(calls,[1,-1,'fit','reset']);assert.equal(nodes(render(760)).some(n=>n.props.accessibilityRole==='menu'),false);
   assert.equal(nodes(render(880)).filter(n=>n.type==='IconButton').length,3);
 });
 
 test('zoom menu delegates inside clicks, dismisses outside/Escape, and supports focused keyboard navigation', () => {
   const { attachZoomMenu } = require('../plugin/client/web');const h=harness();let closed=0,focused='',triggerFocus=0;
-  const rows=['Acercar','Alejar','Ajustar al lienzo'].map(label=>({getAttribute:(name:string)=>name==='aria-label'?label:null,focus:()=>{focused=label;}}));
+  const rows=['Acercar','Alejar','Fit all'].map(label=>({getAttribute:(name:string)=>name==='aria-label'?label:null,focus:()=>{focused=label;}}));
   const node:any=new Events();node.contains=(target:any)=>rows.includes(target);node.querySelectorAll=()=>rows;
   const trigger:any={contains:(target:any)=>target===trigger,focus:()=>{triggerFocus++;}};
   const stop=attachZoomMenu(node,trigger,()=>closed++);
   try {
     assert.equal(focused,'Acercar');h.doc.fire('pointerdown',{target:rows[1]});assert.equal(closed,0);
     const key=(key:string,target=rows[0])=>({key,target,ctrlKey:false,metaKey:false,preventDefault(){},stopPropagation(){}});
-    h.doc.fire('keydown',key('ArrowDown'));assert.equal(focused,'Alejar');h.doc.fire('keydown',key('End'));assert.equal(focused,'Ajustar al lienzo');
+    h.doc.fire('keydown',key('ArrowDown'));assert.equal(focused,'Alejar');h.doc.fire('keydown',key('End'));assert.equal(focused,'Fit all');
     h.doc.fire('keydown',key('Escape'));assert.equal(closed,1);assert.equal(triggerFocus,1);h.doc.fire('pointerdown',{target:{}});assert.equal(closed,2);
   }finally{stop();h.close();}
 });

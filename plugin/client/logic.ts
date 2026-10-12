@@ -31,9 +31,9 @@ export const snap = (v: number) => Math.round(v / tokens.canvas.snap) * tokens.c
 let counter = 0;
 export const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${(++counter).toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 export function propertyValue(kind: BlockType['properties'][number]['kind'], raw: unknown): CanvasBlock['data'][string] {
-  if (kind === 'boolean') { if (typeof raw === 'boolean') return raw; if (raw === 'true') return true; if (raw === 'false') return false; throw new Error('Se esperaba Sí o No.'); }
-  if (kind === 'number') { if (raw === '' || typeof raw === 'string' && !raw.trim()) throw new Error('Número no válido'); const n = Number(raw); if (!Number.isFinite(n)) throw new Error('Número no válido'); return n; }
-  if (kind === 'json') { try { return typeof raw === 'string' ? JSON.parse(raw) : raw as CanvasBlock['data'][string]; } catch { throw new Error('JSON no válido'); } }
+  if (kind === 'boolean') { if (typeof raw === 'boolean') return raw; if (raw === 'true') return true; if (raw === 'false') return false; throw new Error('Expected Yes or No.'); }
+  if (kind === 'number') { if (raw === '' || typeof raw === 'string' && !raw.trim()) throw new Error('Invalid number'); const n = Number(raw); if (!Number.isFinite(n)) throw new Error('Invalid number'); return n; }
+  if (kind === 'json') { try { return typeof raw === 'string' ? JSON.parse(raw) : raw as CanvasBlock['data'][string]; } catch { throw new Error('Invalid JSON'); } }
   return String(raw ?? '');
 }
 export function forkPack(source: CanvasPack, id = newId('pack')): CanvasPack {
@@ -53,7 +53,7 @@ export function selectionPack(doc: CanvasDocument, catalog: CanvasCatalog, ids: 
   content.groups = doc.groups.filter(g => included.has(g.id)).map(g => ({ ...g, parentGroupId: g.parentGroupId && included.has(g.parentGroupId) ? g.parentGroupId : null, blockIds: g.blockIds.filter(id => included.has(id)), groupIds: g.groupIds.filter(id => included.has(id)) }));
   content.links = (doc.links ?? []).filter(l => included.has(l.from) && included.has(l.to));
   content.selectedIds = [];
-  return forkPack({ format: 'paseo-canvas-pack', version: 1, id: 'selection', name: `Selección de ${doc.title}`, description: doc.description, blockTypes: catalog.blockTypes.filter(t => content.blocks.some(b => b.typeId === t.id)), templates: [], documents: [content], extensions: [] });
+  return forkPack({ format: 'paseo-canvas-pack', version: 1, id: 'selection', name: `Selection from ${doc.title}`, description: doc.description, blockTypes: catalog.blockTypes.filter(t => content.blocks.some(b => b.typeId === t.id)), templates: [], documents: [content], extensions: [] });
 }
 export function safeUrl(input: unknown): string | null {
   if (typeof input !== 'string' || !/^https?:\/\//i.test(input)) return null;
@@ -663,7 +663,7 @@ export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, id
   return result.length > 200 ? result.filter((op, i) => i >= frozen) : result;
 }
 /**
- * "Soltar posición": hands entities back to the automatic layout of their container (or of `parent`, to re-parent
+ * "Release position": hands entities back to the automatic layout of their container (or of `parent`, to re-parent
  * without a place). The reducer cannot unset a position, so a positioned entity is re-created without one in the same
  * transaction, keeping its id, contents, members, order and links. One undo step.
  */
@@ -700,7 +700,7 @@ export function groupOperations(doc: CanvasDocument, rects: Map<string, Rect>, i
   const nested = !!parent, pad = nested ? tokens.size.groupPaddingNested : tokens.size.groupPadding, head = nested ? tokens.size.groupHeaderNested : tokens.size.groupHeader;
   const left = Math.min(...items.map(e => rects.get(e.id)!.x)), top = Math.min(...items.map(e => rects.get(e.id)!.y)), origin = parent ? rects.get(parent) : null;
   const position = manual(index.mode(parent)) ? { x: Math.round(left - pad - (origin?.x ?? 0)), y: Math.round(top - head - pad - (origin?.y ?? 0)) } : undefined;
-  return [{ type: 'group.create', group: { id, title: 'Nuevo grupo', description: '', blockIds: [], groupIds: [], parentGroupId: parent, ...(position ? { position } : {}) } },
+  return [{ type: 'group.create', group: { id, title: 'New Marco', description: '', blockIds: [], groupIds: [], parentGroupId: parent, ...(position ? { position } : {}) } },
     ...items.map((e): CanvasOperation => { const r = rects.get(e.id)!; return { type: 'entity.move', id: e.id, parentGroupId: id, position: { x: Math.round(r.x - left) + pad, y: Math.round(r.y - top) + head + pad } }; })];
 }
 /** How world coordinates land inside a minimap of the given size: the content box fitted and centred. */

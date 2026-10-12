@@ -57,7 +57,7 @@ test('real dispatcher passes a protected document to neighboring renderers and c
   const block = view.document.blocks.find(b => b.id === 'flow')!;
   const wrapper = RegisteredRenderer({ block, id: 'animated-flow', controller, readOnly: false, send: async () => {} }) as Element;
   const child = wrapper.props.children as Element;
-  assert.equal(child.props.document.blocks.find((b: any) => b.id === 'c').title, 'Resultado oculto');
+  assert.equal(child.props.document.blocks.find((b: any) => b.id === 'c').title, 'Hidden result');
   assert.deepEqual(child.props.document.blocks.find((b: any) => b.id === 'c').data, {});
   const rendered = (child.type as Function)(child.props) as Element;
   assert.ok(!JSON.stringify(rendered).includes('SECRET RESULT'));
@@ -118,7 +118,7 @@ test('scope frames reuse masked document identity; opening a gate invalidates it
   // A different authored target must invalidate the projection even at the same revision.
   controller.view = { ...view, document: { ...view.document, blocks: view.document.blocks.map(b => b.id === 'gate' ? { ...b, data: { ...b.data, target: 'b' } } : b) } };
   assert.notEqual(usePresentation(controller).document, first.document);
-  assert.equal(usePresentation(controller).document.blocks.find((b: any) => b.id === 'b').title, 'Resultado oculto');
+  assert.equal(usePresentation(controller).document.blocks.find((b: any) => b.id === 'b').title, 'Hidden result');
 });
 
 class Svg {
@@ -169,7 +169,7 @@ test('SVG bridge samples epoch time on real paths, follows live geometry/strands
     assert.equal(seen.at(-1), h.epoch + 500, 'never receives RAF navigation time 123');
     assert.equal(motionNodes(h)[0].attrs.transform, 'translate(50 10)');
     assert.equal(motionNodes(h).length, 3);
-    assert.match(motionNodes(h)[0].children[1].textContent, /Señal: 2 · − · 50 ms/);
+    assert.match(motionNodes(h)[0].children[1].textContent, /Signal: 2 · − · 50 ms/);
     assert.equal(new Set(motionNodes(h).map(n => n.children[0].attrs.d)).size, 3);
     initial.draws[0] = { ...initial.draws[0], d: 'updated-real-path', shift: { x: 7, y: 9 } };
     h.layer.update(initial); assert.equal(motionNodes(h)[0].attrs.transform, 'translate(107 29)');
