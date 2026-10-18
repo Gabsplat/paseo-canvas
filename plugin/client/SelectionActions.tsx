@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, TextInput } from '@getpaseo/plugin/client/react-native';
+import { Icon, TextInput } from './host';
 import type { CanvasGroup, CanvasLink, CanvasOperation } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { Button, CheckRow, Field, IconButton, Segments, Txt, useTooltip, useUI } from './ui';

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { useAgent, usePaseo, useRpc } from '@getpaseo/plugin/client';
-import { copyText, useToast } from '@getpaseo/plugin/client/react-native';
+import { useAgent, usePaseo, useRpc } from './host';
+import { copyText, useToast } from './host';
 import { configureInjection, configureSharing, readInjection, readSharing } from '../shared/rpc';
 import type { SharingMode } from '../shared/model';
 import type { CanvasController } from './useCanvas';

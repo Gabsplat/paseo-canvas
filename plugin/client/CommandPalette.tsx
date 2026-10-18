@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, ScrollView, TextInput } from '@getpaseo/plugin/client/react-native';
+import { Icon, ScrollView, TextInput } from './host';
 import { tokens } from './tokens';
 import { withAlpha } from './color';
 import { Txt, useUI } from './ui';

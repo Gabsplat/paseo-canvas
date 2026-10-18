@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Icon } from './host';
 import type { CanvasGroup } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { Button, Field, IconButton, Segments, Txt, useUI } from './ui';

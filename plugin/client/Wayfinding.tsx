@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, View } from 'react-native';
-import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Icon } from './host';
 import { edgeHint, minimapFit, type Box, type Point } from './logic';
 import { LENSES, LENS_LABEL, type LensId, type LensKey } from './lenses';
 import { withAlpha } from './color';

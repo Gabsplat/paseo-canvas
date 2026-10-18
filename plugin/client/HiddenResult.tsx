@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Icon } from './host';
 import { Button, Txt, useUI } from './ui';
 export function HiddenResult({ gateIds, open }: { gateIds: readonly string[]; open: (id: string) => void }) {
   const ui = useUI();

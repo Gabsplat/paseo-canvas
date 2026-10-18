@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, View } from 'react-native';
-import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Icon } from './host';
 import { tokens } from './tokens';
 import { Txt, useUI } from './ui';
 import { WebVectors, type VectorPath } from './web';

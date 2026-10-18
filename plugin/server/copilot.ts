@@ -1,12 +1,12 @@
-import type { RpcInput } from "@getpaseo/plugin";
-import type { PluginLifecycleEvents } from "@getpaseo/plugin/server";
+import type { RpcInput } from "../shared/contract";
+import type { TurnEndedEvent } from "./host";
 import * as rpc from "../shared/rpc";
 import { copilotSettingsSchema, documentContentSchema, type AgentEvent, type CopilotSettings } from "../shared/model";
 import { CanvasError } from "../shared/errors";
 import { documentRecord, type CanvasState, type CopilotRecord, type DocumentRecord } from "./store";
 import { newId } from "./reducer";
 import { latestAgent, type CanvasService } from "./service";
-import type { AgentGateway } from "./agent-integration";
+import type { AgentGateway } from "./host";
 
 /** How long the pill keeps saying "drawing" after a Lienzo tool call ends. */
 export const DRAWING_WINDOW_MS = 3000;
@@ -165,7 +165,7 @@ export class CopilotService {
    * the turn completed, it changed things (a tool call that is not ours), no Lienzo tool ran, the agent is idle, and
    * the previous turn did not already get a reminder. Never for thinking (or custom).
    */
-  async turnEnded(event: PluginLifecycleEvents["agent.turn_ended"], gateway: AgentGateway): Promise<ReminderDecision> {
+  async turnEnded(event: TurnEndedEvent, gateway: AgentGateway): Promise<ReminderDecision> {
     const agentId = event.agent.id;
     const record = (await this.service.store.read()).copilot[agentId];
     const settings = settingsOf(record);
@@ -176,7 +176,7 @@ export class CopilotService {
     const mark = (reminded: boolean) => this.service.store.transaction(state => { const entry = state.copilot[agentId]; if (entry && entry.reminded !== reminded) entry.reminded = reminded; });
     if (record?.reminded) { await mark(false); return "repeat"; }
     const calls = event.timeline.filter(item => item.type === "tool_call");
-    if (calls.some(call => isLienzoTool(call.name, this.toolNames)) || this.activity.usedThisTurn(agentId)) return "drew";
+    if (calls.some(call => isLienzoTool(call.name ?? "", this.toolNames)) || this.activity.usedThisTurn(agentId)) return "drew";
     if (!calls.some(call => call.status !== "canceled")) return "quiet";
     let agent;
     try { agent = await gateway.verify(agentId); } catch { return "unavailable"; }

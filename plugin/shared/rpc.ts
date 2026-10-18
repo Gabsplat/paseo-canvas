@@ -1,5 +1,5 @@
 import { runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
-import { defineRpc } from "@getpaseo/plugin";
+import { defineRpc } from "./contract";
 import { z } from "zod";
 import {
   idSchema, revisionInputSchema, revisionSchema, createInputSchema, mutateInputSchema,

@@ -182,7 +182,7 @@ function toolbarHarness() {
   let cursor = 0, now = 100; const slots: any[] = [];
   const react = { Fragment: 'Fragment', createElement: (type: any, props: any, ...children: any[]) => ({ type, props: { ...props, children } }), useRef: (value: any) => slots[cursor++] ??= { current: value }, useState: (initial: any) => { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], (v: any) => { slots[i] = typeof v === 'function' ? v(slots[i]) : v; }]; } };
   const tip = { ref: { current: null }, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} };
-  const modules: Record<string, any> = { react, 'react-native': { Pressable: 'Pressable', View: 'View' }, '@getpaseo/plugin/client/react-native': { Icon: 'Icon', ScrollView: 'ScrollView' }, './tokens': { tokens }, './color': { withAlpha: () => '' }, './ui': { Txt: 'Txt', useUI: () => ({ c: {}, compact: false }), useTooltip: () => tip }, './whiteboard-visuals': { islandStyle: () => ({}) } };
+  const modules: Record<string, any> = { react, 'react-native': { Pressable: 'Pressable', View: 'View' }, './host': { Icon: 'Icon', ScrollView: 'ScrollView' }, './tokens': { tokens }, './color': { withAlpha: () => '' }, './ui': { Txt: 'Txt', useUI: () => ({ c: {}, compact: false }), useTooltip: () => tip }, './whiteboard-visuals': { islandStyle: () => ({}) } };
   const exports: any = {}, output = ts.transpileModule(readFileSync('plugin/client/Toolbar.tsx', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText;
   runInNewContext(output, { exports, require: (id: string) => modules[id], Date: { now: () => now } });
   const mount = (tree: any): any => Array.isArray(tree) ? tree.map(mount) : !tree?.props ? tree : typeof tree.type === 'function' ? mount(tree.type(tree.props)) : { ...tree, props: { ...tree.props, children: mount(tree.props.children) } };
@@ -264,7 +264,7 @@ test('Canvas imperative editSelection routes whiteboard editing and deep card in
   const doc=document(); doc.blocks=[{id:'text',typeId:'wb-text',title:'',position:{x:40,y:60},data:{text:'Hello'}},{id:'frame',typeId:'preview',title:'Frame',data:{url:'https://example.test'}}];
   const c:any={view:{document:doc},selection:['frame'],catalog,events:[],pendingIds:[],learning:{getSnapshot:()=>({})}};
   const modules:Record<string,any>={
-    react,'react-native':{Animated:{Value,View:'Animated.View',add:()=>0,subtract:()=>0,multiply:()=>0,divide:()=>1},PanResponder:{create:(handlers:any)=>({panHandlers:handlers})},Pressable:'Pressable',View:'View'},'@getpaseo/plugin/client/react-native':{},
+    react,'react-native':{Animated:{Value,View:'Animated.View',add:()=>0,subtract:()=>0,multiply:()=>0,divide:()=>1},PanResponder:{create:(handlers:any)=>({panHandlers:handlers})},Pressable:'Pressable',View:'View'},'./host':{},
     './SelectionOverlay': {}, './ZoomControl':{ZoomControl:()=>null},'./logic':logic,'./tokens':{tokens},'./color':{isDark:()=>false,withAlpha:()=>''},'./Blocks':{},'./usePresentation':{usePresentation:()=>undefined},'./link-motion':{prepareLinkMotion:()=>undefined},'./renderers':{},'./Links':{},'./MagnetCue':{},'./ui':{useUI:()=>({layout:{platform:'web'},c:{surface0:'#fff'},font:()=>({})})},'./web':{},
     './motion':{NATIVE:false,reducedMotion:{current:true},useReducedMotion:()=>{}},'./Wayfinding':{Minimap:'Minimap',SelectionBeacon:'SelectionBeacon'},'./cursors':{canvasCursors:()=>({}),cursorForTool:()=>undefined},'./lenses':{LENSES:['none'],lensMarks:()=>({marks:new Map(),legend:[]})},'./useHistory':{useHistory:()=>({changes:null,failed:false})},'./whiteboard-tools':{DEFAULT_TOOL_STYLE},'../shared/whiteboard':wb,'./useWhiteboard':{useWhiteboard:()=>({editor:null,store:{},edit:(id:string)=>edits.push(id)})},'./WhiteboardContent':{},'./WhiteboardOverlay':{},'./interaction':require('../plugin/client/interaction'),'./whiteboard-geometry':require('../plugin/client/whiteboard-geometry'),'./whiteboard-visuals':{islandStyle:()=>({})},
   };
@@ -298,7 +298,7 @@ test('real Txt suppresses native text dragging only in passive cards and restore
     if (typeof tree.type === 'function') return mount(tree.type(tree.props));
     return tree;
   }
-  const modules: Record<string, any> = { react, 'react-native': { Text:'NativeText', Platform:{OS:'web',select:(value:any)=>value.default} }, '@getpaseo/plugin/client/react-native': { Modal:Object.assign(()=>null,{Content:()=>null}) }, './tokens':{tokens}, './color':{withAlpha:()=>''}, './web':{}, './motion':{useReducedMotion(){}} };
+  const modules: Record<string, any> = { react, 'react-native': { Text:'NativeText', Platform:{OS:'web',select:(value:any)=>value.default} }, './host': { capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true }, Modal:Object.assign(()=>null,{Content:()=>null}) }, './tokens':{tokens}, './color':{withAlpha:()=>''}, './web':{}, './motion':{useReducedMotion(){}} };
   function load(name: string) {
     const output = ts.transpileModule(readFileSync(`plugin/client/${name}`, 'utf8'), { compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true} }).outputText;
     const exports:any={};runInNewContext(output,{exports,require:(id:string)=>{assert.ok(id in modules,id);return modules[id];}});return exports;
@@ -324,7 +324,7 @@ test('narrow ZoomControl keeps only the percent trigger and exposes functional f
   const { readFileSync } = require('node:fs'), { runInNewContext } = require('node:vm'), ts = require('typescript'), { tokens } = require('../plugin/client/tokens');
   let cursor=0;const slots:any[]=[],calls:any[]=[];
   const react={createElement:(type:any,props:any,...children:any[])=>({type,props:{...props,children}}),useState:(initial:any)=>{const i=cursor++;if(!(i in slots))slots[i]=typeof initial==='function'?initial():initial;return[slots[i],(value:any)=>slots[i]=typeof value==='function'?value(slots[i]):value];},useRef:(value:any)=>slots[cursor++]??={current:value},useEffect(){}};
-  const modules:Record<string,any>={react,'react-native':{Pressable:'Pressable',View:'View'},'@getpaseo/plugin/client/react-native':{Icon:'Icon'},'./ui':{IconButton:'IconButton',Txt:'Txt',useUI:()=>({compact:false,c:{}})},'./tokens':{tokens},'./color':{withAlpha:()=>''},'./whiteboard-visuals':{islandStyle:()=>({})},'./web':{}};
+  const modules:Record<string,any>={react,'react-native':{Pressable:'Pressable',View:'View'},'./host':{Icon:'Icon'},'./ui':{IconButton:'IconButton',Txt:'Txt',useUI:()=>({compact:false,c:{}})},'./tokens':{tokens},'./color':{withAlpha:()=>''},'./whiteboard-visuals':{islandStyle:()=>({})},'./web':{}};
   const exports:any={},output=ts.transpileModule(readFileSync('plugin/client/ZoomControl.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   runInNewContext(output,{exports,require:(id:string)=>modules[id]});
   const render=(width:number)=>{cursor=0;return exports.ZoomControl({width,camera:{current:{scale:1}},subscribe:()=>()=>{},onStep:(d:number)=>calls.push(d),onFit:()=>calls.push('fit'),onReset:()=>calls.push('reset')});};

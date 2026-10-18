@@ -1,4 +1,4 @@
-import type { SettingsState } from '@getpaseo/plugin/client';
+import { capabilities, type SettingsState } from './host';
 import { DEFAULT_SHORTCUTS, formatCombo } from './shortcuts';
 import type { canvasPreferences } from '../shared/preferences';
 
@@ -54,7 +54,7 @@ export const guideSections: readonly { id: string; title: string; icon: string; 
     { title: 'History, undo and redo', detail: 'See the revisions and use Undo or Redo for content, positions, sizes and links.', action: 'history', button: 'See history' },
     { title: 'Templates and collections', detail: 'Select a Marco and choose Save as template… in Properties. Export the selection or the Lienzo as a JSON collection, and import collections of types, templates and documents.', action: 'packs', button: 'Open collections' },
     { title: 'Changes at the same time', detail: 'If the Lienzo changed while you edited, the notice lets you apply your change again or discard it.' },
-    { title: 'Your keys', keywords: 'shortcuts keyboard', detail: 'Press ? for every shortcut. Settings → Shortcuts reassigns them; your choices are kept for this Paseo host.' },
+    { title: 'Your keys', keywords: 'shortcuts keyboard', detail: `Press ? for every shortcut. Settings → Shortcuts reassigns them; your choices are kept ${capabilities.keptFor}.` },
   ] },
 ];
 /** The cheat sheet in the guide, from the shortcut registry so it never disagrees with the keys. */

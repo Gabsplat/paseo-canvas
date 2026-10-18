@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, View } from 'react-native';
-import { type PluginWorkspacePanelProps, useAgent, useSettings } from '@getpaseo/plugin/client';
-import { Icon, ScrollView, useToast } from '@getpaseo/plugin/client/react-native';
+import { type PanelProps, AgentSheet, capabilities, useAgent, useSettings } from './host';
+import { Icon, ScrollView, useToast } from './host';
 import type { BlockType, CanvasGroup, CanvasOperation, CanvasPack } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
 import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Txt, UIProvider, useUI, MenuRow, MenuDivider, TooltipProvider, TooltipLayer } from './ui';
@@ -146,11 +146,13 @@ function ContextTray({ composerRef, controller: c, note, setNote, sending, error
 }
 function Presence({ id, open }: { id: string | null; open: () => void }) {
   const u = useUI(), agent = useAgent(id ?? '', a => ({ title: a.title, status: a.status }));
+  // A host without agents (the desktop app) knows who connected over MCP, not whether it is working: no status.
+  if (!capabilities.runsAgents) return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agent connected over MCP: ' + (agent?.title || 'unknown client') : 'Connect an agent'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View><Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'MCP client' : 'No agent'}</Txt></Pressable>;
   const status = agent?.status === 'running' ? 'working' : agent?.status === 'idle' ? 'idle' : agent?.status === 'error' ? 'with an error' : agent?.status === 'closed' ? 'closed' : agent ? 'starting' : 'no data';
   const color = agent?.status === 'running' ? u.c.accent : agent?.status === 'idle' ? u.c.statusSuccess : agent?.status === 'error' || agent?.status === 'closed' ? u.c.statusDanger : u.c.foregroundMuted;
   return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agent connected: ' + (agent?.title || 'Agent unavailable') + ', ' + status : 'Connect an agent'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View>{id && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />}<Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'Agent unavailable' : 'No agent'}</Txt></Pressable>;
 }
-export function LienzoPanel(props: PluginWorkspacePanelProps) { return <UIProvider theme={props.theme} layout={props.layout} host={props.host}><Panel key={`${props.host.id}:${props.workspaceId}`} workspaceId={props.workspaceId} hostId={props.host.id} /></UIProvider>; }
+export function LienzoPanel(props: PanelProps) { return <UIProvider theme={props.theme} layout={props.layout} host={props.host}><Panel key={`${props.host.id}:${props.workspaceId}`} workspaceId={props.workspaceId} hostId={props.host.id} /></UIProvider>; }
 function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string }) {
   const u = useUI(), raw = useCanvas(workspaceId), toast = useToast(), settings = useSettings(canvasPreferences), prefs = useSettings(interfacePreferences);
   const c = useMemo<CanvasController>(() => ({ ...raw,
@@ -739,7 +741,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
           {c.failure && <Banner title={c.failure.conflict ? 'The Lienzo changed while you were editing' : 'The change was not saved'} icon={c.failure.conflict ? 'GitCompareArrows' : 'CircleAlert'} color={c.failure.conflict ? u.c.statusWarning : u.c.statusDanger} message={c.failure.conflict ? 'Another edit changed the Lienzo and yours was not saved. You can apply it again on top of the current content, or discard it.' : c.failure.message}>
             {c.failure.retry && <Button label={c.failure.conflict ? 'Apply my change again' : 'Retry'} variant="primary" small disabled={disabled} onPress={() => { void c.failure?.retry?.().catch(e => c.fail(e)); }} />}<Button label="Discard" variant="ghost" small onPress={c.clearFailure} />
           </Banner>}
-          {c.offline && <Banner title="No connection to Paseo" icon="Unplug" color={u.c.border} message="You can keep reading; changes are paused."><Button label="Retry" small onPress={() => { void c.refresh(); }} /></Banner>}
+          {c.offline && <Banner title={`No connection to ${capabilities.name}`} icon="Unplug" color={u.c.border} message="You can keep reading; changes are paused."><Button label="Retry" small onPress={() => { void c.refresh(); }} /></Banner>}
           {reload && !(c.failure && c.offline) && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected and will get your actions as messages, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => setReload(false)} /></Banner>}
           {c.failure && c.offline && reload && <Button label="+1 notice" small variant="ghost" onPress={() => setShowAllWarnings(true)} />}
         </View>}</View>
@@ -792,7 +794,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} list={resolved.list} chips={chips} onAssign={(id, combo) => savePrefs({ shortcuts: { ...overrides, [id]: combo } })} onReset={id => { const next = { ...overrides }; delete next[id]; savePrefs({ shortcuts: next }); }} />
     <Modal title="Settings" open={settingsOpen} onOpenChange={setSettingsOpen}><Modal.Content><View nativeID="lienzo-settings" style={{ gap: 12 }}>
       <Txt kind="title">Shortcuts</Txt>
-      <Txt kind="small" muted>Press Change and then the new keys. A combination another shortcut already uses moves here and leaves that one unassigned. Saved for this Paseo host.</Txt>
+      <Txt kind="small" muted>Press Change and then the new keys. A combination another shortcut already uses moves here and leaves that one unassigned. Saved {capabilities.keptFor}.</Txt>
       <ShortcutList list={resolved.list} chips={chips} onAssign={(id, combo) => savePrefs({ shortcuts: { ...overrides, [id]: combo } })} onReset={id => { const next = { ...overrides }; delete next[id]; savePrefs({ shortcuts: next }); }} />
       {Object.keys(overrides).length > 0 && <Button label="Reset all shortcuts" variant="ghost" onPress={() => savePrefs({ shortcuts: {} })} />}
     </View></Modal.Content></Modal>
@@ -803,6 +805,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {(templateError || c.failure) && <Txt kind="small" style={{ color: u.c.statusDanger }}>{c.failure?.message ?? templateError}</Txt>}
       <Button label={c.busy ? 'Saving…' : 'Save template'} variant="primary" disabled={disabled || !templateName.trim() || templateName.length > 200} onPress={() => { void saveTemplate(); }} />
     </Modal.Content></Modal>
-    <AgentModal controller={c} open={agentsOpen} close={() => setAgentsOpen(false)} onReload={() => setReload(true)} /><PackImport controller={c} open={importOpen} close={() => setImportOpen(false)} /><PackExport pack={exported} close={() => setExported(null)} />
+    {AgentSheet ? <AgentSheet open={agentsOpen} close={() => setAgentsOpen(false)} connectedAgentId={c.view?.connection?.agentId ?? null} /> : <AgentModal controller={c} open={agentsOpen} close={() => setAgentsOpen(false)} onReload={() => setReload(true)} />}<PackImport controller={c} open={importOpen} close={() => setImportOpen(false)} /><PackExport pack={exported} close={() => setExported(null)} />
   </View></TooltipProvider>;
 }

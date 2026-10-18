@@ -1,7 +1,7 @@
 import { LearningRuntimeStore } from "./learning-state";
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useRpc } from '@getpaseo/plugin/client';
-import type { RpcInput } from '@getpaseo/plugin';
+import { useRpc } from './host';
+import type { RpcInput } from '../shared/contract';
 import * as rpc from '../shared/rpc';
 import type { AgentEvent, CanvasCatalog, CanvasOperation, DocumentView } from '../shared/model';
 import { useHostId } from './ui';

@@ -1,0 +1,23 @@
+// The Paseo implementation of the panel's host contract (./contract.ts): the plugin SDK, unchanged underneath.
+// The desktop app replaces this module at build time with its own implementation of the same contract.
+import { openExternalUrl as sdkOpenExternalUrl, useAgent as sdkUseAgent, usePaseo as sdkUsePaseo, useRpc as sdkUseRpc, useSettings as sdkUseSettings } from '@getpaseo/plugin/client';
+import { Icon as SdkIcon, Modal as SdkModal, ScrollView as SdkScrollView, TextInput as SdkTextInput, copyText as sdkCopyText, useToast as sdkUseToast } from '@getpaseo/plugin/client/react-native';
+import type { ClientHost } from './contract';
+
+export type * from './contract';
+// Paseo-only contributions (composer pills, slash commands): used by index.client.tsx and copilot/, never by the panel.
+export type { PluginButtonContentProps, PluginButtonIconProps, PluginButtonRegistration, PluginClientContext } from '@getpaseo/plugin/client';
+
+export const Icon: ClientHost['Icon'] = SdkIcon;
+export const ScrollView: ClientHost['ScrollView'] = SdkScrollView;
+export const TextInput: ClientHost['TextInput'] = SdkTextInput;
+export const Modal: ClientHost['Modal'] = SdkModal;
+export const useToast: ClientHost['useToast'] = sdkUseToast;
+export const copyText: ClientHost['copyText'] = sdkCopyText;
+export const openExternalUrl: ClientHost['openExternalUrl'] = sdkOpenExternalUrl;
+export const useRpc: ClientHost['useRpc'] = sdkUseRpc;
+export const useSettings: ClientHost['useSettings'] = sdkUseSettings as ClientHost['useSettings'];
+export const useAgent: ClientHost['useAgent'] = sdkUseAgent;
+export const usePaseo: ClientHost['usePaseo'] = sdkUsePaseo as unknown as ClientHost['usePaseo'];
+export const capabilities: ClientHost['capabilities'] = { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true };
+export const AgentSheet: ClientHost['AgentSheet'] = null;

@@ -5,6 +5,7 @@ import type { CanvasOperation, CatalogExtension, ExtensionPermission } from '../
 import { isDark } from './color';
 import { layoutCanvas, newId } from './logic';
 import { Button, IconButton, Txt, useUI } from './ui';
+import { capabilities } from './host';
 import type { CanvasController } from './useCanvas';
 import { WebExtension, type ExtensionCall } from './web';
 
@@ -40,7 +41,7 @@ function ExtensionFrame({ extension, controller: c, onOpen, onClose }: { extensi
       need('edit'); const operations = args.operations;
       if (!Array.isArray(operations) || !operations.length || operations.length > EXTENSION_LIMITS.operations) throw new Error(`Expected 1 to ${EXTENSION_LIMITS.operations} operations.`);
       if (operations.some(o => !o || typeof o !== 'object' || (EXTENSION_FORBIDDEN_OPERATIONS as readonly string[]).includes((o as { type?: string }).type ?? ''))) throw new Error('An extension cannot change the saved selection or the agent instructions with edit.');
-      if (c.offline) throw new Error('No connection to Paseo.');
+      if (c.offline) throw new Error(`No connection to ${capabilities.name}.`);
       const label = typeof args.label === 'string' && args.label.trim() ? args.label.trim().slice(0, 200) : extension.name, next = await c.edit(operations as CanvasOperation[], `${extension.name}: ${label}`.slice(0, 300));
       if (!next) throw new Error(c.failure?.message ?? 'The canvas rejected the change.'); return { revision: next.document.revision };
     }

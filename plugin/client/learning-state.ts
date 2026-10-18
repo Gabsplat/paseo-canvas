@@ -1,6 +1,6 @@
 import type { CanvasDocument } from '../shared/model';
 import { cleanRuntime, resolveScope, type RuntimeState } from '../shared/learning';
-import type { RpcInput } from '@getpaseo/plugin';
+import type { RpcInput } from '../shared/contract';
 import type { setRuntime, runtimeOutputSchema } from '../shared/rpc';
 import type { z } from 'zod';
 type Request = RpcInput<typeof setRuntime>;

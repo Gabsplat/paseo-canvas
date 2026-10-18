@@ -1,6 +1,6 @@
 import { cleanRuntime, DOCUMENT_SCOPE, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
 import { safeJson } from "./reducer";
-import type { RpcInput } from "@getpaseo/plugin";
+import type { RpcInput } from "../shared/contract";
 import * as rpc from "../shared/rpc";
 import {
   documentContentSchema, documentSchema, catalogMutateInputSchema, groupSchema,

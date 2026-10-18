@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, ScrollView } from '@getpaseo/plugin/client/react-native';
+import { Icon, ScrollView } from './host';
 import type { WbShape } from '../shared/whiteboard';
 import { tokens } from './tokens';
 import { withAlpha } from './color';

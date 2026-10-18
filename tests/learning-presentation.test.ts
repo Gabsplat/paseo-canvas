@@ -59,7 +59,7 @@ function headless(presentation: ReturnType<typeof canvasPresentation>, document:
   const react = { createElement: (type: unknown, props: unknown, ...children: unknown[]) => { rendered.push(type); return { type, props: { ...(props as object), children } }; }, useEffect() {}, useState: (v: unknown) => [v, () => {}], useRef: (v: unknown) => ({ current: v }) };
   const modules: Record<string, unknown> = {
     react, 'react-native': { Animated: { View: 'AnimatedView' }, View: 'View', Pressable: 'Pressable', Image: 'Image' },
-    '@getpaseo/plugin/client': {}, '@getpaseo/plugin/client/react-native': { Icon: 'Icon', ScrollView: 'ScrollView', useToast: () => ({}) },
+    './host': { Icon: 'Icon', ScrollView: 'ScrollView', useToast: () => ({}), capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
     './tokens': { tokens }, './usePresentation': { usePresentation: () => presentation },
     './ui': { Txt: 'Txt', Button: 'Button', IconButton: 'IconButton', useUI: () => ({ compact: false, c: { surface1: '#fff', border: '#888', accent: '#268' } }) },
     './logic': {}, './color': {}, './web': {}, './media': {}, './ImageViewer': {},
