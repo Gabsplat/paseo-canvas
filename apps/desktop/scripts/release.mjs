@@ -16,7 +16,8 @@ if (process.platform === 'darwin') {
   builder(['--mac', 'dmg', 'zip', '--arm64', '--x64', ...(sign ? ['-c.mac.hardenedRuntime=true', `-c.mac.notarize=${notarize}`] : ['-c.mac.identity=null'])], sign ? {} : { CSC_IDENTITY_AUTO_DISCOVERY: 'false' });
 } else if (process.platform === 'win32') {
   // WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD (a .pfx) sign; without them the installer is unsigned and SmartScreen warns.
-  builder(['--win', 'nsis'], process.env.WIN_CSC_LINK ? {} : { CSC_IDENTITY_AUTO_DISCOVERY: 'false' });
+  // One installer per architecture: a combined one would carry both and be twice the size.
+  for (const arch of ['--x64', '--arm64']) builder(['--win', 'nsis', arch], process.env.WIN_CSC_LINK ? {} : { CSC_IDENTITY_AUTO_DISCOVERY: 'false' });
 } else {
   builder(['--linux', 'AppImage', 'deb', '--x64']);
 }
