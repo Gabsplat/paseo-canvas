@@ -473,8 +473,10 @@ subtree or template is copied.
 `html` holds one self-contained page: `data: { html (1..200000 characters), height? (80..1600) }`. Any HTML,
 CSS and JavaScript is allowed; there are no preset components. It runs sandboxed without access to the
 canvas page; scripts and network requests are allowed. The injected `lienzo` object is the only channel:
-`lienzo.send(kind, payload)` arrives as a canvas event of kind `html.event` with
-`payload: { event, data }`; `lienzo.onContext(fn)` gives `{ theme: { dark, colors }, block, document,
+`lienzo.send(kind, payload, options)` arrives as a canvas event of kind `html.event` with
+`payload: { event, data }`. It waits with other events until the agent next hears from the canvas, without
+interrupting it; `{ wake: true }` delivers it at once with whatever is waiting (at most once every 3 s per mini app),
+for buttons where the person asks the agent to react now; `lienzo.onContext(fn)` gives `{ theme: { dark, colors }, block, document,
 selection }`; `lienzo.select(id)`; `lienzo.resize(height)`; `lienzo.onFrame(fn)` gives `{ x, y, width, height, others }` in
 screen pixels, this window and the other mini apps, on every move. Update the page with `block.update` on
 `data.html`. For projects with several files or a server, run them and use a `preview` block with `data.url`.

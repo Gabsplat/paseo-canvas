@@ -14,7 +14,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  try{
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme='+(process.argv[2]||'oscuro')});await wait('!!document.querySelector("#lienzo-entity-note")');
- const app=`<!doctype html><meta charset="utf-8"><style>body{margin:0;height:100vh;display:grid;place-items:center;font:16px system-ui;background:#123;color:#fff}button{font:inherit;padding:10px 16px;border-radius:999px;border:0;background:#f90}</style><button id="b">Ejemplo: contar</button><p id="s">sin contexto</p><script>let n=0;b.onclick=()=>{n++;b.textContent='Ejemplo: '+n;lienzo.send('count',{n})};lienzo.onContext(c=>{s.textContent=(c.theme.dark?'oscuro':'claro')+' · '+c.selection.length+' seleccionados · '+c.block.title});</script>`;
+ const app=`<!doctype html><meta charset="utf-8"><style>body{margin:0;height:100vh;display:grid;place-items:center;font:16px system-ui;background:#123;color:#fff}button{font:inherit;padding:10px 16px;border-radius:999px;border:0;background:#f90}</style><button id="b">Ejemplo: contar</button><p id="s">sin contexto</p><script>let n=0;b.onclick=()=>{n++;b.textContent='Ejemplo: '+n;lienzo.send('count',{n},{wake:true})};lienzo.onContext(c=>{s.textContent=(c.theme.dark?'oscuro':'claro')+' · '+c.selection.length+' seleccionados · '+c.block.title});</script>`;
  await ev(`__panelQA.seed([{type:'block.create',block:{id:'app',typeId:'html',title:'Ejemplo: contador',position:{x:900,y:380},data:{html:${JSON.stringify(app)},height:220}}},
   {type:'block.create',block:{id:'web',typeId:'preview',title:'',position:{x:900,y:700},data:{url:'http://127.0.0.1:8765/fixtures/frame.html'}}}])`);
  await wait('!!document.querySelector("#lienzo-entity-app iframe")&&!!document.querySelector("#lienzo-entity-web")');await new Promise(r=>setTimeout(r,900));
@@ -31,6 +31,8 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  for(const f of [.3,.3,.26,.3,.34,.3]){const yy=r.y+r.h*f;await mouse('mouseMoved',x,yy);await mouse('mousePressed',x,yy,1,1);await mouse('mouseReleased',x,yy,0,1);await new Promise(r=>setTimeout(r,200));}await new Promise(r=>setTimeout(r,900));
  await wait('__panelQA.actions.length>'+before);const sent=await ev(`JSON.stringify(__panelQA.actions.slice(-1))`);
  assert.ok(sent.includes('html.event')&&sent.includes('count'),'the mini app reached the canvas: '+sent.slice(0,300));
+ const counts=await ev(`JSON.stringify(__panelQA.actions.filter(a=>a.kind==='html.event').map(a=>a.delivery))`);const kinds=JSON.parse(counts);
+ assert.equal(kinds[0],'immediate','a wake reaches the agent at once');assert.ok(kinds.length>1&&kinds.slice(1).every(k=>k==='batched'),'rapid wakes wait with the rest: '+counts);
  const shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('/tmp/lienzo-windows.png',Buffer.from(shot.data,'base64'));
  console.log('PASS windows are bare and the mini app talks to the canvas');assert.deepEqual(uncaught,[]);
  }finally{ws.close();}
