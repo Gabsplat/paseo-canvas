@@ -2,8 +2,8 @@
  * The command palette's model (docs/redesign-2026-10.md, "Command palette"): fuzzy matching on titles and keywords,
  * results grouped in a fixed order, and Recent on an empty query.
  */
-export type PaletteGroup = 'Recent' | 'Tools' | 'Actions' | 'Hojas' | 'Lienzos' | 'Extensions' | 'Settings';
-export const PALETTE_GROUPS: readonly PaletteGroup[] = ['Recent', 'Tools', 'Actions', 'Hojas', 'Lienzos', 'Extensions', 'Settings'];
+export type PaletteGroup = 'Recent' | 'Tools' | 'Actions' | 'Sheets' | 'Lienzos' | 'Extensions' | 'Settings';
+export const PALETTE_GROUPS: readonly PaletteGroup[] = ['Recent', 'Tools', 'Actions', 'Sheets', 'Lienzos', 'Extensions', 'Settings'];
 export type PaletteItem = {
   id: string; group: Exclude<PaletteGroup, 'Recent'>; title: string; subtitle?: string; icon: string; keywords?: string;
   /** Combinations from the shortcut registry, shown as chips. */

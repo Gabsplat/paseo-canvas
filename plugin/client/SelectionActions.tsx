@@ -22,7 +22,7 @@ import { withAlpha } from './color';
 import { PanelSection } from './RightPanel';
 
 const toneNames = { neutro: 'Neutral', acento: 'Accent', violeta: 'Violet', turquesa: 'Teal', aviso: 'Amber', peligro: 'Red' } as const;
-const MARCO = 'Marco — a frame that holds things together (Spanish for frame).';
+const MARCO = 'Frame — holds things together on the canvas.';
 type Colour = { kind: 'whiteboard'; value: WbColor; set(color: WbColor): void } | { kind: 'link'; link: CanvasLink; set(tone: CanvasLink['tone'] | undefined): void };
 
 function BarButton({ label, icon, onPress, disabled, shortcut, detail, active, danger, nativeID, children }: { label: string; icon?: string; onPress(): void; disabled?: boolean; shortcut?: string; detail?: string; active?: boolean; danger?: boolean; nativeID?: string; children?: React.ReactNode }) {
@@ -35,7 +35,7 @@ function BarButton({ label, icon, onPress, disabled, shortcut, detail, active, d
 }
 
 /**
- * The small bar over the selection: colour, Marco, duplicate, delete. Detail lives in the right panel.
+ * The small bar over the selection: colour, Frame, duplicate, delete. Detail lives in the right panel.
  * A selected link gets its own: colour, kind, reverse, delete.
  */
 export function SelectionBar({ controller: c, disabled, linkId, colour, duplicate, remove, wrap, unwrap, keyLabel, onProperties }: {
@@ -56,8 +56,8 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, duplicat
         <BarButton label={link.kind === 'flow' ? 'Kind: flow' : link.kind === 'depends' ? 'Kind: needs' : 'Kind: mention'} icon={link.kind === 'flow' ? 'Minus' : link.kind === 'depends' ? 'MoreHorizontal' : 'Ellipsis'} detail="Press to change what this link means." disabled={disabled} onPress={() => { const kinds = ['flow', 'depends', 'reference'] as const; void c.edit([{ type: 'link.update', id: link.id, patch: { kind: kinds[(kinds.indexOf(link.kind) + 1) % kinds.length] } }], 'Change link kind'); }} />
         <BarButton label="Reverse" icon="ArrowLeftRight" disabled={disabled} onPress={() => { void c.edit([{ type: 'link.update', id: link.id, patch: { from: link.to, to: link.from } }], 'Reverse link'); }} />
       </> : <>
-        {group ? <BarButton nativeID="lienzo-selection-unwrap" label="Unwrap Marco" icon="Ungroup" shortcut={keyLabel('edit.unwrap')} detail="Keeps what is inside; removes the frame." disabled={disabled} onPress={unwrap} />
-          : <BarButton nativeID="lienzo-selection-marco" label="Wrap in a Marco" icon="SquareDashed" shortcut={keyLabel('edit.wrap')} detail={MARCO} disabled={disabled} onPress={wrap} />}
+        {group ? <BarButton nativeID="lienzo-selection-unwrap" label="Unwrap Frame" icon="Ungroup" shortcut={keyLabel('edit.unwrap')} detail="Keeps what is inside; removes the frame." disabled={disabled} onPress={unwrap} />
+          : <BarButton nativeID="lienzo-selection-marco" label="Wrap in a Frame" icon="SquareDashed" shortcut={keyLabel('edit.wrap')} detail={MARCO} disabled={disabled} onPress={wrap} />}
         <BarButton nativeID="lienzo-selection-duplicate" label="Duplicate" icon="CopyPlus" shortcut={keyLabel('edit.duplicate')} disabled={disabled} onPress={duplicate} />
       </>}
       <BarButton nativeID="lienzo-selection-delete" label="Delete" icon="Trash2" danger shortcut={keyLabel('edit.delete')} disabled={disabled} onPress={remove} />
@@ -98,14 +98,14 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
     return c.edit([communicationOperation(latest, target, patch)], 'Edit instructions for the agent');
   };
   const layout = group?.layout, layoutMode = containerMode(doc, group?.id ?? null, c.catalog);
-  const saveLayout = (next: NonNullable<CanvasGroup['layout']>) => { try { void apply(layoutOperations(doc, group?.id ?? null, next, rects(), c.catalog), 'Change Marco layout'); } catch (error) { c.fail(error); } };
+  const saveLayout = (next: NonNullable<CanvasGroup['layout']>) => { try { void apply(layoutOperations(doc, group?.id ?? null, next, rects(), c.catalog), 'Change Frame layout'); } catch (error) { c.fail(error); } };
   const resetUnavailable = u.layout.platform !== 'web' && type?.renderer !== 'controls';
   const reset = async () => {
     if (!block || disabled || resetUnavailable) return;
     const documentId = doc.id, blockId = block.id, root = panelRoot.current; await c.settle();
     const current = () => { const controller = liveController.current, latest = controller.current.current?.document; return lifetime.current && !!root && panelRoot.current === root && !controller.busy && !controller.offline && latest?.id === documentId && latest.workspaceId === doc.workspaceId && controller.selection.length === 1 && controller.selection[0] === blockId && latest.blocks.some(item => item.id === blockId); };
     if (!current()) { if (lifetime.current) c.fail(new Error('Not reset: the document or the selection changed.')); return; }
-    if (u.layout.platform === 'web') { if (!activateRendererReset(root, blockId, current)) c.fail(new Error('Not reset: open the Marco and wait for the block to appear.')); return; }
+    if (u.layout.platform === 'web') { if (!activateRendererReset(root, blockId, current)) c.fail(new Error('Not reset: open the Frame and wait for the block to appear.')); return; }
     const latest = c.current.current!.document;
     if (type?.renderer === 'controls') { const variables = resolveScope(latest, blockId, c.learning.getSnapshot()); for (const name of block.data.variables as string[] ?? []) if (variables[name]) c.learning.setVariable(blockId, name, null); }
     else c.learning.setBlock(blockId, null);
@@ -122,7 +122,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
   // Titles come from what is shown: a result still hidden behind a learning gate is never named here.
   const shown = presentation?.document ?? doc, shownTitle = (id: string) => [...shown.blocks, ...shown.groups].find(e => e.id === id)?.title || 'Untitled';
   const heading = link ? `${shownTitle(link.from)} → ${shownTitle(link.to)}` : selected.length > 1 ? `${selected.length} selected` : entity ? shownTitle(entity.id) : 'Untitled';
-  const kindName = link ? 'Link' : selected.length > 1 ? 'Selection' : group ? 'Marco' : type?.name ?? 'Block';
+  const kindName = link ? 'Link' : selected.length > 1 ? 'Selection' : group ? 'Frame' : type?.name ?? 'Block';
   const head = <View style={{ paddingHorizontal: tokens.face.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>{kindName}</Txt><Txt kind="bodyStrong" numberOfLines={2}>{heading}</Txt></View>;
 
   if (gate) return <View>{head}<PanelSection title="Data"><RegisteredRenderer block={block!} id={type!.renderer!} controller={c} readOnly={disabled} /></PanelSection></View>;
@@ -151,24 +151,24 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
     {block && needsContentInteraction(type?.renderer) && !u.compact && row('Interact', 'MousePointerClick', interact, false)}
     {block && slot?.kind === 'reset' && row(slot.label, slot.icon, () => { void reset().catch(c.fail); }, true, false, resetUnavailable)}
     {group && row('Add inside', 'Plus', add)}
-    {group && row(group.collapsed ? 'Expand' : 'Collapse', group.collapsed ? 'ChevronDown' : 'ChevronUp', () => { void patchEntity({ collapsed: !group.collapsed }, group.collapsed ? 'Expand Marco' : 'Collapse Marco'); })}
-    {selected.length > 1 && row('Wrap in a Marco', 'SquareDashed', groupSelection)}
+    {group && row(group.collapsed ? 'Expand' : 'Collapse', group.collapsed ? 'ChevronDown' : 'ChevronUp', () => { void patchEntity({ collapsed: !group.collapsed }, group.collapsed ? 'Expand Frame' : 'Collapse Frame'); })}
+    {selected.length > 1 && row('Wrap in a Frame', 'SquareDashed', groupSelection)}
     {selected.length === 2 && row('Connect the two', 'Spline', connectSelection)}
     {row('Duplicate', 'CopyPlus', duplicate)}
-    {group && row('Unwrap Marco', 'Ungroup', () => { void apply([{ type: 'group.delete', id: group.id, ungroup: true }], 'Unwrap Marco'); })}
+    {group && row('Unwrap Frame', 'Ungroup', () => { void apply([{ type: 'group.delete', id: group.id, ungroup: true }], 'Unwrap Frame'); })}
     {(entity?.position || selected.some(e => e.position)) && row(selected.length > 1 ? 'Release positions' : 'Release position', 'PinOff', () => release(selected.filter(e => e.position).map(e => e.id)))}
     {group && pinnedChildren(doc, group.id).length > 0 && row('Arrange automatically', 'LayoutGrid', () => release(pinnedChildren(doc, group.id), 'Arrange automatically'))}
-    {selected.length > 0 && selected[0].parentGroupId && selected.every(e => e.parentGroupId === selected[0].parentGroupId) && row('Take out of the Marco', 'LogOut', () => { try { void apply(leaveGroupOperations(doc, c.selection, rects(), c.catalog), 'Take out of the Marco'); } catch (error) { c.fail(error); } })}
+    {selected.length > 0 && selected[0].parentGroupId && selected.every(e => e.parentGroupId === selected[0].parentGroupId) && row('Take out of the Frame', 'LogOut', () => { try { void apply(leaveGroupOperations(doc, c.selection, rects(), c.catalog), 'Take out of the Frame'); } catch (error) { c.fail(error); } })}
     {block?.size && row('Automatic size', 'Maximize', () => { void patchEntity({ size: null }, 'Restore automatic size'); })}
     {entity?.parentGroupId && ['stack', 'grid', 'flow'].includes(containerMode(doc, entity.parentGroupId, c.catalog)) && [-1, 1].map(direction => row(direction < 0 ? 'Move earlier' : 'Move later', direction < 0 ? 'ChevronUp' : 'ChevronDown', () => { void apply(reorderOperation(doc, entity.id, direction), direction < 0 ? 'Move earlier' : 'Move later'); }, true, false, !reorderOperation(doc, entity.id, direction).length))}
-    {row(group ? 'Delete Marco and contents' : 'Delete', 'Trash2', remove, true, true)}
+    {row(group ? 'Delete Frame and contents' : 'Delete', 'Trash2', remove, true, true)}
   </>;
   return <View nativeID="lienzo-properties">{head}
     {style && <PanelSection title="Style">{style}</PanelSection>}
     {block && !isWhiteboardSelection(c, selected) && <PanelSection title="Content">{fields}</PanelSection>}
-    {group && <PanelSection title="Marco">
+    {group && <PanelSection title="Frame">
       <Field key={group.id + ':title'} label="Title" value={group.title} disabled={disabled} onSave={title => patchEntity({ title }, 'Edit title')} />
-      <Field key={group.id + ':purpose'} label="Purpose" value={group.description} multiline disabled={disabled} helper="One sentence: what this Marco is for." onSave={description => patchEntity({ description }, 'Edit Marco purpose')} />
+      <Field key={group.id + ':purpose'} label="Purpose" value={group.description} multiline disabled={disabled} helper="One sentence: what this Frame is for." onSave={description => patchEntity({ description }, 'Edit Frame purpose')} />
     </PanelSection>}
     {group && <PanelSection title="Layout">
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>{(['graph', 'stack', 'grid', 'flow', 'free'] as const).map(mode => <Pressable key={mode} accessibilityRole="button" accessibilityLabel={tokens.layout.labels[mode]} accessibilityState={{ selected: mode === layoutMode, disabled }} disabled={disabled} onPress={() => saveLayout({ ...layout, mode })} style={{ width: 50, height: 48, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 6, borderWidth: mode === layoutMode ? layout ? 1.5 : 1 : 0, borderStyle: !layout ? 'dashed' : 'solid', borderColor: layout ? u.c.accent : u.c.border, backgroundColor: mode === layoutMode && layout ? u.wash('acento') : 'transparent', opacity: disabled ? .45 : 1 }}><Icon name={layoutIcons[mode]} size={18} color={u.c.foreground} /><Txt kind="small">{tokens.layout.labels[mode]}</Txt></Pressable>)}</View>
@@ -176,10 +176,10 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
       {layoutMode === 'graph' && <Segments value={layout?.direction ?? 'down'} options={[{ value: 'down', label: 'Downwards' }, { value: 'right', label: 'To the right' }]} disabled={disabled} onChange={direction => saveLayout({ ...layout, mode: 'graph', direction })} />}
       {layoutMode === 'grid' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Txt>Columns</Txt><IconButton icon="Minus" label="Fewer columns" disabled={disabled || (layout?.columns ?? 2) <= 1} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) - 1 })} /><Txt>{layout?.columns ?? 2}</Txt><IconButton icon="Plus" label="More columns" disabled={disabled || (layout?.columns ?? 2) >= 4} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) + 1 })} /></View>}
     </PanelSection>}
-    {group?.variables?.length ? <PanelSection title="Variables" defaultOpen={false}><Field label="Variables" value={JSON.stringify(group.variables, null, 2)} multiline mono disabled={disabled} onSave={value => patchEntity({ variables: variablesSchema.parse(JSON.parse(value)) }, 'Edit Marco variables')} /></PanelSection> : null}
+    {group?.variables?.length ? <PanelSection title="Variables" defaultOpen={false}><Field label="Variables" value={JSON.stringify(group.variables, null, 2)} multiline mono disabled={disabled} onSave={value => patchEntity({ variables: variablesSchema.parse(JSON.parse(value)) }, 'Edit Frame variables')} /></PanelSection> : null}
     {entity && <PanelSection title="Instructions for the agent" defaultOpen={focus === 'instruction' || hasCommunication(entity.communication)}>
-      <Field key={'instruction:' + (target ?? doc.id)} label={target === entity.id ? 'How the agent should talk about this' : target ? `Marco “${targetEntity?.title}”` : 'The whole Lienzo'} value={communication?.instructions ?? ''} multiline inputStyle={{ minHeight: 72, maxHeight: 192 }} disabled={disabled} placeholder="For example: explain it to a beginner, step by step." onSave={instructions => saveCommunication({ instructions })} />
-      {levels.length > 0 && <><Txt kind="small" muted>Also applies:</Txt>{levels.map(level => <Button key={level.id} label={level.id === doc.id ? 'The whole Lienzo' : 'Marco “' + level.title + '”'} icon="Compass" variant="ghost" small onPress={() => setInstructionTarget(level.id === doc.id ? null : level.id)} />)}</>}
+      <Field key={'instruction:' + (target ?? doc.id)} label={target === entity.id ? 'How the agent should talk about this' : target ? `Frame “${targetEntity?.title}”` : 'The whole Lienzo'} value={communication?.instructions ?? ''} multiline inputStyle={{ minHeight: 72, maxHeight: 192 }} disabled={disabled} placeholder="For example: explain it to a beginner, step by step." onSave={instructions => saveCommunication({ instructions })} />
+      {levels.length > 0 && <><Txt kind="small" muted>Also applies:</Txt>{levels.map(level => <Button key={level.id} label={level.id === doc.id ? 'The whole Lienzo' : 'Frame “' + level.title + '”'} icon="Compass" variant="ghost" small onPress={() => setInstructionTarget(level.id === doc.id ? null : level.id)} />)}</>}
       {target !== entity.id && <Button label="Back to this one" small variant="ghost" onPress={() => setInstructionTarget(undefined)} />}
       {hasCommunication(communication) && <Button label="Clear" icon="Eraser" variant="ghost" small disabled={disabled} onPress={() => { void saveCommunication({ instructions: '', intent: '', audience: '' }).then(next => { if (next) undoNotice('Instructions cleared'); }); }} />}
     </PanelSection>}

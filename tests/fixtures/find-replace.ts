@@ -16,7 +16,7 @@ lienzo.onContext(function(c){ctx=c;var k=c.theme.colors;document.body.style.back
 find.oninput=put.oninput=function(){note.textContent='';show()};
 go.onclick=function(){var list=hits();if(!list.length)return;go.disabled=true;
  lienzo.edit(list.map(function(b){return{type:'block.update',id:b.id,patch:{title:b.title.split(find.value).join(put.value)||'Untitled'}}}),'Replace “'+find.value+'” in '+list.length+' titles')
-  .then(function(){note.textContent='Listo. '+list.length+' titles changed. You can undo it.'},function(e){note.textContent='Could not replace: '+e.message;show()})};
+  .then(function(){note.textContent='Done. '+list.length+' titles changed. You can undo it.'},function(e){note.textContent='Could not replace: '+e.message;show()})};
 </script>`;
 /** A tool that edits, written against API 1 only. The contract test runs it; it no longer ships in the app. */
 export const findAndReplace: CanvasExtension = { id: "find-replace", kind: "tool", api: 1, name: "Find and replace", description: "Changes text in the titles of the selection, or of the whole Lienzo.", icon: "Replace", permissions: ["edit"], html: REEMPLAZAR };

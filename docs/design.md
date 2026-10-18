@@ -54,7 +54,7 @@ still to be published by the backend; it fixes their look and behaviour, not the
     B, §20.4) and a card's *interaction mode* (ring and chip, §20.2). `Esc` leaves each.
   - Never show identifiers, revision numbers, coordinates or pixel sizes.
   - Editable fields retain accessible names. Visible labels appear in forms and learning controls; a single-purpose inline editor uses its contextual title.
-- **Language:** Spanish, sentence case, no exclamation marks, no emoji. Interface text is
+- **Language:** (historical, v1–v12) Spanish, sentence case, no exclamation marks, no emoji. Interface text is
   **impersonal**: buttons and menu rows are infinitives ("Añadir nota"), hints are noun phrases
   ("Doble clic para escribir una idea"). It never conjugates in the second person, so it reads the
   same for "tú" and "vos" readers. The complete string list is §19.
@@ -90,7 +90,7 @@ still to be published by the backend; it fixes their look and behaviour, not the
   screens dim the canvas with it at 0.4 in dark, `foreground` at 0.4 in light).
 - Fonts: `tokens.font.family` via `Platform.select`. No custom fonts.
 - Popovers and menus use RN positioning on desktop. Lienzos, the guide, Settings, Extensions and History are
-  screens drawn by the plugin over the canvas (§35), not host modals; small dialogs (Ventana address, SVG import, the
+  screens drawn by the plugin over the canvas (§35), not host modals; small dialogs (Window address, SVG import, the
   agent dialog) stay host `Modal`; compact popovers become host sheets.
 - **DOM is allowed only in `plugin/client/web.ts`**, guarded by `layout.platform === "web"` and
   `typeof document !== "undefined"`. Extend the existing drawing, input and viewport adapters in that module only. Every DOM entry checks Platform.OS and remains inert on native.
@@ -133,7 +133,7 @@ non-compact layouts: there is no top bar, no side rail, no inspector and no tray
 │          ┌─────────────────────┐ ← selection bar    │               │  │  (floating)
 │          │ ● ▢ ⧉ 🗑            │                    │               │  │
 │                                                     └───────────────┘  │
-│  [Lente]                                                               │
+│  [Lens]                                                               │
 │  [map]  [ V H │ P ▢ T ↗ E │ M W │ pinned… │ + ]          [ − 100% + ]  │  bottom toolbar
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -142,11 +142,11 @@ Every island floats over the one canvas with `pointerEvents: "box-none"` around 
 
 | Island | Position | Content |
 | --- | --- | --- |
-| Top-left | inset 12, 44 tall | `Menu` (main menu, §3.2) · **title** (serif `groupTitle`, max 280, 160 under 880, `ChevronDown` 12 after it; press → Lienzos) · chip "Example" · save dot. Stage 2 adds the Hoja menu after the title. |
+| Top-left | inset 12, 44 tall | `Menu` (main menu, §3.2) · **title** (serif `groupTitle`, max 280, 160 under 880, `ChevronDown` 12 after it; press → Lienzos) · chip "Example" · save dot. Stage 2 adds the Sheet menu after the title. |
 | Top-right | inset 12, 44 tall | `Search` "Search and commands" (⌘K, §31) · `PanelRight` "Properties" (⌘\, active while the right panel shows) |
 | Bottom toolbar | centred on the bottom edge, inset 12 (`face.toolbar.bottom`) | §24 |
 | Right panel | right inset 12, under the top islands | §31 |
-| Lente · minimap | bottom-left | §25, §29 |
+| Lens · minimap | bottom-left | §25, §29 |
 | Zoom | bottom-right | `Minus` · percent · `Plus` · fit |
 
 - **Save dot.** 6 px, only when it has something to say: `statusWarning` while a write takes over 400 ms,
@@ -852,8 +852,8 @@ reads the strokes as blocks, and `canvas_selection` summarises them without poin
 
 ## 19. Copy and event honesty
 
-English, sentence case, short and concrete, with the five glossary words of §33 (Lienzo, Marco, Hoja, Lente,
-Ventana) used as names and explained where they appear. User-facing labels never include raw IDs, revision numbers
+English, sentence case, short and concrete; Lienzo is the only Spanish word, and Frame, Sheet, Lens and Window
+are used as names. User-facing labels never include raw IDs, revision numbers
 or schema names. Technical documentation may use API names. Argentine flavour only where nobody needs it to use the
 app: empty states, onboarding, a few confirmations ("Listo.", "Dale.").
 
@@ -861,8 +861,8 @@ app: empty states, onboarding, a few confirmations ("Listo.", "Dale.").
 | --- | --- |
 | Lienzos | Lienzos; New Lienzo; Untitled Lienzo; Search Lienzos; Recent; Name; Rename; Duplicate; Delete…; No Lienzos yet. |
 | Adding | More tools; Search tools, embeds, blocks…; Nothing matches “{q}”; Manage extensions… |
-| Selection | Wrap in a Marco; Unwrap Marco; Duplicate; Delete; Properties |
-| Marco | Add inside; Layout; Take out of the Marco |
+| Selection | Wrap in a Frame; Unwrap Frame; Duplicate; Delete; Properties |
+| Frame | Add inside; Layout; Take out of the Frame |
 | Link | Label; Kind (Flow, Needs, Mentions); Colour; Reverse |
 | Agent | Agent; Works on this Lienzo; Connect an agent; Talk to the agent in its own app |
 | Extensions | Add from file…; Export all mine; Export; Remove; Allow; Review “{file}”; Install; Read the guide |
@@ -1058,12 +1058,12 @@ accent name. Unpaired rows are pressable only when they are directories with chi
 **Toolbar** (`face.toolbar`, `client/Toolbar.tsx`). A floating island centred on the bottom edge, 12 from it (`face.toolbar.bottom`),
 44 tall with 36 buttons (44 on compact), icon 18, 4 apart, 1 × 20 dividers between groups. Order: Select, Hand ┃
 Pencil, Shape (chevron; pressing it again opens the flyout: rectangle R, ellipse O, diamond, triangle, line), Text,
-Arrow, Eraser ┃ Marco, Ventana ┃ pinned tools in pin order, each with its 1–9 badge ┃ `+`. Marco adds an empty
-Marco in the middle of the view (inside the selected Marco, if any); Ventana asks for an address and adds a web
+Arrow, Eraser ┃ Frame, Window ┃ pinned tools in pin order, each with its 1–9 badge ┃ `+`. Frame adds an empty
+Frame in the middle of the view (inside the selected Frame, if any); Window asks for an address and adds a web
 page, or a player for an image, video or sound link. On compact the toolbar is one horizontal scroller.
 
 **`+` catalog** (`face.catalog`, `client/AddMenu.tsx`). A popover anchored to `+` (right edges aligned), 360 wide, up
-to 480 tall. A search field on top, focused on open; then sections Pinned, Shapes & drawing, Embeds (Ventana, image,
+to 480 tall. A search field on top, focused on open; then sections Pinned, Shapes & drawing, Embeds (Window, image,
 video, audio, mini app, file tree), Blocks (every catalog block type), Extensions (tools from
 extensions); "Manage extensions…" at the bottom opens the Extensions screen (§35.5). Rows are 44: a 28 tile in the type's
 tone, the name, one line of description, the shortcut on the right; hovering shows the pin toggle. Pins persist in
@@ -1141,7 +1141,7 @@ Verified with `design/whiteboard-harness/windows.cjs` (RN-web, isolated omabox);
 
 ## 29. Lenses
 
-Lente (Spanish for lens) is a way to colour the same canvas. The lenses that use history read what the server
+Lens is a way to colour the same canvas. The lenses that use history read what the server
 stores, the 50 most recent changes, and say so.
 
 A control above the minimap names the lens in use; each press, or L, moves to the next: none, Who changed it, How
@@ -1157,7 +1157,7 @@ in `tests/lenses.test.ts`.
 ## 30. One view
 
 The canvas is the only way to look at a Lienzo. A compact panel shows Lista (the same document as a scrolling list
-of cards and Marcos) without anyone choosing it, and switches to the canvas while a drawing tool or the hand is in
+of cards and Frames) without anyone choosing it, and switches to the canvas while a drawing tool or the hand is in
 use. There is no view switcher, no alternative readings and no extension views.
 
 ## 31. Properties, the selection bar and ⌘K
@@ -1169,20 +1169,20 @@ one tab per extension tool; picking a drawing tool brings its tab forward. The p
 selected, showing the Lienzo (description, instructions for the agent, layout); ⌘\ and the `PanelRight` button hide
 it or bring it back. Sections fold under 12 px headers. A block shows Content (title and every field of its type),
 Style for drawings, Instructions for the agent (with those it inherits), Connect (search a target) and Actions (edit
-on the canvas, interact, reset, duplicate, export, release position, take out of the Marco, move
-earlier/later, automatic size, delete). A Marco adds its title and purpose, Layout and Variables. A link shows label,
+on the canvas, interact, reset, duplicate, export, release position, take out of the Frame, move
+earlier/later, automatic size, delete). A Frame adds its title and purpose, Layout and Variables. A link shows label,
 kind, colour, reverse and delete. A result still hidden behind a learning gate is never named. On compact the panel
 is a sheet.
 
 **Selection bar** (`face.selectionBar`). A small bar above the selection, below when there is no room: colour (for
-drawings and links), Wrap in a Marco (Unwrap for a Marco), Duplicate, Delete;
+drawings and links), Wrap in a Frame (Unwrap for a Frame), Duplicate, Delete;
 32 buttons. A link gets colour, kind, reverse and delete. Detail lives in the right panel.
 
 **Command palette** (`face.palette`, `client/CommandPalette.tsx`, model in `client/palette.ts`). ⌘K / Ctrl+K, or the
 top-right button. Centred, 640 wide, its top at 18 % of the panel, a 52 px search field with a leading icon, results
 under small-caps headers in rows of 40 (icon, title, muted subtitle, shortcut chips), the active row in a soft accent
 fill. Footer: "↵ Open · ⌘↵ Run in background · Esc Close" and the active row's verb. Groups: Recent (on an empty
-query), Tools, Actions, Hojas (every Hoja, the agent's latest, follow), Lienzos, Extensions, Settings. Nothing in it sends to the agent. Titles match fuzzily; keywords and subtitles
+query), Tools, Actions, Sheets (every Sheet, the agent's latest, follow), Lienzos, Extensions, Settings. Nothing in it sends to the agent. Titles match fuzzily; keywords and subtitles
 by whole words. Keyboard alone works fully; so does the mouse.
 
 ## 32. Extension tools
@@ -1196,10 +1196,10 @@ Extensions take every colour from the theme they are given. Verified with `desig
 ## 33. Shortcuts, tooltips, words and small details
 
 **Shortcuts** (`client/shortcuts.ts`). Tools: V Select, H Hand, P Pencil, R Rectangle, O Ellipse, T Text, A Arrow,
-E Eraser, M Marco, W Ventana, L next Lente, Space held = Hand, 1–9 pinned tools. Navigation: ⌘K palette, [ / ]
-previous / next Hoja, ⌘J jump to Hoja, F follow the agent, G the agent's latest (these five are registered now and
-Hojas and the agent, see §34), Shift+1 fit all, Shift+2 fit selection, ⌘\ right panel, ⌘. hide all UI, ? the sheet. Editing: ⌘Z,
-⌘⇧Z, ⌘D duplicate, ⌘G wrap in a Marco, ⌘⇧G unwrap, Delete / Backspace, Esc, ⌘A. The person's overrides win, then
+E Eraser, M Frame, W Window, L next Lens, Space held = Hand, 1–9 pinned tools. Navigation: ⌘K palette, [ / ]
+previous / next Sheet, ⌘J jump to Sheet, F follow the agent, G the agent's latest (these five are registered now and
+Sheets and the agent, see §34), Shift+1 fit all, Shift+2 fit selection, ⌘\ right panel, ⌘. hide all UI, ? the sheet. Editing: ⌘Z,
+⌘⇧Z, ⌘D duplicate, ⌘G wrap in a Frame, ⌘⇧G unwrap, Delete / Backspace, Esc, ⌘A. The person's overrides win, then
 ours, then extensions' in the order they register; a combination already taken is not assigned and is listed as
 "unassigned" with whose keys they are. `?` opens Settings → Shortcuts, which lists everything and reassigns
 in place: press the key chip, then the new keys (§35.4); overrides persist in the host's `interface` settings.
@@ -1209,10 +1209,11 @@ everything. Name, then the shortcut in muted monospace ("Pencil  P"); a second l
 after 500 ms; once one has shown, the next appears at once for 800 ms. They sit 6 px from the control on the side
 away from the nearest panel edge and never cover it; a press hides them; on touch a long press shows one for 1.6 s.
 
-**Words.** The interface is in English with five Spanish brand words, each explained in English where it appears in
-a surface: Lienzo (this canvas, and each document), Marco (a frame that holds things together), Hoja (a chapter the
-agent adds while explaining), Lente (a way to colour the same canvas), Ventana (a window onto a web page, a video or
-a mini app). The agent still answers in the person's language.
+**Words.** The interface is in English. The only Spanish word is the name, Lienzo (the app, and each document;
+explained once as "Spanish for canvas"). The rest are plain English names: Frame (holds things together), Sheet (a
+chapter the agent adds while explaining), Lens (a way to colour the same canvas), Window (a web page, a video or a
+mini app on the canvas). Argentine flavour lives only in the mate (empty states and the kettle) and small loading
+winks. The agent still answers in the person's language.
 
 **Small details** (`face.eggs`, `client/Eggs.tsx`). An empty canvas shows a hand-drawn mate with rising steam and
 "Empty. Pour yourself a mate." Typing "mate" in ⌘K boils a small kettle in the bottom-right corner for 4 s ("80 °C.
@@ -1223,16 +1224,16 @@ kettle and the loading details do not appear.
 Verified with `design/whiteboard-harness/face.cjs` (RN-web, isolated omabox, example data, dark and light); captures
 in `design/qa-face-2026-10/`.
 
-## 34. Following the agent and Hojas (copilot, canvas side)
+## 34. Following the agent and Sheets (copilot, canvas side)
 
-The top-left island ends, after a divider, with "Hoja 3 of 7 ▾" (only when the Lienzo has Hojas) and a magnet. A
-Hoja is a top-level Marco the agent added as a chapter; its header shows "Hoja N" instead of an ordinal. The menu
-lists every Hoja (number, title, the current one washed in the accent); `[` `]` step and ⌘J opens the menu; ⌘K lists
-them under Hojas. The current Hoja is the one holding the centre of the view, read live from the camera.
+The top-left island ends, after a divider, with "Sheet 3 of 7 ▾" (only when the Lienzo has Sheets) and a magnet. A
+Sheet is a top-level Frame the agent added as a chapter; its header shows "Sheet N" instead of an ordinal. The menu
+lists every Sheet (number, title, the current one washed in the accent); `[` `]` step and ⌘J opens the menu; ⌘K lists
+them under Sheets. The current Sheet is the one holding the centre of the view, read live from the camera.
 
 The magnet is on by default: each new transaction of the agent flies the camera to what it changed, and that glows
 for 3 s (2 px accent ring with a soft accent shadow, 6 px outside the entity). Moving the camera yourself (wheel,
-middle button, Hand, two fingers) or jumping to a Hoja lets go. While not following, the agent's next change shows
+middle button, Hand, two fingers) or jumping to a Sheet lets go. While not following, the agent's next change shows
 a pill above the toolbar, "● Agent's latest · ‹label› →"; it and `G` take you there and follow again; `F` toggles.
 The conversation chip's "Go to latest" and "Open Lienzo" open this panel on the right document and land the same
 way. Logic in `plugin/client/Hojas.tsx` and `hojas-model.ts`; verified with `design/whiteboard-harness/copilot.cjs`.
@@ -1264,10 +1265,10 @@ Lienzos, the guide, Settings, Extensions and History are screens, not small moda
 ### 35.2 Lienzos
 
 The home of the app, from the title, the menu and ⌘K ("All Lienzos"). A grid of cards, 3–4 columns by width (2 on
-compact), 16 apart. Each card is a live thumbnail drawn from the Lienzo's real layout, like the minimap: Marcos as
-outlines (Hojas in the accent), cards as filled marks in their tones, drawings as faint marks, links as thin lines
+compact), 16 apart. Each card is a live thumbnail drawn from the Lienzo's real layout, like the minimap: Frames as
+outlines (Sheets in the accent), cards as filled marks in their tones, drawings as faint marks, links as thin lines
 between centres; a single small card is not blown up. Under it the serif title (two lines), "Edited 3 h ago · 24
-blocks · 3 Hojas", and the agent working on it (dot and name; the accent while it works). The open Lienzo has an
+blocks · 3 Sheets", and the agent working on it (dot and name; the accent while it works). The open Lienzo has an
 accent ring. Search filters as you type (accents and case ignored, every word); sort is Recent · Name. Hovering a
 card shows ⋯: Rename (in place), Duplicate, Delete… (a confirmation inside the card). Choosing a card opens it and
 closes the sheet. Empty: the mate, "No Lienzos yet." and "Start one, or ask your agent to draw something." There are
@@ -1276,12 +1277,12 @@ no examples; a stored document marked as an example keeps an "Example" chip by i
 ### 35.3 The guide
 
 Four scenes on a large stage (60 % of the sheet; on top on compact) with the words on the right: the agent draws
-while it works (a sentence types in a chat; cards and arrows appear and the camera settles), Hojas (three chapters
-slide in along a strip, the "Hoja 2 of 3" pill counts, the magnet glows while the camera follows), point and ask in
+while it works (a sentence types in a chat; cards and arrows appear and the camera settles), Sheets (three chapters
+slide in along a strip, the "Sheet 2 of 3" pill counts, the magnet glows while the camera follows), point and ask in
 your own chat (a cursor selects a card, "mirá esto" arrives in the chat, a dashed line shows the agent reading the
 selection), and make your own tools (a code card types `lienzo.edit([...])`, folds into an icon and drops into the
 toolbar; "Works in Paseo and the desktop app"). Each scene plays by itself for 6 s with a thin progress bar; Back,
-Next, Skip and dots; the last button says "Dale, let’s start". The stage is a picture: nothing on it is pressable.
+Next, Skip and dots; the last button says "Let’s start". The stage is a picture: nothing on it is pressable.
 Drawn with Animated views in the theme's colours, in a fixed 560 × 420 space scaled to fit. Under reduced motion each
 scene shows its last frame and waits for Next. Shown once per host (§11.3), and from the menu and ⌘K.
 

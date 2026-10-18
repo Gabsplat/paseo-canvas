@@ -50,12 +50,12 @@ function runtime(controller: any) {
     './useLearning': { recordInteraction: async () => {} },
     './FloatingTools': Object.fromEntries(['ToolIsland','StyleIsland','ShapePopover','LibraryPopover','SvgImportDialog'].map(name=>[name,control(name)])), './whiteboard-tools': { DEFAULT_TOOL_STYLE }, './interaction': { needsContentInteraction:()=>true }, '../shared/whiteboard': whiteboard, './whiteboard-visuals': { islandStyle: () => ({}) }, './media': { mediaSource: () => null },
     './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined }, './Hojas': { HojaControls: control('HojaControls'), HojaMenu: control('HojaMenu'), LatestPill: control('LatestPill'), useCopilotCanvas: () => ({ hojas: [], current: -1, follow: true, glowIds: [], unseen: false, menuOpen: false, setMenuOpen() {}, toggleFollow() {}, goToLatest: () => false, goToHoja: () => false, step: () => false, userMoved() {} }) }, './Extensions': { ExtensionTool: control('ExtensionTool'), extensionIcon: () => 'Puzzle' },
-    './Toolbar': { Toolbar: control('Toolbar'), GLOSSARY: { lienzo: 'Lienzo', marco: 'Marco (Spanish for frame)', hoja: 'Hoja', lente: 'Lente', ventana: 'Ventana (Spanish for window)' }, shapeIcon: () => 'Square' },
+    './Toolbar': { Toolbar: control('Toolbar'), GLOSSARY: { lienzo: 'Lienzo', marco: 'Frame', hoja: 'Sheet', lente: 'Lens', ventana: 'Window' }, shapeIcon: () => 'Square' },
     './AddMenu': { AddMenu: control('AddMenu') }, './RightPanel': { RightPanel: control('RightPanel'), PanelSection: control('PanelSection') },
     './CommandPalette': { CommandPalette: control('CommandPalette') },
     './Screen': { Screen: control('Screen'), sheetFrame: () => ({ left: 0, top: 0, width: 960, height: 680 }) }, './LienzosScreen': { LienzosScreen: control('LienzosScreen') }, './HistoryScreen': { HistoryScreen: control('HistoryScreen') },
     './ExtensionsScreen': { ExtensionsContent: control('ExtensionsContent') }, './SettingsScreen': { SettingsContent: control('SettingsContent'), settingsRail: () => [] },
-    './Eggs': { EmptyMate: control('EmptyMate'), Kettle: control('Kettle'), LoadingEgg: control('LoadingEgg') },
+    './Eggs': { EmptyMate: control('EmptyMate'), Kettle: control('Kettle'), LoadingEgg: control('LoadingEgg'), MateDrawing: control('MateDrawing') },
     './shortcuts': shortcuts, './palette': palette,
   };
   const load = (name: string) => {
@@ -129,7 +129,7 @@ test('no view switcher and no composer: the toolbar and the selection bar passed
   const bar = find(tree, 'Canvas').props.selectionToolbar;
   assert.equal(bar.type.name, 'SelectionBar');
   const rendered = nodes(bar.type(bar.props));
-  assert.deepEqual(Array.from(rendered.filter(node => node.type?.name === 'BarButton'), node => node.props.label), ['Wrap in a Marco', 'Duplicate', 'Delete']);
+  assert.deepEqual(Array.from(rendered.filter(node => node.type?.name === 'BarButton'), node => node.props.label), ['Wrap in a Frame', 'Duplicate', 'Delete']);
   const panel = find(tree, 'RightPanel');
   assert.deepEqual(Array.from(panel.props.tabs, (t: any) => t.id), ['properties']);
   assert.equal(panel.props.tabs[0].content.type.name, 'SelectionProperties');

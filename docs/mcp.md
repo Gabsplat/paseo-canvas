@@ -200,7 +200,7 @@ RPC method names use the installed SDK's lowercase-only syntax.
 | `readInjection`, `configureInjection` | `canvas.injection.read`, `canvas.injection` | Legacy: still stored and readable, but every new agent gets the tools regardless |
 | `readCopilot`, `setCopilot` | `canvas.copilot.read`, `canvas.copilot.set` | `{workspaceId,agentId}` (+ `patch`, optional `title`) return the agent's copilot view |
 | `listCopilot` | `canvas.copilot.list` | `{agentIds}` returns `{enabled,drawing,hasTools}` per agent, for composer pills |
-| `createSheet`, `listSheets` | `canvas.sheet.create`, `canvas.sheet.list` | Create a Hoja (user source) with revision, or list Hojas in order |
+| `createSheet`, `listSheets` | `canvas.sheet.create`, `canvas.sheet.list` | Create a Sheet (user source) with revision, or list Sheets in order |
 
 `DocumentView.latestAgent` is the agent's most recent transaction from history, or `null`:
 `{transactionId, revision, at, agentId?, label, kind, ids, removed}`. `ids` are the changed
@@ -452,7 +452,7 @@ screen pixels, this window and the other mini apps, on every move. Update the pa
 
 Lienzo is the visual copilot of a conversation. Every new agent gets the tools and short system
 instructions (`integrationInstructions`): draw only when the copilot is on for this conversation, read
-the mode from any canvas tool response, one Hoja per new explanation and revisit a Hoja for the same
+the mode from any canvas tool response, one Sheet per new explanation and revisit a Sheet for the same
 topic. The longer drawing guide (`drawingGuide`) is returned by `canvas_list` as `guide` instead of
 living in every system prompt.
 
@@ -492,19 +492,19 @@ by the bridge during the turn also counts as drawing), and the agent is not busy
 a reminder never gets one. This is Paseo nudging the agent to draw; it is the only message the plugin sends to an
 agent, and nothing on the canvas triggers it.
 
-### Hojas
+### Sheets
 
-A Hoja is a chapter the agent adds while explaining: a top-level group with
-`sheet: {number, createdAt, source: "agent"|"user"}`. Validation keeps Hojas top-level and numbers
-unique; a duplicate of a Hoja is an ordinary group. New Hojas take the next number
-(never reused while higher ones exist) and sit to the right of the last Hoja at the same `y`, one
+A Sheet is a chapter the agent adds while explaining: a top-level group with
+`sheet: {number, createdAt, source: "agent"|"user"}`. Validation keeps Sheets top-level and numbers
+unique; a duplicate of a Sheet is an ordinary group. New Sheets take the next number
+(never reused while higher ones exist) and sit to the right of the last Sheet at the same `y`, one
 horizontal strip. The server estimates widths (explicit child positions, else a grid guess, at least
-1200) plus a 320 gap; the first Hoja goes to the right of existing loose content, or at the origin.
+1200) plus a 320 gap; the first Sheet goes to the right of existing loose content, or at the origin.
 
 `canvas_sheet` actions: `create {documentId, expectedRevision, title, description?, id?, layout?}`
 returns `{documentId, revision, id, number}`; `list {documentId}` returns `{revision, sheets: [{id,
 number, title, description, createdAt, source, position, blockCount, groupCount}]}` in number order;
-`update {documentId, expectedRevision, id, title?, description?}` retitles one. Content goes into a Hoja
+`update {documentId, expectedRevision, id, title?, description?}` retitles one. Content goes into a Sheet
 with ordinary `canvas_apply` operations using `parentGroupId`. Outline reads include `sheet` on groups.
 
 ## Extensions

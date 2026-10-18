@@ -114,7 +114,7 @@ export class CanvasService {
       return view(record, actor, agentId);
     });
   }
-  /** A new Hoja: the next number, placed right of the last Hoja on the strip, in one undoable transaction. */
+  /** A new Sheet: the next number, placed right of the last Sheet on the strip, in one undoable transaction. */
   createSheet(input: RpcInput<typeof rpc.createSheet>, actor: Actor = "user", agentId?: string) {
     return this.store.transaction(state => {
       const record = documentRecord(state, input.documentId, input.workspaceId);
@@ -123,7 +123,7 @@ export class CanvasService {
       const group = groupSchema.parse({ id, title: input.title, description: input.description ?? "", blockIds: [], groupIds: [], position, ...(input.layout ? { layout: input.layout } : {}), sheet: { number, createdAt: timestamp(), source: actor === "agent" ? "agent" : "user" } });
       const next = reduce(record.document, [{ type: "group.create", group }], catalogView(state.catalog), actor);
       if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
-      recordEdit(record, next, actor, `Hoja ${number}: ${input.title}`.slice(0, 300), "edit", undefined, agentId);
+      recordEdit(record, next, actor, `Sheet ${number}: ${input.title}`.slice(0, 300), "edit", undefined, agentId);
       return { view: view(record, actor, agentId), id, number };
     });
   }

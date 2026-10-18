@@ -5,7 +5,7 @@ const property = (key: string, kind: 'text' | 'number' | 'json', required = fals
 export const whiteboardSpecs: RendererSpec[] = [
   {
     id: 'wb-text', dataSchema: wbTextDataSchema, interactive: false, minSize: { width: 24, height: 8 }, guidance,
-    blockType: { id: 'wb-text', renderer: 'wb-text', name: 'Free text', description: 'A label without a card, placed freely on the Lienzo or in a Marco.',
+    blockType: { id: 'wb-text', renderer: 'wb-text', name: 'Free text', description: 'A label without a card, placed freely on the Lienzo or in a Frame.',
       properties: [property('text', 'text', true), property('color', 'text'), property('scale', 'text'), property('font', 'text'), property('align', 'text'), property('width', 'number')], defaults: { text: '' } },
   },
   {

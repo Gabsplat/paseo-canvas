@@ -26,7 +26,7 @@ export function friendlyError(error: unknown): string {
   if (/revision conflict|latest revision|Expected revision|selection version/i.test(message)) return errorMessages.REVISION_CONFLICT;
   if (error instanceof SyntaxError || /ZodError|Invalid input|invalid_type|invalid_format/.test(message)) return 'Check the JSON format and the required fields.';
   // Only client-authored validation messages may pass through unchanged.
-  const local = ['Invalid JSON', 'Invalid number', 'Up to 200 characters.', 'The change was not applied.', 'The file is larger than 1 MB.', 'The block changed. Select it again.', 'The Lienzo changed before the action finished.', 'Write a title of up to 300 characters.', 'The form was not saved.', 'The layer reached its size limit. The previous drawing is kept.', 'Not reset: the document or the selection changed.', 'Not reset: open the Marco and wait for the block to appear.'];
+  const local = ['Invalid JSON', 'Invalid number', 'Up to 200 characters.', 'The change was not applied.', 'The file is larger than 1 MB.', 'The block changed. Select it again.', 'The Lienzo changed before the action finished.', 'Write a title of up to 300 characters.', 'The form was not saved.', 'The layer reached its size limit. The previous drawing is kept.', 'Not reset: the document or the selection changed.', 'Not reset: open the Frame and wait for the block to appear.'];
   if (local.includes(message)) return message;
   if (/network|fetch|connection|offline|socket|timeout/i.test(message)) return `Could not reach ${capabilities.name}. Try again in a moment.`;
   return 'That did not work. Try again.';

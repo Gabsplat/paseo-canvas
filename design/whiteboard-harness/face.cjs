@@ -47,15 +47,15 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  assert.ok(Math.abs(bar.x+bar.w/2-640)<2,'centred');
  await background();
  for(const [k,code,id] of [['p','KeyP','pencil'],['h','KeyH','hand'],['r','KeyR','shape'],['a','KeyA','arrow'],['t','KeyT','text'],['e','KeyE','eraser'],['o','KeyO','shape'],['v','KeyV','select']]){await key(k,code);await wait(`document.querySelector('#lienzo-tool-${id}')?.getAttribute('aria-pressed')==='true'`,k+' → '+id);}
- const groups=await ev('__panelQA.doc().groups.length');await key('m','KeyM');await wait('__panelQA.doc().groups.length==='+(groups+1),'M adds a Marco');
+ const groups=await ev('__panelQA.doc().groups.length');await key('m','KeyM');await wait('__panelQA.doc().groups.length==='+(groups+1),'M adds a Frame');
  await key('z','KeyZ',2);await wait('__panelQA.doc().groups.length==='+groups,'⌘Z undoes it');
- await key('w','KeyW');await wait(`document.body.innerText.includes('Paste a link to a page')`,'W opens the Ventana dialog');await key('Escape','Escape');await pause(300);
+ await key('w','KeyW');await wait(`document.body.innerText.includes('Paste a link to a page')`,'W opens the Window dialog');await key('Escape','Escape');await pause(300);
  // 3. Tooltips: after 500 ms, name then key; the next one at once; never over the control.
  await hover('#lienzo-tool-pencil');await pause(250);assert.ok(!(await has('#lienzo-tooltip')),'not before 500 ms');
  await wait(`document.querySelector('#lienzo-tooltip')?.innerText.includes('Pencil')`,'pencil tooltip');assert.match(await text('#lienzo-tooltip'),/Pencil\s*P/);
  let tip=await rect('#lienzo-tooltip'),pencil=await rect('#lienzo-tool-pencil');assert.ok(tip.y+tip.h<=pencil.y,'above the toolbar button, not over it');
  await shot('tooltip');
- await hover('#lienzo-tool-marco');await pause(120);assert.match(await text('#lienzo-tooltip'),/Marco\s*M[\s\S]*Spanish for frame/,'warm: the next tooltip is immediate and explains the glossary word');
+ await hover('#lienzo-tool-marco');await pause(120);assert.match(await text('#lienzo-tooltip'),/Frame\s*M[\s\S]*holds things together/,'warm: the next tooltip is immediate and explains the glossary word');
  await hover('#lienzo-top-right [aria-label="Search and commands"]');await pause(150);tip=await rect('#lienzo-tooltip');const search=await rect('#lienzo-top-right [aria-label="Search and commands"]');assert.ok(tip.y>=search.y+search.h,'away from the top edge');assert.match(await text('#lienzo-tooltip'),/Search and commands\s*Ctrl\+K/);
  await mouse('mouseMoved',1000,560);await pause(900);
  // 4. The + catalog: search focused, sections, pin.
@@ -70,7 +70,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  // 5. Selection: the bar over it and Properties on the right.
  await click('#lienzo-entity-note');await wait('!!document.querySelector("#lienzo-right-panel")','the right panel appears on selection');await wait('!!document.querySelector("#lienzo-interactive-selection-toolbar")');
  const barLabels=await ev(`[...document.querySelectorAll('#lienzo-interactive-selection-toolbar [aria-label]')].map(e=>e.getAttribute('aria-label'))`);
- assert.deepEqual(barLabels,['Wrap in a Marco','Duplicate','Delete']);
+ assert.deepEqual(barLabels,['Wrap in a Frame','Duplicate','Delete']);
  assert.ok(!/Ask the agent/.test(await text('#lienzo-right-panel')),'Properties has no Ask the agent');
  const panel=await rect('#lienzo-right-panel');assert.equal(Math.round(panel.w),300);assert.equal(Math.round(1280-panel.x-panel.w),12);
  assert.match(await text('#lienzo-right-panel'),/Properties[\s\S]*Content[\s\S]*Instructions for the agent[\s\S]*Actions/);
@@ -88,7 +88,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  assert.equal(await ev('__panelQA.actions.length'),before,'nothing was sent');assert.ok(!(await ev('__panelQA.errors.some(e=>/agent\\.(action|events)/.test(e.name))')),'no retired RPC was called');
  await key('k','KeyK',2);await wait('!!document.querySelector("#lienzo-palette")');assert.match(await text('#lienzo-palette'),/RECENT[\s\S]*Pencil/i,'Recent remembers');await key('Escape','Escape');
  // 7. ? opens Settings → Shortcuts: the cheat sheet and reassigning are one screen.
- await background();await key('?','Slash',8,'?');await wait('!!document.querySelector("#lienzo-settings-shortcuts")');{const sheet=await text('#lienzo-settings-shortcuts');assert.ok(/Follow the agent/.test(sheet)&&/Previous Hoja/.test(sheet),sheet.slice(0,200));}await shot('sheet');
+ await background();await key('?','Slash',8,'?');await wait('!!document.querySelector("#lienzo-settings-shortcuts")');{const sheet=await text('#lienzo-settings-shortcuts');assert.ok(/Follow the agent/.test(sheet)&&/Previous Sheet/.test(sheet),sheet.slice(0,200));}await shot('sheet');
  // 8. Give Text the key Q in place (press its key chip, then Q); T stops, Q works; Reset.
  await click('[id="lienzo-shortcut-tool.text"] [aria-label="Change keys for Text"]');await key('q','KeyQ');await wait(`!!document.querySelector('[id="lienzo-shortcut-tool.text"] [aria-label="Reset Text"]')`,'overridden');
  await shot('settings');await key('Escape','Escape');await wait('!document.querySelector("#lienzo-screen-settings")','Escape closes Settings');

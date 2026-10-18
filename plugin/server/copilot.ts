@@ -57,7 +57,7 @@ export class ToolActivity {
 }
 
 export function reminderText(settings: CopilotSettings) {
-  return `[Lienzo] The copilot is on (${settings.cadence === "task" ? "once per task" : "after each step"}) and this turn changed things without updating the canvas. Update Lienzo ${settings.documentId} with what is worth showing, in the Hoja for this topic, or say in one line why not.`;
+  return `[Lienzo] The copilot is on (${settings.cadence === "task" ? "once per task" : "after each step"}) and this turn changed things without updating the canvas. Update Lienzo ${settings.documentId} with what is worth showing, in the Sheet for this topic, or say in one line why not.`;
 }
 
 export type ReminderDecision = "off" | "no-remind" | "cadence" | "outcome" | "repeat" | "drew" | "quiet" | "busy" | "unavailable" | "sent";

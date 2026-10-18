@@ -117,7 +117,7 @@ The tools are the plugin's (`canvas_list`, `canvas_create`, `canvas_read`, `canv
 session is identified by the client's declared name: `mcp:claude-code`, for example. That identity owns its undo
 history, and it becomes the canvas's connected agent when it uses that canvas.
 
-**An agent can** list, create, read and edit documents transactionally with revisions, use groups, Hojas, block types
+**An agent can** list, create, read and edit documents transactionally with revisions, use groups, Sheets, block types
 and extensions, undo and redo its own edits, and read the selection with its instructions and the state the
 person's interaction left on each block.
 
@@ -135,7 +135,7 @@ requests.
 - Only the Linux AppImage has been built and smoke-tested. The mac configuration is unbuilt and unsigned, and the
   macOS menu key handling for undo and redo is unverified.
 - The AppImage needs FUSE, or `APPIMAGE_EXTRACT_AND_RUN=1`.
-- Web pages that forbid framing do not load in a Ventana, as in Paseo's web client.
+- Web pages that forbid framing do not load in a Window, as in Paseo's web client.
 
 ## Releases
 

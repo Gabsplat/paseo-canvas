@@ -18,8 +18,7 @@ runtime import crosses into `design/`, `architecture/`, or `server/`.
 
 ## Working with a document
 
-The UI is in English with five Spanish brand words (Lienzo, Marco, Hoja, Lente, Ventana), each explained where it
-appears; `docs/design.md` §19 and §33 have the copy. The title opens Lienzos, a list of your documents and labelled
+The UI is in English; Lienzo is the only Spanish word; `docs/design.md` §19 and §33 have the copy. The title opens Lienzos, a list of your documents and labelled
 examples. New Lienzo creates and opens an empty document titled "Untitled Lienzo" with empty communication; there
 is no creation form. Rename in the menu (or F2) edits the title in place, saving after idle or blur. Duplicate as
 my own and Export this Lienzo are in the menu; duplicating clears the example flag. An empty canvas shows the
@@ -42,7 +41,7 @@ The free canvas supports background drag to pan, zoom controls, fit, and browser
 wheel pan or Ctrl/Command wheel zoom. First open centres content horizontally at
 80–100% scale with its top at 76 px on desktop and 48 px in compact mode; Fit all (Shift+1) still fits all content.
 Cards use their measured content heights.
-In the browser, left dragging beyond 4 px moves a block or group from any passive content or control. Short clicks still activate controls. Range sliders, learning surfaces, editing inputs, resize and connection handles retain their own drag. Children in stack, grid, or flow Marcos also offer Move earlier / Move later. Dragging moves elements between Marcos.
+In the browser, left dragging beyond 4 px moves a block or group from any passive content or control. Short clicks still activate controls. Range sliders, learning surfaces, editing inputs, resize and connection handles retain their own drag. Children in stack, grid, or flow Frames also offer Move earlier / Move later. Dragging moves elements between Frames.
 Compact clients show Lista, switch to the canvas while a drawing tool or the hand is in use, and do not drag cards. Group movement
 uses parent-relative persisted positions; collapse hides descendants and preserves
 their membership. Card and whiteboard resize gestures persist block size through transactions. Group frames expand around their children.
@@ -53,7 +52,7 @@ separate selection version, and never sends an agent message. Grouping and delet
 operate on the highest selected ancestors so selecting a group and its child does
 not delete the same subtree twice.
 
-The right panel (Properties) appears with a selected block, Marco or link, with the options of the tool in hand,
+The right panel (Properties) appears with a selected block, Frame or link, with the options of the tool in hand,
 or with an open extension tool; the pin or ⌘\ keeps it open on the Lienzo itself. Multiple selection shows shared
 actions without an item list. History opens in a modal from the menu. There is no composer: the toolbar sits on the
 bottom edge, and the selection bar floats above selected bounds.
@@ -282,7 +281,7 @@ Panel commits every change through `c.edit` or `c.send`:
 
 - `Toolbar.tsx`: `Toolbar` takes active, shape, locked, disabled, onTool, onShape, onLock, pinned, onAdd, addOpen,
   keyLabel (registry id → formatted keys), scroll (compact) and addRef. Select and Hand stay available while
-  writes are disabled. Only a double press on the tool in hand toggles its lock; Marco and Ventana never lock.
+  writes are disabled. Only a double press on the tool in hand toggles its lock; Frame and Window never lock.
 - `AddMenu.tsx`: `AddMenu` takes entries (`ToolEntry`: id, section, name, description, icon, tone, shortcut,
   keywords, run), pinned ids, onPin, onClose, onManage and maxHeight. The same entries feed pinned tools, keys 1–9
   and ⌘K.
