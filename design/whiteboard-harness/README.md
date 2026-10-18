@@ -5,7 +5,8 @@ renderers and floating tools under React 19.1 and react-native-web 0.21.3. Its
 in-memory transport validates production RPC contracts and applies the production
 reducer and built-in catalog. Every document is explicitly marked as example data.
 Writes simulate 45 ms latency. `__panelQA.failNext()` simulates a rejected write.
-There is no live assistant, disk persistence or installed-plugin test here.
+There is no live assistant, disk persistence or installed-plugin test here. The canvas is one-way:
+the QA host implements no RPC that sends to an agent, and `__panelQA.actions` stays empty; scenarios assert it.
 
 The Paseo icon, modal, toast, theme injection, settings and RPC transport are
 stand-ins. Icons appear as `▫`. Responsive compact checks use the web renderer,
@@ -36,6 +37,8 @@ omabox run -- node "$PWD/dist/panel-qa/compact.cjs"
 omabox run -- node "$PWD/dist/panel-qa/many.cjs"
 omabox run -- node "$PWD/dist/panel-qa/face.cjs"          # the stage 1 face; add `papel` for light
 omabox run -- node "$PWD/dist/panel-qa/extensions.cjs"
+omabox run -- node "$PWD/dist/panel-qa/windows.cjs"       # mini app setState stored on its block
+omabox run -- node "$PWD/dist/panel-qa/copilot.cjs"
 ```
 
 The scripts drive the browser through its private debugging port, assert document

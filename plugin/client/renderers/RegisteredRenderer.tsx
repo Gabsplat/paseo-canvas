@@ -8,9 +8,8 @@ import { Txt, useUI } from '../ui';
 import { getClientRenderer } from './index';
 import { usePresentation } from '../usePresentation';
 import { HiddenResult } from '../HiddenResult';
-export function RegisteredRenderer({ block, id, controller, readOnly, send }: {
+export function RegisteredRenderer({ block, id, controller, readOnly }: {
   block: CanvasBlock; id: string; controller: CanvasController; readOnly: boolean;
-  send(kind: string, payload: CanvasBlock['data'], label: string, delivery?: 'immediate' | 'batched'): Promise<void>;
 }) {
   const ui = useUI(), { runtime, scope } = useLearning(block, controller), [width, setWidth] = useState(0), presentation = usePresentation(controller);
   const gates = presentation?.hiddenBy.get(block.id);
@@ -32,8 +31,8 @@ export function RegisteredRenderer({ block, id, controller, readOnly, send }: {
   // Discard local renderer state when switching documents or closing a gate.
   // Effects reconcile runtime after commit; they cannot conceal a stale reveal
   // in the first rendered frame after an external reset.
-  // Opening a gate preserves the attempt that is sending its comparison. Closing
-  // invalidates both local state and callbacks still waiting for that delivery.
+  // Opening a gate preserves the attempt that is recording its comparison. Closing
+  // invalidates both local state and callbacks still waiting for that save.
   const rendererKey = JSON.stringify([identity, epoch]);
   const active = () => lifetime.current.active && lifetime.current.epoch === epoch
     && lifetime.current.identity === identity
@@ -41,14 +40,14 @@ export function RegisteredRenderer({ block, id, controller, readOnly, send }: {
     && controller.current.current?.document.workspaceId === document?.workspaceId;
   const scopedRuntime = { ...runtime,
     set: (...args: Parameters<typeof runtime.set>) => { if (active()) runtime.set(...args); },
-    async settle(...args: Parameters<typeof runtime.settle>) {
+    async record(...args: Parameters<typeof runtime.record>) {
       await runtime.flush();
       if (!active()) throw new Error('The Lienzo or the block changed before the interaction finished.');
-      return runtime.settle(...args);
+      return runtime.record(...args);
     },
   };
   const scopedScope = { ...scope, set: (...args: Parameters<typeof scope.set>) => { if (active()) scope.set(...args); } };
   return <View nativeID={spec?.interactive ? `lienzo-interactive-renderer-${block.id}` : undefined} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
-    <Component key={rendererKey} document={presentation?.document ?? controller.view.document} data={parsed.data} block={block} availableWidth={width} compact={ui.compact} readOnly={readOnly} ui={ui} runtime={scopedRuntime} scope={scopedScope} send={send} selection={controller.selection} select={ids => { void controller.select(ids); }} />
+    <Component key={rendererKey} document={presentation?.document ?? controller.view.document} data={parsed.data} block={block} availableWidth={width} compact={ui.compact} readOnly={readOnly} ui={ui} runtime={scopedRuntime} scope={scopedScope} selection={controller.selection} select={ids => { void controller.select(ids); }} />
   </View>;
 }

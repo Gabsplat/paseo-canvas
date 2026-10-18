@@ -16,7 +16,9 @@ nothing from the plugin, so a plugin update cannot break it.
   the former kind `view` is retired: catalogs and packs stored with views still load without them, a pack that
   carries one imports without it, and a view can no longer be saved.
 - `api`: always `1` today.
-- `permissions`: any of `edit`, `agent`, `network`. Reading the document and changing the selection need none.
+- `permissions`: any of `edit`, `network`. Reading the document and changing the selection need none. There is no
+  permission to reach the agent: the canvas never sends anything to it. A new extension that asks for `agent` is
+  refused; a stored or imported one that carried it loads without it.
 - `html`: up to 300 000 characters. No build step. Without `network` the page may only use inline code and `data:` URLs.
 
 ## API 1
@@ -30,7 +32,6 @@ nothing from the plugin, so a plugin update cannot break it.
 | `lienzo.open(id)` | — | Goes to the canvas on that thing. |
 | `lienzo.close()` | — | Closes a tool panel. |
 | `lienzo.edit(operations, label)` | `edit` | One transaction of canvas operations. Resolves `{ revision }`, rejects with the reason. Undoable. `selection.set` and `communication.set` are refused. At most 200 operations. |
-| `lienzo.ask(kind, payload, label, targetIds)` | `agent` | Sends a request to the connected assistant as an `extension.event` canvas event with payload `{ extension, event, data }`. `payload` is JSON up to 8000 characters. |
 | `lienzo.kit.stage(options)` | — | A 2D surface that behaves like the canvas. See below. |
 | `lienzo.kit.card(g, item, view, options)` | — | Draws a thing with the standard selection, hover and drag look. |
 
@@ -78,7 +79,9 @@ what each extension asks for before anything is saved.
 
 ## Compatibility promise
 
-API 1 only grows. Members and context fields are added, never renamed or removed. A future API 2 would live beside
+API 1 grows: members and context fields are added, not renamed. One member was removed: `lienzo.ask` (with the
+`agent` permission), because the canvas is one-way; no shipped or known extension used it. Calling it now fails in
+the page like any missing function. A future API 2 would live beside
 it. The shipped example (`ejemplos.reemplazar`, a find-and-replace tool) is written against API 1 only;
 `tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract broke. (The kind `view` was retired
 with the one-canvas redesign; the frame API itself did not change.)

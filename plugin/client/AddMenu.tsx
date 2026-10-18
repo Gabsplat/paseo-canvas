@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, ScrollView, TextInput } from '@getpaseo/plugin/client/react-native';
+import { Icon, ScrollView, TextInput } from './host';
 import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
 import { Txt, useTooltip, useUI } from './ui';
@@ -55,7 +55,7 @@ export function AddMenu({ entries, pinned, onPin, onClose, onManage, maxHeight, 
         style={[u.font('body'), { flex: 1, height: A.search, borderWidth: 0, backgroundColor: 'transparent', ...({ outlineStyle: 'none' } as object) }]} />
     </View>
     <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: Math.max(120, maxHeight - A.search - 16 - 44) }} contentContainerStyle={{ padding: 6, paddingTop: 2 }} keyboardShouldPersistTaps="handled">
-      {!flat.length && <Txt kind="small" muted style={{ padding: 12 }}>Nothing matches “{query.trim()}”. Try ⌘K to ask the agent.</Txt>}
+      {!flat.length && <Txt kind="small" muted style={{ padding: 12 }}>Nothing matches “{query.trim()}”. Try ⌘K to search everything.</Txt>}
       {sections.map(section => <View key={section.title}>
         <Txt kind="label" muted style={{ paddingHorizontal: 8, height: A.sectionHeader, lineHeight: A.sectionHeader, marginTop: 2 }}>{section.title}</Txt>
         {section.items.map(item => { const index = flat.findIndex(f => f.item === item && f.section === section.title);

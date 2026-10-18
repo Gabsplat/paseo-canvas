@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, ScrollView, useToast } from '@getpaseo/plugin/client/react-native';
+import { Icon, ScrollView, useToast } from './host';
 import { blockTypeSchema, type BlockType, type CanvasPack } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { Modal, Button, CheckRow, Chip, Input, JsonPreview, Segments, Txt, friendlyError, useUI } from './ui';

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Icon } from './host';
 import type { Camera } from './logic';
 import { IconButton, Txt, useUI } from './ui';
 import { tokens } from './tokens';

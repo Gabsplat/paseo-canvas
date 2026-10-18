@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, View } from 'react-native';
-import { type PluginWorkspacePanelProps, useAgent, useSettings } from '@getpaseo/plugin/client';
-import { Icon, ScrollView, useToast } from '@getpaseo/plugin/client/react-native';
+import { type PanelProps, AgentSheet, capabilities, useAgent, useSettings } from './host';
+import { Icon, ScrollView, useToast } from './host';
 import type { BlockType, CanvasGroup, CanvasOperation, CanvasPack } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
 import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Txt, UIProvider, useUI, MenuRow, MenuDivider, TooltipProvider, TooltipLayer } from './ui';
@@ -10,9 +10,9 @@ import { Catalog, PackExport, PackImport } from './Catalog';
 import { DocumentActions } from './DocumentActions';
 import { SelectionBar, SelectionProperties } from './SelectionActions';
 import { AgentModal } from './AgentModal';
-import { Delivery, visual } from './Blocks';
+import { visual } from './Blocks';
 import { connectOperations, documentContent, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, selectionPack, topSelection, safeUrl, type Point, type Rect } from './logic';
-import { focusInput, isMacPlatform, keyboard, type PanelKey } from './web';
+import { isMacPlatform, keyboard, type PanelKey } from './web';
 import { Onboarding } from './Onboarding';
 import { claimFirstGuide, type GuideAction } from './guide';
 import { canvasPreferences, interfacePreferences } from '../shared/preferences';
@@ -38,7 +38,7 @@ import { HojaControls, HojaMenu, LatestPill, useCopilotCanvas } from './Hojas';
 
 type ViewMode = 'canvas' | 'outline';
 type CatalogTab = 'types' | 'templates' | 'packs';
-type InspectorSection = 'document' | 'communication' | 'history' | 'activity';
+type InspectorSection = 'document' | 'communication' | 'history';
 type VentanaKind = 'page' | 'image' | 'video' | 'audio';
 const F = tokens.face;
 /** What ⌘K ran last, per host and workspace, for as long as this client runs. */
@@ -118,55 +118,28 @@ function ExampleRow({ title, disabled, create }: { title: string; disabled: bool
   </View>;
 }
 
-function ContextTray({ composerRef, controller: c, note, setNote, sending, error, lastId, send, retry, inspect, connect }: { composerRef: React.RefObject<View | null>; controller: CanvasController; note: string; setNote: (value: string) => void; sending: boolean; error: string; lastId?: string; send: () => void; retry: () => void; inspect: (section?: InspectorSection) => void; connect: () => void }) {
-  const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document;
-  const queued = c.events.filter(e => e.status === 'pending' || e.status === 'failed').length;
-  const lastEvent = lastId ? c.events.find(e => e.id === lastId) : [...c.events].reverse().find(e => e.action.kind === 'selection.send');
-  const disabled = sending || c.busy || c.offline;
-  return <View ref={composerRef} nativeID="lienzo-composer" style={[islandStyle(u), { borderRadius: tokens.composer.radius, paddingHorizontal: tokens.composer.paddingH }]}>
-    {!!c.selection.length && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: tokens.composer.chipsRow.gap, paddingTop: tokens.composer.chipsRow.paddingTop }}>
-      {c.selection.slice(0, 3).map(id => {
-        const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id);
-        return <Pressable key={id} accessibilityRole="button" accessibilityLabel={'Remove from context: ' + (entity?.title || 'Item')} disabled={disabled} onPress={() => { void c.select(c.selection.filter(x => x !== id)); }} hitSlop={6} style={{ maxWidth: 160, minHeight: 20, paddingHorizontal: 6, borderRadius: tokens.radius.control, backgroundColor: u.wash('neutro'), flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{entity?.title || 'Item'}</Txt><Icon name="X" size={12} color={u.c.foregroundMuted} />
-        </Pressable>;
-      })}
-      {c.selection.length > 3 && <Button label={'+' + (c.selection.length - 3)} small variant="ghost" onPress={() => inspect()} />}
-    </View>}
-    <View style={{ minHeight: tokens.composer.height, flexDirection: 'row', gap: 4, alignItems: 'center' }}>
-      <IconButton icon={c.view?.connection ? 'Bot' : 'Unplug'} label={c.view?.connection ? 'Agent connected' : 'Connect an agent'} detail={c.view?.connection ? 'Choose which agent hears this Lienzo.' : 'Pick an agent in this workspace to send your questions to.'} onPress={connect} />
-      <View style={{ flex: 1, minWidth: 0 }}><Input value={note} label="Write to the agent" onChange={setNote} readOnly={sending || c.offline} multiline placeholder={c.selection.length ? 'Ask about the selection…' : 'Write to the agent…'} style={{ minHeight: 32, maxHeight: 84, paddingVertical: 4, borderWidth: 0, backgroundColor: 'transparent' }} /></View>
-      <IconButton label={sending ? 'Sending' : 'Send to the agent'} shortcut={isMacPlatform() ? '⌘↵' : 'Ctrl+↵'} icon="ArrowUp" disabled={disabled || !c.selection.length && !note.trim()} onPress={send} />
-    </View>
-    {!c.view?.connection && <Txt kind="small" muted>No agent yet. Messages wait in a queue.</Txt>}
-    {queued > 0 && <Button label={queued === 1 ? '1 action queued' : queued + ' actions queued'} small variant="ghost" onPress={() => inspect('activity')} />}
-    {!!error && <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}><Txt kind="small" style={{ flex: 1, color: u.c.statusDanger }} numberOfLines={2}>{error}</Txt><Button label="Retry" variant="ghost" small disabled={disabled} onPress={retry} /></View>}
-    {lastEvent && <Delivery event={lastEvent} retry={lastEvent.status === 'failed' && !disabled ? retry : undefined} />}
-  </View>;
-}
 function Presence({ id, open }: { id: string | null; open: () => void }) {
   const u = useUI(), agent = useAgent(id ?? '', a => ({ title: a.title, status: a.status }));
+  // A host without agents (the desktop app) knows who connected over MCP, not whether it is working: no status.
+  if (!capabilities.runsAgents) return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agent connected over MCP: ' + (agent?.title || 'unknown client') : 'Connect an agent'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View><Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'MCP client' : 'No agent'}</Txt></Pressable>;
   const status = agent?.status === 'running' ? 'working' : agent?.status === 'idle' ? 'idle' : agent?.status === 'error' ? 'with an error' : agent?.status === 'closed' ? 'closed' : agent ? 'starting' : 'no data';
   const color = agent?.status === 'running' ? u.c.accent : agent?.status === 'idle' ? u.c.statusSuccess : agent?.status === 'error' || agent?.status === 'closed' ? u.c.statusDanger : u.c.foregroundMuted;
   return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agent connected: ' + (agent?.title || 'Agent unavailable') + ', ' + status : 'Connect an agent'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View>{id && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />}<Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'Agent unavailable' : 'No agent'}</Txt></Pressable>;
 }
-export function LienzoPanel(props: PluginWorkspacePanelProps) { return <UIProvider theme={props.theme} layout={props.layout} host={props.host}><Panel key={`${props.host.id}:${props.workspaceId}`} workspaceId={props.workspaceId} hostId={props.host.id} /></UIProvider>; }
+export function LienzoPanel(props: PanelProps) { return <UIProvider theme={props.theme} layout={props.layout} host={props.host}><Panel key={`${props.host.id}:${props.workspaceId}`} workspaceId={props.workspaceId} hostId={props.host.id} /></UIProvider>; }
 function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string }) {
   const u = useUI(), raw = useCanvas(workspaceId), toast = useToast(), settings = useSettings(canvasPreferences), prefs = useSettings(interfacePreferences);
   const c = useMemo<CanvasController>(() => ({ ...raw,
     failure: raw.failure ? { ...raw.failure, message: friendlyError(raw.failure.message) } : null,
-    events: raw.events.map(event => event.error ? { ...event, error: friendlyError(event.error) } : event),
-    send: async (...args) => { const event = await raw.send(...args); return event?.error ? { ...event, error: friendlyError(event.error) } : event; },
   }), [raw]);
   const doc = c.view?.document;
-  const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [composerHeight, setComposerHeight] = useState(44), [toolbarBox, setToolbarBox] = useState({ x: 0, width: 0 });
+  const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [toolbarBox, setToolbarBox] = useState({ x: 0, width: 0 });
   const [extTools, setExtTools] = useState<string[]>([]), [overlay, setOverlay] = useState<'catalog' | null>(null);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('types'), [catalogKey, setCatalogKey] = useState(0);
   const [inspectorSection, setInspectorSection] = useState<InspectorSection>('document'), [inspectorKey, setInspectorKey] = useState(0);
   const [docsError, setDocsError] = useState(''), [docsLoading, setDocsLoading] = useState(false);
   const [showAllWarnings, setShowAllWarnings] = useState(false), [templateError, setTemplateError] = useState('');
   const [documentSettingsOpen, setDocumentSettingsOpen] = useState(false), [docsOpen, setDocsOpen] = useState(false), [agentsOpen, setAgentsOpen] = useState(false), [overflow, setOverflow] = useState(false), [importOpen, setImportOpen] = useState(false), [exported, setExported] = useState<CanvasPack | null>(null), [template, setTemplate] = useState<CanvasGroup | null>(null), [templateName, setTemplateName] = useState(''), [reload, setReload] = useState(false);
-  const [note, setNote] = useState(''), [sending, setSending] = useState(false), [sendError, setSendError] = useState('');
   const [tool, setTool] = useState<CanvasTool>('select'), [toolStyle, setToolStyle] = useState<ToolStyle>(DEFAULT_TOOL_STYLE), [toolLocked, setToolLocked] = useState(false), [shapePick, setShapePick] = useState<WbShape>('rect');
   const [addOpen, setAddOpen] = useState(false), [libraryOpen, setLibraryOpen] = useState(false), [svgOpen, setSvgOpen] = useState(false), [libraryError, setLibraryError] = useState(''), [svgBusy, setSvgBusy] = useState(false);
   const [interactionId, setInteractionId] = useState<string | null>(null), [rename, setRename] = useState(false);
@@ -190,7 +163,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   }, [c.catalog, c.loading, settings]);
   const closeGuide = () => setGuideOpen(false);
   const guideAction = (action: GuideAction) => {
-    if (!doc && ['agents', 'inspector', 'communication', 'history', 'activity'].includes(action)) { openDocuments(); return; }
+    if (!doc && ['agents', 'inspector', 'communication', 'history'].includes(action)) { openDocuments(); return; }
     if (action === 'documents') openDocuments();
     else if (action === 'catalog' || action === 'templates' || action === 'packs') openCatalog(action === 'catalog' ? 'types' : action);
     else if (action === 'agents') setAgentsOpen(true);
@@ -198,10 +171,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   };
   // A selected link is view state, like the selection highlight; every change to the link itself goes through c.edit.
   const [linkId, setLinkId] = useState<string | null>(null);
-  const retrySend = useRef<{ id: string; documentId: string; ids: string[]; note: string } | null>(null);
-  const composerRef = useRef<View>(null), addRef = useRef<View>(null);
+  const addRef = useRef<View>(null);
   const root = useRef<View>(null), canvas = useRef<CanvasApi>(null), geometry = useRef<{ rects: Map<string, Rect>; center: Point }>({ rects: new Map(), center: { x: 24, y: 24 } });
-  const disabled = c.busy || c.offline || sending || c.loading;
+  const disabled = c.busy || c.offline || c.loading;
   const mac = isMacPlatform();
   // ---- Shortcuts and pins: the person's choices live in the host's `interface` settings; the registry resolves them.
   const savedPrefs = prefs.status === 'ready' ? prefs.values as { pinned?: string[]; shortcuts?: Record<string, string> } : undefined;
@@ -216,7 +188,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const keyLabel = (id: string) => { const combo = resolved.list.find(s => s.id === id)?.assigned[0]; return combo ? formatCombo(combo, mac) : undefined; };
   const chips = (combo: string) => comboParts(combo, mac);
   useEffect(() => { if (c.arrival) toast.show(`New Lienzo: “${c.arrival.title}”`, { variant: 'info' }); }, [c.arrival?.id]);
-  useEffect(() => { setNote(''); setSendError(''); setSending(false); retrySend.current = null; setReload(false); setDocumentSettingsOpen(false); setTemplate(null); setTemplateError(''); setLinkId(null); setExtTools([]); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
+  useEffect(() => { setReload(false); setDocumentSettingsOpen(false); setTemplate(null); setTemplateError(''); setLinkId(null); setExtTools([]); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
   useEffect(() => { setOverlay(null); setAddOpen(false); }, [u.compact]);
   useEffect(() => { if (linkId && (c.selection.length || !doc?.links.some(l => l.id === linkId))) setLinkId(null); }, [linkId, c.selection, doc?.links]);
   // A new selection brings the panel back if the person had hidden it, and a section asked for earlier is forgotten.
@@ -232,7 +204,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const showPanel = (focus: string | null = null) => setPanel(p => ({ ...p, hidden: false, forced: true, tab: 'properties', focus }));
   const inspectorOpen = (section: InspectorSection = 'document') => {
     setImmersive(false); // asking for details leaves Hide all UI so the request is visible
-    if (section === 'history' || section === 'activity') { setInspectorSection(section); setInspectorKey(key => key + 1); setDocumentSettingsOpen(true); return; }
+    if (section === 'history') { setInspectorSection(section); setInspectorKey(key => key + 1); setDocumentSettingsOpen(true); return; }
     if (section === 'communication') { void c.select([]); setLinkId(null); }
     showPanel(section === 'communication' ? 'instruction' : null);
   };
@@ -253,7 +225,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     const next = await c.revision(kind);
     if (next) toast.show(kind === 'undo' ? 'Undone' : 'Redone', { variant: 'success' });
   }
-  const focusComposer = () => { setImmersive(false); focusInput(composerRef.current); };
   const noticeUndo = (label: string) => { setUndoLabel(label); toast.show(label + ' · Undo'); };
   function ungroupSelection() { const group = doc?.groups.find(g => c.selection.length === 1 && g.id === c.selection[0]); if (group && !disabled) void c.edit([{ type: 'group.delete', id: group.id, ungroup: true }], 'Unwrap Marco'); }
   function editSelectedText() {
@@ -310,41 +281,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     void c.edit(copies.map(({ item, prefix }) => ({ type: 'entity.duplicate', id: item.id, idPrefix: prefix })), 'Duplicate selection').then(next => { if (next) void c.select(copies.map(({ item, prefix }) => prefix + '.' + item.id)); });
   }
   function exportDocument() { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, [...doc.groups, ...doc.blocks].map(e => e.id))); }
-  /** The one path to the agent: the composer, the selection bar and ⌘K's "Ask the agent" all send through here. */
-  async function send(again = false, text?: string) {
-    const body = text ?? note;
-    if (!doc || disabled || !c.selection.length && !body.trim() && !again) return;
-    if (!again && c.selection.length > 100) { setSendError('Select at most 100 things per message.'); return; }
-    if (!again) retrySend.current = { id: newId('evt'), documentId: doc.id, ids: [...c.selection], note: body };
-    const request = retrySend.current; if (!request || request.documentId !== doc.id) return;
-    setSending(true); setSendError('');
-    try { await c.settle(); if (c.current.current?.document.id !== request.documentId) return; const event = await c.send({ kind: 'selection.send', label: request.ids.length ? 'Ask about the selection' : 'Ask about the Lienzo', payload: { note: request.note }, targetIds: request.ids, delivery: 'immediate' }, request.id);
-      if (c.current.current?.document.id !== request.documentId) return;
-      if (!event) setSendError('Not sent. See the notice on the canvas.');
-      else if (event.status === 'failed') setSendError(event.error ?? 'Not sent. See the notice on the canvas.');
-      else { if ((event.status === 'sent' || event.status === 'pending') && note === request.note) setNote(''); toast.show(event.status === 'pending' ? 'Queued: the agent is busy or not connected' : event.status === 'acked' ? 'Received by the agent' : 'Listo. Sent to the agent.', { variant: event.status === 'pending' ? 'info' : 'success' }); }
-    } catch (e) { if (c.current.current?.document.id === request.documentId) setSendError(friendlyError(e)); } finally { if (c.current.current?.document.id === request.documentId) setSending(false); }
-  }
-  function retryFeedback() {
-    if (!doc || disabled) return;
-    const previous = retrySend.current ? c.events.find(e => e.id === retrySend.current!.id) : [...c.events].reverse().find(e => e.action.kind === 'selection.send');
-    if (previous?.status !== 'failed') { void send(true); return; }
-    const documentId = doc.id;
-    // The flush RPC retries stored batches with their original event ids and payloads.
-    setSending(true);
-    void c.task(async () => {
-      if (c.current.current?.document.id !== documentId) return;
-      const result = await c.api.flush({ workspaceId, documentId });
-      if (c.current.current?.document.id !== documentId) return;
-      c.setEvents(result.events);
-      const event = result.events.find(e => e.id === previous.id);
-      setSendError(event?.status === 'failed' ? friendlyError(event.error) : '');
-      if ((event?.status === 'sent' || event?.status === 'pending') && note === previous.action.payload.note) setNote('');
-      if (event?.status === 'pending') toast.show('Queued: the agent is busy or not connected');
-      else if (event?.status === 'sent' || event?.status === 'acked') toast.show(event.status === 'acked' ? 'Received by the agent' : 'Listo. Sent to the agent.', { variant: 'success' });
-      return result;
-    }).finally(() => { if (c.current.current?.document.id === documentId) setSending(false); });
-  }
   async function saveTemplate() {
     if (!doc || !template || disabled || !templateName.trim()) return;
     const documentId = doc.id, groupId = template.id, name = templateName.trim();
@@ -409,7 +345,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   // "Clear my strokes": only the learner's own drawings, in one undoable transaction. The agent's and the author's stay.
   const myLayers = strokeLayers(doc?.blocks ?? [], b => c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer === 'wb-draw').filter(layer => layer.author === 'learner');
   const clearMyStrokes = () => { const ids = learnerLayerIds(myLayers); if (ids.length && !c.busy && !c.offline) void c.edit(ids.map(id => ({ type: 'block.delete' as const, id })), 'Clear my strokes'); };
-  const composerWidth = u.compact ? width : width < 560 ? Math.max(0, width - 24) : Math.min(tokens.composer.width.max, Math.max(0, width - 2 * (width < 880 ? 100 : 180)));
   const mode: ViewMode = u.compact && ['select', 'svg'].includes(tool) ? 'outline' : 'canvas';
   function chooseTool(next: CanvasTool) {
     if (!doc) { openDocuments(); return; }
@@ -521,7 +456,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const hasSelection = !!doc && (!!c.selection.length || !!linkId), toolOptions = !!doc && ['text', 'shape', 'draw', 'eraser'].includes(tool);
   const styleNode = (selectionKinds.size > 0 || toolOptions) ? <StyleIsland bare tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation="vertical" touch={u.compact} disabled={disabled} myStrokes={myLayers.reduce((sum, layer) => sum + layer.strokes, 0)} onClearMyStrokes={clearMyStrokes} /> : null;
   const selectionProperties = doc && hasSelection ? <SelectionProperties controller={c} panelRoot={root} disabled={disabled} linkId={linkId} onLink={selectLink} focus={panel.focus}
-    ask={focusComposer} add={() => setAddOpen(true)} duplicate={duplicateSelection} remove={removeLinkOrSelection} groupSelection={groupSelection} connectSelection={connectSelection} release={release}
+    add={() => setAddOpen(true)} duplicate={duplicateSelection} remove={removeLinkOrSelection} groupSelection={groupSelection} connectSelection={connectSelection} release={release}
     template={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} exportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} rects={rectsNow} editText={editSelectedText} interact={() => canvas.current?.beginInteraction()} undoNotice={noticeUndo}
     style={selectionKinds.size > 0 ? styleNode : undefined} /> : null;
   const documentProperties = doc ? <View nativeID="lienzo-properties-document">
@@ -572,22 +507,20 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (c.view?.latestAgent?.ids.length) items.push({ id: 'agent.latest', group: 'Hojas', title: "Go to the agent's latest", subtitle: c.view.latestAgent.label, icon: 'Sparkles', verb: 'Go', run: () => { copilot.goToLatest(); } });
     items.push({ id: 'agent.follow', group: 'Hojas', title: copilot.follow ? 'Stop following the agent' : 'Follow the agent', subtitle: 'The camera goes wherever the agent draws', icon: 'Magnet', run: () => copilot.toggleFollow() });
     items.push({ id: 'lienzo.new', group: 'Lienzos', title: 'New Lienzo', subtitle: GLOSSARY.lienzo, icon: 'Plus', disabled, run: () => { void newCanvas(); } });
-    for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: (d.example ? 'Example · ' : '') + relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy || sending, run: () => { void c.open(d.id); } });
+    for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: (d.example ? 'Example · ' : '') + relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy, run: () => { void c.open(d.id); } });
     items.push(
       { id: 'settings.shortcuts', group: 'Settings', title: 'Shortcuts', subtitle: 'Reassign keys', icon: 'Keyboard', keywords: 'keys keyboard bindings', run: () => setSettingsOpen(true) },
       { id: 'settings.sheet', group: 'Settings', title: 'Keyboard shortcuts', subtitle: 'The cheat sheet', icon: 'Keyboard', shortcut: key('help.shortcuts'), run: () => setSheetOpen(true) },
       { id: 'settings.agent', group: 'Settings', title: 'Agent connection', icon: 'Plug', keywords: 'assistant connect', disabled: !doc, run: () => setAgentsOpen(true) },
       { id: 'settings.instructions', group: 'Settings', title: 'Instructions for the agent', subtitle: 'How it should explain on this Lienzo', icon: 'Compass', disabled: !doc, run: () => inspectorOpen('communication') },
       { id: 'settings.history', group: 'Settings', title: 'History', icon: 'History', disabled: !doc, run: () => inspectorOpen('history') },
-      { id: 'settings.activity', group: 'Settings', title: 'Activity', subtitle: 'What was sent to the agent', icon: 'Clock', disabled: !doc, run: () => inspectorOpen('activity') },
       { id: 'settings.import', group: 'Settings', title: 'Import a collection', icon: 'FileInput', disabled: c.offline, run: () => setImportOpen(true) },
       { id: 'settings.guide', group: 'Settings', title: 'Lienzo guide', icon: 'BookOpen', run: () => setGuideOpen(true) },
     );
     const q = query.trim();
-    if (q && doc) items.push({ id: 'ask', group: 'Ask the agent', title: `Ask the agent: ${q}`, subtitle: c.selection.length ? `With ${c.selection.length === 1 ? 'the selection' : c.selection.length + ' selected'} as context` : 'About this Lienzo', icon: 'MessageCircleQuestion', verb: 'Ask', disabled: disabled, run: () => { void send(false, q); } });
     return items;
   };
-  const runPaletteItem = (item: PaletteItem) => { if (item.id !== 'ask') { const next = remember(recent, item.id, F.palette.recent); recentByScope.set(scope, next); setRecent(next); } item.run(false); };
+  const runPaletteItem = (item: PaletteItem) => { const next = remember(recent, item.id, F.palette.recent); recentByScope.set(scope, next); setRecent(next); item.run(false); };
   // ---- Keys. Registered shortcuts go through the registry; the few contextual ones (Enter, Tab, arrows) stay here.
   const runShortcut = (id: string): boolean => {
     if (id.startsWith('pinned.')) { const entry = pinnedEntries[Number(id.slice(7)) - 1]; if (!entry || entry.disabled) return false; entry.run(); return true; }
@@ -638,7 +571,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       if (!doc) return false;
       if ((e.key === 'Enter' || e.key === 'F2') && !e.command && c.selection.length === 1) { editSelectedText(); return true; }
       if (e.key === 'F2' && !c.selection.length && !disabled) { setRename(true); return true; }
-      if (e.command && e.key === 'Enter') { void send(); return true; }
       if (disabled) return false;
       if (e.key === 'Enter') { showPanel(); return true; }
       if (e.key === 'Tab') {
@@ -656,7 +588,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       }
       return false;
     }, field: (e: PanelKey) => {
-      // From a field (the composer, a search box) only ⌘K and ⌘\ reach the panel.
+      // From a field (a search box, a text being edited) only ⌘K and ⌘\ reach the panel.
       if (modalOpen) return false;
       const id = resolved.byCombo.get(eventCombo(e) ?? '');
       return (id === 'palette.open' || id === 'panel.right') && e.command ? runShortcut(id) : false;
@@ -679,7 +611,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <MenuRow icon="Maximize2" label="Hide all UI" hint={keyLabel('ui.hide')} disabled={!doc} onPress={() => { setOverflow(false); setImmersive(true); }} />
       <MenuRow icon="Plug" label="Agent" disabled={!doc} trailing={<Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />} onPress={() => { setOverflow(false); setAgentsOpen(true); }} />
       <MenuRow icon="Compass" label="Instructions for the agent" disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
-      <MenuRow icon="Clock" label="Activity" disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('activity'); }} />
       <MenuDivider />
       <MenuRow icon="Package" label="Manage extensions…" onPress={() => { setOverflow(false); openCatalog('packs'); }} />
       <MenuRow icon="FileInput" label="Import a collection" disabled={c.offline} onPress={() => { setOverflow(false); setImportOpen(true); }} />
@@ -694,13 +625,16 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const colour = selectedWhiteboard.length && !linkId ? { kind: 'whiteboard' as const, value: displayedStyle.color, set: (color: ToolStyle['color']) => changeStyle({ color }) } : undefined;
   const link = linkId ? doc?.links.find(l => l.id === linkId) : undefined;
   const linkColour = link ? { kind: 'link' as const, link, set: (tone: typeof link.tone) => { if (tone) void c.edit([{ type: 'link.update', id: link.id, patch: { tone } }], 'Change link colour'); else if (link.tone) { const { tone: _tone, ...rest } = link; void c.edit([{ type: 'link.delete', id: link.id }, { type: 'link.create', link: rest }], 'Clear link colour'); } } } : undefined;
-  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} ask={focusComposer} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} keyLabel={keyLabel} onProperties={u.compact ? () => showPanel() : undefined} /> : undefined;
+  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} keyLabel={keyLabel} onProperties={u.compact ? () => showPanel() : undefined} /> : undefined;
   const title = doc ? rename ? <Field key={doc.id} hideLabel label="Lienzo title" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
     if (!value.trim() || value.trim().length > 300) throw new Error('Write a title of up to 300 characters.');
     await c.settle(); if (c.current.current?.document.id !== doc.id) return;
     const next = await c.edit([{ type: 'document.update', title: value.trim() }], 'Rename Lienzo'); if (next) setRename(false); return next;
   }} /> : <Pressable nativeID="lienzo-title" accessibilityRole="button" accessibilityLabel={'Open Lienzos: ' + doc.title} onPress={openDocuments} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: tokens.island.title.paddingH, minHeight: tokens.island.button.size, gap: 4 }}><Txt kind="groupTitle" numberOfLines={1} style={{ flexShrink: 1 }}>{doc.title}</Txt><Icon name="ChevronDown" size={12} color={u.c.foregroundMuted} /></Pressable> : <Txt kind="groupTitle">Lienzo</Txt>;
-  const toolbarBottom = tokens.island.inset + composerHeight + F.toolbar.aboveComposer;
+  // The toolbar sits on the bottom edge, level with the minimap and the zoom control.
+  const toolbarBottom = F.toolbar.bottom;
+  // On a compact panel the toolbar is docked in the flow at the bottom; floating things clear its strip.
+  const compactDock = F.toolbar.height + F.toolbar.compactPadding.top + F.toolbar.compactPadding.bottom;
   const toolbar = <Toolbar active={toolId} shape={toolId === 'arrow' ? shapePick : toolStyle.shape === 'line' && toolStyle.heads !== 'none' ? shapePick : toolStyle.shape} locked={toolLocked} disabled={!doc || disabled} onTool={chooseToolId} onShape={pickShape} onLock={setToolLocked} pinned={pinnedTools} onAdd={() => { setLibraryOpen(false); setAddOpen(open => !open); }} addOpen={addOpen} keyLabel={keyLabel} scroll={u.compact} addRef={addRef} />;
   const panelTop = F.top.height + tokens.island.inset + F.top.islandGap, panelMax = Math.max(200, panelHeight - panelTop - F.rightPanel.bottomClearance);
   const addLeft = Math.max(tokens.island.inset, Math.min(width - F.catalog.width - tokens.island.inset, toolbarBox.x + toolbarBox.width - F.catalog.width + 24));
@@ -725,7 +659,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         {!!doc && <><View style={{ width: 1, height: 20, marginHorizontal: 4, backgroundColor: u.c.border }} /><HojaControls copilot={copilot} shortcut={keyLabel} /></>}
       </View></View>}
       {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, right: tokens.island.inset }}><View nativeID="lienzo-top-right" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
-        <IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} detail="Tools, actions, Lienzos, or ask the agent." size={36} onPress={() => { setAddOpen(false); setPaletteOpen(true); }} />
+        <IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} detail="Tools, actions, Hojas and Lienzos." size={36} onPress={() => { setAddOpen(false); setPaletteOpen(true); }} />
         <IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} detail="The panel on the right. Pin it to keep it open." size={36} disabled={!doc} active={panelVisible} onPress={togglePanel} />
       </View></View>}
       {empty && <View pointerEvents="box-none" style={{ position: 'absolute', top: Math.max(F.top.height + 40, panelHeight * .24), left: 24, right: 24, alignItems: 'center', gap: 14 }}>
@@ -733,30 +667,28 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         <View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}><Button label="Add something" icon="Plus" disabled={disabled} onPress={() => setAddOpen(true)} /><Button label="Use a template" disabled={disabled} onPress={() => openCatalog('templates')} /></View>
       </View>}
       {doc && !immersive && !u.compact && <View pointerEvents="box-none" style={{ position: 'absolute', bottom: toolbarBottom, left: tokens.island.inset, right: tokens.island.inset, alignItems: 'center' }}><View pointerEvents="box-none" onLayout={e => { const { x, width: w } = e.nativeEvent.layout; setToolbarBox({ x: x + tokens.island.inset, width: w }); }}>{toolbar}</View></View>}
-      {doc && !immersive && !u.compact && <View pointerEvents="box-none" onLayout={e => setComposerHeight(e.nativeEvent.layout.height)} style={{ position: 'absolute', bottom: tokens.island.inset, left: width < 560 ? tokens.island.inset : (width - composerWidth) / 2, width: composerWidth }}><ContextTray composerRef={composerRef} controller={c} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} /></View>}
       {panelVisible && !u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={panelTop} maxHeight={panelMax} shortcut={keyLabel('panel.right')} focusSection={panel.focus === 'instruction' ? 'Instructions for the agent' : undefined} />}
       <View pointerEvents="box-none" style={{ position: 'absolute', top: u.compact ? tokens.size.topBarCompact + 8 : tokens.island.bannerTop, left: 12, right: panelVisible && !u.compact ? F.rightPanel.width + 24 : 12 }}>{doc && (c.failure || c.offline || reload) && <View pointerEvents="box-none" style={{ padding: 12, gap: 8 }}>
           {c.failure && <Banner title={c.failure.conflict ? 'The Lienzo changed while you were editing' : 'The change was not saved'} icon={c.failure.conflict ? 'GitCompareArrows' : 'CircleAlert'} color={c.failure.conflict ? u.c.statusWarning : u.c.statusDanger} message={c.failure.conflict ? 'Another edit changed the Lienzo and yours was not saved. You can apply it again on top of the current content, or discard it.' : c.failure.message}>
             {c.failure.retry && <Button label={c.failure.conflict ? 'Apply my change again' : 'Retry'} variant="primary" small disabled={disabled} onPress={() => { void c.failure?.retry?.().catch(e => c.fail(e)); }} />}<Button label="Discard" variant="ghost" small onPress={c.clearFailure} />
           </Banner>}
-          {c.offline && <Banner title="No connection to Paseo" icon="Unplug" color={u.c.border} message="You can keep reading; changes are paused."><Button label="Retry" small onPress={() => { void c.refresh(); }} /></Banner>}
-          {reload && !(c.failure && c.offline) && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected and will get your actions as messages, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => setReload(false)} /></Banner>}
+          {c.offline && <Banner title={`No connection to ${capabilities.name}`} icon="Unplug" color={u.c.border} message="You can keep reading; changes are paused."><Button label="Retry" small onPress={() => { void c.refresh(); }} /></Banner>}
+          {reload && !(c.failure && c.offline) && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => setReload(false)} /></Banner>}
           {c.failure && c.offline && reload && <Button label="+1 notice" small variant="ghost" onPress={() => setShowAllWarnings(true)} />}
         </View>}</View>
-      {doc && !immersive && <LatestPill copilot={copilot} bottom={(u.compact ? composerHeight + 72 : toolbarBottom + F.toolbar.height + 12)} label={c.view?.latestAgent?.label} />}
+      {doc && !immersive && <LatestPill copilot={copilot} bottom={u.compact ? compactDock + 12 : toolbarBottom + F.toolbar.height + 12} label={c.view?.latestAgent?.label} />}
       {doc && !u.compact && <HojaMenu copilot={copilot} left={tokens.island.inset} top={tokens.island.inset + F.top.height + 6} maxHeight={Math.max(200, panelHeight - 220)} />}
-      {libraryOpen && !immersive && <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: 8 + composerHeight + 60, alignItems: 'center' } : { position: 'absolute', bottom: toolbarBottom + F.toolbar.height + 8, left: 0, right: 0, alignItems: 'center' }}>
+      {libraryOpen && !immersive && <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 8, alignItems: 'center' } : { position: 'absolute', bottom: toolbarBottom + F.toolbar.height + 8, left: 0, right: 0, alignItems: 'center' }}>
         <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} />
       </View>}
       {immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: 12, right: 12 }}><View style={islandStyle(u)}><IconButton icon="Minimize2" label="Show the interface" shortcut={keyLabel('ui.hide')} onPress={() => setImmersive(false)} /></View></View>}
-      <Kettle serial={kettle} bottom={u.compact ? composerHeight + 72 : 60} />
+      <Kettle serial={kettle} bottom={u.compact ? compactDock + 12 : 60} />
     </View>
     {u.compact && doc && !immersive && selectionBar}
-    {u.compact && doc && !immersive && <View style={{ paddingHorizontal: 8, paddingTop: 6 }}>{toolbar}</View>}
-    {u.compact && doc && !immersive && <View onLayout={e => setComposerHeight(e.nativeEvent.layout.height)}><ContextTray composerRef={composerRef} controller={c} note={note} setNote={setNote} sending={sending} error={sendError} lastId={retrySend.current?.id} send={() => { void send(); }} retry={retryFeedback} inspect={inspectorOpen} connect={() => setAgentsOpen(true)} /></View>}
+    {u.compact && doc && !immersive && <View style={{ paddingHorizontal: 8, paddingTop: F.toolbar.compactPadding.top, paddingBottom: F.toolbar.compactPadding.bottom }}>{toolbar}</View>}
     {panelVisible && u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={0} maxHeight={Math.max(320, panelHeight - 120)} open />}
     {addOpen && <><Pressable accessibilityLabel="Close the catalog" onPress={() => setAddOpen(false)} style={{ position: 'absolute', inset: 0, zIndex: 40 }} />
-      <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: composerHeight + 64, zIndex: 41, alignItems: 'center' } : { position: 'absolute', left: addLeft, bottom: toolbarBottom + F.toolbar.height + F.catalog.offset, zIndex: 41 }}>
+      <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 6, zIndex: 41, alignItems: 'center' } : { position: 'absolute', left: addLeft, bottom: toolbarBottom + F.toolbar.height + F.catalog.offset, zIndex: 41 }}>
         <AddMenu entries={entries} pinned={pinnedIds} onPin={togglePin} onClose={() => setAddOpen(false)} onManage={() => openCatalog('packs')} maxHeight={Math.min(F.catalog.maxHeight, Math.max(240, panelHeight - toolbarBottom - F.toolbar.height - 80))} width={u.compact ? Math.min(F.catalog.width, width - 16) : F.catalog.width} />
       </View></>}
     {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
@@ -775,24 +707,24 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <Button label={ventana === 'page' ? 'Add Ventana' : 'Add'} variant="primary" disabled={disabled || !mediaUrl.trim()} onPress={insertVentana} />
     </Modal.Content></Modal>
     <SvgImportDialog open={svgOpen} onClose={() => setSvgOpen(false)} onInsert={insertSvg} />
-    <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected and will get your actions as messages, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
+    <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
     <Modal title="Lienzos" open={docsOpen} onOpenChange={setDocsOpen}><Modal.Content>
       {docsLoading && <Txt kind="small" muted>Loading Lienzos…</Txt>}
       {docsError && <View style={{ gap: 8 }}><Txt kind="small" style={{ color: u.c.statusDanger }}>{docsError}</Txt><Button label="Retry" small onPress={() => { void refreshDocuments(); }} /></View>}
       <Txt kind="label" muted>Yours</Txt>
       {!docsLoading && !c.documents.some(d => !d.example) && <Txt kind="small" muted>No Lienzos of your own yet.</Txt>}
-      {c.documents.filter(d => !d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy || sending} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
+      {c.documents.filter(d => !d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
       <Button label={c.busy ? 'Creating…' : 'New Lienzo'} variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />
       <Txt kind="label" muted>Examples</Txt>
-      {c.documents.filter(d => d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy || sending} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
+      {c.documents.filter(d => d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
       {c.catalog?.packs.filter(p => ['frontend', 'learn'].includes(p.id)).flatMap(p => p.documents.map((d, i) => <View key={p.id + ':' + i} style={{ gap: 4 }}><Chip label="Example" tone="aviso" icon="FlaskConical" /><Button label={'Create ' + d.title} variant="ghost" disabled={disabled} onPress={() => { void c.example(p.id, i).then(next => { if (next) setDocsOpen(false); }); }} /></View>))}
     </Modal.Content></Modal>
     <Modal title="Menu" open={overflow && u.compact} onOpenChange={setOverflow}><Modal.Content><View>{menuRows}</View></Modal.Content></Modal>
-    <Modal title={inspectorSection === 'history' ? 'History' : inspectorSection === 'activity' ? 'Activity' : inspectorSection === 'communication' ? 'Instructions for the agent' : 'Lienzo settings'} open={documentSettingsOpen && !!doc} onOpenChange={setDocumentSettingsOpen}><Modal.Content>{documentSettingsOpen && doc && inspector}</Modal.Content></Modal>
+    <Modal title={inspectorSection === 'history' ? 'History' : inspectorSection === 'communication' ? 'Instructions for the agent' : 'Lienzo settings'} open={documentSettingsOpen && !!doc} onOpenChange={setDocumentSettingsOpen}><Modal.Content>{documentSettingsOpen && doc && inspector}</Modal.Content></Modal>
     <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} list={resolved.list} chips={chips} onAssign={(id, combo) => savePrefs({ shortcuts: { ...overrides, [id]: combo } })} onReset={id => { const next = { ...overrides }; delete next[id]; savePrefs({ shortcuts: next }); }} />
     <Modal title="Settings" open={settingsOpen} onOpenChange={setSettingsOpen}><Modal.Content><View nativeID="lienzo-settings" style={{ gap: 12 }}>
       <Txt kind="title">Shortcuts</Txt>
-      <Txt kind="small" muted>Press Change and then the new keys. A combination another shortcut already uses moves here and leaves that one unassigned. Saved for this Paseo host.</Txt>
+      <Txt kind="small" muted>Press Change and then the new keys. A combination another shortcut already uses moves here and leaves that one unassigned. Saved {capabilities.keptFor}.</Txt>
       <ShortcutList list={resolved.list} chips={chips} onAssign={(id, combo) => savePrefs({ shortcuts: { ...overrides, [id]: combo } })} onReset={id => { const next = { ...overrides }; delete next[id]; savePrefs({ shortcuts: next }); }} />
       {Object.keys(overrides).length > 0 && <Button label="Reset all shortcuts" variant="ghost" onPress={() => savePrefs({ shortcuts: {} })} />}
     </View></Modal.Content></Modal>
@@ -803,6 +735,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {(templateError || c.failure) && <Txt kind="small" style={{ color: u.c.statusDanger }}>{c.failure?.message ?? templateError}</Txt>}
       <Button label={c.busy ? 'Saving…' : 'Save template'} variant="primary" disabled={disabled || !templateName.trim() || templateName.length > 200} onPress={() => { void saveTemplate(); }} />
     </Modal.Content></Modal>
-    <AgentModal controller={c} open={agentsOpen} close={() => setAgentsOpen(false)} onReload={() => setReload(true)} /><PackImport controller={c} open={importOpen} close={() => setImportOpen(false)} /><PackExport pack={exported} close={() => setExported(null)} />
+    {AgentSheet ? <AgentSheet open={agentsOpen} close={() => setAgentsOpen(false)} connectedAgentId={c.view?.connection?.agentId ?? null} /> : <AgentModal controller={c} open={agentsOpen} close={() => setAgentsOpen(false)} onReload={() => setReload(true)} />}<PackImport controller={c} open={importOpen} close={() => setImportOpen(false)} /><PackExport pack={exported} close={() => setExported(null)} />
   </View></TooltipProvider>;
 }

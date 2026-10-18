@@ -18,7 +18,7 @@ const reference = { workspaceId, documentId: "d" };
 const rejectCode = (code: string) => (error: unknown) => error instanceof CanvasError && error.code === code;
 const group = (id: string, blockIds: string[] = [], groupIds: string[] = []) => groupSchema.parse({ id, title: id, description: "Keep description", blockIds, groupIds });
 
-test("pre-v1.1 strict documents/templates parse and existing state/1 history and feedback reopen", async t => {
+test("pre-v1.1 strict documents/templates parse and existing state/1 history reopens; its old event queue is dropped", async t => {
   const { service, store, directory } = await setup(t);
   const { links: _links, ...legacyContent } = content();
   const legacy = { ...legacyContent, id: "legacy", workspaceId, revision: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
@@ -26,7 +26,6 @@ test("pre-v1.1 strict documents/templates parse and existing state/1 history and
   assert.equal(documentSchema.parse(legacy).layout, undefined);
   assert.deepEqual(templateSchema.parse({ id: "old", name: "Old", description: "", blocks: [], groups: [] }).links, []);
   await service.mutate(mutation(0, [{ type: "document.update", title: "Before upgrade" }]));
-  await service.action(rpc.agentAction.input.parse({ ...reference, expectedRevision: 1, eventId: "old-event", action: { kind: "ask", label: "Explain", payload: {} } }));
   await service.catalogMutate(rpc.mutateCatalog.input.parse({ expectedRevision: 0, action: { type: "template.put", template: { id: "old", name: "Old", description: "", blocks: [], groups: [] } } }));
   const disk = JSON.parse(await readFile(store.file, "utf8"));
   const removeNewFields = (value: unknown): void => {
@@ -37,6 +36,7 @@ test("pre-v1.1 strict documents/templates parse and existing state/1 history and
     Object.values(object).forEach(removeNewFields);
   };
   removeNewFields(disk);
+  disk.documents.d.events = [{ id: "old-event", documentId: "d", agentId: null, workspaceId, createdAt: "2026-01-01T00:00:00.000Z", revision: 1, action: { kind: "ask", label: "Explain", payload: {}, delivery: "immediate" }, context: legacyContent, status: "pending" }];
   await store.close();
   await writeFile(store.file, JSON.stringify(disk));
   const reopened = new CanvasStore(directory); t.after(() => reopened.close());
@@ -45,7 +45,7 @@ test("pre-v1.1 strict documents/templates parse and existing state/1 history and
   assert.deepEqual(state.documents.d.document.links, []);
   assert.deepEqual(state.documents.d.history[0].before.links, []);
   assert.deepEqual(state.documents.d.history[0].after.links, []);
-  assert.deepEqual(state.documents.d.events[0].context.links, []);
+  assert.equal("events" in state.documents.d, false);
   assert.deepEqual(state.catalog.localTemplates[0].links, []);
   const undo = await new CanvasService(reopened).undo({ ...reference, expectedRevision: 1 });
   assert.equal(undo.document.title, "Test document");
@@ -245,7 +245,7 @@ test("installed SDK loads every shared contract and backend entry", () => {
   const contracts = Object.values(rpc).filter(value => value && typeof value === "object" && "name" in value);
   assert.ok(contracts.length >= 23);
   for (const contract of contracts) assert.match(String(contract.name), /^[a-z][a-z0-9._-]*$/);
-  assert.equal(rpc.agentAction.name, "canvas.agent.action");
+  assert.equal(rpc.setSelection.name, "canvas.selection.set");
 });
 
 test("batch rollback leaves revision, disk and history unchanged", async t => {

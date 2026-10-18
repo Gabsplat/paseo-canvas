@@ -7,7 +7,6 @@ export type RendererProps<Data = unknown> = {
   document: DeepReadonly<CanvasDocument>;
   data: Data; block: CanvasBlock; availableWidth: number; compact: boolean; readOnly: boolean;
   ui: ReturnType<typeof useUI>; runtime: RendererRuntime; scope: RendererScope;
-  send(kind: string, payload: CanvasBlock['data'], label: string, delivery?: 'immediate' | 'batched'): Promise<void>;
   /** The canvas selection, and a way to move it: how a renderer points at other cards. Absent outside a canvas. */
   selection?: readonly string[]; select?(ids: string[]): void;
 };

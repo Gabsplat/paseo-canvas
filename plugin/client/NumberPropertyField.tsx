@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { TextInput } from '@getpaseo/plugin/client/react-native';
+import { TextInput } from './host';
 import { Button, Txt, useUI } from './ui';
 import { propertyValue } from './logic';
 /** The property form uses a numeric native keyboard and validates before submitting. */

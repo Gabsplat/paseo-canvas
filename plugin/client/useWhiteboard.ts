@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CanvasBlock, CanvasOperation } from '../shared/model';
-import { appendStroke, isWhiteboardRenderer, layerFits, simplifyStroke, strokeSummary, learnerLayerIds, strokeLayers, wbDrawDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbTextDataSchema, WB_LAYER_LIMIT_MESSAGE, WB_LIMITS, type WbDrawing } from '../shared/whiteboard';
+import { appendStroke, isWhiteboardRenderer, layerFits, simplifyStroke, wbDrawDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbTextDataSchema, WB_LAYER_LIMIT_MESSAGE, WB_LIMITS, type WbDrawing } from '../shared/whiteboard';
 import { newId } from './logic';
 import { dropTarget, type Point, type Rect, type CanvasLayout } from './logic';
 import type { CanvasController } from './useCanvas';
@@ -19,19 +19,13 @@ type Environment = { controller:CanvasController; layout:CanvasLayout; world(p:C
 type Gesture = { documentId:string; tool:CanvasTool; start:Point; last:Point; page:CanvasPointer; parent:string|null; anchor:string|null; points:number[]; style:ToolStyle; erased:Map<string,Set<number>> };
 export function useWhiteboard(environment:Environment) {
   const env=useRef(environment);env.current=environment;
-  const gesture=useRef<Gesture|null>(null), drawing=useRef<{id:string;parent:string|null;anchor:string|null;documentId:string}|null>(null), strokes=useRef<{documentId:string;tool:CanvasTool}|null>(null), store=useRef(new WhiteboardPreviewStore()).current;
+  const gesture=useRef<Gesture|null>(null), drawing=useRef<{id:string;parent:string|null;anchor:string|null;documentId:string}|null>(null), store=useRef(new WhiteboardPreviewStore()).current;
   const [editor,setEditor]=useState<TextSession|null>(null),[editorError,setEditorError]=useState(''),[saving,setSaving]=useState(false);
   const documentId=environment.controller.view?.document.id;
   function cancel(){gesture.current=null;store.set(null);setEditor(null);setEditorError('');}
   useEffect(()=>{cancel();drawing.current=null;},[documentId]);
-  // Leaving pencil and eraser settles ONE bounded description of the stroke layers. Never per stroke, never points.
-  useEffect(()=>{
-    drawing.current=null;gesture.current=null;store.set(null);
-    const session=strokes.current,{e,c,doc}=context();if(!session||['draw','eraser'].includes(e.tool()))return;
-    strokes.current=null;if(!doc||doc.id!==session.documentId||c.offline)return;
-    const isDraw=(b:{typeId:string})=>c.catalog?.blockTypes.find(t=>t.id===b.typeId)?.renderer==='wb-draw',mine=learnerLayerIds(strokeLayers(doc.blocks,isDraw));
-    void c.send({kind:'whiteboard.strokes',label:'Learner strokes',payload:strokeSummary(doc.blocks,isDraw),delivery:'batched',settled:true,...(mine.length?{targetIds:mine.slice(0,20)}:{})},newId('evt')).catch(error=>c.fail(error));
-  },[environment.tool()]);
+  // Changing tool ends any stroke in progress. Strokes are stored as wb-draw blocks: the agent reads them like any block.
+  useEffect(()=>{drawing.current=null;gesture.current=null;store.set(null);},[environment.tool()]);
   const context=()=>{const e=env.current,c=e.controller,doc=c.view?.document;return {e,c,doc};};
   const parentPoint=(point:Point,parent:string|null)=>{const r=parent?env.current.layout.rects.get(parent):null;return{x:point.x-(r?.x??0),y:point.y-(r?.y??0)};};
   function afterCreate(id:string){const {e,c}=context();void c.select([id]);if(!e.locked()&&!['draw','eraser'].includes(e.tool()))e.choose('select');}
@@ -95,7 +89,7 @@ export function useWhiteboard(environment:Environment) {
         if(!id)id=newId('draw');operations=old?.id===id?[{type:'block.update',id,patch:next}]:[{type:'block.create',block:{id,typeId:'wb-draw',title:'',parentGroupId:g.parent,...next}}];
       }else if(g.tool==='eraser'){erase(g,at);for(const [blockId,removed]of g.erased){const b=doc.blocks.find(b=>b.id===blockId);if(!b)continue;const data=wbDrawDataSchema.parse(b.data),strokes=data.strokes.filter((_,i)=>!removed.has(i));operations.push(strokes.length?{type:'block.update',id:blockId,patch:{data:{strokes}}}:{type:'block.delete',id:blockId});}}
       if(!operations.length)return;const result=await c.edit(operations,g.tool==='draw'?'Draw stroke':g.tool==='eraser'?'Erase strokes':'Create shape');if(!result)return;
-      if(env.current.controller.view?.document.id!==doc.id)return;if(g.tool==='draw')drawing.current={id,parent:g.parent,anchor:g.anchor,documentId:doc.id};if(g.tool==='draw'||g.tool==='eraser')strokes.current={documentId:doc.id,tool:g.tool};if(id)afterCreate(id);
+      if(env.current.controller.view?.document.id!==doc.id)return;if(g.tool==='draw')drawing.current={id,parent:g.parent,anchor:g.anchor,documentId:doc.id};if(id)afterCreate(id);
     }catch(error){c.fail(g.tool==='draw'?new Error(WB_LAYER_LIMIT_MESSAGE):error);}
   }
   return {store,editor,editorError,saving,cancel,edit,saveText,insertSvg,begin,move,finish};

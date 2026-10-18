@@ -45,14 +45,13 @@ This file is the brief for the four stages. Visual decisions here are final unle
 │                                                     └───────────────┘  │
 │  [map]                                                                 │
 │        [ V H P ▢ T ↗ M W │ pinned… │ + ]          [ − 100% + ]        │  bottom toolbar
-│                         [ composer ]                                   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Bottom toolbar**, centred, floating island, 44 px tall, 36 px buttons, 4 px gap, dividers between groups.
   Order: Select (V), Hand (H) | Pencil (P), Shape (R; chevron flyout: rectangle R, ellipse O, diamond, triangle,
-  line), Text (T), Arrow (A), Eraser (E) | Marco (M), Ventana (W) | pinned tools | `+`. It sits above the composer
-  and never overlaps it; on a short panel it moves the composer clearance into account.
+  line), Text (T), Arrow (A), Eraser (E) | Marco (M), Ventana (W) | pinned tools | `+`. It sits on the bottom
+  edge, 12 px up, level with the minimap and the zoom control. There is no composer: the canvas is one-way.
 - **`+` catalog**: a popover anchored to `+`, 360 × up to 480 px. A search field on top (focused on open), then
   sections: Pinned, Shapes & drawing, Embeds (Ventana, image, video, audio, mini app, file tree…), Blocks (every
   catalog block type, as today's palette), Extensions (tools contributed by extensions), and at the bottom
@@ -65,11 +64,11 @@ This file is the brief for the four stages. Visual decisions here are final unle
   panels). A pin keeps it open; `⌘\` toggles. Collapsible sections with 12 px headers, like Figma. What today's
   inspector and style island show moves here (fill, stroke, text size, link kind, block fields, instructions).
 - **Selection bar**: small floating bar above the selection (or below when there is no room): colour, Marco
-  (group), duplicate, ask the agent, delete. 32 px buttons. Detail lives in the right panel.
+  (group), duplicate, delete. 32 px buttons. Detail lives in the right panel.
 - **Top-left island**: menu, document title ▾, and (stage 2) the Hoja menu. Remove the view button.
 - **Top-right**: `⌘K` button and the right-panel toggle.
 - Minimap stays bottom-left, zoom control bottom-right.
-- Compact panel: Lista as today, toolbar becomes a horizontal scroller above the composer, right panel is a sheet.
+- Compact panel: Lista as today, toolbar becomes a horizontal scroller docked at the bottom, right panel is a sheet.
 
 ### Tooltips
 
@@ -83,8 +82,7 @@ away from the nearest panel edge; never covers the control. On touch, long-press
 Raycast-like: centred, 640 px wide, top at 18 % of the panel, 52 px search field with a leading icon, results
 grouped under small caps headers, each row 40 px with icon, title, muted subtitle, shortcut chips on the right; the
 active row has a soft accent fill. Footer bar: "↵ Open · ⌘↵ Run in background · Esc Close", and the active row's
-primary action on the right. Groups: Tools, Actions (on the selection), Hojas, Lienzos, Ask the agent (always
-last: "Ask the agent: ‹query›", sends with the selection as context), Extensions, Settings. Empty query shows
+primary action on the right. Groups: Tools, Actions (on the selection), Hojas, Lienzos, Extensions, Settings. Empty query shows
 Recent. Fuzzy match on titles and keywords. Keyboard only works fully; mouse too.
 
 ### Shortcuts
@@ -121,7 +119,7 @@ a "Manage extensions…" row that opens today's collections view (stage 4).
   or each tool use, `step` = after finishing each step worth showing — default, `task` = once at the end of a task,
   `custom` + `rule` text), `remind` (default false), `documentId` (the conversation's Lienzo, created on first
   enable). RPCs to read and set it. Every canvas MCP response includes `copilot: { enabled, cadence, rule }`.
-  Turning it on queues a one-line notice to the agent through the existing event delivery (no extra turn).
+  Nothing is sent when it changes: the agent reads the mode from the next tool response.
 - **Reminder** (`remind: true`): on `agent.turn_ended`, if the copilot is on, the cadence is `step` or `task`, the turn
   changed things (tool calls / edits in the timeline) and no Lienzo tool was used, send one short follow-up asking
   it to update the canvas. Never twice in a row, never for `thinking`.

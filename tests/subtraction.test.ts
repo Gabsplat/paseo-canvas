@@ -34,8 +34,8 @@ function runtime(controller: any) {
   const native = { View: 'View', Pressable: 'Pressable', Text: 'Text', Animated: {}, Platform: { OS: 'web', select: (v: any) => v.default } };
   const host = { Icon: 'Icon', ScrollView: 'ScrollView', Modal: modal, useToast: () => ({ show() {}, error() {} }) };
   const modules: Record<string, any> = {
-    react, 'react-native': native, '@getpaseo/plugin/client/react-native': host,
-    '@getpaseo/plugin/client': { useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }) },
+    react, 'react-native': native,
+    './host': { ...host, useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }), AgentSheet: null, capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
     './useCanvas': { useCanvas: () => controller }, './tokens': { tokens }, './logic': logic,
     '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {} }, './motion': {},
     './panel-actions': panelActions, '../shared/learning': learning,
@@ -47,6 +47,7 @@ function runtime(controller: any) {
     './guide': { claimFirstGuide: async () => false },
     './usePresentation': { usePresentation: () => ({ document: controller.view?.document, hiddenBy: new Map(), activeGates: new Set() }) },
     './HiddenResult': { HiddenResult: control('HiddenResult') },
+    './useLearning': { recordInteraction: async () => {} },
     './FloatingTools': Object.fromEntries(['ToolIsland','StyleIsland','ShapePopover','LibraryPopover','SvgImportDialog'].map(name=>[name,control(name)])), './whiteboard-tools': { DEFAULT_TOOL_STYLE }, './interaction': { needsContentInteraction:()=>true }, '../shared/whiteboard': whiteboard, './whiteboard-visuals': { islandStyle: () => ({}) }, './media': { mediaSource: () => null },
     './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined }, './Hojas': { HojaControls: control('HojaControls'), HojaMenu: control('HojaMenu'), LatestPill: control('LatestPill'), useCopilotCanvas: () => ({ hojas: [], current: -1, follow: true, glowIds: [], unseen: false, menuOpen: false, setMenuOpen() {}, toggleFollow() {}, goToLatest: () => false, goToHoja: () => false, step: () => false, userMoved() {} }) }, './Extensions': { ExtensionTool: control('ExtensionTool'), extensionIcon: () => 'Puzzle' },
     './Toolbar': { Toolbar: control('Toolbar'), GLOSSARY: { lienzo: 'Lienzo', marco: 'Marco (Spanish for frame)', hoja: 'Hoja', lente: 'Lente', ventana: 'Ventana (Spanish for window)' }, shapeIcon: () => 'Square' },
@@ -112,12 +113,12 @@ test('new canvas is one click with no fields; title saves in place; instructions
   assert.deepEqual(Array.from(panel.props.tabs, (t: any) => t.label), ['Lienzo']);
   assert.equal(panel.props.focusSection, 'Instructions for the agent');
 });
-test('no view switcher anywhere: the toolbar, the composer and the selection bar passed to Canvas', () => {
+test('no view switcher and no composer: the toolbar and the selection bar passed to Canvas', () => {
   const f = fixture(), r = runtime(f.controller);
   let tree = r.render(); tree.props.onLayout({ nativeEvent: { layout: { width: 1280, height: 800 } } }); tree = r.render();
   const types = () => nodes(tree, true).map(node => node.type?.name);
   assert.ok(!types().includes('Catalog') && !types().includes('RightPanel'));
-  assert.ok(types().includes('ContextTray') && types().includes('Toolbar'));
+  assert.ok(!types().includes('ContextTray') && types().includes('Toolbar'));
   const labels = JSON.stringify(nodes(tree).map(node => node.props.label ?? node.props.accessibilityLabel ?? null));
   for (const gone of ['Cambiar vista', 'Change view', 'Foco', 'Lecturas', 'Matriz', 'Herramientas propias', 'Ver como lista']) assert.ok(!labels.includes(gone), gone);
   assert.equal(find(tree, 'Canvas').props.selectionToolbar, undefined);
@@ -125,12 +126,12 @@ test('no view switcher anywhere: the toolbar, the composer and the selection bar
   const bar = find(tree, 'Canvas').props.selectionToolbar;
   assert.equal(bar.type.name, 'SelectionBar');
   const rendered = nodes(bar.type(bar.props));
-  assert.deepEqual(Array.from(rendered.filter(node => node.type?.name === 'BarButton'), node => node.props.label), ['Wrap in a Marco', 'Duplicate', 'Ask the agent', 'Delete']);
+  assert.deepEqual(Array.from(rendered.filter(node => node.type?.name === 'BarButton'), node => node.props.label), ['Wrap in a Marco', 'Duplicate', 'Delete']);
   const panel = find(tree, 'RightPanel');
   assert.deepEqual(Array.from(panel.props.tabs, (t: any) => t.id), ['properties']);
   assert.equal(panel.props.tabs[0].content.type.name, 'SelectionProperties');
-  f.controller.selection = []; f.controller.events = [{ id: 'pending', status: 'pending' }]; tree = r.render();
-  assert.ok(types().includes('ContextTray'));
+  const everything = JSON.stringify(nodes(tree).map(node => [node.props.label, node.props.accessibilityLabel, node.props.placeholder, node.props.nativeID]));
+  for (const gone of ['Write to the agent', 'Send to the agent', 'lienzo-composer', 'actions queued', 'Ask the agent']) assert.ok(!everything.includes(gone), gone);
 });
 test('Properties omit technical fields and editing instructions preserves hidden intent and audience', async () => {
   const f = fixture(), r = runtime(f.controller); f.controller.selection = ['note'];
@@ -148,7 +149,7 @@ test('Properties omit technical fields and editing instructions preserves hidden
   sized.props.onPress({ stopPropagation() {} }); await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.edits.at(-1)[0][0].patch.size, null);
 });
-test('⌘K lists tools, actions and Lienzos, and "Ask the agent" sends through the composer path with the selection', async () => {
+test('⌘K lists tools, actions and Lienzos, and nothing in it sends to the agent', async () => {
   const f = fixture(), r = runtime(f.controller), sent: any[] = [];
   f.controller.send = async (action: any, id: string) => { sent.push({ action, id }); return { id, status: 'pending', action }; };
   f.controller.documents = [{ id: 'other', title: 'Another Lienzo', example: false, updatedAt: new Date().toISOString() }];
@@ -156,14 +157,11 @@ test('⌘K lists tools, actions and Lienzos, and "Ask the agent" sends through t
   const tree = r.render(), palette = find(tree, 'CommandPalette');
   const items = palette.props.items('pen');
   const groups = [...new Set(items.map((i: any) => i.group))];
-  for (const group of ['Tools', 'Actions', 'Lienzos', 'Extensions', 'Settings', 'Ask the agent']) assert.ok(groups.includes(group), group);
+  for (const group of ['Tools', 'Actions', 'Lienzos', 'Extensions', 'Settings']) assert.ok(groups.includes(group), group);
+  assert.equal(groups.includes('Ask the agent'), false);
   assert.ok(items.some((i: any) => i.title === 'Another Lienzo'));
-  assert.equal(palette.props.items('').some((i: any) => i.group === 'Ask the agent'), false, 'nothing to ask without a query');
-  const ask = items.find((i: any) => i.group === 'Ask the agent');
-  assert.equal(ask.title, 'Ask the agent: pen');
-  palette.props.onRun(ask, false); await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].action.kind, 'selection.send'); assert.deepEqual(Array.from(sent[0].action.targetIds), ['note']); assert.equal(sent[0].action.payload.note, 'pen');
+  for (const item of items) assert.doesNotMatch(String(item.title), /Ask the agent|Activity/);
+  assert.equal(sent.length, 0);
 });
 test('friendly errors translate known server codes and hide unknown raw messages', () => {
   const r = runtime(fixture().controller);

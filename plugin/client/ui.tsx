@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, Text, View, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
-import { Icon, Modal as HostModal, ScrollView, TextInput, copyText, useToast } from '@getpaseo/plugin/client/react-native';
-import type { PluginHostProps } from '@getpaseo/plugin/client';
+import { Icon, Modal as HostModal, ScrollView, TextInput, copyText, useToast, capabilities } from './host';
+import type { HostProps } from './host';
 import { toneColor, withAlpha, type Tone } from './color';
 import { tokens } from './tokens';
 import { downloadJson, useKeyboardFocus } from './web';
@@ -16,7 +16,7 @@ const errorMessages = {
   UNDO_BLOCKED: 'Later changes depend on this one. Check the history.',
   FORBIDDEN: 'You have no access to that in this workspace.',
   TOO_LARGE: 'That is over the size limit. Make it smaller and try again.',
-  UNAVAILABLE: 'Paseo is not available. Try again in a moment.',
+  UNAVAILABLE: `${capabilities.name} is not available. Try again in a moment.`,
 } as const;
 export function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -28,12 +28,12 @@ export function friendlyError(error: unknown): string {
   // Only client-authored validation messages may pass through unchanged.
   const local = ['Invalid JSON', 'Invalid number', 'Up to 200 characters.', 'The change was not applied.', 'The file is larger than 1 MB.', 'The block changed. Select it again.', 'The Lienzo changed before the action finished.', 'Write a title of up to 300 characters.', 'The form was not saved.', 'The layer reached its size limit. The previous drawing is kept.', 'Not reset: the document or the selection changed.', 'Not reset: open the Marco and wait for the block to appear.'];
   if (local.includes(message)) return message;
-  if (/network|fetch|connection|offline|socket|timeout/i.test(message)) return 'Could not reach Paseo. Try again in a moment.';
+  if (/network|fetch|connection|offline|socket|timeout/i.test(message)) return `Could not reach ${capabilities.name}. Try again in a moment.`;
   return 'That did not work. Try again.';
 }
 type Font = keyof typeof tokens.font.style;
-const Context = createContext<PluginHostProps | null>(null);
-export function UIProvider({ children, ...props }: PluginHostProps & { children: React.ReactNode }) { useReducedMotion(); return <Context.Provider value={props}>{children}</Context.Provider>; }
+const Context = createContext<HostProps | null>(null);
+export function UIProvider({ children, ...props }: HostProps & { children: React.ReactNode }) { useReducedMotion(); return <Context.Provider value={props}>{children}</Context.Provider>; }
 export function useHostId(): string | undefined { return useContext(Context)?.host.id; }
 export function useUI() {
   const props = useContext(Context); if (!props) throw new Error('Lienzo UI context unavailable');

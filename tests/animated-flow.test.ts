@@ -63,16 +63,17 @@ function context() {
 function harness(data = base({ events: [event()] }), readOnly = false, platform = 'web', initial: Record<string, unknown> = {}) {
   Platform.OS = platform; reducedMotion.current = false;
   const owned: HookHost = { slots: [], effects: [] }, writes: any[] = [], events: any[][] = [], received: any[][] = [], seen = new Map<string, string>();
-  let flushes = 0, rejectDelivery = false;
+  let flushes = 0, rejectDelivery = false, pendingRetry = false;
   const props = { data, document: { ...graph(), id: 'document' }, block: { id: 'flow' }, compact: false, availableWidth: 400, readOnly,
     ui: { layout: { platform }, c: { surface0: '#fff', foreground: '#111', foregroundMuted: '#555', border: '#ccc', accent: '#246', statusDanger: '#933' } },
     runtime: { state: initial, set(state: Record<string, unknown> | null, settled = false) { writes.push([state, settled]); (props.runtime as any).state = state ?? {}; },
-      flush: async () => { flushes++; }, settle: async (...args: any[]) => {
-        flushes++; events.push(args); const signature = JSON.stringify(args.slice(0, 3)), prior = seen.get(args[3]);
-        if (prior) assert.equal(prior, signature, 'A retained event ID must keep its payload');
-        else { seen.set(args[3], signature); received.push(args); }
+      flush: async () => { flushes++; }, record: async (...args: any[]) => {
+        // A retry repeats the same record; the block keeps one lastInteraction, so a repeat counts once.
+        flushes++; events.push(args); const signature = JSON.stringify(args);
+        if (!pendingRetry || seen.get('last') !== signature) received.push(args);
+        seen.set('last', signature); pendingRetry = rejectDelivery;
         if (rejectDelivery) throw new Error('ambiguous response /private/path');
-      } }, scope: { values: {}, variables: {}, get: () => NaN, set() { throw new Error('flow must not mutate scope'); } }, send: async () => { throw new Error('flow only sends settled runtime'); },
+      } }, scope: { values: {}, variables: {}, get: () => NaN, set() { throw new Error('flow must not mutate scope'); } },
   } as unknown as RendererProps<AnimatedFlowData>;
   return { props, writes, events, received, reject(value: boolean) { rejectDelivery = value; }, flushes: () => flushes,
     render() { host = owned; cursor = 0; const node = (animatedFlowRenderer.Component as Function)(props) as Element; commit(owned); return node; },
@@ -234,7 +235,7 @@ test('actual renderer handles missing routes, readOnly, native fallback and empt
   for (const b of all(node).filter(n => n.type === Button)) { assert.equal(b.props.disabled, true); b.props.onPress(); } assert.equal(native.writes.length, 0); assert.equal(native.events.length, 0); native.close();
   const empty = harness(base()); node = empty.render(); assert.match(text(node), /Add events between connected nodes/); assert.equal(button(node, 'Play').props.disabled, true); empty.close(); Platform.OS = 'web';
 });
-test('real service blocks feedback on flush failure, deduplicates a lost-response retry and persists bounded runtime', async t => {
+test('real service keeps the interaction off the block on flush failure, retries a lost response with the same record and persists bounded runtime', async t => {
   const { service } = await setup(t), reference = { documentId: 'd', workspaceId };
   const view = await service.mutate(mutation(0, [{ type: 'link.create', link: { id: 'bc', from: 'b', to: 'c', kind: 'flow' } }]));
   const h = harness(base({ events: [event({ from: 'b', to: 'c', linkId: 'bc' })] }));
@@ -243,11 +244,13 @@ test('real service blocks feedback on flush failure, deduplicates a lost-respons
   let write: Promise<unknown> = Promise.resolve(), flight: Promise<void> = Promise.resolve(), failFlush = true, loseResponse = true;
   h.props.runtime.set = (state, settled) => { originalWrite(state, settled); write = service.runtimeSet({ ...reference, blocks: [{ id: 'b', state }], scopes: [] }); };
   h.props.runtime.flush = async () => { await write; if (failFlush) throw new Error('offline /private/flush'); };
-  h.props.runtime.settle = (...args) => {
+  const interaction = async () => (await service.read(reference)).runtime.blocks.b?.lastInteraction as { kind: string; payload?: Record<string, unknown> } | undefined;
+  h.props.runtime.record = (...args) => {
     calls.push(args);
     flight = (async () => {
       await h.props.runtime.flush();
-      await service.action({ ...reference, expectedRevision: view.document.revision, eventId: args[3]!, action: { kind: args[0], payload: args[1], label: args[2]!, targetIds: ['b'], delivery: 'batched', settled: true } });
+      const current = (await service.read(reference)).runtime.blocks.b ?? {};
+      await service.runtimeSet({ ...reference, blocks: [{ id: 'b', state: { ...current, lastInteraction: { kind: args[0], label: args[2]!, payload: args[1] } } }], scopes: [] });
       if (loseResponse) { loseResponse = false; throw new Error('lost response /private/service'); }
     })();
     return flight;
@@ -255,21 +258,19 @@ test('real service blocks feedback on flush failure, deduplicates a lost-respons
   try {
     let node = h.render(); find(node, WebRange).props.onChange(400); find(node, WebRange).props.onSettle(400);
     await assert.rejects(flight, /offline/); await Promise.resolve();
-    assert.equal((await service.events(reference)).events.length, 0);
+    assert.equal(await interaction(), undefined);
     node = h.render(); assert.match(text(node), /The interaction could not be saved/); assert.ok(!text(node).includes('/private'));
     failFlush = false; button(node, 'Retry').props.onPress(); await assert.rejects(flight, /lost response/); await Promise.resolve();
-    assert.equal((await service.events(reference)).events.length, 1);
+    assert.equal((await interaction())?.kind, 'animated-flow.seek');
     button(h.render(), 'Retry').props.onPress(); await flight; await Promise.resolve();
     assert.deepEqual(calls[0], calls[1]); assert.deepEqual(calls[1], calls[2]);
-    const events = (await service.events(reference)).events;
-    assert.equal(events.length, 1); assert.equal(events[0].action.settled, true);
-    assert.ok(Buffer.byteLength(JSON.stringify(events[0].action.payload), 'utf8') <= 4096);
     const persisted = await service.read(reference);
     assert.equal(persisted.runtime.blocks.b.playhead, 400); assert.equal(persisted.document.revision, view.document.revision);
+    assert.ok(Buffer.byteLength(JSON.stringify(persisted.runtime.blocks.b), 'utf8') <= 4096);
     assert.deepEqual(persisted.document, view.document);
     button(h.render(), 'Reset').props.onPress(); await flight;
-    assert.equal((await service.read(reference)).runtime.blocks.b, undefined);
-    assert.equal((await service.events(reference)).events.length, 2);
+    const reset = (await service.read(reference)).runtime.blocks.b;
+    assert.equal(reset.playhead, undefined); assert.equal((reset.lastInteraction as { kind: string }).kind, 'animated-flow.reset');
   } finally { h.close(); }
 });
 test('real surface adapter pauses renderer on hidden tab, caps pixels and stops scheduling without GUI', async () => clock(async advance => {

@@ -1,0 +1,38 @@
+{
+  "name": "lienzo-desktop",
+  "productName": "Lienzo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lienzo outside Paseo: the canvas as a desktop app, with its tools for agents over MCP.",
+  "desktopName": "lienzo.desktop",
+  "author": "gabsplat",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs",
+    "dev": "node scripts/bundle.mjs && electron .",
+    "preview": "node scripts/bundle.mjs && node dist/preview.cjs",
+    "build": "node scripts/bundle.mjs --production && electron-builder --linux AppImage --publish never",
+    "build:mac": "node scripts/bundle.mjs --production && tiffutil -cathidpicheck build/background.png build/background@2x.png -out build/background.tiff && electron-builder --mac dmg zip --publish never -c.mac.identity=null",
+    "build:win": "node scripts/bundle.mjs --production && electron-builder --win nsis --publish never",
+    "release": "node scripts/release.mjs",
+    "art": "bash build-src/render.sh",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "~19.2.0",
+    "@types/react-dom": "~19.2.0",
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "^0.28.2",
+    "lucide-react": "^1.59.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "^0.21.3",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  },
+  "homepage": "https://github.com/Gabsplat/paseo-canvas"
+}

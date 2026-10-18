@@ -1,22 +1,15 @@
-import type { RpcInput } from "@getpaseo/plugin";
-import type { PluginLifecycleEvents } from "@getpaseo/plugin/server";
+import type { RpcInput } from "../shared/contract";
+import type { TurnEndedEvent } from "./host";
 import * as rpc from "../shared/rpc";
-import { copilotSettingsSchema, documentContentSchema, type AgentEvent, type CopilotSettings } from "../shared/model";
+import { copilotSettingsSchema, documentContentSchema, type CopilotSettings } from "../shared/model";
 import { CanvasError } from "../shared/errors";
-import { documentRecord, type CanvasState, type CopilotRecord, type DocumentRecord } from "./store";
+import { documentRecord, type CanvasState, type CopilotRecord } from "./store";
 import { newId } from "./reducer";
 import { latestAgent, type CanvasService } from "./service";
-import type { AgentGateway } from "./agent-integration";
+import type { AgentGateway } from "./host";
 
 /** How long the pill keeps saying "drawing" after a Lienzo tool call ends. */
 export const DRAWING_WINDOW_MS = 3000;
-const NOTICE_KIND = "copilot.mode";
-const cadenceText: Record<CopilotSettings["cadence"], string> = {
-  thinking: "after each bit of reasoning or tool use",
-  step: "after each step worth showing",
-  task: "once, when the task is done",
-  custom: "following the person's rule",
-};
 
 /** What every canvas MCP response carries, so the agent always knows whether to draw. */
 export type CopilotSummary = Pick<CopilotSettings, "enabled" | "cadence" | "rule" | "documentId">;
@@ -63,26 +56,6 @@ export class ToolActivity {
   }
 }
 
-/** The one-line notice queued as a batched canvas event: delivered with the next feedback, never as its own turn. */
-export function noticeLabel(settings: CopilotSettings) {
-  if (!settings.enabled) return "Lienzo copilot is off: do not draw unless asked.";
-  return `Lienzo copilot is on: draw ${settings.cadence === "custom" && settings.rule ? `when ${settings.rule.slice(0, 200)}` : cadenceText[settings.cadence]} in Lienzo ${settings.documentId}.`;
-}
-function queueNotice(record: DocumentRecord, agentId: string, settings: CopilotSettings) {
-  const inBatch = new Set(record.outboundBatches.filter(batch => batch.status !== "completed").flatMap(batch => batch.eventIds));
-  // Only the latest mode matters: an older notice that has not left yet is replaced.
-  record.events = record.events.filter(event => !(event.action.kind === NOTICE_KIND && event.agentId === agentId && event.status === "pending" && !inBatch.has(event.id)));
-  if (!settings.enabled) return;
-  const event: AgentEvent = {
-    id: newId("evt"), documentId: record.document.id, agentId, workspaceId: record.document.workspaceId, createdAt: new Date().toISOString(), revision: record.document.revision,
-    action: { kind: NOTICE_KIND, label: noticeLabel(settings), payload: { enabled: true, cadence: settings.cadence, rule: settings.rule, documentId: settings.documentId }, targetIds: [], delivery: "batched" },
-    context: documentContentSchema.parse({ title: record.document.title, blocks: [], groups: [], communication: record.document.communication }),
-    status: "pending",
-  };
-  record.events.push(event);
-  record.runtimeVersion++;
-}
-
 export function reminderText(settings: CopilotSettings) {
   return `[Lienzo] The copilot is on (${settings.cadence === "task" ? "once per task" : "after each step"}) and this turn changed things without updating the canvas. Update Lienzo ${settings.documentId} with what is worth showing, in the Hoja for this topic, or say in one line why not.`;
 }
@@ -118,8 +91,8 @@ export class CopilotService {
   }
   /**
    * Changes an agent's copilot. Turning it on without a Lienzo creates one for the conversation, connected to the agent.
-   * Attaching an existing Lienzo connects it to this agent. Turning on, or changing how often to draw while on, queues
-   * a one-line notice through the canvas event delivery; it rides along with the next feedback and starts no turn.
+   * Attaching an existing Lienzo connects it to this agent. Nothing is sent to the agent: it reads the mode from the
+   * copilot field of its next canvas tool response.
    */
   async set(input: RpcInput<typeof rpc.setCopilot>) {
     const current = settingsOf((await this.service.store.read()).copilot[input.agentId]);
@@ -145,13 +118,6 @@ export class CopilotService {
       if (next.cadence === "custom" && next.enabled && !next.rule.trim()) throw new CanvasError("VALIDATION", "A custom cadence needs a rule: say when the agent should draw.");
       const record = state.copilot[input.agentId];
       state.copilot[input.agentId] = { ...next, workspaceId: input.workspaceId, reminded: record?.reminded ?? false, updatedAt: new Date().toISOString() };
-      const changedMode = next.enabled !== before.enabled || next.enabled && (next.cadence !== before.cadence || next.rule !== before.rule || next.documentId !== before.documentId);
-      if (changedMode) {
-        for (const id of new Set([before.documentId, next.documentId])) {
-          if (!id || !Object.hasOwn(state.documents, id)) continue;
-          queueNotice(state.documents[id], input.agentId, id === next.documentId ? next : { ...next, enabled: false });
-        }
-      }
       return this.view(state, input.agentId, input.workspaceId);
     });
   }
@@ -165,7 +131,7 @@ export class CopilotService {
    * the turn completed, it changed things (a tool call that is not ours), no Lienzo tool ran, the agent is idle, and
    * the previous turn did not already get a reminder. Never for thinking (or custom).
    */
-  async turnEnded(event: PluginLifecycleEvents["agent.turn_ended"], gateway: AgentGateway): Promise<ReminderDecision> {
+  async turnEnded(event: TurnEndedEvent, gateway: AgentGateway): Promise<ReminderDecision> {
     const agentId = event.agent.id;
     const record = (await this.service.store.read()).copilot[agentId];
     const settings = settingsOf(record);
@@ -176,11 +142,11 @@ export class CopilotService {
     const mark = (reminded: boolean) => this.service.store.transaction(state => { const entry = state.copilot[agentId]; if (entry && entry.reminded !== reminded) entry.reminded = reminded; });
     if (record?.reminded) { await mark(false); return "repeat"; }
     const calls = event.timeline.filter(item => item.type === "tool_call");
-    if (calls.some(call => isLienzoTool(call.name, this.toolNames)) || this.activity.usedThisTurn(agentId)) return "drew";
+    if (calls.some(call => isLienzoTool(call.name ?? "", this.toolNames)) || this.activity.usedThisTurn(agentId)) return "drew";
     if (!calls.some(call => call.status !== "canceled")) return "quiet";
     let agent;
     try { agent = await gateway.verify(agentId); } catch { return "unavailable"; }
-    // A send to a busy agent would interrupt its turn (for example one started by canvas feedback just now).
+    // A send to a busy agent would interrupt its turn (for example one the person started just now).
     // The turn that is ending may still be reported as active; only a different turn counts as busy.
     if (agent.status === "closed" || agent.status === "error") return "unavailable";
     if ((agent.status === "running" || agent.status === "initializing") && agent.activeTurn?.turnId !== (event.turnId ?? undefined)) return "busy";

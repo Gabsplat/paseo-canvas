@@ -2,11 +2,12 @@ import type { CanvasExtension } from "./model";
 
 /**
  * The contract between Lienzo and code it did not write. An extension is one self-contained page; it runs sandboxed in
- * its own frame and sees the canvas only through `window.lienzo`. Version 1 is frozen: members are added, never
- * renamed or removed, and a page written for it keeps working whatever changes inside the plugin.
+ * its own frame and sees the canvas only through `window.lienzo`. Version 1 is stable: members are added, not renamed.
+ * The one exception is `lienzo.ask` and the "agent" permission, removed when the canvas became one-way (it never
+ * sends anything to the agent).
  */
 export const EXTENSION_API = 1;
-export const EXTENSION_LIMITS = { payload: 8000, operations: 200, selection: 1200 } as const;
+export const EXTENSION_LIMITS = { operations: 200, selection: 1200 } as const;
 /** Operations an extension may not send: what is selected and what the assistant is told belong to the person. */
 export const EXTENSION_FORBIDDEN_OPERATIONS = ["selection.set", "communication.set"] as const;
 
@@ -27,7 +28,6 @@ var lienzo=window.lienzo={api:1,
  select:function(ids){return call('select',{ids:[].concat(ids||[])})},
  open:function(id){return call('open',{id:String(id)})},
  edit:function(operations,label){return call('edit',{operations:operations,label:label})},
- ask:function(kind,payload,label,targetIds){return call('ask',{kind:kind,payload:payload,label:label,targetIds:targetIds})},
  close:function(){return call('close',{})},
  kit:{}};
 function rounded(g,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));g.beginPath();g.moveTo(x+r,y);g.lineTo(x+w-r,y);g.quadraticCurveTo(x+w,y,x+w,y+r);g.lineTo(x+w,y+h-r);g.quadraticCurveTo(x+w,y+h,x+w-r,y+h);g.lineTo(x+r,y+h);g.quadraticCurveTo(x,y+h,x,y+h-r);g.lineTo(x,y+r);g.quadraticCurveTo(x,y,x+r,y);g.closePath()}
@@ -90,18 +90,10 @@ const OFFLINE = `<meta http-equiv="Content-Security-Policy" content="default-src
 export function extensionDocument(extension: Pick<CanvasExtension, "html" | "permissions">, granted: boolean): string {
   return `<!doctype html><meta charset="utf-8">${granted && extension.permissions.includes("network") ? "" : OFFLINE}<script>${EXTENSION_RUNTIME}</script><body>${extension.html.replace(/^\s*<!doctype[^>]*>/i, "")}`;
 }
-/** A request to the assistant from an extension: a short kind and bounded plain JSON, or nothing. */
-export function extensionEvent(kind: unknown, payload: unknown): { kind: string; payload: unknown } | null {
-  if (typeof kind !== "string" || !/^[a-zA-Z][a-zA-Z0-9._:-]{0,63}$/.test(kind)) return null;
-  let text: string | undefined; try { text = JSON.stringify(payload ?? null); } catch { return null; }
-  return text === undefined || text.length > EXTENSION_LIMITS.payload ? null : { kind, payload: JSON.parse(text) };
-}
-
 export const EXTENSION_GUIDE = `An extension adds a tool to Lienzo without changing the plugin (kind "tool": it opens as a floating panel over the canvas and usually acts on the selection). Save one with canvas_catalog save_extension { id, kind: "tool", api: 1, name, description, icon (a Lucide icon name), permissions, html }. html is one complete self-contained page: any HTML, CSS and JavaScript, no build step, nothing imported from Lienzo. It runs sandboxed in its own frame. A global lienzo object (API 1, stable across plugin updates) is the only way to the canvas:
 - lienzo.onContext(fn): fn(context) now and on every change. context = { api, extension: { id, kind, name, permissions }, theme: { dark, colors: { background, surface, foreground, muted, border, accent, flow, needs, mentions, areas[] } }, document: { id, title, description, revision, blocks: [{ id, title, typeId, renderer, data, parentGroupId }], groups: [{ id, title, description, blockIds, groupIds, parentGroupId }], links: [{ id, from, to, kind, label }] }, layout: { [id]: { x, y, width, height } } (where each thing is on the canvas), selection: [ids] }. Use theme.colors for every colour so it matches light and dark.
 - lienzo.select(ids) sets the shared selection (the same one the canvas and every tool use). lienzo.open(id) goes to the canvas on that thing. lienzo.close() closes a tool panel.
-- lienzo.edit(operations, label) -> Promise<{ revision }>. Needs permission "edit". operations are the same transactional operations as canvas_update (block.create/update/delete, group.*, link.*, entity.move, entity.duplicate, document.update), so undo and revision conflicts work; selection.set and communication.set are refused.
-- lienzo.ask(kind, payload, label, targetIds) -> Promise. Needs permission "agent". Delivers a request to the connected assistant as an "extension.event" canvas event with payload { extension, event, data }; payload is JSON up to 8000 characters.
+- lienzo.edit(operations, label) -> Promise<{ revision }>. Needs permission "edit". operations are the same transactional operations as canvas_apply (block.create/update/delete, group.*, link.*, entity.move, entity.duplicate, document.update), so undo and revision conflicts work; selection.set and communication.set are refused.
 - Permission "network" lets the page load things from the internet; without it only inline code and data: URLs work.
 - lienzo.kit.stage({ layout(context) -> [{ id, x, y, w, h }], draw(g, view), onMove?(ids, dx, dy), onOpen?(id), onHover?(id) }) gives a tool that draws things the canvas' own behaviour on a 2D canvas it creates: wheel pans, command-wheel zooms, press selects, shift adds, drag on nothing box-selects, drag on a thing moves the selection (only if onMove is given), double press opens, Escape clears. draw runs in world units with view = { scale, selected: { [id]: true }, hover, drag, theme, context, items }. lienzo.kit.card(g, item, view, { title, subtitle, color }) draws a thing with the standard selection and hover look. Prefer the kit whenever a tool shows things: it is what keeps interactions consistent.
 Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. Read the shipped example with canvas_catalog read { id: "ejemplos.reemplazar" }.`;

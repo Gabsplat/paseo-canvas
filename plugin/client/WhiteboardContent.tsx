@@ -1,5 +1,5 @@
 import React from 'react';
-import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Icon } from './host';
 import { Pressable, View, type GestureResponderEvent } from 'react-native';
 import type { CanvasBlock } from '../shared/model';
 import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema, type WbRenderer } from '../shared/whiteboard';

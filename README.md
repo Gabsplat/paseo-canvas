@@ -24,7 +24,7 @@ Los pasos para probarla y el alcance de las comprobaciones están en
 [`docs/probar-aprendizaje.md`](docs/probar-aprendizaje.md).
 
 Los agentes nuevos reciben las herramientas de Lienzo de forma predeterminada. Desde el
-diálogo de agente puedes desactivarlas o fijar quién recibe las acciones. Los agentes que
+diálogo de agente puedes desactivarlas o fijar qué agente trabaja en un lienzo. Los agentes que
 ya existían necesitan la configuración manual que ofrece ese diálogo.
 
 Los contratos publicados están en
@@ -36,7 +36,7 @@ Los contratos publicados están en
 - Nodos, enlaces y grupos en grafo que el agente puede ampliar durante una explicación.
 - Catálogo local de tipos, plantillas y packs JSON portables.
 - Documentos de ejemplo para revisión de frontend y enseñanza progresiva.
-- Revisiones, transacciones, selección y feedback explícito al agente.
+- Revisiones, transacciones y una selección que el agente lee cuando se la mencionas.
 - Referencias a medios y previews web, con enlaces en clientes nativos.
 - Pizarra con herramientas flotantes, texto libre, formas y SVG importado o de biblioteca.
 - Trazos a mano alzada que acompañan a su tarjeta.
@@ -49,6 +49,20 @@ la interfaz no simula actividad ni respuestas del agente.
 Abrir `architecture/index.html` permite explorar componentes y reproducir los flujos paso a paso.
 La vista Multijugador distingue el comportamiento actual de las funciones futuras.
 No requiere CDN ni una licencia de tldraw.
+
+## App de escritorio
+
+`apps/desktop` ejecuta Lienzo fuera de Paseo como app de Electron, con el mismo núcleo, panel, herramientas MCP y
+formato de estado que el plugin. Los agentes se conectan por MCP sobre HTTP en `http://127.0.0.1:7421/mcp`. Le
+hablas al agente en su terminal; cuando dices «mirá lo que seleccioné», lo lee con `canvas_selection`.
+
+```sh
+pnpm --dir apps/desktop dev      # abrir la app
+pnpm --dir apps/desktop build    # AppImage de Linux sin firmar en apps/desktop/release/
+claude mcp add lienzo --transport http http://127.0.0.1:7421/mcp
+```
+
+Diferencias con el plugin, cómo copiar un estado de Paseo y límites conocidos: [`docs/desktop.md`](docs/desktop.md).
 
 ## Desarrollo
 
@@ -81,18 +95,18 @@ Una vez instalado el plugin:
 3. Inserta bloques o plantillas desde el catálogo. La barra de selección permite editar
    propiedades e instrucciones de bloques y grupos. Más acciones abre los ajustes del documento.
 4. No hace falta conectar nada: los agentes que crees después de instalar el plugin reciben
-   las herramientas de Lienzo, y el agente que usa un lienzo pasa a recibir tus acciones.
-   Desde el diálogo de agente puedes fijar un destinatario, desactivar las herramientas
+   las herramientas de Lienzo, y el agente que usa un lienzo queda conectado a él.
+   Desde el diálogo de agente puedes fijar ese agente, desactivar las herramientas
    para agentes nuevos o elegir entre lienzos compartidos y un lienzo por agente. Un agente
    creado antes de instalar el plugin necesita la guía manual del mismo diálogo.
-5. Envía una acción explícita para pedir cambios, responder o consultar un paso. La selección
-   por sí sola no inicia un turno. La interfaz muestra el estado real de entrega.
+5. Lienzo es de una sola vía: el lienzo nunca le envía nada al agente. Selecciona algo y dile
+   «mirá lo que seleccioné» en la conversación de Paseo; el agente lee la selección, sus
+   instrucciones y lo que hiciste en cada bloque (respuestas, controles, el estado de una mini app).
 6. Importa y exporta packs desde el catálogo. Los ejemplos integrados se pueden copiar a
    un pack portable propio; la referencia original está protegida.
 
 El acceso a documentos por MCP se autoriza por workspace. Con «Uno por agente», cada agente
-alcanza solo los lienzos que creó, los que recibe y los que nadie reclamó todavía. La conexión
-elige el destinatario del feedback.
+alcanza solo los lienzos que creó, los que tiene conectados y los que nadie reclamó todavía.
 
 ## Contratos y diseño
 
@@ -101,7 +115,7 @@ elige el destinatario del feedback.
 - [`design/tokens.json`](design/tokens.json) contiene los colores y medidas aprobados por diseño.
 - [`docs/architecture.md`](docs/architecture.md) separa el contrato actual de las propuestas originales.
 
-Cada documento pertenece a un workspace. La conexión selecciona el destinatario del feedback;
+Cada documento pertenece a un workspace. La conexión indica qué agente trabaja en él;
 el MCP está ligado a la identidad del agente y su workspace. El catálogo pertenece al host.
 
 Compartir un host permite compartir los documentos. Presencia, cursores de equipo,

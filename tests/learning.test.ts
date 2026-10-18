@@ -6,8 +6,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { CanvasStore } from '../plugin/server/store';
 import { CanvasService } from '../plugin/server/service';
 import { ToolRouter, toolDefinitions, drawingGuide } from '../plugin/server/tools';
-import { feedbackPrompt } from '../plugin/server/feedback';
-import { blockTypeSchema, documentSchema, agentActionInputSchema, type CanvasDocument } from '../plugin/shared/model';
+import { blockTypeSchema, documentSchema, type CanvasDocument } from '../plugin/shared/model';
 import { rendererSpecs, legacyRendererNames, getRendererSpec } from '../plugin/shared/renderers';
 import { controlsDataSchema } from '../plugin/shared/renderers/controls';
 import { resolveScope, variablesSchema, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES, type RuntimeState } from '../plugin/shared/learning';
@@ -130,24 +129,6 @@ test('canvas_runtime MCP reads/sets/resets specific IDs below 24 KiB and enforce
   const reset = await router.call('canvas_runtime', { action: 'set', documentId: 'd', blocks: [{ id: 'b', state: null }], scopes: [{ id: 'inner', values: { x: null } }] }, 'owner') as any; assert.deepEqual(reset.runtime, emptyRuntime());
   await assert.rejects(router.call('canvas_runtime', { action: 'read', documentId: 'd', blockIds: ['b','c','d','e','f'] }, 'owner'));
   const outsider = new ToolRouter(service, async () => ({ workspaceId: 'wrong', agentId: 'a' })); await assert.rejects(outsider.call('canvas_runtime', { action: 'read', documentId: 'd', blockIds: ['b'] }, 'owner'), /workspace/);
-});
-const settled = (eventId: string, kind = 'slider', target = 'b', value = 1) => agentActionInputSchema.parse({ ...reference, expectedRevision: 0, eventId, action: { kind, label: 'Ajustar', payload: { value }, targetIds: [target], delivery: 'batched', settled: true } });
-test('settled events coalesce by block/kind beyond 100 drags with compact inherited feedback context', async t => {
-  const { service } = await setup(t); await withScopes(service);
-  for (let i = 0; i < 105; i++) await service.action(settled(`evt${i}`, 'slider', 'b', i));
-  await service.action(settled('other-kind', 'transport')); await service.action(settled('other-block', 'slider', 'c'));
-  const events = (await service.events(reference)).events; assert.equal(events.length, 3); assert.equal(events[0].action.payload.value, 104);
-  assert.equal(events[0].context.blocks.length, 1); assert.equal(events[0].context.groups.length, 2); assert.deepEqual(events[0].context.links, []);
-  assert.ok(feedbackPrompt(events).includes('Explain plainly.')); assert.equal((await service.read(reference)).document.revision, 1);
-  assert.equal((await service.action(settled('evt104', 'slider', 'b', 104))).id, 'evt104');
-});
-test('settled coalescing preserves immutable prepared batches and normal feedback snapshots', async t => {
-  const { service } = await setup(t); await service.connect({ ...reference, expectedRevision: 0, connection: { agentId: 'a', workspaceId } });
-  await service.action(settled('old')); const batch = await service.prepareFeedbackBatch('d', workspaceId, 'a', true, feedbackPrompt); assert.ok(batch);
-  await service.action(settled('new', 'slider', 'b', 2)); const events = (await service.events(reference)).events; assert.equal(events.length, 2); assert.equal(batch!.eventIds[0], 'old'); assert.ok(batch!.prompt.includes('"value":1'));
-  const immediate = settled('normal'); immediate.expectedRevision = 1; immediate.action.settled = false; immediate.action.delivery = 'immediate';
-  const event = await service.action(immediate); assert.equal(event.context.blocks.length, 2);
-  await assert.rejects(service.action({ ...settled('invalid'), action: { ...settled('invalid').action, delivery: 'immediate' } }), /batched/);
 });
 test('optimistic runtime notifies sibling scopes before network, debounces and reconciles in-flight writes', async t => {
   const { service } = await setup(t), view = await withScopes(service), requests: unknown[] = [];

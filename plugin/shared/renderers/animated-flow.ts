@@ -53,7 +53,7 @@ export const animatedFlowSpec = {
   id: 'animated-flow', dataSchema: animatedFlowDataSchema, interactive: true,
   minSize: { width: 280, height: 320 }, defaultSize: { width: 440, height: 430 },
   remapReferences: remapAnimatedFlowReferences,
-  guidance: 'Set question, duration/travelMs in milliseconds, events [{t,from,to,payload,kind,linkId?}] over existing directed document blocks/groups and links. Kinds: message/signal/value; payload: bounded number or text. Parallel routes require linkId. Optional links {realLinkId:{sign:1|-1,delay:ms}} and propagation {maxEvents:1..256,horizon:ms} propagate numeric arrivals only along declared links. Arrival=t+delay+travelMs. Runtime is local transport; reset preserves the graph. Request hints, not solutions.',
+  guidance: 'Set question, duration/travelMs in milliseconds, events [{t,from,to,payload,kind,linkId?}] over existing directed document blocks/groups and links. Kinds: message/signal/value; payload: bounded number or text. Parallel routes require linkId. Optional links {realLinkId:{sign:1|-1,delay:ms}} and propagation {maxEvents:1..256,horizon:ms} propagate numeric arrivals only along declared links. Arrival=t+delay+travelMs. Runtime is local transport; reset preserves the graph. What the person explored (playhead, visited range) stays in the block state and its lastInteraction, read with canvas_selection or canvas_read ids.',
   blockType: {
     id: 'animated-flow', renderer: 'animated-flow', name: 'Animated flow', description: 'Time and cause travelling along the real links of the Lienzo.',
     properties: [

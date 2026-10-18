@@ -114,10 +114,10 @@ test('native wrappers return static Spanish fallback without touching the browse
   assert.equal(WebRange({ id: 'r', label: 'r', min: 0, max: 1, value: 0, step: 1, disabled: false, color: '#000', onChange() {}, onSettle() {} }), null);
   Platform.OS = 'web';
 });
-test('controls presents its guiding question and visible reset, removes overrides and reports settled defaults', async () => {
+test('controls presents its guiding question and visible reset, removes overrides and records the reset defaults on the block', async () => {
   reset(); const writes: unknown[] = [], events: unknown[] = [];
   const component = controlsRenderer.Component as Function;
-  const node = component({ data: { question: '¿Cómo cambia la amplitud?', variables: ['amplitude'] }, block: { id: 'b' }, ui: { layout: { platform: 'web' }, c: { accent: '#246', statusDanger: '#933' } }, scope: { variables: { amplitude: { label: 'Amplitud', value: 1, current: 3, min: 0, max: 4, scopeId: 'g' } }, get: () => 3, set: (...args: unknown[]) => writes.push(args) }, runtime: { settle: async (...args: unknown[]) => { events.push(args); } } }) as Element;
+  const node = component({ data: { question: '¿Cómo cambia la amplitud?', variables: ['amplitude'] }, block: { id: 'b' }, ui: { layout: { platform: 'web' }, c: { accent: '#246', statusDanger: '#933' } }, scope: { variables: { amplitude: { label: 'Amplitud', value: 1, current: 3, min: 0, max: 4, scopeId: 'g' } }, get: () => 3, set: (...args: unknown[]) => writes.push(args) }, runtime: { record: async (...args: unknown[]) => { events.push(args); } } }) as Element;
   assert.equal(children(node)[0].props.children, '¿Cómo cambia la amplitud?');
   const button = find(node, 'Button')!; assert.equal(button.props.label, 'Reset'); button.props.onPress(); await Promise.resolve();
   assert.deepEqual(writes, [['amplitude', null]]); assert.deepEqual(events, [['controls.reset', { values: { amplitude: 1 } }, 'Reset controls']]);

@@ -1,10 +1,10 @@
 import { cleanRuntime, DOCUMENT_SCOPE, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
 import { safeJson } from "./reducer";
-import type { RpcInput } from "@getpaseo/plugin";
+import type { RpcInput } from "../shared/contract";
 import * as rpc from "../shared/rpc";
 import {
-  documentContentSchema, documentSchema, catalogMutateInputSchema, groupSchema,
-  type CanvasDocument, type CanvasPack, type DocumentView, type AgentEvent, type LatestAgent,
+  documentSchema, catalogMutateInputSchema, groupSchema,
+  type CanvasDocument, type CanvasPack, type DocumentView, type LatestAgent,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
 import { isRetiredRenderer } from "../shared/renderers";
@@ -18,7 +18,7 @@ type State = Parameters<Parameters<CanvasStore["transaction"]>[0]>[0];
 // Untouched preferences mean "every workspace": installing the plugin is enough for new agents to get the tools.
 // The user turns this off from the agent dialog; any explicit choice is stored and respected.
 const injectionOf = (state: State) => state.injection.revision === 0 && !state.injection.workspaceIds.length ? { revision: 0, workspaceIds: ["*"] } : state.injection;
-/** With one canvas per agent, a document is reachable by its creator, its recipient, or anyone while it is unclaimed. */
+/** With one canvas per agent, a document is reachable by its creator, its connected agent, or anyone while it is unclaimed. */
 const reachable = (state: State, record: DocumentRecord, agentId: string) => state.sharing[record.document.workspaceId] !== "agent"
   || record.ownerAgentId === agentId || record.connection?.agentId === agentId || !record.ownerAgentId && !record.connection;
 const view = (record: DocumentRecord, actor: Actor = "user", agentId?: string): DocumentView => ({
@@ -36,6 +36,17 @@ export function latestAgent(record: Pick<DocumentRecord, "document" | "history">
   return { transactionId: entry.id, revision: entry.revision, at: entry.at, ...(entry.agentId ? { agentId: entry.agentId } : {}), label: entry.label, kind: entry.kind, ids: entry.changed.filter(id => present.has(id)), removed: [...entry.removed] };
 }
 const touchRuntime = (record: RuntimeRecord) => { record.runtimeVersion++; };
+const SELECTION_ENTITIES = 40, LONG_TEXT = 2000;
+/**
+ * Long strings (a mini app's page, a big code sample) and drawing points are summarised, so a selection always fits in
+ * one response. A drawing keeps its author, anchor, extent and stroke count; canvas_read ids returns everything.
+ */
+export function compactData(data: CanvasDocument["blocks"][number]["data"]) {
+  return Object.fromEntries(Object.entries(data).map(([key, value]) => [key,
+    typeof value === "string" && value.length > LONG_TEXT ? `[${value.length} characters; read this block with canvas_read ids to get it]`
+      : key === "strokes" && Array.isArray(value) ? { count: value.length, note: "Stroke points omitted; read this block with canvas_read ids to get them." }
+      : value]));
+}
 /** A grant is for the code that was approved: an extension that is new or different in the replacing pack needs approval again. */
 function keptGrants(grants: string[], old: CanvasPack | undefined, next: CanvasPack): string[] {
   const before = new Map((old?.extensions ?? []).map(extension => [extension.id, JSON.stringify(extension)])), mine = new Set([...(old?.extensions ?? []), ...next.extensions].map(extension => extension.id));
@@ -46,7 +57,7 @@ function recordEdit(record: DocumentRecord, next: CanvasDocument, actor: Actor, 
   next.revision = before.revision + 1;
   next.updatedAt = timestamp();
   const delta = changedEntities(before, next);
-  if (JSON.stringify(before.selectedIds) !== JSON.stringify(next.selectedIds)) { record.selectionVersion++; touchRuntime(record); }
+  if (JSON.stringify(before.selectedIds) !== JSON.stringify(next.selectedIds)) { record.selectionVersion++; if (actor === "user") record.selectedAt = next.updatedAt; touchRuntime(record); }
   const entry: HistoryEntry = { id: newId("txn"), revision: next.revision, actor, label, at: next.updatedAt, ...delta, kind, before, after: clone(next), undone: false, ...(target ? { target } : {}), ...(agentId ? { agentId } : {}) };
   if (kind === "edit") record.history = record.history.filter(entry => !(entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && entry.kind === "edit" && entry.undone));
   record.history.push(entry);
@@ -79,7 +90,7 @@ export class CanvasService {
       for (const block of document.blocks) normalizeBlock(block, catalog.blockTypes.find(type => type.id === block.typeId)!);
       validateDocument(document, catalog);
       if (Buffer.byteLength(JSON.stringify(document)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
-      state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, runtime: { blocks: {}, scopes: {} }, events: [], outboundBatches: [], ...(actor === "agent" && connection ? { ownerAgentId: connection.agentId } : {}) };
+      state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, runtime: { blocks: {}, scopes: {} }, ...(actor === "agent" && connection ? { ownerAgentId: connection.agentId } : {}) };
       return view(state.documents[id], actor);
     });
   }
@@ -155,7 +166,7 @@ export class CanvasService {
       const record = documentRecord(state, input.documentId, input.workspaceId);
       if (record.selectionVersion !== input.expectedSelectionVersion) throw new CanvasError("REVISION_CONFLICT", "Selection changed. Read current selection and retry.", { currentSelectionVersion: record.selectionVersion });
       const next = clone(record.document); next.selectedIds = [...input.ids]; validateDocument(next);
-      record.document.selectedIds = next.selectedIds; record.selectionVersion++; touchRuntime(record);
+      record.document.selectedIds = next.selectedIds; record.selectionVersion++; record.selectedAt = timestamp(); touchRuntime(record);
       return view(record);
     });
   }
@@ -204,9 +215,31 @@ export class CanvasService {
       return this.runtimeSubset(record, input.blocks.map(b => b.id), input.scopes.map(s => s.id));
     });
   }
-  async selected(input: RpcInput<typeof rpc.readDocument>) {
-    const current = await this.read(input);
-    return { revision: current.document.revision, selectionVersion: current.selectionVersion, ids: current.document.selectedIds, entities: current.document.selectedIds.map(id => ({ entity: [...current.document.blocks, ...current.document.groups].find(entity => entity.id === id), effectiveInstructions: effectiveInstructions(current.document, id) })) };
+  /**
+   * What the person has selected, for "this" and "what I selected": each entity with its effective instructions and,
+   * for a block, the state its interaction left (runtime state, a mini app's stored state, the last interaction).
+   * Without a documentId it reads the reachable document whose selection the person changed most recently.
+   */
+  async selected(input: { workspaceId: string; documentId?: string }, agentId?: string) {
+    const state = await this.store.read();
+    let record: DocumentRecord | undefined;
+    if (input.documentId) record = documentRecord(state, input.documentId, input.workspaceId);
+    else record = Object.values(state.documents)
+      .filter(item => item.document.workspaceId === input.workspaceId && item.document.selectedIds.length && (!agentId || reachable(state, item, agentId)))
+      .sort((a, b) => (b.selectedAt ?? "").localeCompare(a.selectedAt ?? "") || b.document.updatedAt.localeCompare(a.document.updatedAt))[0];
+    if (!record) return { documentId: null, ids: [], entities: [], note: "Nothing is selected in any Lienzo of this workspace. Ask the person to select what they mean, or read the canvas with canvas_read." };
+    const document = record.document, ids = document.selectedIds;
+    const entities = ids.slice(0, SELECTION_ENTITIES).map(id => {
+      const entity = [...document.blocks, ...document.groups].find(entity => entity.id === id)!;
+      const runtime = Object.hasOwn(record!.runtime.blocks, id) ? clone(record!.runtime.blocks[id]) : undefined;
+      return { entity: "typeId" in entity ? { ...entity, data: compactData(entity.data) } : entity, effectiveInstructions: effectiveInstructions(document, id), ...(runtime ? { state: runtime } : {}) };
+    });
+    return {
+      documentId: document.id, title: document.title, revision: document.revision, selectionVersion: record.selectionVersion,
+      ...(record.selectedAt ? { selectedAt: record.selectedAt } : {}), ids, entities,
+      ...(ids.length > SELECTION_ENTITIES ? { hasMore: true, hint: `Only the first ${SELECTION_ENTITIES} are described; read the rest with canvas_read ids.` } : {}),
+      ...(!ids.length ? { note: "Nothing is selected in this Lienzo. Ask the person to select what they mean." } : {}),
+    };
   }
   async catalog() { return catalogView((await this.store.read()).catalog); }
   async validatePack(input: RpcInput<typeof rpc.validatePack>) { return packIssues(input.pack, await this.catalog()); }
@@ -287,102 +320,13 @@ export class CanvasService {
       return { view: view(record), requiresReload: false };
     });
   }
-  action(input: RpcInput<typeof rpc.agentAction>) {
-    return this.store.transaction(state => {
-      const record = documentRecord(state, input.documentId, input.workspaceId);
-      const existing = record.events.find(event => event.id === input.eventId);
-      if (existing) {
-        if (JSON.stringify(existing.action) !== JSON.stringify(input.action)) throw new CanvasError("VALIDATION", "Event ID was reused with a different action.");
-        return existing;
-      }
-      if (!input.action.settled) assertRevision(record, input.expectedRevision);
-      const ids = new Set([...record.document.blocks, ...record.document.groups].map(entity => entity.id));
-      if (input.action.targetIds?.some(id => !ids.has(id))) throw new CanvasError("NOT_FOUND", "Action target was not found.");
-      if (input.action.settled) {
-        if (input.action.delivery !== 'batched' || input.action.targetIds?.length !== 1) throw new CanvasError('VALIDATION', 'Settled events need batched delivery and one block target.');
-        if (!record.document.blocks.some(b => b.id === input.action.targetIds![0])) throw new CanvasError('NOT_FOUND', 'Settled target must be a block.');
-        if (Buffer.byteLength(JSON.stringify(input.action.payload)) > 4096) throw new CanvasError('TOO_LARGE', 'Settled payload exceeds 4 KiB.');
-        const protectedIds = new Set(record.outboundBatches.filter(b => b.status !== 'completed').flatMap(b => b.eventIds));
-        record.events = record.events.filter(e => !(e.status === 'pending' && e.action.settled && e.action.kind === input.action.kind && e.action.targetIds?.[0] === input.action.targetIds![0] && !protectedIds.has(e.id)));
-      }
-      if (record.events.filter(event => event.status === "pending" || event.status === "failed").length >= 100) throw new CanvasError("TOO_LARGE", "Too many pending feedback events. Connect an agent and send them first.");
-      const { id: _id, workspaceId: _workspace, revision: _revision, createdAt: _created, updatedAt: _updated, ...content } = record.document;
-      if (input.action.settled) {
-        const kept = new Set(input.action.targetIds);
-        for (const id of input.action.targetIds ?? []) {
-          let parent = record.document.blocks.find(b => b.id === id)?.parentGroupId;
-          while (parent) { kept.add(parent); parent = record.document.groups.find(g => g.id === parent)?.parentGroupId; }
-        }
-        content.blocks = content.blocks.filter(b => kept.has(b.id));
-        content.groups = content.groups.filter(g => kept.has(g.id)).map(g => ({ ...g, blockIds: g.blockIds.filter(id => kept.has(id)), groupIds: g.groupIds.filter(id => kept.has(id)) }));
-        content.links = []; content.selectedIds = content.selectedIds.filter(id => kept.has(id));
-      }
-      const event: AgentEvent = { id: input.eventId, documentId: input.documentId, agentId: record.connection?.agentId ?? null, workspaceId: input.workspaceId, createdAt: timestamp(), revision: record.document.revision, action: clone(input.action), context: documentContentSchema.parse(content), status: "pending" };
-      record.events.push(event);
-      const retained = new Set(record.outboundBatches.filter(batch => batch.status !== "completed").flatMap(batch => batch.eventIds));
-      const recent = new Set(record.events.filter(event => event.status === "sent" || event.status === "acked").slice(-100).map(event => event.id));
-      record.events = record.events.filter(event => event.status === "pending" || event.status === "failed" || retained.has(event.id) || recent.has(event.id));
-      record.outboundBatches = record.outboundBatches.filter(batch => batch.status !== "completed" || batch.eventIds.some(id => record.events.some(event => event.id === id)));
-      touchRuntime(record); return event;
-    });
-  }
-  async events(input: RpcInput<typeof rpc.readAgentEvents>) { return { events: clone(documentRecord(await this.store.read(), input.documentId, input.workspaceId).events) }; }
-  markEvents(documentId: string, workspaceId: string, ids: string[], status: AgentEvent["status"], agentId?: string, error?: string) {
-    return this.store.transaction(state => {
-      const record = documentRecord(state, documentId, workspaceId);
-      for (const event of record.events) if (ids.includes(event.id)) {
-        if (event.status === "acked" || event.status === "sent" && (status === "pending" || status === "failed")) continue;
-        event.status = status; if (agentId) event.agentId = agentId; if (error) event.error = error.slice(0, 1000); else delete event.error;
-      }
-      for (const batch of record.outboundBatches) {
-        if (batch.eventIds.every(id => record.events.some(event => event.id === id && (event.status === "acked" || event.status === "sent")))) batch.status = "completed";
-        else if (status === "failed" && ids.some(id => batch.eventIds.includes(id))) batch.status = "failed";
-      }
-      touchRuntime(record); return { events: clone(record.events) };
-    });
-  }
-  prepareFeedbackBatch(documentId: string, workspaceId: string, agentId: string, flushBatched: boolean, render: (events: AgentEvent[]) => string) {
-    return this.store.transaction(state => {
-      const record = documentRecord(state, documentId, workspaceId);
-      if (record.connection?.agentId !== agentId) return null;
-      // Prepared retries always reuse the stored payload and membership, even after new arrivals.
-      const retry = record.outboundBatches.find(batch => batch.agentId === agentId && (batch.status === "prepared" || flushBatched && batch.status === "failed"));
-      if (retry) { retry.status = "prepared"; return retry; }
-      const assigned = new Set(record.outboundBatches.flatMap(batch => batch.eventIds));
-      const events = record.events.filter(event => !assigned.has(event.id) && (event.status === "pending" || flushBatched && event.status === "failed") && (!event.agentId || event.agentId === agentId));
-      if (!events.length || !flushBatched && !events.some(event => event.action.delivery === "immediate")) return null;
-      const prompt = render(clone(events));
-      if (Buffer.byteLength(prompt) > 8192) throw new CanvasError("TOO_LARGE", "Feedback prompt exceeds 8 KiB.");
-      const batch = { messageId: newId("msg"), agentId, eventIds: events.map(event => event.id), prompt, createdAt: timestamp(), status: "prepared" as const };
-      // This transaction is durable before the caller is allowed to invoke SDK send.
-      record.outboundBatches.push(batch);
-      for (const event of events) event.agentId = agentId;
-      return batch;
-    });
-  }
-  finishFeedbackBatch(documentId: string, workspaceId: string, messageId: string, sent: boolean) {
-    return this.store.transaction(state => {
-      const record = documentRecord(state, documentId, workspaceId);
-      const batch = record.outboundBatches.find(batch => batch.messageId === messageId);
-      if (!batch) throw new CanvasError("NOT_FOUND", "Feedback batch was not found.");
-      // Only this immutable batch's event IDs can transition on this send result.
-      for (const event of record.events) if (batch.eventIds.includes(event.id)) {
-        if (event.status === "acked" || event.status === "sent") continue;
-        event.status = sent ? "sent" : "failed";
-        if (sent) delete event.error;
-        else event.error = "Delivery to the connected agent could not be confirmed. Retry when available.";
-      }
-      if (batch.status !== "completed") batch.status = sent ? "completed" : "failed";
-      touchRuntime(record);
-    });
-  }
   async assertReachable(documentId: string, workspaceId: string, agentId: string) {
     const state = await this.store.read();
     if (!reachable(state, documentRecord(state, documentId, workspaceId), agentId)) throw new CanvasError("FORBIDDEN", "This canvas belongs to another agent. This workspace keeps one canvas per agent; use canvas_list for yours or create one.");
   }
   /**
-   * Makes the calling agent the feedback recipient. A read only claims a canvas nobody receives; a write takes over,
-   * since the agent editing a canvas is the one the user is talking to. A recipient the user picked by hand stays.
+   * Makes the calling agent the one working on this canvas. A read only claims a canvas nobody holds; a write takes over,
+   * since the agent editing a canvas is the one the person is talking to. An agent the person picked by hand stays.
    * The document revision is untouched, so the caller's next expectedRevision still holds.
    */
   autoConnect(documentId: string, workspaceId: string, agentId: string, takeover: boolean) {
@@ -392,16 +336,11 @@ export class CanvasService {
       record.connection = { agentId, workspaceId }; touchRuntime(record); return true;
     });
   }
-  /** Frees every canvas that pointed at an agent that no longer exists, so the next agent to use it becomes the recipient. */
+  /** Frees every canvas that pointed at an agent that no longer exists, so the next agent to use it takes it. */
   releaseAgent(agentId: string) {
     return this.store.transaction(state => {
       for (const record of Object.values(state.documents)) if (record.connection?.agentId === agentId) { record.connection = null; touchRuntime(record); }
     });
-  }
-  /** Agents holding canvas tools, most recently bound first. */
-  async toolAgents() {
-    const state = await this.store.read();
-    return [...new Set(Object.values(state.owners).flatMap(owner => owner.agentId ? [owner.agentId] : []).reverse())];
   }
   async sharing(input: RpcInput<typeof rpc.readSharing>) { return { mode: (await this.store.read()).sharing[input.workspaceId] ?? "shared" as const }; }
   configureSharing(input: RpcInput<typeof rpc.configureSharing>) {

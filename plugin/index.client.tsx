@@ -1,4 +1,4 @@
-import type { PluginClientContext } from '@getpaseo/plugin/client';
+import type { PluginClientContext } from './client/host';
 import { LienzoPanel } from './client/Panel';
 import { tokens } from './client/tokens';
 import { registerCopilotPills } from './client/copilot/register';

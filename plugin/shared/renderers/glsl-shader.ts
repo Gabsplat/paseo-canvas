@@ -53,7 +53,7 @@ export function glslShaderState(data: GlslShaderData, raw: Record<string, JSONVa
 export const glslShaderSpec = {
   id: 'glsl-shader', dataSchema: glslShaderDataSchema, interactive: true,
   minSize: { width: 260, height: 280 }, defaultSize: { width: 440, height: 440 },
-  guidance: 'Una pregunta, fragment GLSL WebGL1 completo de hasta 4096 bytes, hasta cuatro uniforms float declarados con rangos. Nombres iguales al scope enlazan valores compartidos. Declare u_resolution vec2 y u_time float solo si sus builtins están habilitados. Tiempo solo tras Reproducir; pistas sin soluciones.',
+  guidance: 'Una pregunta, fragment GLSL WebGL1 completo de hasta 4096 bytes, hasta cuatro uniforms float declarados con rangos. Nombres iguales al scope enlazan valores compartidos. Declare u_resolution vec2 y u_time float solo si sus builtins están habilitados. Tiempo solo tras Reproducir. Lo que la persona probó (valores, tiempo, lastInteraction) queda en el estado del bloque: léelo con canvas_selection o canvas_read ids.',
   blockType: {
     id: 'glsl-shader', renderer: 'glsl-shader', name: 'GLSL shader', description: 'Explore an image computed from a few parameters. WebGL on desktop and web; a static reference on native.',
     properties: [

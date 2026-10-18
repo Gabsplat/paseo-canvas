@@ -1,4 +1,4 @@
-import { defineSettings } from '@getpaseo/plugin';
+import { defineSettings } from './contract';
 import { z } from 'zod';
 
 // Paseo stores this document on the host and broadcasts saves to connected clients.

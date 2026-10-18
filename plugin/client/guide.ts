@@ -1,4 +1,4 @@
-import type { SettingsState } from '@getpaseo/plugin/client';
+import { capabilities, type SettingsState } from './host';
 import { DEFAULT_SHORTCUTS, formatCombo } from './shortcuts';
 import type { canvasPreferences } from '../shared/preferences';
 
@@ -8,7 +8,7 @@ export async function claimFirstGuide(settings: SettingsState<typeof canvasPrefe
   return settings.save({ ...settings.values, guideSeen: true }, settings.revision);
 }
 
-export type GuideAction = 'documents' | 'catalog' | 'templates' | 'packs' | 'inspector' | 'agents' | 'communication' | 'history' | 'activity';
+export type GuideAction = 'documents' | 'catalog' | 'templates' | 'packs' | 'inspector' | 'agents' | 'communication' | 'history';
 export type GuideFeature = { title: string; detail: string; keywords?: string; action?: GuideAction; button?: string };
 export const guideSections: readonly { id: string; title: string; icon: string; intro: string; features: readonly GuideFeature[] }[] = [
   { id: 'start', title: 'Start a Lienzo', icon: 'Frame', intro: 'Lienzo (Spanish for canvas) is one canvas where you and your agent draw what is being explained.', features: [
@@ -39,26 +39,25 @@ export const guideSections: readonly { id: string; title: string; icon: string; 
     { title: 'Images', detail: 'Press the image to enlarge it. Use + and − to zoom and drag to explore. Open reference goes to the original.' },
     { title: 'Video and audio', detail: 'Direct links and YouTube or Vimeo videos are recognised. Double-click or Interact enables the controls. Nothing plays on its own.' },
     { title: 'Web pages', detail: 'A Ventana shows the page. Double-click or Interact uses it; otherwise you can move the block and pan over it. If the site refuses to be embedded, open it in the browser.' },
-    { title: 'Editable content', detail: 'Properties on the right holds every field of the selected block. Lists can be ticked; questions and forms send your answers to the agent. Code can be copied.' },
+    { title: 'Editable content', detail: 'Properties on the right holds every field of the selected block. Lists can be ticked; answers, forms and what you try in learning blocks and mini apps are kept on the block, where the agent can read them. Code can be copied.' },
     { title: 'Animated flow', keywords: 'timeline links nodes', detail: 'Follow events over the real nodes and links of the Lienzo. They move with the blocks and stop when out of sight.' },
     { title: 'GLSL shader', keywords: 'WebGL uniforms', detail: 'Explore an image computed from shared variables. Compile errors show in the block; without WebGL there is a static stand-in.' },
     { title: 'On a phone', detail: 'Lista (the list) makes reading and selecting easy. Videos and web pages open in the browser; learning blocks show a static description.' },
   ] },
-  { id: 'agent', title: 'Work with your agent', icon: 'Bot', intro: 'You choose what context to share and when to send.', features: [
-    { title: 'Connect an agent', detail: 'Choose the workspace agent from the composer. Its status says whether it is working, idle or unavailable.', action: 'agents', button: 'See agents' },
+  { id: 'agent', title: 'Work with your agent', icon: 'Bot', intro: 'The agent draws here and reads what you point at. You talk to it in your usual chat.', features: [
+    { title: 'Point at something', keywords: 'ask selection this', detail: 'Select it on the canvas and tell the agent “look at what I selected” in your conversation. It reads the selection, its instructions and what you did with it. The canvas itself never messages the agent.' },
     { title: 'Give instructions', detail: 'Select a block or Marco and open Instructions for the agent in Properties. Those of the whole Lienzo are in the menu. The agent gets them together, most specific first.', action: 'communication', button: 'Instructions for the agent' },
-    { title: 'Ask about the selection', detail: 'Select, write in the composer and send, or type in ⌘K and choose Ask the agent. Answers and forms send real feedback; selecting alone sends nothing.' },
-    { title: 'Follow the delivery', detail: 'Activity tells queued, sent, received and failed apart. A failed delivery can be retried. Sent means delivered, not done.', action: 'activity', button: 'See activity' },
+    { title: 'Agent', detail: 'The menu shows the agent working on this Lienzo and how to give another one the tools.', action: 'agents', button: 'See agents' },
   ] },
   { id: 'keep', title: 'Keep and share', icon: 'Package', intro: 'Every confirmed change is a revision. You can go back and reuse the content.', features: [
     { title: 'History, undo and redo', detail: 'See the revisions and use Undo or Redo for content, positions, sizes and links.', action: 'history', button: 'See history' },
     { title: 'Templates and collections', detail: 'Select a Marco and choose Save as template… in Properties. Export the selection or the Lienzo as a JSON collection, and import collections of types, templates and documents.', action: 'packs', button: 'Open collections' },
     { title: 'Changes at the same time', detail: 'If the Lienzo changed while you edited, the notice lets you apply your change again or discard it.' },
-    { title: 'Your keys', keywords: 'shortcuts keyboard', detail: 'Press ? for every shortcut. Settings → Shortcuts reassigns them; your choices are kept for this Paseo host.' },
+    { title: 'Your keys', keywords: 'shortcuts keyboard', detail: `Press ? for every shortcut. Settings → Shortcuts reassigns them; your choices are kept ${capabilities.keptFor}.` },
   ] },
 ];
 /** The cheat sheet in the guide, from the shortcut registry so it never disagrees with the keys. */
 export const guideShortcuts: readonly (readonly [string, string])[] = [
   ...DEFAULT_SHORTCUTS.filter(s => !s.id.startsWith('pinned.') || s.id === 'pinned.1').map(s => [s.id === 'pinned.1' ? '1–9' : s.keys.map(k => formatCombo(k, false)).join(' / '), s.id === 'pinned.1' ? 'Pinned tools' : s.label] as const),
-  ['Shift + click', 'Add to or remove from the selection'], ['Arrows / Shift + arrows', 'Move 8 / 32 px'], ['Enter / F2', 'Edit text or interact with content'], ['Tab / Shift + Tab', 'Go through things'], ['Ctrl/⌘ + Enter', 'Send to the agent'], ['0 / + / −', '100% / zoom in / zoom out'],
+  ['Shift + click', 'Add to or remove from the selection'], ['Arrows / Shift + arrows', 'Move 8 / 32 px'], ['Enter / F2', 'Edit text or interact with content'], ['Tab / Shift + Tab', 'Go through things'], ['0 / + / −', '100% / zoom in / zoom out'],
 ];

@@ -78,17 +78,19 @@ export function WebFrame({ url, title, border, height, surface, player = false, 
     React.createElement('iframe', { key: safe, src: safe, title, sandbox: frameSandbox(safe, browser().location?.origin), referrerPolicy: 'strict-origin-when-cross-origin', loading: 'lazy', allow: player ? 'encrypted-media; fullscreen; picture-in-picture' : 'fullscreen', allowFullScreen: true, onLoad: () => { setLoaded(true); onLoaded?.(); }, style: { width: '100%', height: '100%', border: 0, opacity: loaded ? 1 : 0, pointerEvents: interacting ? 'auto' : 'none' }, 'aria-label': loaded ? title : `Loading ${title}` }), !interacting && React.createElement('div', { 'aria-label': 'Double-click to interact', style: { position: 'absolute', inset: 0, background: 'transparent' } }));
 }
 /**
- * What every mini app gets before its own code: a `lienzo` object that talks to the canvas through messages. It only
- * believes messages from the canvas page: mini apps can post to each other, and one must not pass for the canvas.
+ * What every mini app gets before its own code: a `lienzo` object that talks to the canvas page through messages. It
+ * only believes messages from the canvas page: mini apps can post to each other, and one must not pass for the canvas.
+ * `setState` stores a small JSON value on the block for the agent to read; `send` is kept for pages written before it
+ * and only records the last call on the block. Nothing a page does reaches the agent by itself.
  */
-export const HTML_APP_BRIDGE = "<script>(function(){var l=[],c=null,m=[],r=null;function post(m){m.lienzo=1;parent.postMessage(m,'*')}window.lienzo={send:function(k,p,o){post({type:'event',kind:String(k),payload:p===undefined?null:p,wake:!!(o&&o.wake)})},resize:function(h){post({type:'resize',height:Number(h)})},select:function(id){post({type:'select',id:String(id)})},onContext:function(f){l.push(f);if(c)f(c)},get context(){return c},onFrame:function(f){m.push(f);if(r)f(r)},get frame(){return r}};addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||e.source!==parent)return;if(d.type==='frame'){r=d.frame;m.forEach(function(f){try{f(r)}catch(_){}});return}if(d.type!=='context')return;c=d.context;try{document.documentElement.style.colorScheme=c.theme.dark?'dark':'light'}catch(_){}l.forEach(function(f){try{f(c)}catch(_){}})});post({type:'ready'})})();</script>";
-export type HtmlAppMessage = { type: 'ready' } | { type: 'event'; kind: unknown; payload: unknown; wake?: unknown } | { type: 'resize'; height: unknown } | { type: 'select'; id: unknown };
+export const HTML_APP_BRIDGE = "<script>(function(){var l=[],c=null,m=[],r=null,w={},q=0;function post(m){m.lienzo=1;parent.postMessage(m,'*')}window.lienzo={setState:function(v){return new Promise(function(ok,no){var id=++q;w[id]={ok:ok,no:no};post({type:'state',id:id,value:v===undefined?null:v})})},get state(){return c&&c.state!==undefined?c.state:null},send:function(k,p){post({type:'event',kind:String(k),payload:p===undefined?null:p})},resize:function(h){post({type:'resize',height:Number(h)})},select:function(id){post({type:'select',id:String(id)})},onContext:function(f){l.push(f);if(c)f(c)},get context(){return c},onFrame:function(f){m.push(f);if(r)f(r)},get frame(){return r}};addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||e.source!==parent)return;if(d.type==='frame'){r=d.frame;m.forEach(function(f){try{f(r)}catch(_){}});return}if(d.type==='stored'){var x=w[d.id];if(!x)return;delete w[d.id];if(d.ok)x.ok();else x.no(new Error(d.error||'Not saved'));return}if(d.type!=='context')return;c=d.context;try{document.documentElement.style.colorScheme=c.theme.dark?'dark':'light'}catch(_){}l.forEach(function(f){try{f(c)}catch(_){}})});post({type:'ready'})})();</script>";
+export type HtmlAppMessage = { type: 'ready' } | { type: 'state'; id: unknown; value: unknown } | { type: 'event'; kind: unknown; payload: unknown } | { type: 'resize'; height: unknown } | { type: 'select'; id: unknown };
 /**
  * A page written by the author or an agent, running in a sandboxed frame with an opaque origin: scripts run, but it
  * cannot reach the canvas page, its storage or its cookies. It hears only the context it is sent and is heard only
  * through messages from its own window.
  */
-export function WebHtml({ id, html, title, surface, context, onMessage }: { id: string; html: string; title: string; surface: string; context: unknown; onMessage(message: HtmlAppMessage): void }) {
+export function WebHtml({ id, html, title, surface, context, onMessage }: { id: string; html: string; title: string; surface: string; context: unknown; onMessage(message: HtmlAppMessage, reply: (message: Record<string, unknown>) => void): void }) {
   const interacting = useContentInteraction(), frame = useRef<{ contentWindow?: { postMessage(message: unknown, target: string): void } | null } | null>(null), ready = useRef(false), latest = useRef({ context, onMessage }); latest.current = { context, onMessage };
   const post = () => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, type: 'context', context: latest.current.context }, '*'); } catch {} };
   useEffect(() => {
@@ -97,7 +99,7 @@ export function WebHtml({ id, html, title, surface, context, onMessage }: { id: 
     const listen = (event: { source: unknown; data: unknown }) => {
       const data = event.data as { lienzo?: unknown; type?: unknown } | null;
       if (!frame.current?.contentWindow || event.source !== frame.current.contentWindow || !data || data.lienzo !== 1 || typeof data.type !== 'string') return;
-      if (data.type === 'ready') { ready.current = true; post(); } else if (['event', 'resize', 'select'].includes(data.type)) latest.current.onMessage(data as HtmlAppMessage);
+      if (data.type === 'ready') { ready.current = true; post(); } else if (['state', 'event', 'resize', 'select'].includes(data.type)) latest.current.onMessage(data as HtmlAppMessage, message => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, ...message }, '*'); } catch {} });
     };
     host.addEventListener('message', listen); return () => { host.removeEventListener?.('message', listen); ready.current = false; };
   }, [html]);

@@ -22,7 +22,7 @@ those files change, **they win on names and shapes, this file wins on how things
 **Map of this file.** §1 identity · §2 platform · §3 regions and widths · §4 primitives and controls ·
 §5 contextual toolbar and popovers · §6 canvas, blocks, groups · §8 direct
 manipulation (in-place editing, `+` handles, quick-create) · §9 adding blocks, collections, Lista ·
-§10 assistant composer · §11 states and first run · §12 keyboard · §13 accessibility · §15 graph ·
+§10 the agent (one-way, no composer) · §11 states and first run · §12 keyboard · §13 accessibility · §15 graph ·
 §16 dragging and motion · §17 media, sizes, link magnetism · §18 interactive learning blocks ·
 §19 copy · §20 whiteboard (free text, shapes, SVG, freehand, tool and style islands, drag and
 interaction rules).
@@ -128,11 +128,10 @@ non-compact layouts: there is no top bar, no side rail, no inspector and no tray
 │                                                     ┌───────────────┐  │
 │                    canvas                           │ Properties │… │  │  right panel
 │          ┌─────────────────────┐ ← selection bar    │               │  │  (floating)
-│          │ ● ▢ ⧉ ? 🗑          │                    │               │  │
+│          │ ● ▢ ⧉ 🗑            │                    │               │  │
 │                                                     └───────────────┘  │
 │  [Lente]                                                               │
 │  [map]  [ V H │ P ▢ T ↗ E │ M W │ pinned… │ + ]          [ − 100% + ]  │  bottom toolbar
-│                    [ composer ]                                        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -142,8 +141,7 @@ Every island floats over the one canvas with `pointerEvents: "box-none"` around 
 | --- | --- | --- |
 | Top-left | inset 12, 44 tall | `Menu` (main menu, §3.2) · **title** (serif `groupTitle`, max 280, 160 under 880, `ChevronDown` 12 after it; press → Lienzos) · chip "Example" · save dot. Stage 2 adds the Hoja menu after the title. |
 | Top-right | inset 12, 44 tall | `Search` "Search and commands" (⌘K, §31) · `PanelRight` "Properties" (⌘\, active while the right panel shows) |
-| Bottom toolbar | centred, 8 above the composer | §24 |
-| Composer | bottom-centre | §10 |
+| Bottom toolbar | centred on the bottom edge, inset 12 (`face.toolbar.bottom`) | §24 |
 | Right panel | right inset 12, under the top islands | §31 |
 | Lente · minimap | bottom-left | §25, §29 |
 | Zoom | bottom-right | `Minus` · percent · `Plus` · fit |
@@ -158,15 +156,14 @@ Every island floats over the one canvas with `pointerEvents: "box-none"` around 
 ### 3.2 Main menu (`Menu` on the top-left island)
 
 Anchored below the button, 288 wide; rows grouped by dividers: New Lienzo · Lienzos · Rename (F2) · Duplicate as
-my own ┃ Undo · Redo · History ┃ Hide all UI · Agent (with its presence) · Instructions for the agent · Activity ┃
+my own ┃ Undo · Redo · History ┃ Hide all UI · Agent (with its presence) · Instructions for the agent ┃
 Manage extensions… · Import a collection · Export this Lienzo ┃ Settings · Keyboard shortcuts (?) · Lienzo guide.
 There is no view switcher.
 
 ### 3.3 Narrower panels (not compact)
 
 Nothing docks. Under 880 the title shrinks to 160 and the zoom shows only its percent (a menu holds zoom in, zoom
-out, fit and 100 %). The toolbar stays centred above the composer; the composer is `w − 2 · 100` wide from 560 to
-879 and `w − 24` below 560. The right panel keeps its 300 and covers what is under it; ⌘\ hides it, and the
+out, fit and 100 %). The toolbar stays centred on the bottom edge, level with the minimap and the zoom. The right panel keeps its 300 and covers what is under it; ⌘\ hides it, and the
 selection beacon keeps clear of it.
 
 ### 3.4 Compact (`layout.compact`)
@@ -178,8 +175,8 @@ selection beacon keeps clear of it.
 │ Lista (scrolls) — or the canvas while a drawing │
 │ tool or the hand is in use                      │
 ├ Selection bar 52, only with a selection ────────┤
-├ Toolbar: one horizontal scroller, 44 buttons ───┤
-├ Composer, docked, full width (§10) ─────────────┤
+├ Toolbar: one horizontal scroller, 44 buttons,  ─┤
+│ docked at the bottom (6 above, 8 below)         │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -282,12 +279,11 @@ A `Popover` of width 232, padding 4, whose children are rows.
 
 ### 4.6 `Chip`
 
-One component, three uses.
+One component, two uses.
 
 | Use | Height | Fill | Content |
 | --- | --- | --- | --- |
 | Status ("Ejemplo", "Estático", counts) | 20 | `wash(tone)` | optional icon 12 in tone + `label` muted |
-| Context (selection in the composer, §10) | 24 (32 touch) | `wash("acento")` | type icon 12 `accent` + `small` 600 title, max width 160 + `X` 12 in a 24 hit ("Quitar del contexto") |
 | Toggle (quick types) | 24 | off transparent + 1 px `border`; on `wash` of its colour + 1 px of its colour @0.38 | optional leading icon 12 + `small` 600; `accessibilityState.checked` |
 
 Radius 6, pad H 6, gap 4. A chip never wraps its text.
@@ -353,25 +349,23 @@ inspector.
   gesture ends. It never appears during a rubber-band selection until release.
 - **Never under the pointer on arrival:** if it would appear under the pointer that just made the
   selection, it uses the opposite side.
-- **Offline or mutation in flight:** actions that write are disabled (0.45); "Preguntar" may focus a draft, but sending is disabled while offline.
+- **Offline or mutation in flight:** actions that write are disabled (0.45).
 - **Compact:** the same items as a docked **action bar** (48 high, `surface1`, top border, 44 px
-  targets, horizontal scroll when they do not fit), directly above the composer.
+  targets, horizontal scroll when they do not fit), directly above the toolbar.
 - At most six items plus "Más" (`Ellipsis`). Everything in the toolbar is also reachable from the
   keyboard (§12) and, by name, from "Más".
 
 ### 5.2 Items by selection
 
-Order is left → right. `▾` opens a popover (§5.3) anchored to the button. "Preguntar" is a
-`LabelButton` (`MessageCircleQuestion` + "Preguntar", key `A`): it focuses the composer, whose chips
-already show the selection (§10). It is first because talking about a thing is the main reason to
-select it.
+Order is left → right. `▾` opens a popover (§5.3) anchored to the button. There is no "ask" item:
+the canvas never messages the agent (§10); the person mentions the selection in their own chat.
 
 | Selection | Items | Behind "Más" |
 | --- | --- | --- |
-| **One block** | Preguntar · *type slot* · `Compass` Instrucción ▾ · `CopyPlus` Duplicar (`⌘D`) · `Trash2` Eliminar (`⌫`) · Más | Editar texto (`Enter`) · Datos… (when the type slot is something else) · Conectar con… · Sacar del grupo (if grouped) · Soltar posición (if pinned) · Tamaño automático (if sized) · Mover antes / Mover después (in `stack`, `grid`, `flow`) |
-| **One group** | Preguntar · `Plus` Añadir dentro ▾ (picker, §9.1) · *layout icon* Disposición ▾ · `Compass` Instrucción ▾ · `Ungroup` Desagrupar (`⇧⌘G`) · Más | Editar título (`Enter`) · Plegar / Desplegar · Variables… (§18.3, only if the group has any) · Conectar con… · Duplicar · Guardar como plantilla… · Reordenar automáticamente (if any child is pinned) · Sacar del grupo (if nested) · **Eliminar grupo y contenido** (danger) |
+| **One block** | *type slot* · `Compass` Instrucción ▾ · `CopyPlus` Duplicar (`⌘D`) · `Trash2` Eliminar (`⌫`) · Más | Editar texto (`Enter`) · Datos… (when the type slot is something else) · Conectar con… · Sacar del grupo (if grouped) · Soltar posición (if pinned) · Tamaño automático (if sized) · Mover antes / Mover después (in `stack`, `grid`, `flow`) |
+| **One group** | `Plus` Añadir dentro ▾ (picker, §9.1) · *layout icon* Disposición ▾ · `Compass` Instrucción ▾ · `Ungroup` Desagrupar (`⇧⌘G`) · Más | Editar título (`Enter`) · Plegar / Desplegar · Variables… (§18.3, only if the group has any) · Conectar con… · Duplicar · Guardar como plantilla… · Reordenar automáticamente (if any child is pinned) · Sacar del grupo (if nested) · **Eliminar grupo y contenido** (danger) |
 | **One connection** | `Type` Etiqueta · *line glyph* Tipo ▾ · *swatch* Color ▾ · `ArrowLeftRight` Invertir · `Trash2` Eliminar (`⌫`) | ; (no "Más") |
-| **Several entities** | Preguntar · `Group` Agrupar (`⌘G`) · `Spline` Conectar (`L`; only with exactly two; tooltip "Conectar «A» → «B»") · `CopyPlus` Duplicar · `Trash2` Eliminar · Más | Soltar posiciones (if any is pinned) · Sacar del grupo (if all share a parent group) |
+| **Several entities** | `Group` Agrupar (`⌘G`) · `Spline` Conectar (`L`; only with exactly two; tooltip "Conectar «A» → «B»") · `CopyPlus` Duplicar · `Trash2` Eliminar · Más | Soltar posiciones (if any is pinned) · Sacar del grupo (if all share a parent group) |
 | **Nothing** | no toolbar | Lienzo-wide settings are in the main menu (§3.2) |
 
 - **Type slot** (one item, chosen by renderer, so the most likely edit is one press away):
@@ -475,7 +469,7 @@ Hover changes the border. Selection adds an accent border and halo without shift
 Keyboard focus adds a visible ring. Dragging lifts the card using existing motion tokens. No
 persistent ellipsis button remains inside each card; contextual actions live in §5. Content
 in-flight and failed-save states remain visible, with "No se guardó" and "Reintentar" as needed.
-Instruction and delivery footers appear only when they have real content. Every renderer retains
+Instruction and save-state footers appear only when they have real content. Every renderer retains
 its own content controls, using the type registry and §18 for learning blocks.
 
 ### 6.4 Groups
@@ -652,101 +646,43 @@ a distinct namespace. A conflict rereads the catalog; it never reports an uncomm
 successful. JSON is editable code content, but scripts or HTML are never executed as learning specs.
 
 
-## 10. Assistant composer (island C)
+## 10. The agent: one-way, no composer
 
-One free-text field. **The selection is the context**; there are no intent or audience fields and
-nothing to configure before writing.
+Lienzo is one-way. The agent draws and reads; **the canvas never sends anything to it**. The person talks to the
+agent in their usual chat (the Paseo conversation, or a terminal for the desktop app) and says "look at what I
+selected"; the agent reads the selection with `canvas_selection`. So there is no composer island, no "Ask the agent"
+item in the selection bar, Properties or ⌘K, no delivery chips ("Queued", "Sent", "Received by the agent"), no
+queue counter and no queue toasts. Selecting never sends anything and never starts a turn; `setSelection` stays
+debounced 250 ms.
 
-### 10.1 Anatomy
+### 10.1 Bottom of the panel
 
-```
- rest (no selection, empty)            with selection, typing
-┌──────────────────────────────┐     ┌────────────────────────────────────────────┐
-│ (●) Escribir al asistente… ↑ │     │ Sobre: [◉ Custodia ✕] [▢ Flujo ✕] +2       │
-└──────────────────────────────┘     │ (●) ¿por qué pasa por aquí?              ↑ │
-        360 × 44, radius 14          └────────────────────────────────────────────┘
-                                              up to 560 wide, input up to 4 lines
-```
+The bottom toolbar sits centred, 12 from the bottom edge (`face.toolbar.bottom`),
+level with the minimap and the zoom control, in light and dark alike. What floated above the toolbar keeps its
+offset from the toolbar: the "Agent's latest →" pill and the SVG library sit `face.toolbar.height + 12` above it,
+the + catalog `face.catalog.offset` above it. On a compact panel the toolbar is the last row, docked with 6 above
+and 8 below (`face.toolbar.compactPadding`); the selection bar docks above it.
 
-- `Island`, radius 14, padding H 6. Bottom-centre, 12 from the bottom edge.
-- **Status button** (leading, 32 px circle, `Bot` 16): fill `surface2`; an 8 px dot at its
-  bottom-right with a 2 px `surface1` ring ; `statusSuccess` idle, `accent` working,
-  `statusDanger` error or closed, `foregroundMuted` when no assistant is connected (icon `Unplug`).
-  Press → popover "Asistente" (§10.3). Tooltip: the assistant's title and its state in words.
-- **Input.** `body`, grows from 1 to 4 lines (then scrolls), placeholder by state (below). `Enter`
-  sends, `⇧Enter` adds a line. `Esc` blurs and returns focus to the canvas, keeping the text.
-- **Send** (trailing, 32 px circle, `ArrowUp` 16): fill `accent`, icon `accentForeground`; with an
-  empty input and no selection it is `surface2` with a muted icon and disabled. Tooltip "Enviar"
-  + `Enter`.
-- **Width.** 360 at rest; grows to its maximum (§3.3) over 160 ms when focused, when it holds text
-  or when chips are shown; returns when all three are false.
-- **Chips row** (above the input, pad top 6, gap 4, one line): `small` muted "Sobre:" then one
-  context `Chip` (§4.6) per selected entity, up to 3, then "+{n}" (press → popover listing all,
-  each removable). Removing a chip **deselects that entity** ; chips and selection are the same
-  thing, there is no separate context list. The row animates its height (160 ms) so the input does
-  not jump under the pointer: the island grows upwards.
-- **Status row** (under the input, 24 high, only when it has something to say): the delivery state
-  of the last send (§10.2) or the no-assistant note.
+### 10.2 What an interaction leaves
 
-| State | Placeholder | Notes |
-| --- | --- | --- |
-| No selection | "Escribir al asistente…" | Sends with no targets |
-| One or more selected | "Preguntar sobre la selección…" | Send is enabled even with an empty input: it sends the selection alone |
-| Empty canvas | "Pedir un lienzo: «explicar la fotosíntesis paso a paso»" | §11.1 |
-| No assistant connected | "Escribir al asistente…" | Status row: `Unplug` 12 + `small` "Sin asistente. Se guarda en cola." + ghost small "Conectar" (§10.3) |
-| Offline | input disabled | Status row: "Sin conexión con Paseo." |
-| Sending | input read-only, send shows a 14 px ring (static under reduce motion) | |
+Interactions are stored, never sent. The agent reads them as the block's state:
 
-Selecting never sends anything and never starts a turn; `setSelection` stays debounced 250 ms.
+| Press | Stored as |
+| --- | --- |
+| Quiz "Answer" | `data.answer` (a document edit; the explanation appears once answered) |
+| Quiz "Show hint" | runtime `lastInteraction` `quiz.hint` |
+| Form "Save" | the typed fields in `data`, then `lastInteraction` `form.save` |
+| Controls, animated flow, shader (move, release, pause, reset) | their runtime state, plus `lastInteraction` |
+| Mini app `lienzo.setState(value)` | runtime `{ state: value }` |
 
-### 10.2 What is sent, and delivery
+Block footers show only "Has instructions", "Saving…" and "Not saved · Retry". There is no "Ask for a hint" button on
+the shader: a hint is something the person asks for in their chat.
 
-Existing actions use `agentAction`; learning summaries use `runtime.settle` from the registry contract. `eventId` = `newId("evt")`, generated once per press and reused on retry. Kind names for future renderers are defined by their schemas, not by this visual specification.
+### 10.3 The agent in the menu
 
-| Press | `kind` | `targetIds` | `payload` | `delivery` |
-| --- | --- | --- | --- | --- |
-| Composer send | `selection.send` | selected ids (may be empty) | `{ note }` | `immediate` |
-| Quiz "Enviar respuesta" | `block.answer` | `[blockId]` | `{ answer }` | `immediate` |
-| Form "Enviar" | `block.submit` | `[blockId]` | `{ values }` | `immediate` |
-| Quiz "Ver pista" | `block.hint` | `[blockId]` | `{}` | `batched` |
-| Learning block "Pedir arreglo" (§18.10) | `block.error` | `[blockId]` | `{ message }` | `immediate` |
-
-Not sent: moving, editing, checklist toggles, collapsing, selecting, per-frame slider updates. Learning renderers emit only the settled summaries described in §18.2.
-
-Delivery state ; always from the returned or polled `AgentEvent.status`, never assumed. Shown in
-the composer's status row for composer sends, and in the block footer for block actions:
-
-| Status | Icon | Text | Colour |
-| --- | --- | --- | --- |
-| request in flight | ; | "Enviando…" | muted |
-| `pending` | `Clock` 12 | "En cola" | muted |
-| `sent` | `Check` 12 | "Enviado · {hh:mm}" | muted |
-| `acked` | `CheckCheck` 12 | "Recibido por el asistente" | `statusSuccess` icon, muted text |
-| `failed` | `CircleAlert` 12 | "No se envió" + `error` (1 line) + ghost small "Reintentar" | `statusDanger` |
-
-The input clears only on `sent` or `pending`. The status row disappears 6 s after `acked`, or when
-the next message is typed. There are no toasts for delivery: the row is the feedback.
-
-### 10.3 Popover "Asistente"
-
-Width medium, anchored above the status button.
-
-- Current connection: `bodyStrong` assistant title, `small` muted provider and state in words
-  ("inactivo", "trabajando", "con error", "cerrado", "iniciando"); or `small` "Ningún asistente
-  recibe lo que se envía desde este lienzo."
-- `label` "Asistentes de este espacio": option rows (title, `small` provider, status dot); pressing
-  one calls `connectAgent`. Ghost small "Desconectar" under the list.
-- `label` "Enviado": the last 5 `readAgentEvents` rows (state icon, `action.label`, relative time);
-  if any is `pending`, ghost small "Enviar pendientes" (`flushAgentEvents`). Empty: `small` muted
-  "Todavía no se envió nada."
-- Footer row: ghost small "Configurar…" → the host modal with the sharing mode, tool injection and
-  manual setup (its content is unchanged; its title is "Configurar asistente").
-
-### 10.4 Compact
-
-Docked at the bottom, full width, `surface1`, top border, padding 8; same anatomy with 44 px
-targets; the chips row scrolls horizontally. It rises with the keyboard.
-
+The main menu's "Agent" row shows the agent working on this Lienzo (its title and, in Paseo, its status dot) and opens
+the agent dialog: in Paseo, choose or pin the agent, sharing mode, tool injection and manual setup; in the desktop
+app, "Connect an agent" with the MCP setup and the agents seen. Neither says anything about queues or waking.
 
 ## 11. States and first run
 
@@ -759,7 +695,7 @@ assistant output. Show only the hint relevant to the current state.
 | State | Hint and action |
 | --- | --- |
 | No document | "Un espacio para pensar con el asistente" and "Nuevo lienzo". Creation needs no form. |
-| Empty document | "Doble clic para escribir una idea" at the centre; "Añadir un bloque" near B; composer placeholder offers a learning request. |
+| Empty document | "Doble clic para escribir una idea" at the centre; "Añadir un bloque" near B. |
 | First block, no links | "Seleccionar para editar o conectar" near the block. Disappear after the first selection. |
 | One selected block | Toolbar explains actions. No separate tutorial note obscures the content. |
 | At least one connection | Hide empty-canvas hints. |
@@ -794,7 +730,7 @@ Every shortcut lives in one registry, `plugin/client/shortcuts.ts` (§33): id, l
 (always, a document, the canvas, a selection). The panel resolves the person's overrides against it and runs what
 a key press spells. Keys typed into a field, a frame or an interactive control are left alone, except ⌘K and ⌘\.
 A few contextual keys stay outside the registry because they depend on focus: Enter / F2 edit a selected text or
-enter interaction mode, Tab / Shift+Tab walk the entities, arrows nudge 8 (Shift 32), ⌘↵ sends the composer,
+enter interaction mode, Tab / Shift+Tab walk the entities, arrows nudge 8 (Shift 32),
 0 / + / − zoom. ⌘ on Apple platforms, Ctrl elsewhere.
 
 ## 13. Accessibility and quality
@@ -868,7 +804,7 @@ it and stay outside the camera gesture layer. There are no illustrations, gradie
 motion or controls unrelated to the concept. Compact/native shows the same question and a static
 summary with the chip "Estático" and "La interacción está disponible en la versión web".
 
-### 18.2 Spec, current state and assistant feedback
+### 18.2 Spec, current state and what the agent reads
 
 Renderer data is declarative JSON validated by its shared schema. No agent-provided JavaScript,
 HTML, evaluation functions or dynamic imports run. GLSL fragment
@@ -882,14 +818,13 @@ unless the block explicitly represents the shared controls of that scope.
 
 Renderers update their own stage and sibling scope subscribers on every pointer/input frame.
 Transport may debounce; visible feedback must not wait for pointer release or a server reply.
-The assistant receives only settled events after the runtime flush succeeds. Summaries include
-final value and explored range. Never send animation
-frames, hover coordinates, pointer moves or intermediate slider values. Coalescing
-must preserve the range explored, and must not replace a batch already being delivered.
+Nothing is sent to the agent. After the runtime flush succeeds, a settled move records the block's
+`lastInteraction` with the final value and the explored range; the agent reads it with the block's state
+when the person mentions the block in their chat. Never record animation frames, hover coordinates,
+pointer moves or intermediate slider values.
 
-A successful event receipt is not a correct answer. Feedback labels are "En cola", "Enviado",
-"Recibido por el asistente" and "No se envió" from actual event status. Hints refer to the learner's
-attempt and guiding question; reveal a solution only if the learner explicitly requests it.
+A stored interaction is not a correct answer, and no label claims the agent has seen it. Hints refer to
+the learner's attempt and guiding question; reveal a solution only if the learner explicitly asks the agent.
 
 ### 18.3 Variables and sliders
 
@@ -909,7 +844,7 @@ may show a short variables strip, but no empty strip appears without declaration
 
 Default to manual stepping. Prev/next flank "Paso {current} de {total}" with a caption. Play is
 optional, clearly labelled and never starts automatically. A timeline scrubber updates continuously;
-settled feedback describes the final position and explored interval. Leaving the document, hiding
+the recorded interaction holds the final position and explored interval. Leaving the document, hiding
 its stage or unmounting stops timers. Reduced motion leaves a manual step path.
 Hover/trace readouts use axis/value typography inside the stage, not floating cards over controls.
 A pin action preserves a readout; keyboard navigation can reach the same sample without hover.
@@ -963,9 +898,8 @@ Simplify points and cap counts before storing. Current runtime has a 4 KiB block
 document cap; it is not an unlimited storage escape. Persistent document data has a 1 MiB cap.
 If a complete layer cannot fit, show "La capa alcanzó su límite de tamaño" and preserve the prior
 layer. A separate attachment/storage design requires coordinator review. Reset removes only the
-learner's current experiment layer, preserving assistant and authored strokes. Send a bounded
-settled summary, never the full point stream, unless the assistant explicitly requests an allowed
-bounded runtime read.
+learner's current experiment layer, preserving assistant and authored strokes. Nothing is sent; the agent
+reads the strokes as blocks, and `canvas_selection` summarises them without points.
 
 ## 19. Copy and event honesty
 
@@ -978,19 +912,18 @@ app: empty states, onboarding, a few confirmations ("Listo.", "Dale.").
 | --- | --- |
 | Lienzos | Lienzos; New Lienzo; Untitled Lienzo; Duplicate as my own |
 | Adding | More tools; Search tools, embeds, blocks…; Nothing matches “{q}”; Manage extensions… |
-| Selection | Wrap in a Marco; Unwrap Marco; Duplicate; Ask the agent; Delete; Properties |
+| Selection | Wrap in a Marco; Unwrap Marco; Duplicate; Delete; Properties |
 | Marco | Add inside; Layout; Take out of the Marco; Save as template… |
 | Link | Label; Kind (Flow, Needs, Mentions); Colour; Reverse |
-| Agent | Agent connected; Connect an agent; No agent yet. Messages wait in a queue.; Ask about the selection… |
+| Agent | Agent; Works on this Lienzo; Connect an agent; Talk to the agent in its own app |
 | Collections | Import a collection; Export; Remove; Portable copy |
-| Learning | Ask for a hint |
+| Learning | Answer; Show hint; Save |
 | Playback | Play; Pause; Reset |
 | Persistence | Saving; Not saved; Retry; Apply my change again; Discard |
-| Delivery | Sending; Queued; Sent; Received by the agent; Not sent |
 | Static fallback | Static; The interactive version is available on desktop and web. |
 
 Examples always keep the "Example" chip and say that the data is illustrative. A result, agent status, successful
-save or feedback receipt is shown only after a confirmed tool/RPC response or live host signal. No renderer
+save is shown only after a confirmed tool/RPC response or live host signal. Nothing claims the agent saw anything. No renderer
 fabricates an agent hint, answer or completed job.
 
 
@@ -1170,7 +1103,7 @@ accent name. Unpaired rows are pressable only when they are directories with chi
 
 ## 24. Bottom toolbar and the + catalog
 
-**Toolbar** (`face.toolbar`, `client/Toolbar.tsx`). A floating island centred above the composer, 8 between them,
+**Toolbar** (`face.toolbar`, `client/Toolbar.tsx`). A floating island centred on the bottom edge, 12 from it (`face.toolbar.bottom`),
 44 tall with 36 buttons (44 on compact), icon 18, 4 apart, 1 × 20 dividers between groups. Order: Select, Hand ┃
 Pencil, Shape (chevron; pressing it again opens the flyout: rectangle R, ellipse O, diamond, triangle, line), Text,
 Arrow, Eraser ┃ Marco, Ventana ┃ pinned tools in pin order, each with its 1–9 badge ┃ `+`. Marco adds an empty
@@ -1244,10 +1177,11 @@ cursor shows through them. Buttons keep the system pointer. Verified with
 - **Mini app (`html`).** `data.html` is a complete page with any HTML, CSS and JavaScript, shown in a
   sandboxed frame (`allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups`, no
   `allow-same-origin`, so an opaque origin with no access to the canvas page). Double click enters it, as
-  with other deep content. A `lienzo` object is injected before the page: `send(kind, payload)` becomes a
-  batched `html.event` to the agent (kind matching `[a-zA-Z][a-zA-Z0-9._:-]{0,63}`, payload JSON up to 4000
-  characters, otherwise dropped); `onContext(fn)` receives theme colours, the block, the document and up to
-  20 selected entities, now and on change; `select(id)` selects an existing entity; `resize(height)` is
+  with other deep content. A `lienzo` object is injected before the page. It never reaches the agent: `setState(value)` stores
+  plain JSON up to 3000 characters on the block (resolving once saved, rejecting otherwise) for the agent to read,
+  and `state` gives it back; a legacy `send(kind, payload)` only records the block's `lastInteraction`;
+  `onContext(fn)` receives theme colours, the block, its stored state, the document and up to 20 selected
+  entities, now and on change; `select(id)` selects an existing entity; `resize(height)` is
   clamped to 80..1600. Native shows a plain notice.
 
 Verified with `design/whiteboard-harness/windows.cjs` (RN-web, isolated omabox); capture
@@ -1259,13 +1193,13 @@ Lente (Spanish for lens) is a way to colour the same canvas. The lenses that use
 stores, the 50 most recent changes, and say so.
 
 A control above the minimap names the lens in use; each press, or L, moves to the next: none, Who changed it, How
-fresh, Talked about, What the agent has seen. A lens keeps every card in place and lays a mark over it (`lens`:
+fresh, The agent's version. A lens keeps every card in place and lays a mark over it (`lens`:
 2 px border, 0.2 fill, radius 12, 2 px outset; neutral states at half fill). Who changed it: accent for the person,
 violet for the agent, neutral without a stored change. How fresh: changed within 2 revisions (risk tone), within 10
-(warning), earlier (turquoise), not stored (neutral). Talked about: waiting (warning), not delivered (risk), answered
-(success), never discussed (neutral). What the agent has seen: up to date where the agent changed it last or
-answered about it since, behind where you changed it afterwards, no record otherwise; it is derived from stored
-changes and requests and claims nothing more. Marks hide while dragging. Logic in `plugin/client/lenses.ts`, tested
+(warning), earlier (turquoise), not stored (neutral). The agent's version: as the agent left it where the agent
+changed it last (success), "You changed it since" where the person edited it after the agent's last edit (warning),
+not touched by the agent otherwise (neutral); it is derived from stored changes and claims nothing more. There is no
+lens built on messages to the agent, because there are none. Marks hide while dragging. Logic in `plugin/client/lenses.ts`, tested
 in `tests/lenses.test.ts`.
 
 ## 30. One view
@@ -1283,21 +1217,20 @@ one tab per extension tool; picking a drawing tool brings its tab forward. The p
 selected, showing the Lienzo (description, instructions for the agent, layout); ⌘\ and the `PanelRight` button hide
 it or bring it back. Sections fold under 12 px headers. A block shows Content (title and every field of its type),
 Style for drawings, Instructions for the agent (with those it inherits), Connect (search a target) and Actions (edit
-on the canvas, interact, reset, duplicate, ask, export, release position, take out of the Marco, move
+on the canvas, interact, reset, duplicate, export, release position, take out of the Marco, move
 earlier/later, automatic size, delete). A Marco adds its title and purpose, Layout and Variables. A link shows label,
 kind, colour, reverse and delete. A result still hidden behind a learning gate is never named. On compact the panel
 is a sheet.
 
 **Selection bar** (`face.selectionBar`). A small bar above the selection, below when there is no room: colour (for
-drawings and links), Wrap in a Marco (Unwrap for a Marco), Duplicate, Ask the agent (focuses the composer), Delete;
+drawings and links), Wrap in a Marco (Unwrap for a Marco), Duplicate, Delete;
 32 buttons. A link gets colour, kind, reverse and delete. Detail lives in the right panel.
 
 **Command palette** (`face.palette`, `client/CommandPalette.tsx`, model in `client/palette.ts`). ⌘K / Ctrl+K, or the
 top-right button. Centred, 640 wide, its top at 18 % of the panel, a 52 px search field with a leading icon, results
 under small-caps headers in rows of 40 (icon, title, muted subtitle, shortcut chips), the active row in a soft accent
 fill. Footer: "↵ Open · ⌘↵ Run in background · Esc Close" and the active row's verb. Groups: Recent (on an empty
-query), Tools, Actions, Hojas (every Hoja, the agent's latest, follow), Lienzos, Extensions, Settings, and "Ask the agent: ‹query›" always last,
-which sends through the composer's path with the selection as context. Titles match fuzzily; keywords and subtitles
+query), Tools, Actions, Hojas (every Hoja, the agent's latest, follow), Lienzos, Extensions, Settings. Nothing in it sends to the agent. Titles match fuzzily; keywords and subtitles
 by whole words. Keyboard alone works fully; so does the mouse.
 
 ## 32. Extension tools

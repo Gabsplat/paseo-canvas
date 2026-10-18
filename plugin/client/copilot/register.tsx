@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Icon } from '@getpaseo/plugin/client/react-native';
-import type { PluginButtonContentProps, PluginButtonIconProps, PluginButtonRegistration, PluginClientContext } from '@getpaseo/plugin/client';
+import { Icon } from '../host';
+import type { PluginButtonContentProps, PluginButtonIconProps, PluginButtonRegistration, PluginClientContext } from '../host';
 import * as rpc from '../../shared/rpc';
 import { CopilotPopover, StatusDot, type CopilotApi, type CopilotView } from './CopilotPopover';
 import { requestCanvasIntent } from './intent';

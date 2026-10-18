@@ -11,8 +11,8 @@ from `client/ui.tsx`: it retains the SDK props and static `Content` component, a
 inserts an explicit UI provider inside the content children for compact sheet
 portals. The controller is passed through; opening a sheet creates no extra
 `useCanvas` instance or RPC subscription. Shared RPC identifiers are imported
-from `shared/rpc.ts`, including the corrected `agentAction`, `readAgentEvents`, and
-`flushAgentEvents` contracts. No endpoint strings are duplicated in client code.
+from `shared/rpc.ts`. No endpoint strings are duplicated in client code, and no
+client RPC sends anything to an agent.
 The token transcription in `client/tokens.ts` comes from the Opus v7 design and whiteboard contract. No client
 runtime import crosses into `design/`, `architecture/`, or `server/`.
 
@@ -55,8 +55,8 @@ not delete the same subtree twice.
 
 The right panel (Properties) appears with a selected block, Marco or link, with the options of the tool in hand,
 or with an open extension tool; the pin or ⌘\ keeps it open on the Lienzo itself. Multiple selection shows shared
-actions without an item list. History and activity open in a modal from the menu. The composer remains visible and
-receives the current selection; the selection bar floats above selected bounds.
+actions without an item list. History opens in a modal from the menu. There is no composer: the toolbar sits on the
+bottom edge, and the selection bar floats above selected bounds.
 
 Properties edits typed properties and one "Instructions for the agent" field.
 Editing that field preserves existing `intent` and `audience`; those keys remain
@@ -70,7 +70,7 @@ group no longer have a direct UI path. MCP can still perform those operations.
 
 Known server error codes map to short English messages, with a generic fallback.
 Raw server messages are not rendered by the panel, catalog, settings or agent modal.
-The panel also translates feedback errors before passing them to canvas/block
+The panel also translates write errors before passing them to canvas/block
 components. The conflict banner describes the rejected change and offers reapply
 or discard without revision numbers.
 
@@ -79,36 +79,36 @@ reloads the latest document before showing the retained failure. Reapplying subm
 the same operations against the fresh revision. Undo and redo use the backend's real
 availability and history, including its conflict checks. An unrelated successful
 edit does not dismiss another edit's conflict. A failed watch disables writes and
-retains the readable document. `watchDocument` and agent events poll every 1.5 seconds
+retains the readable document. `watchDocument` and the document list poll every 1.5 seconds
 without overlapping poll requests. Scope guards discard late results after opening
 another document or changing workspace.
 
-## Actual actions and agents
+## Agents: one-way
 
 Use the agent dialog to choose an existing agent in the workspace. It shows the
-current assistant title, provider and a selected option row; it hides the raw ID. Lifecycle
-statuses have Spanish labels. Connecting
-selects the recipient of UI feedback. Workspace tool authorization is separate;
+current assistant title, provider and a selected option row; it hides the raw ID.
+Connecting marks the agent working on this Lienzo; it routes nothing, because the
+canvas never sends anything to an agent. Workspace tool authorization is separate;
 injection enables tools for new agents in that workspace. Existing-agent setup
 returns a provider configuration snippet and instructions. Copy uses the raw
 configuration text. The plugin never edits provider configuration or reloads agents.
 
-Explicit sends use a generated event ID retained for retry:
+The person talks to the agent in their own chat and says "look at what I selected";
+the agent reads `canvas_selection`. What the person does with a block is stored on it:
 
-| Control | Action | Delivery |
-| --- | --- | --- |
-| Send to the agent, or ⌘K "Ask the agent: …" | `selection.send`, selection IDs and note | Immediate |
-| Send answer | `block.answer`, answer and block ID | Immediate |
-| Form Send | `block.submit`, committed typed values and block ID | Immediate |
-| Show hint | `block.hint`, block ID | Batched |
+| Control | What is stored |
+| --- | --- |
+| Quiz Answer | `data.answer` (a document edit) |
+| Quiz Show hint | runtime `lastInteraction` `quiz.hint` |
+| Form Save | the typed fields in `data`, then `lastInteraction` `form.save` |
+| Controls, animated flow, shader | their runtime state, plus `lastInteraction` with the last move or reset |
+| Mini app `lienzo.setState` | runtime `{ state }` |
+| Strokes | `wb-draw` blocks with `author: learner` |
 
 Checklist toggles, text edits, dragging, collapse, and selection only persist data.
-Form submission waits for previous edits, commits all current typed field values,
-then sends the values returned by that committed view. Boolean fields use native
-checkbox controls. Pending, sent, acknowledged, and failed labels come from returned
-or polled `AgentEvent.status`. A request in flight says Sending. The UI does not
-invent a reply, teaching result, or agent activity. Failed persisted deliveries use
-the backend flush path instead of generating a duplicate event.
+Form saving waits for previous edits and commits all current typed field values.
+Boolean fields use native checkbox controls. The UI does not invent a reply,
+teaching result, or agent activity.
 
 ## Catalog and portable packs
 
@@ -174,7 +174,7 @@ portable pack forks, and real
 RPC-parser/service transactions preserving nested groups during rename/collapse/layout
 and undo. Native visual and interaction QA belongs to the coordinator's installed
 plugin run through omabox. These headless checks do not claim that screenshots or
-live agent delivery have already been exercised. Headless component tests exercise
+a live agent session have already been exercised. Headless component tests exercise
 creation, title editing, visibility, instruction preservation and friendly errors.
 Guide tests cover loading/error states, failed saves and concurrent client claims.
 Labels use the UI sans face in sentence case. Free text supports sans, serif and mono from the whiteboard specification.

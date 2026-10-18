@@ -1,4 +1,4 @@
-import type { AgentEvent, CanvasDocument } from '../shared/model';
+import type { CanvasDocument } from '../shared/model';
 import type { Tone } from './color';
 
 /** One stored change, as the history RPC returns it. The server keeps the most recent ones, not the whole life. */
@@ -15,51 +15,44 @@ export function biographies(changes: readonly Change[]): Map<string, Biography> 
   }
   return out;
 }
-export const LENSES = ['none', 'author', 'age', 'talk', 'agent'] as const;
+export const LENSES = ['none', 'author', 'age', 'agent'] as const;
 export type LensId = typeof LENSES[number];
-export const LENS_LABEL: Record<LensId, string> = { none: 'No Lente', author: 'Who changed it', age: 'How fresh', talk: 'Talked about', agent: 'What the agent has seen' };
+export const LENS_LABEL: Record<LensId, string> = { none: 'No Lente', author: 'Who changed it', age: 'How fresh', agent: 'The agent’s version' };
 export type LensKey = { key: string; label: string; tone: Tone; count: number };
-type Events = readonly Pick<AgentEvent, 'status' | 'action' | 'revision'>[];
 /**
  * A lens keeps every card where it is and tints it by one variable the canvas does not show: who last changed
- * it, how long it has been left alone, or whether it was ever taken up with the assistant.
+ * it, how long it has been left alone, or whether the person changed it after the agent last did.
  */
-export function lensMarks(lens: LensId, doc: Pick<CanvasDocument, 'blocks' | 'revision'>, changes: readonly Change[], events: Events): { marks: Map<string, string>; legend: LensKey[] } {
+export function lensMarks(lens: LensId, doc: Pick<CanvasDocument, 'blocks' | 'revision'>, changes: readonly Change[]): { marks: Map<string, string>; legend: LensKey[] } {
   const marks = new Map<string, string>(); if (lens === 'none') return { marks, legend: [] };
   const lives = biographies(changes);
   const keys: Record<Exclude<LensId, 'none'>, [string, string, Tone][]> = {
     author: [['user', 'You', 'acento'], ['agent', 'Agent', 'violeta'], ['quiet', 'No recent changes', 'neutro']],
     age: [['fresh', 'Just changed', 'riesgo'], ['recent', 'Recent', 'aviso'], ['settled', 'Settled', 'turquesa'], ['quiet', 'Still', 'neutro']],
-    talk: [['open', 'Waiting for an answer', 'aviso'], ['failed', 'Not delivered', 'riesgo'], ['acked', 'Answered', 'exito'], ['never', 'Never discussed', 'neutro']],
-    agent: [['current', 'Up to date', 'exito'], ['behind', 'You changed it since', 'aviso'], ['unknown', 'No record', 'neutro']],
+    agent: [['current', 'As the agent left it', 'exito'], ['behind', 'You changed it since', 'aviso'], ['unknown', 'Not touched by the agent', 'neutro']],
   };
-  const state = new Map<string, string>();
-  if (lens === 'talk') for (const event of events) for (const id of event.action.targetIds ?? []) {
-    const now = event.status === 'acked' ? 'acked' : event.status === 'failed' ? 'failed' : 'open', before = state.get(id);
-    // The worst outstanding state wins: something still waiting matters more than something already answered.
-    if (!before || now === 'open' || now === 'failed' && before === 'acked') state.set(id, now);
-  }
-  const held = lens === 'agent' ? agentView(doc, changes, events) : null;
+  const held = lens === 'agent' ? agentView(doc, changes) : null;
   for (const block of doc.blocks) {
     const life = lives.get(block.id);
     if (held) { marks.set(block.id, held.get(block.id) ?? 'unknown'); continue; }
     if (lens === 'author') marks.set(block.id, life ? life.lastActor : 'quiet');
-    else if (lens === 'age') { const idle = life ? doc.revision - life.last : Infinity; marks.set(block.id, idle <= 2 ? 'fresh' : idle <= 10 ? 'recent' : Number.isFinite(idle) ? 'settled' : 'quiet'); }
-    else marks.set(block.id, state.get(block.id) ?? 'never');
+    else { const idle = life ? doc.revision - life.last : Infinity; marks.set(block.id, idle <= 2 ? 'fresh' : idle <= 10 ? 'recent' : Number.isFinite(idle) ? 'settled' : 'quiet'); }
   }
   const counts = new Map<string, number>(); marks.forEach(key => counts.set(key, (counts.get(key) ?? 0) + 1));
   return { marks, legend: keys[lens].map(([key, label, tone]) => ({ key, label, tone, count: counts.get(key) ?? 0 })) };
 }
 /**
- * What the agent holds of each block, as far as the stored record shows. It is up to date with a block it
- * changed last, or whose current state it acknowledged in a request. It is behind on a block the person changed
- * afterwards. Where the record says nothing, nothing is claimed.
+ * Where each block stands against the agent's last edit of it, as far as the stored history shows. The canvas never
+ * tells the agent anything, so the record is the edits themselves: a block the agent changed last is as it left it,
+ * a block the person changed after the agent's last edit is ahead of it, and a block the agent never edited in the
+ * retained history is not claimed either way.
  */
-export function agentView(doc: Pick<CanvasDocument, 'blocks'>, changes: readonly Change[], events: readonly Pick<AgentEvent, 'status' | 'action' | 'revision'>[]): Map<string, 'current' | 'behind' | 'unknown'> {
-  const last = new Map<string, { revision: number; agent: boolean }>(), acked = new Map<string, number>();
-  for (const c of [...changes].sort((a, b) => a.revision - b.revision)) for (const id of c.changed) last.set(id, { revision: c.revision, agent: c.actor === 'agent' });
-  for (const e of events) if (e.status === 'acked') for (const id of e.action.targetIds ?? []) acked.set(id, Math.max(acked.get(id) ?? -1, e.revision));
-  return new Map(doc.blocks.map(b => { const change = last.get(b.id), seen = acked.get(b.id);
-    if (change?.agent) return [b.id, 'current'] as const; if (change) return [b.id, seen !== undefined && seen >= change.revision ? 'current' : 'behind'] as const;
-    return [b.id, seen !== undefined ? 'current' : 'unknown'] as const; }));
+export function agentView(doc: Pick<CanvasDocument, 'blocks'>, changes: readonly Change[]): Map<string, 'current' | 'behind' | 'unknown'> {
+  const last = new Map<string, { agent: number; any: number }>();
+  for (const c of [...changes].sort((a, b) => a.revision - b.revision)) for (const id of c.changed) {
+    const entry = last.get(id) ?? { agent: -1, any: -1 }; entry.any = c.revision; if (c.actor === 'agent') entry.agent = c.revision; last.set(id, entry);
+  }
+  return new Map(doc.blocks.map(b => { const entry = last.get(b.id);
+    if (!entry || entry.agent < 0) return [b.id, 'unknown'] as const;
+    return [b.id, entry.any > entry.agent ? 'behind' : 'current'] as const; }));
 }

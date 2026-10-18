@@ -14,7 +14,7 @@ so custom renderer aliases work without capturing ordinary card data.
 The implementation follows `design/whiteboard-spec.md` sections 5 and 6 and
 `docs/design.md` sections 20.4 through 20.6. On noncompact hosts, the Canvas
 container is absolute with `inset: 0`. Its sibling overlay layer uses
-`pointerEvents="box-none"`. Every empty positioning wrapper for the document island, tools, composer,
+`pointerEvents="box-none"`. Every empty positioning wrapper for the document island, tools,
 style, notices and compact Listo uses `box-none`; the island bodies retain
 automatic hit testing. The former full-width contextual-toolbar wrapper has
 been removed from Panel. Canvas receives the island body through
@@ -27,15 +27,15 @@ The top-left island holds the main menu, the title (it opens Lienzos), the persi
 indicator; stage 2 adds the Hoja menu there. Renaming is in the menu and on F2 with no selection; undo and redo are
 in the menu, ⌘Z / ⌘⇧Z and ⌘K. The top-right island holds the command palette button and the right-panel toggle.
 
-The bottom toolbar is centred eight pixels above the measured composer and never overlaps it; the + catalog opens
-above it, right-aligned to `+`. The composer floats at the bottom centre; below 560 px it aligns left. Its
-selection chips, queue actions, errors and delivery receipt use the actual controller data. The right panel floats
+The bottom toolbar is centred on the bottom edge (`tokens.face.toolbar.bottom`, 12 px, level with the minimap and the
+zoom control); the + catalog opens above it, right-aligned to `+`. There is no composer: the person talks to the agent
+in their own chat, and the canvas sends nothing to it. The right panel floats
 at the right under the top islands and holds what the inspector, the selection popovers and the style island used
 to: Properties of the selection, the tool's options and extension tool tabs. The selection bar reaches Canvas
 through `selectionToolbar`. Canvas alone owns zoom; it also receives `reservedKey` and `obscuredRight`.
 
 Compact hosts keep a docked header (menu, title, undo, ⌘K, Properties), show Lista, and put the toolbar in one
-horizontal scroller above the docked composer; a drawing tool or the hand shows the canvas and Select returns to
+horizontal scroller docked at the bottom (`tokens.face.toolbar.compactPadding`); a drawing tool or the hand shows the canvas and Select returns to
 Lista. The selection bar docks above the toolbar with a Properties button; the right panel, menus and dialogs are
 host sheets. The local Modal wrapper carries the UI context through host portals. Hide all UI (⌘.) hides the Panel
 controls while retaining Canvas zoom and save, conflict and connection notices.
@@ -82,13 +82,9 @@ published for those formats.
 
 ## Context and interaction
 
-The composer can send selected targets, or a nonempty note without selection. A
-send captures one event ID, document ID, target IDs and note, waits for pending
-writes, and verifies the document is still current before calling `send`.
-Retries retain the same ID and payload. Persisted event retries use the existing
-flush RPC. Queue, sent, failed and acknowledged labels come from returned or
-polled events. Selection remains shared through the controller selection RPC.
-Drawing and style edits do not independently send an assistant prompt.
+Nothing in the panel sends to the agent. Selection is shared through the controller selection RPC, and the agent
+reads it with `canvas_selection` when the person mentions it in their own chat. Drawing, style edits, answers and
+learning blocks persist data or block runtime state only.
 
 Panel composes `selectionToolbar` and passes it to Canvas only outside compact
 mode. Canvas positions its separate overlay above the current selection or a
@@ -99,7 +95,7 @@ zoom, connection gestures, drawing, editing and interaction. It returns after
 In compact mode Panel docks the same bar above the toolbar, with a Properties button.
 The compact header exposes Undo, ⌘K and Properties.
 
-The selection bar offers colour, wrapping in a Marco, duplicate, ask the agent and delete. The right panel's
+The selection bar offers colour, wrapping in a Marco, duplicate and delete. The right panel's
 Properties hold type-specific data, instructions, connections, layout and variables, and its Actions section
 includes editing on the canvas, interaction, reset, collapse, templates, selection export, leaving a Marco,
 releasing positions, automatic sizing and ordering where applicable. These
@@ -155,7 +151,7 @@ the new separate SelectionOverlay module; existing assertions are unchanged.
 The isolated omabox browser QA passes 18 cases with the real Panel, useCanvas,
 registered renderers, scheduler, RPC schemas and reducer. Its host transport,
 icons, Modal and instrumented AudioHost are stand-ins. The audio regression
-checks context shutdown, cancelled pending edits, one settled reset event and a
+checks context shutdown, cancelled pending edits, one recorded reset and a
 rejected save with visible error and zero live contexts. It does not certify
 physical audio or an installed Paseo/native-device build. No plugin installation,
 reload or shared service change was performed.

@@ -1,6 +1,6 @@
-import type { PluginHostProps } from '@getpaseo/plugin/client';
+import type { HostProps } from './host';
 import { tokens } from './tokens';
-export type Theme = PluginHostProps['theme'];
+export type Theme = HostProps['theme'];
 export type Tone = 'neutro' | 'acento' | 'violeta' | 'turquesa' | 'exito' | 'aviso' | 'riesgo';
 export function parseColor(c: string): { r: number; g: number; b: number; a: number } | null {
   const hex = c.match(/^#([\da-f]{3}|[\da-f]{6}|[\da-f]{8})$/i);

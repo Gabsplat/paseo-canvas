@@ -1,10 +1,10 @@
 import { runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
-import { defineRpc } from "@getpaseo/plugin";
+import { defineRpc } from "./contract";
 import { z } from "zod";
 import {
   idSchema, revisionInputSchema, revisionSchema, createInputSchema, mutateInputSchema,
   documentViewSchema, documentSummarySchema, catalogSchema, catalogMutateInputSchema,
-  packSchema, templateSchema, agentActionInputSchema, agentEventSchema, connectionSchema, sharingModeSchema,
+  packSchema, templateSchema, connectionSchema, sharingModeSchema,
   copilotCadenceSchema, copilotSettingsSchema, latestAgentSchema, layoutSchema,
 } from "./model";
 
@@ -25,15 +25,12 @@ export const connectAgent = defineRpc({
   name: "canvas.connect", input: revisionInputSchema.extend({ connection: connectionSchema.nullable() }),
   output: z.object({ view: documentViewSchema, requiresReload: z.boolean() }),
 });
-export const agentAction = defineRpc({ name: "canvas.agent.action", input: agentActionInputSchema, output: agentEventSchema });
-export const readAgentEvents = defineRpc({ name: "canvas.agent.events", input: readInputSchema, output: z.object({ events: z.array(agentEventSchema) }) });
 export const watchDocument = defineRpc({ name: "canvas.watch", input: readInputSchema.extend({ knownRevision: revisionSchema, knownRuntimeVersion: revisionSchema }), output: z.object({ revision: revisionSchema, runtimeVersion: revisionSchema, view: documentViewSchema.optional() }) });
 export const setSelection = defineRpc({ name: "canvas.selection.set", input: readInputSchema.extend({ expectedSelectionVersion: revisionSchema, ids: z.array(idSchema).max(1200) }), output: documentViewSchema });
 export const exportGroup = defineRpc({ name: "canvas.group.export", input: readInputSchema.extend({ groupId: idSchema, templateId: idSchema, name: z.string().min(1).max(200) }), output: z.object({ template: z.lazy(() => templateSchema) }) });
 export const importPack = defineRpc({ name: "canvas.pack.import", input: z.object({ expectedRevision: revisionSchema, pack: z.unknown(), replace: z.boolean().default(false), dryRun: z.boolean().default(false) }).strict(), output: z.object({ catalog: catalogSchema, diff: z.object({ added: z.array(z.string()), replaced: z.array(z.string()), unchanged: z.array(z.string()) }), committed: z.boolean() }) });
 export const readHistory = defineRpc({ name: "canvas.history", input: readInputSchema, output: z.object({ revision: revisionSchema, transactions: z.array(z.object({ id: idSchema, revision: revisionSchema, actor: z.enum(["user", "agent", "system"]), agentId: z.string().optional(), label: z.string(), at: z.iso.datetime(), changed: z.array(z.string()), removed: z.array(idSchema), kind: z.enum(["edit", "undo", "redo"]) })) }) });
 export const agentSetup = defineRpc({ name: "canvas.agent.setup", input: scopeSchema.extend({ agentId: z.string().min(1).max(200), provider: z.enum(["codex", "claude", "opencode"]) }), output: z.object({ configuration: z.string(), instructions: z.string(), requiresReload: z.boolean() }) });
-export const flushAgentEvents = defineRpc({ name: "canvas.agent.events.flush", input: readInputSchema, output: readAgentEvents.output });
 // Legacy: every new agent now gets the Lienzo tools at creation, whatever this says. Kept so older panels keep working.
 export const configureInjection = defineRpc({ name: "canvas.injection", input: z.object({ workspaceId: z.string().min(1).max(200), enabled: z.boolean(), expectedRevision: revisionSchema }).strict(), output: z.object({ revision: revisionSchema, workspaceIds: z.array(z.string()) }) });
 // One canvas set per workspace ("shared") or documents private to the agent that created or received them ("agent").

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { htmlAppDataSchema, htmlAppEvent, HTML_APP_LIMITS } from '../plugin/shared/renderers/html-app';
+import { htmlAppDataSchema, htmlAppInteraction, htmlAppState, HTML_APP_LIMITS } from '../plugin/shared/renderers/html-app';
 import { getRendererSpec } from '../plugin/shared/renderers';
 import { setup, mutation, workspaceId } from './helpers';
 
@@ -11,17 +11,20 @@ test('a mini app accepts any page within its size and height limits', () => {
   assert.equal(htmlAppDataSchema.safeParse({ html: 'x', height: 40 }).success, false);
   assert.equal(htmlAppDataSchema.safeParse({ html: 'x', url: 'https://example.org' }).success, false);
 });
-test('what a mini app reports is a named, bounded, plain JSON event or nothing', () => {
-  assert.deepEqual(htmlAppEvent('step.done', { n: 2, at: [1, 2] }), { kind: 'step.done', payload: { n: 2, at: [1, 2] } });
-  assert.deepEqual(htmlAppEvent('click', undefined), { kind: 'click', payload: null });
-  for (const kind of ['', '9lives', 'a b', 'x'.repeat(65), 7, null]) assert.equal(htmlAppEvent(kind, {}), null);
-  assert.equal(htmlAppEvent('big', { text: 'x'.repeat(HTML_APP_LIMITS.payload) }), null);
-  const loop: Record<string, unknown> = {}; loop.self = loop; assert.equal(htmlAppEvent('loop', loop), null);
-  assert.deepEqual(htmlAppEvent('fn', { run() {}, keep: 1 }), { kind: 'fn', payload: { keep: 1 } });
+test('what a mini app stores is bounded plain JSON, and a legacy send only records its last call', () => {
+  assert.deepEqual(htmlAppState({ step: 2, answer: 'b', seen: [1, 2] }), { value: { step: 2, answer: 'b', seen: [1, 2] } });
+  assert.deepEqual(htmlAppState(undefined), { value: null }); assert.deepEqual(htmlAppState('done'), { value: 'done' });
+  assert.equal(htmlAppState({ text: 'x'.repeat(HTML_APP_LIMITS.state) }), null);
+  const loop: Record<string, unknown> = {}; loop.self = loop; assert.equal(htmlAppState(loop), null);
+  assert.deepEqual(htmlAppState({ run() {}, keep: 1 }), { value: { keep: 1 } });
+  assert.deepEqual(htmlAppInteraction('step.done', { n: 2 }), { kind: 'step.done', payload: { n: 2 } });
+  assert.deepEqual(htmlAppInteraction('click', undefined), { kind: 'click' });
+  assert.deepEqual(htmlAppInteraction('big', { text: 'x'.repeat(HTML_APP_LIMITS.payload) }), { kind: 'big' }, 'a long payload is dropped, the kind kept');
+  for (const kind of ['', '9lives', 'a b', 'x'.repeat(65), 7, null]) assert.equal(htmlAppInteraction(kind, {}), null);
 });
 test('a mini app is created and rewritten through the real service, and the agent is told how to build one', async t => {
   const { service } = await setup(t), spec = getRendererSpec('html')!;
-  assert.match(spec.guidance, /lienzo\.send\(kind, payload, options\)/); assert.match(spec.guidance, /no preset components/);
+  assert.match(spec.guidance, /lienzo\.setState\(value\)/); assert.match(spec.guidance, /cannot message you/); assert.doesNotMatch(spec.guidance, /lienzo\.send|wake/); assert.match(spec.guidance, /no preset components/);
   await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'app', typeId: 'html', title: 'Ejemplo', data: { html: '<b>uno</b>' } } }]));
   const next = await service.mutate(mutation(1, [{ type: 'block.update', id: 'app', patch: { data: { html: '<b>dos</b>', height: 240 } } }]));
   assert.deepEqual(next.document.blocks.find(b => b.id === 'app')!.data, { html: '<b>dos</b>', height: 240 });
@@ -49,15 +52,23 @@ test('the bridge tells a mini app where its window is, and believes only the can
   deliver({ lienzo: 1, type: 'context', context: { theme: { dark: true } } }); assert.deepEqual(lienzo.context, { theme: { dark: true } });
   assert.ok(getRendererSpec('html')!.guidance!.includes('lienzo.onFrame'));
 });
-test('a mini app event waits unless it asks to wake the agent', async () => {
+test('setState asks the canvas to store the value and resolves when it is saved; send never wakes anything', async () => {
   const { readFile } = await import('node:fs/promises'), vm = await import('node:vm');
   const source = await readFile('plugin/client/web.ts', 'utf8'), literal = /export const HTML_APP_BRIDGE = ("(?:[^"\\]|\\.)*");/.exec(source);
-  const script = (JSON.parse(literal![1]) as string).replace(/^<script>|<\/script>$/g, ''), sent: Record<string, unknown>[] = [], parent = { postMessage: (m: never) => { sent.push(m); } };
-  const window: Record<string, unknown> = {}; vm.runInNewContext(script, { window, parent, document: { documentElement: { style: {} } }, addEventListener() {} });
-  const lienzo = window.lienzo as { send(kind: string, payload?: unknown, options?: unknown): void };
-  lienzo.send('moved', { x: 1 }); lienzo.send('done', { ok: true }, { wake: true });
-  assert.deepEqual(JSON.parse(JSON.stringify(sent.slice(1).map(m => [m.kind, m.wake]))), [['moved', false], ['done', true]]);
+  const script = (JSON.parse(literal![1]) as string).replace(/^<script>|<\/script>$/g, ''), sent: Record<string, unknown>[] = [], listeners: ((e: { source: unknown; data: unknown }) => void)[] = [], parent = { postMessage: (m: never) => { sent.push(m); } };
+  const window: Record<string, unknown> = {}; vm.runInNewContext(script, { window, parent, Promise, document: { documentElement: { style: {} } }, addEventListener: (_: string, f: never) => { listeners.push(f); } });
+  const lienzo = window.lienzo as { setState(value: unknown): Promise<void>; state: unknown; send(kind: string, payload?: unknown): void }, deliver = (data: unknown) => listeners.forEach(f => f({ source: parent, data }));
+  assert.equal(lienzo.state, null);
+  const saved = lienzo.setState({ answer: 'b' }), refused = lienzo.setState({ big: true });
+  const [first, second] = JSON.parse(JSON.stringify(sent.slice(1)));
+  assert.deepEqual([first.type, first.value, second.value], ['state', { answer: 'b' }, { big: true }]);
+  deliver({ lienzo: 1, type: 'stored', id: first.id, ok: true }); deliver({ lienzo: 1, type: 'stored', id: second.id, ok: false, error: 'Too big' });
+  await saved; await assert.rejects(refused, /Too big/);
+  deliver({ lienzo: 1, type: 'context', context: { theme: { dark: false }, state: { answer: 'b' } } });
+  assert.deepEqual(JSON.parse(JSON.stringify(lienzo.state)), { answer: 'b' }, 'the page restores what it stored');
+  lienzo.send('done', { ok: true });
+  const legacy = JSON.parse(JSON.stringify(sent.at(-1)));
+  assert.deepEqual([legacy.type, legacy.kind, 'wake' in legacy], ['event', 'done', false]);
   const renderer = await readFile('plugin/client/renderers/html-app.tsx', 'utf8');
-  assert.match(renderer, /wake \? 'immediate' : 'batched'/); assert.ok(HTML_APP_LIMITS.wakeMs >= 1000);
-  assert.ok(getRendererSpec('html')!.guidance!.includes('{ wake: true }'));
+  assert.doesNotMatch(renderer, /immediate|batched|wake/); assert.match(renderer, /runtime\.record\(/);
 });

@@ -8,7 +8,6 @@ import * as rpc from "../plugin/shared/rpc";
 import { CanvasStore } from "../plugin/server/store";
 import { CanvasService } from "../plugin/server/service";
 import { CopilotService, isLienzoTool, ToolActivity, DRAWING_WINDOW_MS } from "../plugin/server/copilot";
-import { FeedbackDispatcher } from "../plugin/server/feedback";
 import { ToolRouter, toolNames } from "../plugin/server/tools";
 import { setup, workspaceId, fakeGateway, mutation } from "./helpers";
 
@@ -37,30 +36,22 @@ test("copilot state starts off, persists per agent, and an old state file withou
   assert.equal((await new CopilotService(new CanvasService(third), toolNames).read({ workspaceId, agentId: "b" })).copilot.enabled, false, "copilot is per agent");
 });
 
-test("turning on creates the conversation's Lienzo, connects it and queues one batched notice without sending", async t => {
-  const { service } = await setup(t), mock = fakeGateway(service), copilot = new CopilotService(service, toolNames);
+test("turning on creates the conversation's Lienzo and connects it; nothing is sent, the mode travels in tool responses", async t => {
+  const { service, store } = await setup(t), mock = fakeGateway(service), copilot = new CopilotService(service, toolNames);
   const view = await set(copilot, { enabled: true });
   assert.ok(view.copilot.documentId); assert.equal(view.document?.title, "Lienzo de la charla");
   const reference = { workspaceId, documentId: view.copilot.documentId! };
   assert.equal((await service.read(reference)).connection?.agentId, "a");
-  let events = (await service.events(reference)).events;
-  assert.equal(events.length, 1);
-  assert.deepEqual([events[0].action.kind, events[0].action.delivery, events[0].status, events[0].agentId], ["copilot.mode", "batched", "pending", "a"]);
-  assert.match(events[0].action.label, /copilot is on: draw after each step worth showing/);
-  // The existing delivery does not start a turn for it: a normal drain leaves it queued.
-  const dispatcher = new FeedbackDispatcher(service, mock.gateway); t.after(() => dispatcher.close());
-  await dispatcher.drain("a"); assert.equal(mock.sends.length, 0);
-  // Changing the cadence replaces the queued notice instead of piling up.
   await set(copilot, { cadence: "custom", rule: "a diagram changes" });
-  events = (await service.events(reference)).events;
-  assert.equal(events.length, 1); assert.match(events[0].action.label, /when a diagram changes/);
   await assert.rejects(set(copilot, { rule: " " }), /custom cadence needs a rule/);
-  // It rides along with the next real delivery.
-  await dispatcher.drain("a", true);
-  assert.equal(mock.sends.length, 1); assert.match(mock.sends[0].text, /copilot\.mode/);
-  // Turning off drops nothing already sent and queues nothing new.
+  assert.equal(mock.sends.length, 0, "changing the copilot never messages the agent");
+  const record = (await store.read()).documents[reference.documentId] as Record<string, unknown>;
+  assert.equal("events" in record, false);
+  const router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }), copilot);
+  const listed = await router.call("canvas_list", {}, "owner") as { copilot: { enabled: boolean; cadence: string; rule: string } };
+  assert.deepEqual([listed.copilot.enabled, listed.copilot.cadence, listed.copilot.rule], [true, "custom", "a diagram changes"]);
   await set(copilot, { enabled: false });
-  assert.equal((await service.events(reference)).events.filter(event => event.status === "pending").length, 0);
+  assert.equal(((await router.call("canvas_list", {}, "owner")) as { copilot: { enabled: boolean } }).copilot.enabled, false);
 });
 
 test("attaching an existing Lienzo moves the connection to this agent; another workspace is refused", async t => {

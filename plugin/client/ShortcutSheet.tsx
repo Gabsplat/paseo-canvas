@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Button, Modal, Txt, useUI } from './ui';
+import { capabilities } from './host';
 import { tokens } from './tokens';
 import { captureKeys } from './web';
 import { eventCombo, SHORTCUT_GROUPS, type ResolvedShortcut } from './shortcuts';
@@ -40,7 +41,7 @@ export function ShortcutList({ list, chips, onAssign, onReset, editable = true }
 export function ShortcutSheet({ open, onClose, title = 'Keyboard shortcuts', intro, ...list }: React.ComponentProps<typeof ShortcutList> & { open: boolean; onClose(): void; title?: string; intro?: string }) {
   return <Modal title={title} open={open} onOpenChange={value => { if (!value) onClose(); }}><Modal.Content>
     <View style={{ gap: 12, minWidth: 0 }}>
-      <Txt kind="small" muted>{intro ?? 'Press Change and then the new keys. Your choices are saved for this Paseo host; Reset brings back the default.'}</Txt>
+      <Txt kind="small" muted>{intro ?? `Press Change and then the new keys. Your choices are saved ${capabilities.keptFor}; Reset brings back the default.`}</Txt>
       <ShortcutList {...list} />
     </View>
   </Modal.Content></Modal>;

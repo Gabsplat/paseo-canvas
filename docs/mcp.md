@@ -1,14 +1,13 @@
 # Canvas backend v1.1
 
 The frontend contracts are in `plugin/shared/model.ts` and `plugin/shared/rpc.ts`.
-Import a named RPC and call `useRpc(contract)` from `@getpaseo/plugin/client`.
+Import a named RPC and call `useRpc(contract)` from `plugin/client/host` (the plugin SDK's in Paseo, the desktop app's in `apps/desktop`; see `docs/desktop.md`).
 For example, `useRpc(readDocument)({workspaceId, documentId})` returns a `DocumentView`.
 `useRpc(mutateDocument)({workspaceId, documentId, expectedRevision, operations})`
 returns the committed view. Invalidate or poll the document query after a mutation.
 `watchDocument` takes `knownRevision` and `knownRuntimeVersion`; it returns a view only
-when either changes. `setSelection` uses its own `expectedSelectionVersion` and never sends
-an agent message. `agentAction` needs a stable client-generated `eventId`, the current document
-revision, and `{kind, label, payload, targetIds?, delivery?}`. Render its persisted status.
+when either changes. `setSelection` uses its own `expectedSelectionVersion`. No RPC sends
+anything to an agent: the canvas is one-way (see Selection and block state below).
 
 All document RPCs require `workspaceId`. Blocks use `typeId`, `title`, `data`, and optional
 `position`, `parentGroupId`, and `communication`. Groups use `blockIds`, `groupIds`,
@@ -34,7 +33,7 @@ Limits are 4 KiB/block, 256 KiB/document, finite numeric values within declared 
 32 JSON nesting levels and reserved-key rejection. Responses retain the 24 KiB tool cap.
 Blocks/groups/declarations deleted by content operations lose their runtime entries.
 Old state/1 records default to empty runtime. `DocumentView.runtime` contains the complete
-channel, and `runtimeVersion` also tracks existing selection/connection/feedback changes.
+channel, and `runtimeVersion` also tracks selection and connection changes.
 
 Documents/groups optionally declare `variables:[{name,value,min,max,label?,step?,unit?}]`
 through normal revisioned document/group updates. Each scope has at most 24 unique names,
@@ -45,14 +44,12 @@ Packs carry declarations, never runtime overrides. `controls` lists variable nam
 Renderer schemas validate JSON properties too. Registered renderer guidance appears in
 catalog list/read results and integration instructions. See [learning-blocks.md](learning-blocks.md).
 
-`agentAction.action.settled:true` requires batched delivery, a single block target and at
-most 4 KiB payload. A newer pending settled event replaces an older one with the same
-block/kind, except events already in an immutable outbound batch. Its context keeps only
-the target block and ancestor groups; ordinary feedback still stores the full snapshot.
-Settled actions capture current server revision without rejecting a stale supplied revision.
-They do not change content revision. Runtime settled helpers flush writes before reporting
-final value or visited range. The existing explicit feedback flush
-mechanism delivers batched-only events.
+What an interactive block leaves is runtime state the agent reads; nothing is sent. The client's
+`runtime.record(kind, payload, label)` writes the block's `lastInteraction: {kind, label, at, payload?}` next to the
+renderer's own state, after flushing pending runtime writes; the payload is dropped first when the block would pass
+4 KiB. Controls record the variable moved and its visited range, animated flows the playhead and explored interval,
+shaders their values and time, a reset its kind; a quiz hint and a saved form record theirs too. Quiz answers and
+form fields stay in block data. Later renderer writes keep the last interaction.
 
 ## Graph canvas
 
@@ -99,9 +96,9 @@ not live agent activity.
 
 `canvas_read` outline and full views include links and root/group layouts. An `ids` read can
 retrieve links too; links have document communication instructions because they have no own
-instruction field. Full UI RPC reads and feedback context snapshots retain graph data. Persisted
+instruction field. Full UI RPC reads retain graph data. Persisted
 `paseo-canvas-state/1` and `paseo-canvas-pack` version 1 are unchanged. Strict pre-v1.1 documents,
-templates, history snapshots and feedback contexts load with empty links and absent root layout.
+templates and history snapshots load with empty links and absent root layout.
 
 ## Intentional differences from architecture v1
 
@@ -143,12 +140,12 @@ verification are coordinator-owned and were not performed by this engineering ta
 
 MCP server name is `paseo-canvas`; plugin ID is `canvas`. The final MCP names are
 `canvas_list`, `canvas_sheet`, `canvas_create`, `canvas_example`, `canvas_read`, `canvas_apply`, `canvas_group`,
-`canvas_catalog`, `canvas_selection`, `canvas_events`, `canvas_history`, `canvas_undo`, `canvas_redo`, `canvas_runtime`.
+`canvas_catalog`, `canvas_selection`, `canvas_history`, `canvas_undo`, `canvas_redo`, `canvas_runtime`.
 Every response also carries the caller's `copilot` (see Copilot below).
 
 Storage is `$PASEO_HOME/canvas/`, falling back to `~/.paseo/canvas/`. `state.json` is the single
 atomic aggregate containing documents, up to 50 retained history entries per document, selection,
-feedback events, catalog, owner bindings and per-agent copilot state. `writer.lock` rejects a second live writer.
+block state, catalog, owner bindings and per-agent copilot state. `writer.lock` rejects a second live writer.
 `canvas-mcp.cjs` is a dependency-free generated stdio shim. `bridge.json` contains the current
 loopback port and random bearer token. Files are mode 0600; the directory is mode 0700.
 This replaces architecture v1's separate per-document snapshots and journal. A failed batch never
@@ -156,7 +153,7 @@ writes anything. A crash before the atomic rename leaves the previous complete a
 after it leaves the next complete aggregate. Content, history and catalog commit together.
 
 The MCP permission boundary is the authenticated agent's **workspace**, resolved through the
-Paseo SDK. A connection selects the feedback recipient; it is not a document ACL. A bound agent
+Paseo SDK. A connection marks the agent working on a canvas; it is not a document ACL. A bound agent
 can read/edit any document in its workspace, including documents connected to another agent.
 Unknown owners and other-workspace documents are refused. UI RPCs are trusted host plugin RPCs
 and require an explicit workspace ID. Shared catalog writes are separate from document access
@@ -164,14 +161,14 @@ and are not automatically preapproved. Every new agent (Codex, Claude, OpenCode;
 gets the tools at creation, with the copilot off. The stored injection preference is legacy and no
 longer filters agents.
 
-Connection is automatic. A document-scoped tool call makes the caller the feedback recipient: a
-read claims a document nobody receives, a write takes it over, and neither changes the document
-revision. A recipient picked in the panel is stored with `pinned: true` and is never replaced.
-A UI action on a document with no recipient goes to the most recently bound agent of that
-workspace that is still open. Archiving an agent releases its documents.
+Connection is automatic. A document-scoped tool call makes the caller the canvas's connected agent: a
+read claims a document nobody holds, a write takes it over, and neither changes the document
+revision. An agent picked in the panel is stored with `pinned: true` and is never replaced.
+Archiving an agent releases its documents. The connection says who works on a canvas (the panel shows it, sharing
+mode `agent` scopes by it); it never routes a message, because the canvas sends none.
 
 `canvas.sharing` stores a per-workspace mode. `shared` is the default. With `agent`, MCP calls
-reach a document only for its creating agent (`ownerAgentId`), its recipient, or any agent while
+reach a document only for its creating agent (`ownerAgentId`), its connected agent, or any agent while
 it has neither; `canvas_list` filters the same way. Panel RPCs always see every document.
 
 The bridge starts when the plugin loads and `agent.turn_started` rebinds the SDK handle, so open
@@ -184,9 +181,7 @@ related edits by any actor block undo. User undo is scoped to the user actor cla
 Checklist items accept strings or `{label: string, done: boolean}`. The exact public schema is
 `checklistDataSchema`. No checklist completion is synthesized from agent activity.
 
-RPC method names use the installed SDK's lowercase-only syntax. Stable TypeScript exports
-`agentAction`, `readAgentEvents`, and `flushAgentEvents` map to `canvas.agent.action`,
-`canvas.agent.events`, and `canvas.agent.events.flush`.
+RPC method names use the installed SDK's lowercase-only syntax.
 Shipped `frontend`, `learn` and `graph` pack exports are protected reference exports and cannot be imported
 as replacements. User pack exports round-trip unchanged. To fork a shipped export, use a new pack
 ID and namespace every exported type/template ID as `newPackId.entry`, updating references.
@@ -210,8 +205,6 @@ ID and namespace every exported type/template ID as `newPackId.entry`, updating 
 | `exportGroup` | `canvas.group.export` | Scoped document and group ID produce a portable template |
 | `connectAgent` | `canvas.connect` | Scoped document and revision, connection or null return view and reload requirement |
 | `agentSetup` | `canvas.agent.setup` | Workspace, agent ID and provider return a private manual MCP snippet |
-| `agentAction` | `canvas.agent.action` | Scoped document, revision, stable event ID and action persist real feedback |
-| `readAgentEvents`, `flushAgentEvents` | `canvas.agent.events`, `canvas.agent.events.flush` | Scoped document lists events or retries/flushes queued events |
 | `readInjection`, `configureInjection` | `canvas.injection.read`, `canvas.injection` | Legacy: still stored and readable, but every new agent gets the tools regardless |
 | `readCopilot`, `setCopilot` | `canvas.copilot.read`, `canvas.copilot.set` | `{workspaceId,agentId}` (+ `patch`, optional `title`) return the agent's copilot view |
 | `listCopilot` | `canvas.copilot.list` | `{agentIds}` returns `{enabled,drawing,hasTools}` per agent, for composer pills |
@@ -225,7 +218,7 @@ It is what "go to latest" flies to. A user edit afterwards does not move it.
 `DocumentView.document` contains content, workspace and revision. `connection` is separate runtime
 metadata; connecting advances document revision but undo never changes connections. `selectedIds`
 remain in the document DTO for a simple frontend while `selectionVersion` and `runtimeVersion`
-advance independently on selection/feedback changes. `setSelection` does not add content history.
+advance independently on selection and runtime changes. `setSelection` does not add content history.
 The legacy `selection.set` batch operation remains supported and counts as a content transaction;
 new UI code should use the dedicated RPC.
 
@@ -251,13 +244,28 @@ Import does not alter existing document content. Removing a pack preserves its b
 raw data; the frontend displays unknown types until the catalog definition returns. New blocks,
 changed type IDs and new pack documents must reference known types.
 
-`canvas_events` returns the latest 10 event payloads by default, with `limit` up to 20 or an
-`eventIds` filter. It includes selection and document communication captured at the event.
-Pass `ack:[eventId]` after handling the action. Acknowledgement is terminal, even if it arrives
-before the SDK send promise resolves. The UI distinguishes `pending`, `sent`, `failed`, `acked`;
-an acknowledgement means the agent acknowledged the event, not that all user goals are complete.
+## Selection and block state
 
-## Connection, delivery and reload
+The canvas is one-way. The agent draws and reads; nothing the person does on the canvas is sent to it. The person
+talks to the agent in their own chat (the Paseo conversation, or a terminal for the desktop app) and says "look at
+what I selected". The tool descriptions and system instructions tell the agent to call `canvas_selection` whenever
+the person says "this", "what I selected", "mirá esto" or similar.
+
+`canvas_selection {documentId?}` returns `{documentId, title, revision, selectionVersion, selectedAt?, ids,
+entities, hasMore?, note?}`. Without `documentId` it reads the reachable Lienzo of the workspace whose selection the
+person changed most recently (`selectedAt`, recorded when the person selects; an agent's `selection.set` does not set
+it). Each entity is `{entity, effectiveInstructions, state?}`: the block or group, its instructions most specific
+first, and for a block its runtime state, which is what its interaction left (controls and simulations, a mini app's
+`state`, the `lastInteraction` record). Strings over 2000 characters and drawing points are summarised so the result
+always fits; at most 40 entities are described. With nothing selected it says so in `note`.
+
+`canvas_read` with `ids` returns `state` for blocks that have it, and the outline marks them `hasState: true` and
+includes `selectedIds`. `canvas_runtime read` returns the same per-block state with scope values.
+
+State files written while the canvas still queued the person's actions carry `events` and `outboundBatches` on each
+document. They load with both dropped and are written back without them.
+
+## Connection and reload
 
 The create hook preserves existing MCP entries and task policies,
 excludes internal/unsupported providers, and catches failures without blocking agent creation.
@@ -278,12 +286,12 @@ Codex visibility override, and its strict provider options do not accept raw MCP
 An already-created Codex session retains its saved policy: plugin reload alone cannot remove its
 old allowlist. Create a new opted-in agent after the coordinator reloads the plugin, or remove that
 agent's Canvas preapproval entries through coordinator-owned configuration and reload the idle
-session. Connecting feedback does not change the saved tool policy.
+session. Connecting a canvas does not change the saved tool policy.
 
 For an existing agent, use `agentSetup` and merge the returned private configuration into that
 agent's provider/project configuration. The plugin never changes global provider configuration or
 reloads a session itself. Paseo 0.10.3's typed agent handle has no MCP reconfiguration method, so
-this manual setup is intentional. Connecting feedback alone does not install MCP tools.
+this manual setup is intentional. Connecting a canvas alone does not install MCP tools.
 
 The stdio shim rereads `bridge.json` on every call. Reopening the backend changes the loopback
 port and bearer token; existing shims keep working with the new endpoint and persistent owner
@@ -291,49 +299,17 @@ binding. Changed tool definitions require reloading the agent's MCP session. The
 closes its own listener, waits for pending writes and releases its writer lock; it never restarts
 the daemon. A deleted/archived agent cannot authenticate through the SDK scope check.
 
-Actions persist before delivery. With no connection they stay pending. While the connected agent
-is running/initializing, they queue and retry on `agent.turn_ended`. Immediate delivery includes
-pending batched events; batched-only events wait for `flushAgentEvents`. Failed sends remain
-failed until explicit retry. Before SDK send, one atomic store transaction prepares a private
-outbound batch with its recipient, immutable event IDs, a unique `messageId` and the exact prompt.
-If send is accepted but its local status write is lost, reopening the backend replays that same
-message ID and prompt. New arrivals form a separate batch with another message ID; completing
-the older batch can only mark its original events sent. Acknowledged events remain acknowledged.
-The private outbox adds no frontend or shared RPC fields. Unresolved batches and their events stay
-retained until delivery or acknowledgement resolves them. Events assigned to another agent are
-not silently rerouted when the connection changes.
-
-Transport acceptance and local persistence are separate operations. The inspected Paseo 0.10.3
-`MessageReceipts` implementation stores receipts keyed by agent ID and message ID and fingerprints
-the request payload. A completed receipt with the same fingerprint returns without resending;
-changing the payload under that ID rejects with `agent_request_key_conflict`. An existing pending
-receipt rejects with `agent_request_outcome_unknown`, because the provider may have accepted the
-message before receipt completion. The plugin preserves the batch on these uncertain failures,
-reports delivery as unconfirmed, and does not substitute a new ID for the old batch. New events
-have their own IDs and can be delivered separately when the agent is available.
-
-The plugin does not promise transport exactly-once delivery or that SDK acceptance means the agent
-finished processing an event. Replay assumes the receiver honors its receipt contract while the
-receipt remains available. The regression simulates a receiver with completed-ID suppression,
-loses the local completion write, then reopens with newer events waiting. It verifies byte-identical
-replay and separate delivery of the new events. If receipts are lost or a receiver accepts a repeat,
-the repeated prompt still contains only the original batch. Explicit event acknowledgements remain
-the handling signal. There is no fake activity or completion output.
-
 ## Limits and errors
 
 Documents and packs are limited to 1 MiB; a pack has at most 200 entries. Each document has up to
 1,000 blocks, 200 groups, 2,000 links and four group levels. Batches contain 1..200 operations. JSON nesting
 is limited to 32 levels, and prototype-mutating keys are rejected. History retains up to 50
-transactions and 8 MiB per document. Total atomic storage is capped at 64 MiB. There are at most
-100 pending/failed and 100 recent sent/acked events per document; terminal events belonging to an
-unresolved outbound batch remain retained until that batch resolves.
+transactions and 8 MiB per document. Total atomic storage is capped at 64 MiB.
 
 The listener binds only `127.0.0.1` on an ephemeral port, requires a random bearer token and a
 bound owner token, refuses browser Origin requests, and caps request bodies at 1 MiB. No host
 config, Tailscale mapping, public endpoint or file-serving route is added. Tool responses have a
-24 KiB limit; large reads return a clear truncation hint. Feedback prompts have an 8 KiB cap and
-refer to event IDs when payloads do not fit. UI RPC read/export can retrieve full content.
+24 KiB limit; large reads return a clear truncation hint. UI RPC read/export can retrieve full content.
 
 MCP errors have stable `code`, `message`, `details`. Revision conflicts use HTTP 409, other-workspace
 requests 403, missing objects 404, invalid input 400, group invariants/unknown types 422, and size
@@ -386,8 +362,8 @@ custom types that reuse a whiteboard renderer. Rejected data rolls back the tran
 revision, history and disk write. Unrelated blocks are not normalized during validation.
 Packs keep the SVG bytes and attribution locally and carry drawing geometry as block data.
 Undo/redo and revision conflicts use the existing block IDs and snapshots.
-Explicit feedback target summaries include drawing stroke counts and extent, or SVG
-caption/source; they omit SVG markup and drawing points. Selection creates no agent action.
+`canvas_selection` summarises drawings (stroke count, extent, author, anchor) and never returns their points;
+`canvas_read` ids returns everything. Selecting creates nothing for the agent; it reads the selection when asked.
 
 ## Safe static SVG
 
@@ -429,9 +405,10 @@ server entry through the actual installed SDK. They cover atomic rollback, persi
 process exit, stale writer recovery, optimistic concurrent conflicts, selection versions,
 group cycles/depth/parent consistency, omitted-patch defaults, subtree movement/duplication/export,
 per-agent undo and related-edit blocking, checklists/media URL validation, retired renderer names in stored state, pack import
-dry-run/collision/roundtrip, missing types, truthful large-write acknowledgements, feedback queues
-and terminal acknowledgement, plus immutable outbound batch replay after accepted-send/lost-mark
-recovery with new event arrivals. The official MCP SDK stdio client verifies real initialize/list/call,
+dry-run/collision/roundtrip, missing types, truthful large-write acknowledgements, state files with the retired event
+queue loading clean, the selection and block state read through MCP, mini app state persisted across a restart, the
+retired extension permission, and that no RPC sends to an agent (`tests/one-way.test.ts`, `tests/host.test.ts`).
+The official MCP SDK stdio client verifies real initialize/list/call,
 shared RPC/MCP state, auth/scope/409 behavior and bridge/store reopen with the existing client.
 Tests use temporary private directories and loopback listeners; they do not launch a GUI or
 touch the daemon's installed plugin state.
@@ -472,12 +449,14 @@ subtree or template is copied.
 
 `html` holds one self-contained page: `data: { html (1..200000 characters), height? (80..1600) }`. Any HTML,
 CSS and JavaScript is allowed; there are no preset components. It runs sandboxed without access to the
-canvas page; scripts and network requests are allowed. The injected `lienzo` object is the only channel:
-`lienzo.send(kind, payload, options)` arrives as a canvas event of kind `html.event` with
-`payload: { event, data }`. It waits with other events until the agent next hears from the canvas, without
-interrupting it; `{ wake: true }` delivers it at once with whatever is waiting (at most once every 3 s per mini app),
-for buttons where the person asks the agent to react now; `lienzo.onContext(fn)` gives `{ theme: { dark, colors }, block, document,
-selection }`; `lienzo.select(id)`; `lienzo.resize(height)`; `lienzo.onFrame(fn)` gives `{ x, y, width, height, others }` in
+canvas page; scripts and network requests are allowed. The injected `lienzo` object is the only channel, and it
+never reaches the agent. `lienzo.setState(value)` stores plain JSON of at most 3000 characters on the block (null
+clears it) and resolves once saved; it is runtime state `{ state: value }`, so the agent reads it as `state.state`
+with `canvas_selection` or `canvas_read` ids, the outline marks the block `hasState`, and it survives restarts.
+`lienzo.state` (also `context.state`) gives the stored value back so the page restores itself. Pages written before
+setState may still call `lienzo.send(kind, payload)`: it only records the call as the block's `lastInteraction`
+(payload up to 1000 characters, otherwise dropped). `lienzo.onContext(fn)` gives `{ theme: { dark, colors }, block,
+document, state, selection }`; `lienzo.select(id)`; `lienzo.resize(height)`; `lienzo.onFrame(fn)` gives `{ x, y, width, height, others }` in
 screen pixels, this window and the other mini apps, on every move. Update the page with `block.update` on
 `data.html`. For projects with several files or a server, run them and use a `preview` block with `data.url`.
 
@@ -504,11 +483,8 @@ use, `step` after each step worth showing — default, `task` once at the end of
 - `canvas.copilot.set {workspaceId, agentId, patch, title?}` verifies the agent belongs to the
   workspace. Turning on without a `documentId` creates the conversation's Lienzo (titled `title`) and
   connects it to the agent; attaching an existing `documentId` moves that document's connection to the
-  agent. Turning on, or changing cadence, rule or Lienzo while on, queues one batched `copilot.mode`
-  canvas event on that Lienzo with a one-line label ("Lienzo copilot is on: draw after each step worth
-  showing in Lienzo …") and payload `{enabled, cadence, rule, documentId}`. It replaces an older notice
-  that has not left yet and starts no turn: it rides along with the next feedback delivery (an immediate
-  UI action or a flush) and shows in `canvas_events`. Turning off drops a pending notice.
+  agent. Nothing is sent to the agent: it learns the mode from the `copilot` field of its next canvas
+  tool response.
 - `canvas.copilot.list {agentIds}` is the cheap status for composer pills.
 
 Every successful canvas MCP response, truncated acknowledgements included, carries
@@ -519,13 +495,14 @@ The client registers a "Lienzo" composer pill per agent (`plugin/client/copilot/
 `kind`, `ids`) in `copilot/intent.ts`; the panel takes it with `takeCanvasIntent(workspaceId)` and
 listens with `onCanvasIntent`. Intents expire after 60 s.
 
-Reminder: on `agent.turn_ended`, after feedback delivery, one short follow-up is sent through
+Reminder (optional, off by default): on `agent.turn_ended`, one short follow-up is sent through
 `agents.ref(id).send` only when the copilot is on, `remind` is true, the cadence is `step` or `task`,
 the turn completed, its timeline has a tool call that is not a Lienzo tool (Claude
 `mcp__paseo-canvas__canvas_*`, `paseo-canvas.canvas_*` or a bare `canvas_*` name; a Lienzo call seen
 by the bridge during the turn also counts as drawing), and the agent is not busy with another turn
 (a send would interrupt it). Never for `thinking` or `custom`, and never twice in a row: the turn after
-a reminder never gets one.
+a reminder never gets one. This is Paseo nudging the agent to draw; it is the only message the plugin sends to an
+agent, and nothing on the canvas triggers it.
 
 ### Hojas
 

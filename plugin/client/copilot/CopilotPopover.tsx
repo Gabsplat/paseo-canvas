@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, ScrollView } from '@getpaseo/plugin/client/react-native';
-import type { PluginButtonContentProps, PluginHostProps } from '@getpaseo/plugin/client';
+import { Icon, ScrollView } from '../host';
+import type { PluginButtonContentProps, HostProps } from '../host';
 import type { z } from 'zod';
 import type { CopilotCadence } from '../../shared/model';
 import type { copilotViewSchema } from '../../shared/rpc';
@@ -21,7 +21,7 @@ export type CopilotApi = {
   changed(view: CopilotView): void;
 };
 
-type Colors = PluginHostProps['theme']['colors'];
+type Colors = HostProps['theme']['colors'];
 export type CopilotPanelProps = {
   colors: Colors; view: CopilotView | null; documents: DocumentSummary[]; now: number;
   loading: boolean; busy: boolean; error: string; created: string;

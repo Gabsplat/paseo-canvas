@@ -6,3 +6,5 @@ test-results/
 playwright-report/
 *.log
 .local-state/
+apps/desktop/release/
+apps/desktop/build/background.tiff

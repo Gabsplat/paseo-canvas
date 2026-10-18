@@ -9,7 +9,6 @@ import { CanvasError } from '../plugin/shared/errors';
 import { CanvasService } from '../plugin/server/service';
 import { CanvasStore } from '../plugin/server/store';
 import { ToolRouter } from '../plugin/server/tools';
-import { feedbackPrompt } from '../plugin/server/feedback';
 import { setup, workspaceId, mutation } from './helpers';
 
 const svg = (content: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${content}</svg>`;
@@ -300,11 +299,12 @@ test('MCP create/apply/read/group/history share canonical persistent whiteboard 
   const list = await router.call('canvas_catalog', { action: 'list' }, 'owner') as { blockTypes: { id: string; guidance: string }[] };
   assert.equal(list.blockTypes.filter(t => t.id.startsWith('wb-')).length, 4);
   assert.match(list.blockTypes.find(t => t.id === 'wb-draw')!.guidance, /petición explícita/);
-  const event = await service.action({ documentId: 'mcp-whiteboard', workspaceId, expectedRevision: 4, eventId: 'ask-about-objects', action: { kind: 'ask', label: 'Explain', payload: {}, targetIds: ['icon', 'draw'], delivery: 'immediate' } });
-  const prompt = feedbackPrompt([event]);
-  assert.match(prompt, /"summary":\{"caption":"MCP icon","source":"tabler:server"\}/);
-  assert.match(prompt, /"strokes":1,"extent":\{"width":100,"height":100\}/);
-  assert.doesNotMatch(prompt, /"points"|<svg/);
+  const current = await service.read({ documentId: 'mcp-whiteboard', workspaceId });
+  await service.selection({ documentId: 'mcp-whiteboard', workspaceId, expectedSelectionVersion: current.selectionVersion, ids: ['icon', 'draw'] });
+  const selected = JSON.stringify(await router.call('canvas_selection', { documentId: 'mcp-whiteboard' }, 'owner'));
+  assert.match(selected, /"caption":"MCP icon","source":"tabler:server"/);
+  assert.match(selected, /"extent":\{"width":100,"height":100\}/); assert.match(selected, /"strokes":\{"count":1/);
+  assert.doesNotMatch(selected, /"points"/);
 });
 
 test('a shape keeps a fill colour separate from its outline, through the real service', async t => {

@@ -46,7 +46,7 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     return [u.name, Object.hasOwn(scope.variables, u.name) ? scope.get(u.name) : live.current.state.values[u.name] ?? u.value];
   }));
   const settle = (kind: string, payload: RendererProps['block']['data'], label: string) => {
-    setEventError(''); void live.current.props.runtime.settle(kind, payload, label).catch(() => setEventError('The setting could not be saved. Check the connection and try again.'));
+    setEventError(''); void live.current.props.runtime.record(kind, payload, label).catch(() => setEventError('The setting could not be saved. Check the connection and try again.'));
   };
   const pause = (reason: string) => {
     if (!clock.current.playing) return;
@@ -144,10 +144,6 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
         else { clock.current.playing = true; clock.current.last = null; clock.current.visited = [clock.current.seconds, clock.current.seconds]; setPlaying(true); }
       }} />}
       <Button label="Reset" small variant="ghost" disabled={readOnly} onPress={reset} />
-      <Button label="Ask for a hint" small variant="ghost" disabled={readOnly} onPress={() => {
-        if (live.current.props.readOnly) return;
-        settle('glsl-shader.hint', { request: 'Give a hint about how the parameters change the image, without giving the answer away.', values: valuesNow(), time: clock.current.seconds }, 'Ask for a hint');
-      }} />
     </View>
     {!!eventError && <Txt kind="small" style={{ color: ui.c.statusDanger }}>{eventError}</Txt>}
   </View>;

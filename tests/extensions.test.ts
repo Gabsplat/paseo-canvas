@@ -3,7 +3,7 @@ import test from "node:test";
 import vm from "node:vm";
 import { catalogStorageSchema, catalogView } from "../plugin/server/catalog";
 import { ToolRouter } from "../plugin/server/tools";
-import { EXTENSION_GUIDE, EXTENSION_RUNTIME, builtinExtensions, extensionDocument, extensionEvent } from "../plugin/shared/extensions";
+import { EXTENSION_GUIDE, EXTENSION_RUNTIME, builtinExtensions, extensionDocument } from "../plugin/shared/extensions";
 import { extensionSchema, packSchema } from "../plugin/shared/model";
 import { setup, workspaceId } from "./helpers";
 import { readFile, writeFile } from "node:fs/promises";
@@ -82,7 +82,7 @@ test("the assistant saves and removes an extension through MCP and is told the w
   const listed = await router.call("canvas_catalog", { action: "list" }, "owner") as { revision: number; extensions: { id: string; kind: string; source: string }[]; extensionGuide: string };
   assert.ok(listed.extensions.some(e => e.id === "ejemplos.reemplazar" && e.kind === "tool"));
   assert.ok(listed.extensions.every(e => e.kind === "tool") && !/kind "view"|Cambiar vista|mosaico/.test(listed.extensionGuide), "views are gone from the catalog and the guide");
-  for (const word of ["lienzo.onContext", "lienzo.select", "lienzo.edit", "lienzo.ask", "lienzo.kit.stage", "save_extension", "api: 1"]) assert.ok(listed.extensionGuide.includes(word), word);
+  for (const word of ["lienzo.onContext", "lienzo.select", "lienzo.edit", "lienzo.kit.stage", "save_extension", "api: 1"]) assert.ok(listed.extensionGuide.includes(word), word);
   assert.equal(listed.extensionGuide, EXTENSION_GUIDE);
   assert.deepEqual(await router.call("canvas_catalog", { action: "save_extension", expectedRevision: listed.revision, extension: { ...view("del-asistente"), kind: "tool", permissions: ["edit"] } }, "owner"), { revision: listed.revision + 1, committed: true, ...off });
   const read = await router.call("canvas_catalog", { action: "read", id: "del-asistente" }, "owner") as { entry: { html: string; source: string; granted: boolean }; guidance: string };
@@ -101,7 +101,7 @@ test("API 1 inside the frame: context, calls that resolve or reject, and nothing
   const sent: { type: string; id?: number; method?: string; args?: Record<string, unknown> }[] = [], listeners: ((e: { source: unknown; data: unknown }) => void)[] = [];
   const parent = { postMessage: (m: never) => { sent.push(m); } }, window = { parent, addEventListener: (type: string, f: never) => { if (type === "message") listeners.push(f); } } as Record<string, unknown>;
   vm.runInNewContext(EXTENSION_RUNTIME, { window, parent, console, Promise });
-  const lienzo = window.lienzo as { api: number; context: unknown; onContext(f: (c: unknown) => void): () => void; select(ids: string[]): Promise<unknown>; edit(ops: unknown[], label?: string): Promise<unknown>; ask(kind: string, payload: unknown): Promise<unknown>; open(id: string): Promise<unknown>; close(): Promise<unknown>; kit: { stage: unknown; card: unknown } };
+  const lienzo = window.lienzo as { api: number; context: unknown; onContext(f: (c: unknown) => void): () => void; select(ids: string[]): Promise<unknown>; edit(ops: unknown[], label?: string): Promise<unknown>; ask?: unknown; open(id: string): Promise<unknown>; close(): Promise<unknown>; kit: { stage: unknown; card: unknown } };
   assert.deepEqual([lienzo.api, sent[0].type, typeof lienzo.kit.stage, typeof lienzo.kit.card], [1, "ready", "function", "function"]);
   const seen: unknown[] = []; lienzo.onContext(c => seen.push(c));
   const deliver = (data: unknown, source: unknown = parent) => listeners.forEach(f => f({ source, data }));
@@ -114,10 +114,24 @@ test("API 1 inside the frame: context, calls that resolve or reject, and nothing
   assert.deepEqual(plain([selectCall.type, selectCall.method, selectCall.args]), ["call", "select", { ids: ["a", "b"] }]); assert.deepEqual(plain([editCall.method, editCall.args]), ["edit", { operations: [{ type: "block.delete", id: "a" }], label: "Borrar" }]);
   deliver({ lienzo: 1, type: "result", id: selectCall.id, ok: true, value: { ids: ["a"] } }); deliver({ lienzo: 1, type: "result", id: editCall.id, ok: false, error: "Sin permiso" });
   assert.deepEqual(await selected, { ids: ["a"] }); await assert.rejects(edited, /Sin permiso/);
-  for (const [name, call] of [["ask", () => lienzo.ask("hecho", { n: 1 })], ["open", () => lienzo.open("a")], ["close", () => lienzo.close()]] as const) { void call().catch(() => {}); assert.equal(sent.at(-1)!.method, name); }
+  assert.equal(lienzo.ask, undefined, "lienzo.ask is gone: an extension cannot message the agent");
+  for (const [name, call] of [["open", () => lienzo.open("a")], ["close", () => lienzo.close()]] as const) { void call().catch(() => {}); assert.equal(sent.at(-1)!.method, name); }
 });
-test("what an extension may ask the assistant is a short name and bounded JSON", () => {
-  assert.deepEqual(extensionEvent("hecho", { n: 1 }), { kind: "hecho", payload: { n: 1 } }); assert.deepEqual(extensionEvent("vacio", undefined), { kind: "vacio", payload: null });
-  for (const bad of [["", {}], ["con espacio", {}], [3, {}], ["grande", "x".repeat(9000)]] as const) assert.equal(extensionEvent(bad[0], bad[1]), null);
-  const loop: Record<string, unknown> = {}; loop.self = loop; assert.equal(extensionEvent("ciclo", loop), null);
+test("the agent permission is gone: refused for a new extension, dropped from stored and imported ones", async t => {
+  assert.throws(() => extensionSchema.parse(view("pide", "<p/>", ["agent"])));
+  assert.ok(!EXTENSION_GUIDE.includes("lienzo.ask") && !EXTENSION_GUIDE.includes('"agent"'));
+  // An imported pack written before keeps loading, without the permission.
+  assert.deepEqual(packSchema.parse(pack([view("ajeno.vieja", "<p/>", ["edit", "agent", "network"])])).extensions[0].permissions, ["edit", "network"]);
+  const { service, store, directory } = await setup(t);
+  const result = await service.importPack({ expectedRevision: 0, pack: pack([view("ajeno.pide", "<p/>", ["agent"])]), replace: false, dryRun: false });
+  assert.deepEqual(result.catalog.extensions.find(e => e.id === "ajeno.pide")!.permissions, []);
+  const router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }));
+  await assert.rejects(router.call("canvas_catalog", { action: "save_extension", expectedRevision: result.catalog.revision, extension: { ...view("del-asistente"), permissions: ["agent"] } }, "owner"));
+  // A stored local extension that held it loads without it.
+  await store.close();
+  const file = JSON.parse(await readFile(join(directory, "state.json"), "utf8"));
+  file.catalog.localExtensions = [{ ...view("guardada", "<p/>", ["edit", "agent"]) }];
+  await writeFile(join(directory, "state.json"), JSON.stringify(file));
+  const reopened = new CanvasStore(directory); t.after(() => reopened.close());
+  assert.deepEqual((await new CanvasService(reopened).catalog()).extensions.find(e => e.id === "guardada")!.permissions, ["edit"]);
 });

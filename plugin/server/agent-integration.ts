@@ -1,11 +1,12 @@
-import type { PluginBeforeRequests, PluginHandlerContext } from "@getpaseo/plugin/server";
-import { CanvasError } from "../shared/errors";
+import type { PluginBeforeRequests } from "@getpaseo/plugin/server";
+import { AgentGateway, type HostApi } from "./host";
 import type { CanvasBridge } from "./bridge";
-import type { CanvasService } from "./service";
 import { integrationInstructions, preapprovedTools } from "./tools";
 
 export const ownerEnvironment = "PASEO_CANVAS_OWNER";
-export type Paseo = PluginHandlerContext["paseo"];
+// Paseo-only: tool injection at agent creation and the stdio bridge entry. The gateway lives behind the host boundary.
+export { AgentGateway };
+export type Paseo = HostApi;
 type Creation = PluginBeforeRequests["agent.create"];
 export function managedMcp(bridge: Pick<CanvasBridge, "script" | "endpoint">, owner: string) {
   // The packaged desktop daemon runs on Electron's binary and Paseo strips ELECTRON_RUN_AS_NODE from agent
@@ -31,29 +32,6 @@ export function injectAgent(request: Creation, bridge: Pick<CanvasBridge, "scrip
     },
   };
 }
-export class AgentGateway {
-  private paseo: Paseo | null = null;
-  constructor(readonly service: CanvasService) {}
-  bind(paseo: Paseo) { this.paseo = paseo; }
-  api(): Paseo {
-    if (!this.paseo) throw new CanvasError("UNAVAILABLE", "Open the canvas panel or retry after the agent session opens.");
-    return this.paseo;
-  }
-  async verify(agentId: string, workspaceId?: string) {
-    const agent = this.api().agents.ref(agentId);
-    const refreshed = await agent.refresh();
-    if (!refreshed || agent.archivedAt || !agent.workspaceId) throw new CanvasError("FORBIDDEN", "Agent is unavailable or has no active workspace.");
-    if (workspaceId && agent.workspaceId !== workspaceId) throw new CanvasError("FORBIDDEN", "Agent belongs to another workspace.");
-    return agent;
-  }
-  async scope(owner: string) {
-    const agentId = await this.service.owner(owner);
-    if (!agentId) throw new CanvasError("FORBIDDEN", "Unknown/unbound canvas owner. Use canvas.agent.setup and reload the idle agent.");
-    const agent = await this.verify(agentId);
-    return { agentId, workspaceId: agent.workspaceId! };
-  }
-}
-
 /**
  * Every new agent gets the Lienzo tools and the short copilot instructions, with the copilot off: whether it draws is
  * decided per conversation afterwards (CopilotService). Hooks fail open. The stored injection preference is legacy and

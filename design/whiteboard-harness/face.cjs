@@ -1,7 +1,7 @@
 // The new face (docs/redesign-2026-10.md, stage 1), example data only: toolbar tools and keys, tooltips, the +
-// catalog with search and pins, the right panel and selection bar, ⌘K running a tool and asking the agent, the ?
-// sheet, reassigning a key, the empty-canvas mate and the kettle. Run with no argument (dark) or `papel` (light).
-// Nothing here reaches an assistant: "Ask the agent" lands in the QA host's simulated action log.
+// catalog with search and pins, the right panel and selection bar, ⌘K running a tool, the ? sheet, reassigning a
+// key, the empty-canvas mate and the kettle. Run with no argument (dark) or `papel` (light).
+// The canvas is one-way: there is no composer, no "Ask the agent", and nothing reaches an assistant.
 const assert=require('node:assert/strict');const fs=require('node:fs');
 (async()=>{
  const theme=process.argv[2]||'oscuro',out='/tmp/lienzo-face-'+(theme==='papel'?'light-':'dark-');
@@ -35,10 +35,15 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const labels=await ev(`[...document.querySelectorAll('[aria-label]')].map(e=>e.getAttribute('aria-label')).join('|')`);
  for(const gone of ['Cambiar vista','Change view','Vistas','Foco','Lecturas','Matriz','Herramientas propias','Ver como lista'])assert.ok(!labels.includes(gone),'no view switcher: '+gone);
  assert.ok(!(await has('#lienzo-interactive-views')),'no view menu');
- // 2. The toolbar: order, keys, and the composer below it.
+ // 2. The toolbar: order, keys, and on the bottom edge with no composer.
  const order=await ev(`[...document.querySelectorAll('[id^="lienzo-tool-"]')].map(e=>e.id.slice(12))`);
  assert.deepEqual(order,['select','hand','pencil','shape','text','arrow','eraser','marco','ventana','add']);
- const bar=await rect('#lienzo-toolbar'),composer=await rect('#lienzo-composer');assert.ok(bar.y+bar.h<=composer.y,'the toolbar sits above the composer');assert.equal(Math.round(bar.h),44,'44 px toolbar');
+ const bar=await rect('#lienzo-toolbar');assert.ok(!(await has('#lienzo-composer')),'no composer');assert.equal(Math.round(bar.h),44,'44 px toolbar');
+ assert.ok(Math.abs(800-(bar.y+bar.h)-12)<=2,'the toolbar sits 12 px from the bottom edge: '+JSON.stringify(bar));
+ {const zoom=await rect('[aria-label="Fit all"]');if(zoom)assert.ok(Math.abs((zoom.y+zoom.h/2)-(bar.y+bar.h/2))<=14,'level with the zoom control');}
+ {const all=await ev(`document.body.innerText+'|'+[...document.querySelectorAll('[aria-label],[placeholder]')].map(e=>e.getAttribute('aria-label')+' '+e.getAttribute('placeholder')).join('|')`);
+  for(const gone of ['Write to the agent','Send to the agent','actions queued','Ask the agent','Received by the agent','Queued'])assert.ok(!all.includes(gone),'gone: '+gone);}
+ await shot('bottom');
  assert.ok(Math.abs(bar.x+bar.w/2-640)<2,'centred');
  await background();
  for(const [k,code,id] of [['p','KeyP','pencil'],['h','KeyH','hand'],['r','KeyR','shape'],['a','KeyA','arrow'],['t','KeyT','text'],['e','KeyE','eraser'],['o','KeyO','shape'],['v','KeyV','select']]){await key(k,code);await wait(`document.querySelector('#lienzo-tool-${id}')?.getAttribute('aria-pressed')==='true'`,k+' → '+id);}
@@ -65,22 +70,22 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  // 5. Selection: the bar over it and Properties on the right.
  await click('#lienzo-entity-note');await wait('!!document.querySelector("#lienzo-right-panel")','the right panel appears on selection');await wait('!!document.querySelector("#lienzo-interactive-selection-toolbar")');
  const barLabels=await ev(`[...document.querySelectorAll('#lienzo-interactive-selection-toolbar [aria-label]')].map(e=>e.getAttribute('aria-label'))`);
- assert.deepEqual(barLabels,['Wrap in a Marco','Duplicate','Ask the agent','Delete']);
+ assert.deepEqual(barLabels,['Wrap in a Marco','Duplicate','Delete']);
+ assert.ok(!/Ask the agent/.test(await text('#lienzo-right-panel')),'Properties has no Ask the agent');
  const panel=await rect('#lienzo-right-panel');assert.equal(Math.round(panel.w),300);assert.equal(Math.round(1280-panel.x-panel.w),12);
  assert.match(await text('#lienzo-right-panel'),/Properties[\s\S]*Content[\s\S]*Instructions for the agent[\s\S]*Actions/);
  await shot('selection');
  await key('\\','Backslash',2);await wait('!document.querySelector("#lienzo-right-panel")','⌘\\ hides it');await key('\\','Backslash',2);await wait('!!document.querySelector("#lienzo-right-panel")','and shows it');
- // 6. ⌘K runs a tool, and "Ask the agent" goes through the real send path with the selection.
+ // 6. ⌘K runs a tool; a free query offers nothing that sends to the agent.
  await key('k','KeyK',2);await wait('!!document.querySelector("#lienzo-palette")');assert.equal(await ev('document.activeElement?.id'),'lienzo-palette-input');
  await shot('palette-recent');
  await type('pencil');await pause(200);await key('Enter','Enter',0,'\r');await wait('!document.querySelector("#lienzo-palette")');await wait(`document.querySelector('#lienzo-tool-pencil')?.getAttribute('aria-pressed')==='true'`,'⌘K ran Pencil');
  await key('Escape','Escape');await click('#lienzo-entity-note');
  const before=await ev('__panelQA.actions.length');
- await key('k','KeyK',2);await wait('!!document.querySelector("#lienzo-palette")');await type('Explain this note');await wait('!!document.querySelector("#lienzo-palette-item-ask")');
- assert.match(await text('#lienzo-palette'),/ASK THE AGENT[\s\S]*Ask the agent: Explain this note/i);
- await shot('palette-ask');
- await click('#lienzo-palette-item-ask');await wait('__panelQA.actions.length>'+before,'the request was recorded');
- const asked=await ev('JSON.stringify(__panelQA.actions.at(-1))');assert.ok(asked.includes('"kind":"selection.send"')&&asked.includes('Explain this note')&&asked.includes('"targetIds":["note"]'),asked);
+ await key('k','KeyK',2);await wait('!!document.querySelector("#lienzo-palette")');await type('Explain this note');await pause(300);
+ assert.ok(!(await has('#lienzo-palette-item-ask')),'no Ask the agent item');assert.doesNotMatch(await text('#lienzo-palette'),/ASK THE AGENT/i);
+ await key('Escape','Escape');await pause(200);
+ assert.equal(await ev('__panelQA.actions.length'),before,'nothing was sent');assert.ok(!(await ev('__panelQA.errors.some(e=>/agent\\.(action|events)/.test(e.name))')),'no retired RPC was called');
  await key('k','KeyK',2);await wait('!!document.querySelector("#lienzo-palette")');assert.match(await text('#lienzo-palette'),/RECENT[\s\S]*Pencil/i,'Recent remembers');await key('Escape','Escape');
  // 7. The ? sheet.
  await background();await key('?','Slash',8,'?');await wait('!!document.querySelector("#lienzo-shortcuts")');{const sheet=await text('#lienzo-shortcuts');assert.ok(sheet.includes('Follow the agent')&&sheet.includes('Previous Hoja'),sheet.slice(0,200));}await shot('sheet');await key('Escape','Escape');await pause(300);
@@ -97,6 +102,6 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await ev(`(()=>{const d=__panelQA.doc();__panelQA.seed([...d.links.map(l=>({type:'link.delete',id:l.id})),...d.blocks.filter(b=>!b.parentGroupId).map(b=>({type:'block.delete',id:b.id})),...d.groups.filter(g=>!g.parentGroupId).map(g=>({type:'group.delete',id:g.id}))]);})()`);
  await wait('!!document.querySelector("#lienzo-empty-mate")','the empty canvas shows the mate');assert.match(await text('#lienzo-empty-mate'),/Empty\. Pour yourself a mate\./);await pause(1200);await shot('empty');
  assert.deepEqual(uncaught.map(u=>u.exception?.description||u.text),[],'something threw');assert.ok(!/Plugin failed|Minified React/.test(await ev('document.body.innerText')));
- console.log('PASS face ('+theme+'): toolbar and keys, tooltips, + catalog with pins, Properties, selection bar, ⌘K tool and ask, ? sheet, reassigned key, kettle, mate');
+ console.log('PASS face ('+theme+'): toolbar on the bottom edge and keys, no composer, tooltips, + catalog with pins, Properties, selection bar without ask, ⌘K tool and no ask, ? sheet, reassigned key, kettle, mate');
  }finally{await call('Emulation.clearDeviceMetricsOverride').catch(()=>{});ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

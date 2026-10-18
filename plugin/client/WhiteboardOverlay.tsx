@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { View } from 'react-native';
-import { TextInput } from '@getpaseo/plugin/client/react-native';
+import { TextInput } from './host';
 import { WhiteboardContent } from './WhiteboardContent';
 import { Button, Txt, useUI } from './ui';
 import { focusInput, attachEditorKeys } from './web';

@@ -1,0 +1,49 @@
+# Unsigned unless the release workflow finds signing secrets (docs/desktop.md). No auto-update yet.
+appId: dev.gabsplat.lienzo
+productName: Lienzo
+copyright: Copyright © 2026 gabsplat
+directories:
+  output: release
+  buildResources: build
+# Everything the app runs is bundled into dist/ by scripts/bundle.mjs; no node_modules ship.
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - package.json
+asar: true
+publish: null
+linux:
+  target: [AppImage]
+  category: Graphics
+  syncDesktopName: true
+  synopsis: A canvas you and your agent draw explanations on.
+  maintainer: gabsplat <gabsplat@users.noreply.github.com>
+  icon: build/icon.png
+  artifactName: Lienzo-${version}-${arch}.${ext}
+mac:
+  target: [dmg, zip]
+  category: public.app-category.productivity
+  hardenedRuntime: false
+  artifactName: Lienzo-${version}-mac-${arch}.${ext}
+  icon: build/icon.png
+# The installer window: the canvas paper, the app on the left, Applications on the right, a drawn arrow between.
+# background.tiff holds the 1x and 2x images; build:mac makes it with tiffutil from build/background*.png.
+win:
+  target: [{ target: nsis, arch: [x64, arm64] }]
+  icon: build/icon.png
+  artifactName: Lienzo-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Lienzo
+dmg:
+  title: Lienzo
+  background: build/background.tiff
+  iconSize: 128
+  iconTextSize: 13
+  window: { width: 660, height: 400 }
+  contents:
+    - { x: 165, y: 220, type: file }
+    - { x: 495, y: 220, type: link, path: /Applications }

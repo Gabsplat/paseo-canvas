@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon } from '@getpaseo/plugin/client/react-native';
+import { Icon } from '../host';
 import { fileTreeRows, fileTreeTargets, visibleFileTreeRows, type FileTreeData } from '../../shared/renderers/file-tree';
 import { withAlpha } from '../color';
 import { Txt } from '../ui';

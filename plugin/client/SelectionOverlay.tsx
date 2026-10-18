@@ -1,6 +1,6 @@
 import React, { createContext, useEffect, useRef, useState } from 'react';
 import { Animated, View } from 'react-native';
-import { TextInput } from '@getpaseo/plugin/client/react-native';
+import { TextInput } from './host';
 import { Button, Txt, useUI } from './ui';
 import { attachEditorKeys, focusInput } from './web';
 import { toolbarPosition } from './panel-actions';

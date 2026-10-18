@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon, ScrollView } from '@getpaseo/plugin/client/react-native';
+import { Icon, ScrollView } from './host';
 import { onCanvasIntent, takeCanvasIntent, type CanvasIntent } from './copilot/intent';
 import type { Point, Rect } from './logic';
 import { currentHoja, hojasOf, type Hoja } from './hojas-model';
