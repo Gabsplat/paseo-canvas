@@ -1,0 +1,25 @@
+{
+  "format": "paseo-canvas-pack",
+  "version": 1,
+  "id": "title-case",
+  "name": "Title Case",
+  "description": "Gives the selected cards titles in Title Case.",
+  "blockTypes": [],
+  "templates": [],
+  "documents": [],
+  "extensions": [
+    {
+      "id": "title-case.title-case",
+      "kind": "tool",
+      "api": 1,
+      "name": "Title Case",
+      "description": "Gives the selected cards titles in Title Case.",
+      "icon": "CaseSensitive",
+      "permissions": [
+        "edit"
+      ],
+      "html": "<style>body{margin:0;padding:12px;font:13px system-ui,sans-serif}button{font:inherit;padding:6px 12px;border-radius:6px;border:1px solid;cursor:pointer}button:disabled{opacity:.5;cursor:default}</style>\n<p id=\"info\">Select some cards.</p>\n<button id=\"go\" disabled>Title Case the titles</button>\n<script>\nvar ctx = null, info = document.getElementById('info'), go = document.getElementById('go');\nfunction chosen() { return ctx ? ctx.document.blocks.filter(function (b) { return ctx.selection.indexOf(b.id) >= 0; }) : []; }\nfunction titleCase(t) { return t.replace(/\\b\\w/g, function (c) { return c.toUpperCase(); }); }\nlienzo.onContext(function (c) {\n  ctx = c; var k = c.theme.colors, n = chosen().length;\n  document.body.style.background = k.surface; document.body.style.color = k.foreground;\n  go.style.background = k.accent; go.style.color = k.background; go.style.borderColor = k.accent;\n  info.textContent = n ? n + ' selected' : 'Select some cards.';\n  go.disabled = !n;\n});\ngo.onclick = function () {\n  var ops = chosen().slice(0, 200).map(function (b) { return { type: 'block.update', id: b.id, patch: { title: titleCase(b.title) } }; });\n  lienzo.edit(ops, 'Title Case').then(function () { info.textContent = 'Done. Undo brings the old titles back.'; }, function (e) { info.textContent = e.message; });\n};\n</script>",
+      "docs": "Title Case gives every selected card a title in Title Case, in one step you can undo.\n\n## Use it\n\n1. Select the cards to tidy.\n2. Open **Title Case** from the + catalog (Extensions).\n3. Press **Title Case the titles**.\n\n> It needs the \"Changes the canvas\" permission. Undo (⌘Z) brings the old titles back."
+    }
+  ]
+}

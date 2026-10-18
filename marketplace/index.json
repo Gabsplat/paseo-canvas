@@ -1,0 +1,29 @@
+{
+  "format": "lienzo-extension-index",
+  "version": 1,
+  "repository": "Gabsplat/lienzo-extensions",
+  "generatedAt": "2026-10-18T21:36:42.378Z",
+  "entries": [
+    {
+      "id": "title-case",
+      "name": "Title Case",
+      "description": "Gives the selected cards titles in Title Case.",
+      "extensions": [
+        {
+          "id": "title-case.title-case",
+          "name": "Title Case",
+          "description": "Gives the selected cards titles in Title Case.",
+          "icon": "CaseSensitive",
+          "permissions": [
+            "edit"
+          ],
+          "docs": true
+        }
+      ],
+      "path": "extensions/title-case/extension.json",
+      "sha256": "730757812f9f0cf07f3ac3e5112bbd81bce7d80ec3abd9be2b24c7d6ca464388",
+      "bytes": 2209,
+      "readme": "extensions/title-case/README.md"
+    }
+  ]
+}

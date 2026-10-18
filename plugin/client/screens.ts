@@ -221,10 +221,10 @@ export function publishPlan(extension: CatalogExtension, config: MarketplaceConf
   // Saved as extension.json, the name it has in the catalog, so the upload page needs no renaming.
   return { file, text, fileName: 'extension.json', issues, warnings, ...submission(file, text, config) };
 }
-/** Discover: whether an entry is installed, and whether the installed file differs from the published one. */
+/** Discover: whether an entry is installed, and whether what the index says about it differs from the installed file. */
 export function entryStatus(entry: MarketplaceEntry, catalog: Pick<CanvasCatalog, 'packs'> | null): 'new' | 'installed' | 'update' {
   const pack = catalog?.packs.find(p => p.id === entry.id); if (!pack) return 'new';
-  const installed = new Map(pack.extensions.map(e => [e.id, e])), same = entry.extensions.length === pack.extensions.length && entry.extensions.every(e => installed.has(e.id) && installed.get(e.id)!.name === e.name);
+  const installed = new Map(pack.extensions.map(e => [e.id, e])), same = entry.extensions.length === pack.extensions.length && entry.extensions.every(e => { const held = installed.get(e.id); return !!held && held.name === e.name && held.description === e.description && held.permissions.join() === e.permissions.join() && !!held.docs === e.docs; });
   return same ? 'installed' : 'update';
 }
 /** Discover's entries matching every word of the query, in the order the catalog lists them. */
