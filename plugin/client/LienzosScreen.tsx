@@ -40,7 +40,7 @@ function useThumbnailDocuments(c: CanvasController, list: readonly LienzoSummary
   return (id: string) => thumbCache.get(key(id))?.document;
 }
 
-/** The Lienzo drawn small: Marcos as outlines, cards as marks in their tones, links as thin lines. */
+/** The Lienzo drawn small: Frames as outlines, cards as marks in their tones, links as thin lines. */
 export function Thumbnail({ document, c, width, height }: { document?: CanvasDocument; c: CanvasController; width: number; height: number }) {
   const u = useUI();
   const model = useMemo(() => document && width > 0 ? thumbnailModel(document, c.catalog, { width, height }, { padding: u.compact ? 10 : S.thumb.padding, toneOf: typeId => visual(c.catalog?.blockTypes.find(t => t.id === typeId)).tone as Tone }) : null, [document, c.catalog, width, height]);

@@ -3,8 +3,8 @@ import { Pressable, View } from 'react-native';
 import { Icon, ScrollView } from './host';
 import { onCanvasIntent, takeCanvasIntent, type CanvasIntent } from './copilot/intent';
 import type { Point, Rect } from './logic';
-import { currentHoja, hojasOf, type Hoja } from './hojas-model';
-export type { Hoja } from './hojas-model';
+import { currentHoja, hojasOf, type Sheet } from './hojas-model';
+export type { Sheet } from './hojas-model';
 import { reducedMotion } from './motion';
 import { tokens } from './tokens';
 import { IconButton, Tooltip, Txt, useUI } from './ui';
@@ -15,13 +15,13 @@ import { islandStyle } from './whiteboard-visuals';
 export const GLOW_MS = 3000;
 type Geometry = { rects: Map<string, Rect>; center: Point };
 export type CopilotCanvas = {
-  hojas: Hoja[]; current: number; follow: boolean; glowIds: string[]; unseen: boolean; menuOpen: boolean;
+  hojas: Sheet[]; current: number; follow: boolean; glowIds: string[]; unseen: boolean; menuOpen: boolean;
   setMenuOpen(open: boolean): void; toggleFollow(): void; goToLatest(): boolean; goToHoja(index: number): boolean; step(direction: 1 | -1): boolean; userMoved(): void;
 };
 /**
  * The canvas side of the copilot. While following, every new transaction of the agent flies the camera to what it
  * changed and makes it glow; moving the camera yourself lets go, and "Agent's latest" (or G) takes you back and
- * follows again. Hojas are walked with [ and ], and the pill in the conversation hands its intent over on open.
+ * follows again. Sheets are walked with [ and ], and the pill in the conversation hands its intent over on open.
  */
 export function useCopilotCanvas({ c, fly, geometry, center, active }: { c: CanvasController; fly(ids: string[]): void; geometry: React.MutableRefObject<Geometry>; center(): Point | undefined; active: boolean }): CopilotCanvas {
   const doc = c.view?.document, latest = c.view?.latestAgent ?? null, hojas = useMemo(() => hojasOf(doc?.groups ?? []), [doc?.groups]);
@@ -49,7 +49,7 @@ export function useCopilotCanvas({ c, fly, geometry, center, active }: { c: Canv
   }, [c.workspaceId]);
   const settleRef = useRef<() => void>(() => {}); useEffect(() => { settleRef.current(); }, [doc?.id]);
   // Where the camera is, read live: the geometry ref only changes with the layout. After a jump the camera is still
-  // flying, so the Hoja we jumped to stands until the person moves the camera themselves.
+  // flying, so the Sheet we jumped to stands until the person moves the camera themselves.
   const moved = useRef(true);
   const look = () => { const g = geometry.current, i = currentHoja(hojas, g.rects, center() ?? g.center); setCurrent(i); return i; };
   useEffect(() => { if (moved.current) look(); }, [hojas, doc?.revision]);
@@ -63,24 +63,24 @@ export function useCopilotCanvas({ c, fly, geometry, center, active }: { c: Canv
   };
 }
 
-/** "Hoja 3 of 7 ▾" and the magnet that follows the agent, for the top island. */
+/** "Sheet 3 of 7 ▾" and the magnet that follows the agent, for the top island. */
 export function HojaControls({ copilot, shortcut }: { copilot: CopilotCanvas; shortcut(id: string): string | undefined }) {
   const u = useUI(), { hojas, current } = copilot, H = tokens.face.hojas;
   return <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-    {!!hojas.length && <Tooltip label="Hojas" detail="Each Hoja is a chapter the agent added while explaining (Spanish for sheet)." shortcut={shortcut('hoja.jump')}><Pressable nativeID="lienzo-hoja-menu" accessibilityRole="button" accessibilityLabel={`Hoja ${current + 1 || '–'} of ${hojas.length}`} onPress={() => copilot.setMenuOpen(!copilot.menuOpen)}
+    {!!hojas.length && <Tooltip label="Sheets" detail="Each Sheet is a chapter the agent added while explaining." shortcut={shortcut('hoja.jump')}><Pressable nativeID="lienzo-hoja-menu" accessibilityRole="button" accessibilityLabel={`Sheet ${current + 1 || '–'} of ${hojas.length}`} onPress={() => copilot.setMenuOpen(!copilot.menuOpen)}
       style={({ pressed, ...state }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4, height: H.button, paddingHorizontal: 10, borderRadius: 8, backgroundColor: copilot.menuOpen || pressed ? u.c.surface2 : (state as { hovered?: boolean }).hovered ? u.c.surface2 : 'transparent' })}>
-      <Txt kind="small" style={{ fontWeight: '600' }}>Hoja {current >= 0 ? current + 1 : '–'}</Txt><Txt kind="small" muted>of {hojas.length}</Txt><Icon name="ChevronDown" size={12} color={u.c.foregroundMuted} />
+      <Txt kind="small" style={{ fontWeight: '600' }}>Sheet {current >= 0 ? current + 1 : '–'}</Txt><Txt kind="small" muted>of {hojas.length}</Txt><Icon name="ChevronDown" size={12} color={u.c.foregroundMuted} />
     </Pressable></Tooltip>}
     <IconButton icon="Magnet" label={copilot.follow ? 'Following the agent' : 'Follow the agent'} detail={copilot.follow ? 'The camera goes wherever the agent draws. Move it yourself to let go.' : 'Stick to the agent: the camera goes wherever it draws.'} shortcut={shortcut('agent.follow')} size={36} active={copilot.follow} onPress={copilot.toggleFollow} />
   </View>;
 }
-/** The list behind "Hoja 3 of 7". */
+/** The list behind "Sheet 3 of 7". */
 export function HojaMenu({ copilot, left, top, maxHeight }: { copilot: CopilotCanvas; left: number; top: number; maxHeight: number }) {
   const u = useUI(), H = tokens.face.hojas;
   if (!copilot.menuOpen) return null;
-  return <><Pressable accessibilityLabel="Close Hojas" onPress={() => copilot.setMenuOpen(false)} style={{ position: 'absolute', inset: 0, zIndex: 40 }} />
+  return <><Pressable accessibilityLabel="Close Sheets" onPress={() => copilot.setMenuOpen(false)} style={{ position: 'absolute', inset: 0, zIndex: 40 }} />
     <View nativeID="lienzo-hoja-list" accessibilityRole="menu" style={[islandStyle(u, true), { position: 'absolute', left, top, width: H.menuWidth, maxHeight, zIndex: 41, padding: 6 }]}>
-      <ScrollView>{copilot.hojas.map((h, i) => <Pressable key={h.id} accessibilityRole="menuitem" accessibilityLabel={`Hoja ${h.number}: ${h.title}`} onPress={() => copilot.goToHoja(i)}
+      <ScrollView>{copilot.hojas.map((h, i) => <Pressable key={h.id} accessibilityRole="menuitem" accessibilityLabel={`Sheet ${h.number}: ${h.title}`} onPress={() => copilot.goToHoja(i)}
         style={({ pressed, ...state }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: H.row, paddingHorizontal: 8, borderRadius: 6, backgroundColor: i === copilot.current ? u.wash('acento') : pressed || (state as { hovered?: boolean }).hovered ? u.c.surface2 : 'transparent' })}>
         <Txt kind="label" muted style={{ width: 22, textAlign: 'right' }}>{h.number}</Txt><Txt kind="small" numberOfLines={1} style={{ flex: 1, fontWeight: i === copilot.current ? '600' : '400' }}>{h.title}</Txt>
       </Pressable>)}</ScrollView>

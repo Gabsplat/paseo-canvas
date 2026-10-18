@@ -1,12 +1,16 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron';
 import { join } from 'node:path';
 import { startDesktop, type Desktop } from './core';
+import { createAppUpdates } from './updater';
+import type { UpdateController } from './updater/controller';
+import { registerUpdateRpcs } from './updater/rpc';
 
 const isMac = process.platform === 'darwin';
 const safeExternal = (url: string) => /^https?:\/\//i.test(url);
 let desktop: Desktop | null = null;
 let window: BrowserWindow | null = null;
 let quitting = false;
+let updates: UpdateController | null = null;
 
 function createWindow() {
   window = new BrowserWindow({
@@ -56,6 +60,18 @@ async function start() {
     dialog.showErrorBox('Lienzo could not open its documents', `${message}\n\nIf another Lienzo is running, use that one. Nothing was overwritten.`);
     app.exit(1); return;
   }
+  // Updates never block the app: a copy that cannot update says why in Settings → About.
+  updates = await createAppUpdates({
+    autoCheck: () => desktop ? desktop.autoCheckUpdates() : Promise.resolve(false),
+    // The new version starts while this one exits: it needs the documents, the MCP port and the instance lock free.
+    async beforeRestart() {
+      quitting = true;
+      await desktop?.close().catch(error => console.error('Lienzo did not close cleanly', error));
+      app.releaseSingleInstanceLock();
+    },
+  });
+  registerUpdateRpcs(desktop.host, updates);
+  updates.start();
   ipcMain.handle('lienzo:invoke', (event, name: unknown, input: unknown) => {
     // Only the app's own page may call in.
     if (!window || event.sender !== window.webContents) return { ok: false, message: 'FORBIDDEN: Unknown caller.' };
@@ -74,7 +90,7 @@ else {
   // Close the store (flushing deferred writes and releasing its lock) and the MCP port before exiting.
   app.on('before-quit', event => {
     if (quitting || !desktop) return;
-    event.preventDefault(); quitting = true;
+    event.preventDefault(); quitting = true; updates?.stop();
     void desktop.close().catch(error => console.error('Lienzo did not close cleanly', error)).finally(() => app.quit());
   });
 }

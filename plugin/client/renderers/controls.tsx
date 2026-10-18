@@ -10,7 +10,7 @@ function Controls({ data, block, scope, runtime, readOnly, ui }: RendererProps<C
   const ranges = useRef<Record<string, [number, number]>>({}), [error, setError] = useState('');
   const summary = data.variables.map(name => `${scope.variables[name]?.label ?? name}: ${scope.get(name)}`).join(', ');
   if (ui.layout.platform !== 'web') return <NativeLearningFallback summary={`${data.question} ${summary || 'No variables.'}`} />;
-  return <View style={{ gap: 8 }}><Txt>{data.question}</Txt>{!data.variables.length && <Txt kind="small" muted>Add names of variables declared in the Marco or the Lienzo.</Txt>}{data.variables.map(name => {
+  return <View style={{ gap: 8 }}><Txt>{data.question}</Txt>{!data.variables.length && <Txt kind="small" muted>Add names of variables declared in the Frame or the Lienzo.</Txt>}{data.variables.map(name => {
     const variable = scope.variables[name];
     if (!variable) return <Txt key={name} kind="small" style={{ color: ui.c.statusDanger }}>Variable sin declarar: {name}</Txt>;
     const changed = (value: number) => {

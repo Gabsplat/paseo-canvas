@@ -17,7 +17,7 @@ export function biographies(changes: readonly Change[]): Map<string, Biography> 
 }
 export const LENSES = ['none', 'author', 'age', 'agent'] as const;
 export type LensId = typeof LENSES[number];
-export const LENS_LABEL: Record<LensId, string> = { none: 'No Lente', author: 'Who changed it', age: 'How fresh', agent: 'The agent’s version' };
+export const LENS_LABEL: Record<LensId, string> = { none: 'No Lens', author: 'Who changed it', age: 'How fresh', agent: 'The agent’s version' };
 export type LensKey = { key: string; label: string; tone: Tone; count: number };
 /**
  * A lens keeps every card where it is and tints it by one variable the canvas does not show: who last changed

@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, View } from 'react-native';
-import { AgentSettings, Icon, capabilities, copyText, openExternalUrl, useToast } from './host';
+import { AboutUpdates, AgentSettings, Icon, capabilities, copyText, openExternalUrl, useToast } from './host';
 import type { CanvasController } from './useCanvas';
 import { withAlpha } from './color';
 import { NATIVE, reducedMotion } from './motion';
@@ -145,6 +145,7 @@ function AboutSection({ c }: { c: CanvasController }) {
         {!!about && <IconButton icon="Copy" label="Copy the path" onPress={() => { void copyText(about.dataFile).then(() => toast.show('Copied', { variant: 'success' })).catch(() => toast.error('Could not copy.')); }} />}
       </View>
     </Card>
+    {AboutUpdates && <AboutUpdates />}
     <SectionLabel>Read more</SectionLabel>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
       {([['Writing extensions', 'extensions.md', 'Puzzle'], ['Tools for agents (MCP)', 'mcp.md', 'Plug'], ['The desktop app', 'desktop.md', 'Monitor'], ['Design', 'design.md', 'Palette']] as const).map(([label, file, icon]) =>
@@ -159,7 +160,7 @@ export function SettingsContent({ section, c, width, list, defs, overrides, chip
 }) {
   const u = useUI(), inner = width - (u.compact ? 32 : 64);
   const head = { shortcuts: ['Shortcuts', 'Every key Lienzo answers to, yours and your extensions’.'], toolbar: ['Toolbar', 'What sits at the end of the bottom toolbar.'], copilot: ['Copilot', 'How your agent draws while it works.'],
-    agents: ['Agents', 'Connect the agents you work with over MCP.'], extensions: ['Extensions', 'Small tools for the + catalog and the Properties panel.'], about: ['About', 'Version, and where your Lienzos are kept.'] }[section];
+    agents: ['Agents', 'Connect the agents you work with over MCP.'], extensions: ['Extensions', 'Small tools for the + catalog and the Properties panel.'], about: ['About', AboutUpdates ? 'Version, updates, and where your Lienzos are kept.' : 'Version, and where your Lienzos are kept.'] }[section];
   return <View nativeID={`lienzo-settings-${section}-screen`} style={{ flex: 1, minHeight: 0 }}>
     <ScreenHeader title={head[0]} subtitle={head[1]} />
     <ScreenBody>

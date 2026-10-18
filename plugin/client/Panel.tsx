@@ -28,7 +28,7 @@ import { Toolbar, GLOSSARY, shapeIcon, type ToolId, type PinnedTool } from './To
 import { AddMenu, type ToolEntry } from './AddMenu';
 import { RightPanel, PanelSection, type PanelTab } from './RightPanel';
 import { CommandPalette } from './CommandPalette';
-import { EmptyMate, Kettle, LoadingEgg } from './Eggs';
+import { EmptyMate, Kettle, LoadingEgg, MateDrawing } from './Eggs';
 import { applies, comboParts, eventCombo, formatCombo, shortcutRegistry } from './shortcuts';
 import { remember, type PaletteItem } from './palette';
 import { getClientRenderer } from './renderers';
@@ -48,11 +48,11 @@ const F = tokens.face;
 /** What ⌘K ran last, per host and workspace, for as long as this client runs. */
 const recentByScope = new Map<string, string[]>();
 
-function EmptyState({ title, description, error, children }: { title: string; description?: string; error?: string; children: React.ReactNode }) {
+function EmptyState({ title, description, error, art, children }: { title: string; description?: string; error?: string; art?: React.ReactNode; children: React.ReactNode }) {
   const u = useUI();
   return <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
     <View style={{ width: '100%', maxWidth: tokens.size.emptyStateMaxWidth, gap: 12, alignItems: 'center' }}>
-      <View style={{ width: 56, height: 56, borderRadius: tokens.radius.group, backgroundColor: u.wash(error ? 'riesgo' : 'acento'), alignItems: 'center', justifyContent: 'center' }}><Icon name={error ? 'CircleAlert' : 'Frame'} size={24} color={error ? u.c.statusDanger : u.c.accent} /></View>
+      {art ?? <View style={{ width: 56, height: 56, borderRadius: tokens.radius.group, backgroundColor: u.wash(error ? 'riesgo' : 'acento'), alignItems: 'center', justifyContent: 'center' }}><Icon name={error ? 'CircleAlert' : 'Frame'} size={24} color={error ? u.c.statusDanger : u.c.accent} /></View>}
       <Txt kind="display" style={{ textAlign: 'center' }}>{title}</Txt>
       {description && <Txt muted style={{ textAlign: 'center' }}>{description}</Txt>}
       {error && <View style={{ alignSelf: 'stretch', backgroundColor: u.c.surface2, borderRadius: 6, padding: 10 }}><Txt kind="small" numberOfLines={4}>{error}</Txt></View>}
@@ -197,7 +197,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (next) toast.show(kind === 'undo' ? 'Undone' : 'Redone', { variant: 'success' });
   }
   const noticeUndo = (label: string) => { setUndoLabel(label); toast.show(label + ' · Undo'); };
-  function ungroupSelection() { const group = doc?.groups.find(g => c.selection.length === 1 && g.id === c.selection[0]); if (group && !disabled) void c.edit([{ type: 'group.delete', id: group.id, ungroup: true }], 'Unwrap Marco'); }
+  function ungroupSelection() { const group = doc?.groups.find(g => c.selection.length === 1 && g.id === c.selection[0]); if (group && !disabled) void c.edit([{ type: 'group.delete', id: group.id, ungroup: true }], 'Unwrap Frame'); }
   function editSelectedText() {
     const block = doc?.blocks.find(b => b.id === c.selection[0]);
     if (!u.compact && block && isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer)) canvas.current?.editSelection();
@@ -240,7 +240,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   }
   function groupSelection() {
     if (!doc || !c.selection.length || disabled) return; const id = newId('group'), operations = groupOperations(doc, rectsNow(), c.selection, id, c.catalog); if (!operations.length) return;
-    void (async () => { const result = await c.edit(operations, `Wrap ${operations.length - 1} in a Marco`); if (result) await c.select([id]); })();
+    void (async () => { const result = await c.edit(operations, `Wrap ${operations.length - 1} in a Frame`); if (result) await c.select([id]); })();
   }
   function removeSelection() { if (doc && !disabled) { const items = topSelection(doc, c.selection); if (items.length > 200) { toast.error('Delete at most 200 things at a time.'); return; } if (items.length) void c.edit(items.map(e => ({ type: 'groupIds' in e ? 'group.delete' : 'block.delete', id: e.id } as CanvasOperation)), 'Delete selection').then(next => { if (next) noticeUndo('Deleted'); }); } }
   const removeLinkOrSelection = () => { if (linkId && !c.selection.length) { if (!disabled) void c.edit([{ type: 'link.delete', id: linkId }], 'Delete link').then(next => { if (next) { setLinkId(null); noticeUndo('Deleted'); } }); } else removeSelection(); };
@@ -261,21 +261,21 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     const id = newId('block');
     void (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title: type.name, typeId: type.id, data, parentGroupId, ...(position ? { position } : {}) } }], `Add ${type.name}`); if (next) await c.select([id]); })();
   }
-  /** M: a new, empty Marco in the middle of the view (inside the selected Marco, if one is selected). */
+  /** M: a new, empty Frame in the middle of the view (inside the selected Frame, if one is selected). */
   function createGroup() {
     if (!doc) { openDocuments(); return; } if (disabled) return;
     const parent = c.selection.length === 1 ? doc.groups.find(group => group.id === c.selection[0]) : undefined, id = newId('group');
-    void c.edit([{ type: 'group.create', group: { id, title: 'Untitled Marco', description: '', blockIds: [], groupIds: [], parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], 'Add Marco').then(next => { if (next) void c.select([id]); });
+    void c.edit([{ type: 'group.create', group: { id, title: 'Untitled Frame', description: '', blockIds: [], groupIds: [], parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], 'Add Frame').then(next => { if (next) void c.select([id]); });
   }
   const openVentana = (kind: VentanaKind) => { if (!doc) { openDocuments(); return; } setAddOpen(false); setMediaError(''); setVentana(kind); };
-  /** W: a Ventana. A web page becomes a live preview; an image, video or audio link becomes a player. */
+  /** W: a Window. A web page becomes a live preview; an image, video or audio link becomes a player. */
   function insertVentana() {
     if (!doc || disabled || !ventana) return;
     const url = safeUrl(mediaUrl), source = url ? mediaSource(url) : null;
     if (!url) { setMediaError('Use a valid HTTP or HTTPS address.'); return; }
     const page = ventana === 'page' && source?.kind !== 'video' && source?.kind !== 'audio' && source?.kind !== 'image';
     const type = page ? c.catalog?.blockTypes.find(type => type.renderer === 'preview-frame') : c.catalog?.blockTypes.find(type => type.id === 'media' && type.renderer === 'image-ref');
-    if (!type) { setMediaError('That kind of Ventana is not in the local catalog.'); return; }
+    if (!type) { setMediaError('That kind of Window is not in the local catalog.'); return; }
     insert(type, page ? { ...type.defaults, url, description: mediaCaption || url } : { ...type.defaults, url, caption: mediaCaption, mediaKind: source?.kind ?? (ventana === 'page' ? 'reference' : ventana) });
     setVentana(null); setMediaUrl(''); setMediaCaption(''); setMediaError('');
   }
@@ -378,10 +378,10 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       { id: 'arrow', section: 'Shapes & drawing', name: 'Arrow', description: 'A line with an arrowhead.', icon: 'MoveUpRight', keywords: 'line connector', shortcut: keyLabel('tool.arrow'), active: toolId === 'arrow', run: () => chooseToolId('arrow') },
       { id: 'text', section: 'Shapes & drawing', name: 'Text', description: 'A free label, without a card.', icon: 'Type', keywords: 'label write', shortcut: keyLabel('tool.text'), active: toolId === 'text', run: () => chooseToolId('text') },
       { id: 'eraser', section: 'Shapes & drawing', name: 'Eraser', description: 'Removes whole strokes; Undo brings them back.', icon: 'Eraser', keywords: 'delete rub', shortcut: keyLabel('tool.eraser'), active: toolId === 'eraser', run: () => chooseToolId('eraser') },
-      { id: 'marco', section: 'Shapes & drawing', name: 'Marco', description: GLOSSARY.marco, icon: 'SquareDashed', keywords: 'frame group area container', shortcut: keyLabel('tool.marco'), run: createGroup },
+      { id: 'marco', section: 'Shapes & drawing', name: 'Frame', description: GLOSSARY.marco, icon: 'SquareDashed', keywords: 'frame group area container', shortcut: keyLabel('tool.marco'), run: createGroup },
       { id: 'icons', section: 'Shapes & drawing', name: 'Architecture icons', description: 'Twelve Tabler icons for systems drawings.', icon: 'Library', keywords: 'svg library server database', run: () => chooseTool('svg') },
       { id: 'svg', section: 'Shapes & drawing', name: 'Import SVG…', description: 'A vector drawing from code, a file or a link.', icon: 'Upload', keywords: 'vector image', run: () => setSvgOpen(true) },
-      { id: 'ventana', section: 'Embeds', name: 'Ventana', description: GLOSSARY.ventana, icon: 'AppWindow', keywords: 'web page iframe embed preview window site', shortcut: keyLabel('tool.ventana'), run: () => openVentana('page') },
+      { id: 'ventana', section: 'Embeds', name: 'Window', description: GLOSSARY.ventana, icon: 'AppWindow', keywords: 'web page iframe embed preview window site', shortcut: keyLabel('tool.ventana'), run: () => openVentana('page') },
       { id: 'image', section: 'Embeds', name: 'Image', description: 'A picture from a link.', icon: 'Image', keywords: 'photo picture media', run: () => openVentana('image') },
       { id: 'video', section: 'Embeds', name: 'Video', description: 'A video file, YouTube or Vimeo link. Never autoplays.', icon: 'Video', keywords: 'youtube vimeo media', run: () => openVentana('video') },
       { id: 'audio', section: 'Embeds', name: 'Audio', description: 'A sound file from a link.', icon: 'AudioLines', keywords: 'sound media podcast', run: () => openVentana('audio') },
@@ -408,7 +408,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <View style={{ paddingHorizontal: F.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>Lienzo</Txt><Txt kind="bodyStrong" numberOfLines={2}>{doc.title}</Txt><Txt kind="small" muted>{GLOSSARY.lienzo}</Txt></View>
     <PanelSection title="This Lienzo"><DocumentActions controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
   </View> : null;
-  const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Marco', ventana: 'Ventana' }[toolId] : 'Tool';
+  const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Frame', ventana: 'Window' }[toolId] : 'Tool';
   const tabs: PanelTab[] = [];
   if (hasSelection) tabs.push({ id: 'properties', label: 'Properties', icon: 'SlidersHorizontal', content: selectionProperties });
   if (toolOptions && styleNode) tabs.push({ id: 'tool', label: toolName + ' options', icon: tool === 'draw' ? 'Pencil' : tool === 'text' ? 'Type' : tool === 'eraser' ? 'Eraser' : 'Shapes', content: <View nativeID="lienzo-tool-options" style={{ padding: F.rightPanel.padding }}>{styleNode}</View> });
@@ -431,7 +431,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (doc) {
       if (hasSelection) items.push(
         { id: 'action.duplicate', group: 'Actions', title: 'Duplicate', subtitle: 'The selection', icon: 'CopyPlus', shortcut: key('edit.duplicate'), disabled, run: duplicateSelection },
-        { id: 'action.wrap', group: 'Actions', title: 'Wrap in a Marco', subtitle: GLOSSARY.marco, icon: 'SquareDashed', shortcut: key('edit.wrap'), disabled: disabled || !c.selection.length, run: groupSelection },
+        { id: 'action.wrap', group: 'Actions', title: 'Wrap in a Frame', subtitle: GLOSSARY.marco, icon: 'SquareDashed', shortcut: key('edit.wrap'), disabled: disabled || !c.selection.length, run: groupSelection },
         { id: 'action.delete', group: 'Actions', title: 'Delete', subtitle: 'The selection', icon: 'Trash2', shortcut: key('edit.delete'), disabled, run: removeLinkOrSelection },
         { id: 'action.fitSelection', group: 'Actions', title: 'Fit selection', icon: 'Scan', shortcut: key('view.fitSelection'), run: () => canvas.current?.zoomToSelection() },
       );
@@ -440,15 +440,15 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         { id: 'action.undo', group: 'Actions', title: 'Undo', icon: 'Undo2', shortcut: key('edit.undo'), disabled: disabled || !c.view?.canUndo, run: () => { void changeRevision('undo'); } },
         { id: 'action.redo', group: 'Actions', title: 'Redo', icon: 'Redo2', shortcut: key('edit.redo'), disabled: disabled || !c.view?.canRedo, run: () => { void changeRevision('redo'); } },
         { id: 'action.fitAll', group: 'Actions', title: 'Fit all', icon: 'Maximize', shortcut: key('view.fitAll'), run: () => canvas.current?.fit() },
-        { id: 'action.lens', group: 'Actions', title: 'Cycle Lente', subtitle: GLOSSARY.lente, icon: 'Glasses', keywords: 'lens colour author age', shortcut: key('lens.cycle'), run: () => canvas.current?.cycleLens() },
+        { id: 'action.lens', group: 'Actions', title: 'Cycle Lens', subtitle: GLOSSARY.lente, icon: 'Glasses', keywords: 'lens colour author age', shortcut: key('lens.cycle'), run: () => canvas.current?.cycleLens() },
         { id: 'action.hideUI', group: 'Actions', title: immersive ? 'Show the interface' : 'Hide all UI', icon: immersive ? 'Minimize2' : 'Maximize2', shortcut: key('ui.hide'), run: () => setImmersive(v => !v) },
         { id: 'action.panel', group: 'Actions', title: panelVisible ? 'Hide Properties' : 'Show Properties', icon: 'PanelRight', shortcut: key('panel.right'), run: togglePanel },
         { id: 'action.rename', group: 'Lienzos', title: 'Rename this Lienzo', icon: 'Pencil', disabled, run: () => setRename(true) },
       );
     }
-    copilot.hojas.forEach((h, i) => items.push({ id: 'hoja.' + h.id, group: 'Hojas', title: `Hoja ${h.number}: ${h.title}`, subtitle: i === copilot.current ? 'You are here' : undefined, icon: 'BookOpen', verb: 'Go', run: () => { copilot.goToHoja(i); } }));
-    if (c.view?.latestAgent?.ids.length) items.push({ id: 'agent.latest', group: 'Hojas', title: "Go to the agent's latest", subtitle: c.view.latestAgent.label, icon: 'Sparkles', verb: 'Go', run: () => { copilot.goToLatest(); } });
-    items.push({ id: 'agent.follow', group: 'Hojas', title: copilot.follow ? 'Stop following the agent' : 'Follow the agent', subtitle: 'The camera goes wherever the agent draws', icon: 'Magnet', run: () => copilot.toggleFollow() });
+    copilot.hojas.forEach((h, i) => items.push({ id: 'hoja.' + h.id, group: 'Sheets', title: `Sheet ${h.number}: ${h.title}`, subtitle: i === copilot.current ? 'You are here' : undefined, icon: 'BookOpen', verb: 'Go', run: () => { copilot.goToHoja(i); } }));
+    if (c.view?.latestAgent?.ids.length) items.push({ id: 'agent.latest', group: 'Sheets', title: "Go to the agent's latest", subtitle: c.view.latestAgent.label, icon: 'Sparkles', verb: 'Go', run: () => { copilot.goToLatest(); } });
+    items.push({ id: 'agent.follow', group: 'Sheets', title: copilot.follow ? 'Stop following the agent' : 'Follow the agent', subtitle: 'The camera goes wherever the agent draws', icon: 'Magnet', run: () => copilot.toggleFollow() });
     items.push({ id: 'lienzo.new', group: 'Lienzos', title: 'New Lienzo', subtitle: GLOSSARY.lienzo, icon: 'Plus', disabled, run: () => { void newCanvas(); } });
     items.push({ id: 'lienzo.all', group: 'Lienzos', title: 'All Lienzos', subtitle: 'Your Lienzos, with thumbnails', icon: 'LayoutGrid', keywords: 'home documents files open', run: openDocuments });
     for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy, run: () => { void c.open(d.id); } });
@@ -603,7 +603,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <IconButton icon="Menu" label="Menu" onPress={() => setOverflow(true)} /><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center />}<IconButton icon="Undo2" label="Undo" shortcut={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} onPress={() => setPaletteOpen(true)} /><IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} disabled={!doc} active={panelVisible} onPress={togglePanel} />
     </View>}
     <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
-      {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo" description="A canvas you and your agent draw explanations on.">
+      {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState art={<MateDrawing size={112} />} title="Pour yourself a mate." description="Then start a Lienzo, or ask your agent to draw what it is explaining.">
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}</View>
       </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
     </View>
@@ -617,7 +617,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         {!!doc && <><View style={{ width: 1, height: 20, marginHorizontal: 4, backgroundColor: u.c.border }} /><HojaControls copilot={copilot} shortcut={keyLabel} /></>}
       </View></View>}
       {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, right: tokens.island.inset }}><View nativeID="lienzo-top-right" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
-        <IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} detail="Tools, actions, Hojas and Lienzos." size={36} onPress={() => { setAddOpen(false); setPaletteOpen(true); }} />
+        <IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} detail="Tools, actions, Sheets and Lienzos." size={36} onPress={() => { setAddOpen(false); setPaletteOpen(true); }} />
         <IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} detail="The panel on the right. Pin it to keep it open." size={36} disabled={!doc} active={panelVisible} onPress={togglePanel} />
       </View></View>}
       {empty && <View pointerEvents="box-none" style={{ position: 'absolute', top: Math.max(F.top.height + 40, panelHeight * .24), left: 24, right: 24, alignItems: 'center', gap: 14 }}>
@@ -652,14 +652,14 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
     {overflow && !u.compact && <><Pressable accessibilityLabel="Close the menu" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
       <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + F.top.height + 6, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
-    <CommandPalette open={paletteOpen} items={paletteItems} recent={recent} chips={chips} width={width} height={panelHeight} onClose={() => setPaletteOpen(false)} onRun={(item, background) => { runPaletteItem(item); if (background) toast.show('Dale. ' + item.title, { variant: 'info' }); }} onQuery={query => { if (query.trim().toLowerCase() === 'mate') setKettle(k => k + 1); }} />
+    <CommandPalette open={paletteOpen} items={paletteItems} recent={recent} chips={chips} width={width} height={panelHeight} onClose={() => setPaletteOpen(false)} onRun={(item, background) => { runPaletteItem(item); if (background) toast.show('Running: ' + item.title, { variant: 'info' }); }} onQuery={query => { if (query.trim().toLowerCase() === 'mate') setKettle(k => k + 1); }} />
     <TooltipLayer />
-    <Modal title={ventana === 'image' ? 'Image' : ventana === 'video' ? 'Video' : ventana === 'audio' ? 'Audio' : 'Ventana'} open={!!ventana} onOpenChange={open => { if (!open) setVentana(null); }}><Modal.Content>
+    <Modal title={ventana === 'image' ? 'Image' : ventana === 'video' ? 'Video' : ventana === 'audio' ? 'Audio' : 'Window'} open={!!ventana} onOpenChange={open => { if (!open) setVentana(null); }}><Modal.Content>
       <Txt kind="small" muted>{ventana === 'page' ? GLOSSARY.ventana + ' Paste a link to a page, a video or a sound.' : 'Paste a link. Players never start on their own.'}</Txt>
       <Input label={ventana === 'page' ? 'Address of the page or media' : 'Address'} placeholder="https://…" value={mediaUrl} onChange={setMediaUrl} readOnly={disabled} />
       <Input label={ventana === 'page' ? 'What it shows (optional)' : 'Caption (optional)'} value={mediaCaption} onChange={setMediaCaption} readOnly={disabled} />
       {!!mediaError && <Txt kind="small" style={{ color: u.c.statusDanger }}>{mediaError}</Txt>}
-      <Button label={ventana === 'page' ? 'Add Ventana' : 'Add'} variant="primary" disabled={disabled || !mediaUrl.trim()} onPress={insertVentana} />
+      <Button label={ventana === 'page' ? 'Add Window' : 'Add'} variant="primary" disabled={disabled || !mediaUrl.trim()} onPress={insertVentana} />
     </Modal.Content></Modal>
     <SvgImportDialog open={svgOpen} onClose={() => setSvgOpen(false)} onInsert={insertSvg} />
     <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>

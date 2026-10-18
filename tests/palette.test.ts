@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { flatten, fuzzyScore, itemScore, paletteSections, remember, type PaletteItem } from '../plugin/client/palette';
 
 const item = (id: string, group: PaletteItem['group'], title: string, keywords?: string): PaletteItem => ({ id, group, title, keywords, icon: 'Dot', run() {} });
-const items = [item('pencil', 'Tools', 'Pencil', 'draw freehand'), item('rect', 'Tools', 'Rectangle', 'shape box'), item('marco', 'Tools', 'Marco', 'frame group container'), item('dup', 'Actions', 'Duplicate'), item('doc', 'Lienzos', 'Árbol de clases'), item('keys', 'Settings', 'Keyboard shortcuts')];
+const items = [item('pencil', 'Tools', 'Pencil', 'draw freehand'), item('rect', 'Tools', 'Rectangle', 'shape box'), item('marco', 'Tools', 'Frame', 'frame group container'), item('dup', 'Actions', 'Duplicate'), item('doc', 'Lienzos', 'Árbol de clases'), item('keys', 'Settings', 'Keyboard shortcuts')];
 test('fuzzy matching needs every character in order and prefers word starts and runs', () => {
   assert.equal(fuzzyScore('pcl', 'Pencil') !== null, true);
   assert.equal(fuzzyScore('lcp', 'Pencil'), null);

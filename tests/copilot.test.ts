@@ -124,10 +124,10 @@ test("Lienzo tool names are recognised across provider prefixes", () => {
   const activity = new ToolActivity(() => 0); assert.equal(activity.usedThisTurn("x"), false);
 });
 
-test("Hojas: MCP creates numbered Hojas on one strip, lists and retitles them; the model keeps them top-level", async t => {
+test("Sheets: MCP creates numbered Sheets on one strip, lists and retitles them; the model keeps them top-level", async t => {
   const { service } = await setup(t);
   const router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }));
-  // Existing loose content: the first Hoja goes to its right.
+  // Existing loose content: the first Sheet goes to its right.
   await service.mutate(mutation(0, [{ type: "block.update", id: "b", patch: { position: { x: 100, y: 40 } } }]));
   const first = await router.call("canvas_sheet", { action: "create", documentId: "d", expectedRevision: 1, title: "How the bridge works" }, "owner") as { id: string; number: number; revision: number };
   assert.equal(first.number, 1); assert.equal(first.revision, 2);
@@ -136,12 +136,12 @@ test("Hojas: MCP creates numbered Hojas on one strip, lists and retitles them; t
   let current = (await service.read({ workspaceId, documentId: "d" })).document;
   const [one, two] = [current.groups.find(group => group.id === first.id)!, current.groups.find(group => group.id === "hoja-tokens")!];
   assert.equal(one.sheet?.source, "agent"); assert.ok(one.position!.x > 100 + 320, "right of the loose content");
-  assert.equal(two.position!.y, one.position!.y, "one horizontal strip"); assert.ok(two.position!.x >= one.position!.x + 1200, "right of the last Hoja");
-  // Ordinary edits target a Hoja with parentGroupId.
+  assert.equal(two.position!.y, one.position!.y, "one horizontal strip"); assert.ok(two.position!.x >= one.position!.x + 1200, "right of the last Sheet");
+  // Ordinary edits target a Sheet with parentGroupId.
   await router.call("canvas_apply", { documentId: "d", expectedRevision: 3, operations: [{ type: "block.create", block: { id: "n1", typeId: "note", title: "Inside", data: { text: "x" }, parentGroupId: "hoja-tokens", position: { x: 2000, y: 0 } } }] }, "owner");
   const third = await router.call("canvas_sheet", { action: "create", documentId: "d", expectedRevision: 4, title: "Third" }, "owner") as { id: string; number: number };
   current = (await service.read({ workspaceId, documentId: "d" })).document;
-  assert.ok(current.groups.find(group => group.id === third.id)!.position!.x >= two.position!.x + 2000 + 320, "a wide Hoja pushes the next one further right");
+  assert.ok(current.groups.find(group => group.id === third.id)!.position!.x >= two.position!.x + 2000 + 320, "a wide Sheet pushes the next one further right");
   const listed = await router.call("canvas_sheet", { action: "list", documentId: "d" }, "owner") as { sheets: { id: string; number: number; title: string; blockCount: number }[] };
   assert.deepEqual(listed.sheets.map(sheet => [sheet.number, sheet.title, sheet.blockCount]), [[1, "How the bridge works", 0], [2, "Why tokens", 1], [3, "Third", 0]]);
   await router.call("canvas_sheet", { action: "update", documentId: "d", expectedRevision: 5, id: "hoja-tokens", title: "Why tokens expire" }, "owner");
@@ -149,13 +149,13 @@ test("Hojas: MCP creates numbered Hojas on one strip, lists and retitles them; t
   await assert.rejects(router.call("canvas_sheet", { action: "update", documentId: "d", expectedRevision: 6, id: "n1", title: "x" }, "owner"), /does not exist/);
   const outline = await router.call("canvas_read", { documentId: "d" }, "owner") as { document: { groups: { id: string; sheet?: { number: number } }[] } };
   assert.equal(outline.document.groups.find(group => group.id === "hoja-tokens")!.sheet!.number, 2);
-  // Invariants: a Hoja cannot be nested, numbers are unique, a copy is an ordinary group.
+  // Invariants: a Sheet cannot be nested, numbers are unique, a copy is an ordinary group.
   await assert.rejects(service.mutate(mutation(6, [{ type: "entity.move", id: "hoja-tokens", parentGroupId: first.id }])), /top level/);
   await assert.rejects(service.mutate(mutation(6, [{ type: "group.create", group: { id: "dup", title: "Dup", description: "", blockIds: [], groupIds: [], sheet: { number: 2, createdAt: new Date().toISOString(), source: "user" } } }])), /share number 2/);
   await service.mutate(mutation(6, [{ type: "entity.duplicate", id: "hoja-tokens", idPrefix: "copy" }]));
   current = (await service.read({ workspaceId, documentId: "d" })).document;
   assert.equal(current.groups.find(group => group.id === "copy.hoja-tokens")!.sheet, undefined);
-  // Undo removes the Hoja like any other transaction; numbers are not reused while the others remain.
+  // Undo removes the Sheet like any other transaction; numbers are not reused while the others remain.
   const fourth = await service.createSheet({ workspaceId, documentId: "d", expectedRevision: 7, title: "Mine" });
   assert.deepEqual([fourth.number, fourth.view.document.groups.find(group => group.id === fourth.id)!.sheet!.source], [4, "user"]);
 });

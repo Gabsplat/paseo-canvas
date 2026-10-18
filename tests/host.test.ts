@@ -89,7 +89,7 @@ test("a host that runs agents verifies them, and nothing the panel does sends a 
   await host.call(rpc.setSelection, { workspaceId, documentId: "doc", expectedSelectionVersion: edited.selectionVersion, ids: ["b", "c"] });
   await host.call(rpc.setRuntime, { workspaceId, documentId: "doc", blocks: [{ id: "b", state: { lastInteraction: { kind: "quiz.hint", label: "Hint", at: new Date().toISOString() } } }] });
   await host.call(rpc.setCopilot, { workspaceId, agentId: "a", patch: { enabled: true, cadence: "step" } });
-  await host.call(rpc.createSheet, { workspaceId, documentId: "doc", expectedRevision: 2, title: "Hoja" });
+  await host.call(rpc.createSheet, { workspaceId, documentId: "doc", expectedRevision: 2, title: "Sheet" });
   await host.emit("agent.turn_ended", { agent: { id: "a" }, turnId: "t1", outcome: { kind: "completed" }, timeline: [] });
   assert.equal(mock.sends.length, 0);
 

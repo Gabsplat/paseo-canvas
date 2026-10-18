@@ -81,4 +81,6 @@ export interface ClientHost {
   AgentSheet: ComponentType<AgentSheetProps> | null;
   /** Settings → Agents on hosts that connect agents over MCP (the desktop app): address, setup commands, agents seen. */
   AgentSettings: ComponentType<{ connectedAgentId: string | null }> | null;
+  /** Settings → About on hosts that update themselves (the desktop app): update state, check, the auto-check switch. */
+  AboutUpdates: ComponentType | null;
 }

@@ -57,7 +57,7 @@ export function CopilotPanel(p: CopilotPanelProps) {
   else if (!view.hasTools) body = <View style={{ gap: 8 }}>
     <Txt kind="small">This agent was created before it had Lienzo tools, so it cannot draw. A new agent gets them, with the copilot on.</Txt>
     <Button label={p.busy ? 'Creating…' : 'New agent with Lienzo'} icon="Plus" variant="primary" disabled={p.busy} onPress={p.onNewAgent} />
-    {!!p.created && <Txt kind="small" muted>Listo. “{p.created}” is in the sidebar.</Txt>}
+    {!!p.created && <Txt kind="small" muted>Done. “{p.created}” is in the sidebar.</Txt>}
   </View>;
   else {
     const preview = latestPreview(view.latest, p.now), recent = recentLienzos(p.documents, view.copilot.documentId);
@@ -70,7 +70,7 @@ export function CopilotPanel(p: CopilotPanelProps) {
             : <Txt kind="small" muted>{cadenceHint(view.copilot.cadence)}</Txt>}
           {remindApplies(view.copilot.cadence) && <CheckRow label="Remind the agent when it forgets" checked={view.copilot.remind} disabled={p.busy} onPress={() => p.onRemind(!view.copilot.remind)} />}
         </View>
-      </> : <Txt kind="small" muted>Off. Turn it on and the agent draws what it explains in this conversation's Lienzo, one Hoja (a chapter of the canvas) per explanation.</Txt>}
+      </> : <Txt kind="small" muted>Off. Turn it on and the agent draws what it explains in this conversation's Lienzo, one Sheet (a chapter of the canvas) per explanation.</Txt>}
       {preview && <View style={{ gap: 4, padding: 8, borderRadius: 6, backgroundColor: c.surface2 }}>
         <Txt kind="small" muted numberOfLines={1}>Latest from the agent · {preview.title}</Txt>
         <Txt kind="small" numberOfLines={2}>{preview.detail}</Txt>

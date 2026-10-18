@@ -1,4 +1,4 @@
-# Unsigned unless the release workflow finds signing secrets (docs/desktop.md). No auto-update yet.
+# Unsigned unless the release workflow finds signing secrets (docs/desktop.md). Updates: docs/desktop.md, "Updates".
 appId: dev.gabsplat.lienzo
 productName: Lienzo
 copyright: Copyright © 2026 gabsplat
@@ -11,7 +11,12 @@ files:
   - "!dist/**/*.map"
   - package.json
 asar: true
-publish: null
+# The update feed. With --publish never, electron-builder still writes latest*.yml and the .blockmap files next to
+# the installers; the release workflow uploads them. GitHub's /releases/latest/download/ redirects to the newest
+# non-prerelease release, so the "desktop-v" tag names are never parsed. The app sets the same URL itself.
+publish:
+  provider: generic
+  url: https://github.com/Gabsplat/paseo-canvas/releases/latest/download
 linux:
   target: [AppImage]
   category: Graphics

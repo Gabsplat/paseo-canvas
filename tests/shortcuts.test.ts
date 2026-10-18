@@ -23,7 +23,7 @@ test('the defaults from the brief are all assigned with no conflict', () => {
   const { list, byCombo } = resolveShortcuts(DEFAULT_SHORTCUTS);
   assert.deepEqual(list.filter(s => s.unassigned).map(s => s.id), []);
   for (const [combo, id] of [['v', 'tool.select'], ['h', 'tool.hand'], ['p', 'tool.pencil'], ['r', 'tool.rectangle'], ['o', 'tool.ellipse'], ['t', 'tool.text'], ['a', 'tool.arrow'], ['e', 'tool.eraser'], ['m', 'tool.marco'], ['w', 'tool.ventana'], ['l', 'lens.cycle'], ['mod+k', 'palette.open'], ['[', 'hoja.previous'], [']', 'hoja.next'], ['mod+j', 'hoja.jump'], ['f', 'agent.follow'], ['g', 'agent.latest'], ['shift+1', 'view.fitAll'], ['shift+2', 'view.fitSelection'], ['mod+\\', 'panel.right'], ['mod+.', 'ui.hide'], ['?', 'help.shortcuts'], ['mod+z', 'edit.undo'], ['mod+shift+z', 'edit.redo'], ['mod+d', 'edit.duplicate'], ['mod+g', 'edit.wrap'], ['delete', 'edit.delete'], ['backspace', 'edit.delete'], ['escape', 'edit.escape'], ['mod+a', 'edit.selectAll'], ['1', 'pinned.1'], ['9', 'pinned.9']] as const) assert.equal(byCombo.get(combo), id, combo);
-  assert.ok(['hoja.previous', 'hoja.next', 'hoja.jump', 'agent.follow', 'agent.latest'].every(id => list.some(s => s.id === id)), 'Hoja and agent shortcuts are registered');
+  assert.ok(['hoja.previous', 'hoja.next', 'hoja.jump', 'agent.follow', 'agent.latest'].every(id => list.some(s => s.id === id)), 'Sheet and agent shortcuts are registered');
 });
 test('an override wins and the shortcut it displaces is listed as unassigned', () => {
   const { list, byCombo } = resolveShortcuts(DEFAULT_SHORTCUTS, { 'tool.text': 'P' });
@@ -54,7 +54,7 @@ test('shortcuts display per platform and apply only when they can', () => {
   assert.equal(applies('selection', { document: true, canvas: true, selection: false }), false);
   assert.equal(applies('always', { document: false, canvas: false, selection: false }), true);
 });
-test('Hojas are read in number order and the one in view is the nearest to the centre', async () => {
+test('Sheets are read in number order and the one in view is the nearest to the centre', async () => {
   const { hojasOf, currentHoja } = await import('../plugin/client/hojas-model');
   const g = (id: string, number?: number, parentGroupId?: string) => ({ id, title: id, description: '', blockIds: [], groupIds: [], ...(number ? { sheet: { number, createdAt: '2026-10-12T00:00:00.000Z', source: 'agent' as const } } : {}), ...(parentGroupId ? { parentGroupId } : {}) });
   const hojas = hojasOf([g('b', 2), g('plain'), g('a', 1), g('nested', 3, 'a')] as never);
