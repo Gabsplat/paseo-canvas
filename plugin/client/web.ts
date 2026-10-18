@@ -232,7 +232,8 @@ export function attachWheel(element: unknown, handler: (e: { x: number; y: numbe
     // An active player, page or resized card scrolls independently; command-wheel still zooms the canvas.
     if (e.target?.closest('[id^="lienzo-interactive-surface-"],[id^="lienzo-interactive-range-"]')) return;
     const target = pointerElement(e.target);
-    const legacy = target?.closest?.('[id^="lienzo-interactive-"]');
+    // A passive surface (a shader that is only a picture) pans like the canvas around it.
+    const legacy = target?.closest?.('[id^="lienzo-surface-"]') ? null : target?.closest?.('[id^="lienzo-interactive-"]');
     const active = target?.closest?.('[data-lienzo-interacting="true"],[id^="lienzo-using-"]');
     if (!e.ctrlKey && !e.metaKey && (active || legacy && !/^lienzo-interactive-(frame|media|video)-/.test(legacy.id ?? ''))) return;
     const origin = node.getBoundingClientRect(); handler({ x: e.clientX - origin.left, y: e.clientY - origin.top, dx: e.deltaX, dy: e.deltaY, command: e.ctrlKey || e.metaKey }); e.preventDefault();
@@ -633,7 +634,9 @@ export function compileGLProgram(gl: GLContext, vertexSource: string, fragmentSo
 export type SurfaceFrame = { width: number; height: number; pixelRatio: number; time: number };
 export type SurfacePointer = { kind: 'down' | 'move' | 'up' | 'cancel'; x: number; y: number; pointerId: number; buttons: number; pressure: number };
 export type SurfaceWheel = { x: number; y: number; dx: number; dy: number; command: boolean };
-type SurfaceBase = { id: string; label: string; height: number; animated?: boolean; maxPixelSize?: number; onVisibilityChange?(visible: boolean): void; onPointer?(event: SurfacePointer): void; onWheel?(event: SurfaceWheel): void; onError?(message: string): void };
+type SurfaceBase = { id: string; label: string; height: number | '100%'; animated?: boolean;
+  /** A picture only (a shader without pointer input): the card can be dragged by it and the wheel pans the canvas. */
+  passive?: boolean; maxPixelSize?: number; onVisibilityChange?(visible: boolean): void; onPointer?(event: SurfacePointer): void; onWheel?(event: SurfaceWheel): void; onError?(message: string): void };
 export type CanvasSurfaceProps = SurfaceBase & { draw(context: Canvas2DContext, frame: SurfaceFrame): void };
 export type GLSurfaceProps = SurfaceBase & {
   initialize?(context: GLContext): { error?: string; dispose?(): void } | void;
@@ -738,6 +741,9 @@ function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps
     latest.current.onPointer?.({ kind, x: (event.clientX - rect.left) * canvas.clientWidth / Math.max(1, rect.width), y: (event.clientY - rect.top) * canvas.clientHeight / Math.max(1, rect.height), pointerId: event.pointerId, buttons: event.buttons, pressure: event.pressure });
   };
   const isolate = (event: { stopPropagation(): void }) => event.stopPropagation();
+  if (props.passive) return React.createElement('div', { id: `lienzo-surface-${props.id}`, style: { position: 'relative', width: '100%', height: props.height } },
+    React.createElement('canvas', { ref, 'aria-label': props.label, role: 'img', style: { width: '100%', height: '100%', display: 'block' } }),
+    error ? React.createElement('div', { role: 'status', style: { position: 'absolute', inset: 0, padding: 8, color: 'inherit', background: 'inherit' } }, error) : null);
   return React.createElement('div', { id: `lienzo-interactive-surface-${props.id}`, style: { position: 'relative', width: '100%', height: props.height }, onWheel: isolate, onKeyDown: isolate, onKeyUp: isolate },
     React.createElement('canvas', { ref, 'aria-label': props.label, role: 'img', tabIndex: 0, style: { width: '100%', height: '100%', display: 'block', touchAction: 'none' }, onPointerDown: pointer('down'), onPointerMove: pointer('move'), onPointerUp: pointer('up'), onPointerCancel: pointer('cancel') }),
     error ? React.createElement('div', { role: 'status', style: { position: 'absolute', inset: 0, padding: 8, color: 'inherit', background: 'inherit' } }, error) : null);
@@ -876,4 +882,9 @@ export async function readSvgFile(file: DroppedFile): Promise<string> {
 export function focusFirstField(element: unknown) {
   const node = element as BrowserElement | null; if (!browser().document || !node?.querySelector) return;
   setTimeout(() => { try { node.querySelector('input, textarea')?.focus(); } catch {} }, 30);
+}
+/** The system asks for less motion (web only; native reads AccessibilityInfo in motion.tsx). */
+export function prefersReducedMotion(): boolean {
+  const host = browser() as unknown as { matchMedia?: (query: string) => { matches: boolean } };
+  try { return !!host.matchMedia?.('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 }

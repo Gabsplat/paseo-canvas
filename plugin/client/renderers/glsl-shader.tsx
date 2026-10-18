@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { GLSL_TIME_MAX, glslShaderState, glslUtf8Length, type GlslShaderData, type GlslShaderState } from '../../shared/renderers/glsl-shader';
+import { GLSL_TIME_MAX, glslChrome, glslShaderState, glslUtf8Length, type GlslShaderData, type GlslShaderState } from '../../shared/renderers/glsl-shader';
 import { GLSurface, NativeLearningFallback, compileGLProgram, type GLContext, type SurfaceFrame } from '../Surfaces';
-import { WebRange } from '../web';
+import { WebRange, prefersReducedMotion } from '../web';
+import { withAlpha } from '../color';
 import { Button, Txt } from '../ui';
 import type { ClientRenderer, RendererProps } from './types';
 
@@ -103,49 +104,69 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     settle('glsl-shader.reset', { time: 0, values: valuesNow() }, 'Reset shader');
   };
   const summary = data.staticSummary ?? 'Shader without a declared static reference. It has not run on this device.';
-  const native = ui.layout.platform !== 'web';
-  if (native) return <View nativeID={`lienzo-interactive-shader-${block.id}-static`} style={{ gap: 8 }}><Txt>{data.question}</Txt><Txt kind="label" muted>Static</Txt><NativeLearningFallback summary={summary} /><Button label="Reset" small variant="ghost" disabled onPress={reset} /></View>;
-  return <View style={{ gap: 12 }}><Txt>{data.question}</Txt>
-    <View style={{ backgroundColor: ui.c.surface0, borderRadius: 8, borderWidth: 1, borderColor: ui.c.border, overflow: 'hidden' }}>
-      <GLSurface id={`glsl-${block.id}`} label={data.question} summary={summary} height={Math.max(160, Math.min(420, (availableWidth || 360) * 9 / 16))} maxPixelSize={data.maxPixelSize}
-        animated={playing} initialize={initialize} draw={draw} onVisibilityChange={onVisibilityChange} onError={message => {
+  const chrome = glslChrome(data), native = ui.layout.platform !== 'web', selected = !!props.selection?.includes(block.id);
+  const play = () => {
+    if (live.current.props.readOnly || !visible.current || failed.current) return;
+    if (clock.current.playing) pause('paused by the person');
+    else { clock.current.playing = true; clock.current.last = null; clock.current.visited = [clock.current.seconds, clock.current.seconds]; setPlaying(true); }
+  };
+  // Autoplay starts the clock once the picture is in view, unless the person asked the system for less motion.
+  const autoplayed = useRef(false);
+  const onVisible = (drawable: boolean) => {
+    onVisibilityChange(drawable);
+    if (drawable && chrome.autoplay && data.builtins.time && !autoplayed.current && !live.current.props.readOnly && !failed.current && !prefersReducedMotion()) { autoplayed.current = true; play(); }
+  };
+  if (native) return <View nativeID={`lienzo-interactive-shader-${block.id}-static`} style={{ gap: 8, padding: chrome.question ? 0 : 12 }}>{!!chrome.question && <Txt>{chrome.question}</Txt>}<Txt kind="label" muted>Static</Txt><NativeLearningFallback summary={summary} />{chrome.reset && <Button label="Reset" small variant="ghost" disabled onPress={reset} />}</View>;
+  const sliders = data.uniforms.map(u => {
+    const variable = props.scope.variables[u.name], value = valuesNow()[u.name], min = variable?.min ?? u.min, max = variable?.max ?? u.max;
+    const change = (next: number) => {
+      if (live.current.props.readOnly || !Number.isFinite(next)) return;
+      const currentVariable = live.current.props.scope.variables[u.name];
+      const value = Math.max(currentVariable?.min ?? u.min, Math.min(currentVariable?.max ?? u.max, next));
+      const start = valuesNow()[u.name], visited = ranges.current[u.name] ?? [start, start];
+      ranges.current[u.name] = [Math.min(visited[0], value), Math.max(visited[1], value)];
+      if (currentVariable) live.current.props.scope.set(u.name, value);
+      else save({ values: { ...live.current.state.values, [u.name]: value }, time: clock.current.seconds });
+    };
+    return <View key={u.name} nativeID={`lienzo-interactive-shader-${block.id}-${u.name}`} style={{ gap: 2 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}><Txt kind={chrome.controls === 'overlay' ? 'small' : 'label'} numberOfLines={1} style={{ flexShrink: 1 }}>{u.label}{variable ? ' · Shared' : ''}</Txt><Txt kind="code" muted={chrome.controls === 'overlay'}>{Number(value.toPrecision(chrome.controls === 'overlay' ? 4 : 6))}{(variable?.unit ?? u.unit) ? ` ${variable?.unit ?? u.unit}` : ''}</Txt></View>
+      <WebRange id={`shader-${block.id}-${u.name}`} label={u.label} min={min} max={max} step={variable?.step ?? u.step ?? 'any'} value={value} color={variable ? ui.c.accent : ui.c.foreground} disabled={readOnly || min === max} onChange={change} onSettle={next => {
+        if (live.current.props.readOnly || !Number.isFinite(next)) return;
+        change(next); const current = live.current.props.scope.variables[u.name];
+        const value = Math.max(current?.min ?? u.min, Math.min(current?.max ?? u.max, next)), visited = ranges.current[u.name] ?? [value, value]; delete ranges.current[u.name];
+        const shared = live.current.props.scope.variables[u.name];
+        settle(`glsl-shader.uniform.${u.name}`, { name: u.name, value, visited, ...(shared ? { scopeId: shared.scopeId } : {}) }, `Adjust ${u.label}`);
+      }} />
+    </View>;
+  });
+  const broken = !!compileError || !!surfaceError;
+  const transport = (data.builtins.time || chrome.reset) && <View nativeID={`lienzo-interactive-shader-${block.id}-transport`} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+    {data.builtins.time && <Button label={playing ? 'Pause' : 'Play'} small disabled={readOnly || broken} onPress={play} />}
+    {chrome.reset && <Button label="Reset" small variant="ghost" disabled={readOnly} onPress={reset} />}
+  </View>;
+  const height = Math.max(140, Math.round((availableWidth || 360) * 10 / 16));
+  const glass = { backgroundColor: withAlpha(ui.c.surface1 ?? ui.c.surface0, .86), borderRadius: 10, borderWidth: 1, borderColor: withAlpha(ui.c.foreground, .1), backdropFilter: 'blur(10px)' } as object;
+  // The picture: the shader edge to edge. Everything else sits on it only when chosen, or under it.
+  const overlay = chrome.controls === 'overlay' && (selected || !playing && data.builtins.time);
+  return <View style={{ flex: 1, minHeight: 0 }}>
+    {!!chrome.question && <Txt style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 }}>{chrome.question}</Txt>}
+    <View nativeID={`lienzo-shader-${block.id}`} style={{ flex: 1, minHeight: height, backgroundColor: ui.c.surface0, overflow: 'hidden' }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}><GLSurface id={`glsl-${block.id}`} passive label={chrome.question || block.title || 'Shader'} summary={summary} height="100%" maxPixelSize={data.maxPixelSize}
+        animated={playing} initialize={initialize} draw={draw} onVisibilityChange={onVisible} onError={message => {
           pause('drawing error');
           setSurfaceError(message.includes('does not offer this drawing context') ? 'WebGL is not available' : message.includes('Too many') ? 'Too many WebGL drawings are open. Close another one and open this block again.' : message.includes('was lost') ? 'The WebGL context was lost. Waiting for it to come back.' : 'The shader could not start. Open the block again.');
-        }} />
+        }} /></View>
+      {chrome.title && !!block.title && <View pointerEvents="none" style={[glass, { position: 'absolute', left: 10, top: 10, maxWidth: '80%', paddingHorizontal: 10, paddingVertical: 5 }]}><Txt kind="heading" numberOfLines={1}>{block.title}</Txt></View>}
+      {broken && <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, padding: 14, gap: 6, backgroundColor: withAlpha(ui.c.surface0, .94) }}>
+        {!!compileError && <><Txt style={{ color: ui.c.statusDanger }}>The shader did not compile</Txt><Txt kind="code">{compileError}</Txt></>}
+        {!!surfaceError && <><Txt style={{ color: ui.c.statusDanger }}>{surfaceError}</Txt><Txt kind="small" muted>{summary}</Txt></>}
+      </View>}
+      {overlay && <View nativeID={`lienzo-shader-${block.id}-overlay`} style={[glass, selected && data.uniforms.length ? { position: 'absolute', left: 8, right: 8, bottom: 8, padding: 10, gap: 8, maxWidth: 360 } : { position: 'absolute', left: 8, bottom: 8, padding: 4 }]}>
+        {selected && sliders}{transport}
+      </View>}
     </View>
-    {!!compileError && <View style={{ gap: 4 }}><Txt style={{ color: ui.c.statusDanger }}>The shader did not compile</Txt><Txt kind="code">{compileError}</Txt></View>}
-    {!!surfaceError && <View style={{ gap: 4 }}><Txt style={{ color: ui.c.statusDanger }}>{surfaceError}</Txt><Txt kind="small" muted>{summary}</Txt></View>}
-    {data.uniforms.map(u => {
-      const variable = props.scope.variables[u.name], value = valuesNow()[u.name], min = variable?.min ?? u.min, max = variable?.max ?? u.max;
-      const change = (next: number) => {
-        if (live.current.props.readOnly || !Number.isFinite(next)) return;
-        const currentVariable = live.current.props.scope.variables[u.name];
-        const value = Math.max(currentVariable?.min ?? u.min, Math.min(currentVariable?.max ?? u.max, next));
-        const start = valuesNow()[u.name], visited = ranges.current[u.name] ?? [start, start];
-        ranges.current[u.name] = [Math.min(visited[0], value), Math.max(visited[1], value)];
-        if (currentVariable) live.current.props.scope.set(u.name, value);
-        else save({ values: { ...live.current.state.values, [u.name]: value }, time: clock.current.seconds });
-      };
-      return <View key={u.name} nativeID={`lienzo-interactive-shader-${block.id}-${u.name}`} style={{ gap: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}><Txt kind="label">{u.label}{variable ? ' · Shared' : ''}</Txt><Txt kind="code">{Number(value.toPrecision(6))}{(variable?.unit ?? u.unit) ? ` ${variable?.unit ?? u.unit}` : ''}</Txt></View>
-        <WebRange id={`shader-${block.id}-${u.name}`} label={u.label} min={min} max={max} step={variable?.step ?? u.step ?? 'any'} value={value} color={variable ? ui.c.accent : ui.c.foreground} disabled={readOnly || min === max} onChange={change} onSettle={next => {
-          if (live.current.props.readOnly || !Number.isFinite(next)) return;
-          change(next); const current = live.current.props.scope.variables[u.name];
-          const value = Math.max(current?.min ?? u.min, Math.min(current?.max ?? u.max, next)), visited = ranges.current[u.name] ?? [value, value]; delete ranges.current[u.name];
-          const shared = live.current.props.scope.variables[u.name];
-          settle(`glsl-shader.uniform.${u.name}`, { name: u.name, value, visited, ...(shared ? { scopeId: shared.scopeId } : {}) }, `Ajustar ${u.label}`);
-        }} />
-      </View>;
-    })}
-    <View nativeID={`lienzo-interactive-shader-${block.id}-transport`} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      {data.builtins.time && <Button label={playing ? 'Pause' : 'Play'} small disabled={readOnly || !!compileError || !!surfaceError} onPress={() => {
-        if (live.current.props.readOnly || !visible.current || failed.current) return;
-        if (clock.current.playing) pause('paused by the person');
-        else { clock.current.playing = true; clock.current.last = null; clock.current.visited = [clock.current.seconds, clock.current.seconds]; setPlaying(true); }
-      }} />}
-      <Button label="Reset" small variant="ghost" disabled={readOnly} onPress={reset} />
-    </View>
-    {!!eventError && <Txt kind="small" style={{ color: ui.c.statusDanger }}>{eventError}</Txt>}
+    {chrome.controls === 'below' && (!!data.uniforms.length || !!transport) && <View style={{ padding: 14, gap: 12 }}>{sliders}{transport}</View>}
+    {!!eventError && <Txt kind="small" style={{ color: ui.c.statusDanger, paddingHorizontal: 14, paddingBottom: 8 }}>{eventError}</Txt>}
   </View>;
 }
 export const glslShaderRenderer: ClientRenderer<GlslShaderData> = { id: 'glsl-shader', Component: GlslShader, visual: { icon: 'Sparkles', tone: 'neutro', width: 'wide' } };

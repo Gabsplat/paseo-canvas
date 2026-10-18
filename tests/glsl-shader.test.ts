@@ -35,7 +35,9 @@ const { glslShaderRenderer, prepareShader, boundedShaderMessage } = require('../
 const { GLSurface, NativeLearningFallback } = require('../plugin/client/Surfaces') as typeof import('../plugin/client/Surfaces');
 const { WebRange } = require('../plugin/client/web') as typeof import('../plugin/client/web');
 const { controlsRenderer } = require('../plugin/client/renderers/controls') as typeof import('../plugin/client/renderers/controls');
-const base = (patch: Record<string, unknown> = {}) => glslShaderDataSchema.parse({ ...glslShaderSpec.blockType.defaults, ...patch });
+// Blocks stored before the chrome became optional carry a question; most tests below exercise that legacy face.
+const LEGACY = { question: 'How does the spacing of the stripes change with the frequency?' };
+const base = (patch: Record<string, unknown> = {}) => glslShaderDataSchema.parse({ ...glslShaderSpec.blockType.defaults, ...LEGACY, ...patch });
 const timed = () => base({ builtins: { resolution: true, time: true }, fragmentSource: String(glslShaderSpec.blockType.defaults.fragmentSource).replace('void main()', 'uniform float u_time;\nvoid main()') });
 const all = (node: Element): Element[] => [node, ...(Array.isArray(node.props.children) ? node.props.children.flat(Infinity) : [node.props.children]).filter((n: unknown): n is Element => !!n && typeof n === 'object' && 'props' in n).flatMap(all)];
 const find = (node: Element, type: unknown) => all(node).find(n => n.type === type)!;
@@ -110,7 +112,7 @@ test('shader defaults and portable schema reject extra executable controls, bad 
   assert.equal(glslShaderSpec.id, glslShaderRenderer.id); assert.equal(base().maxPixelSize, 512);
   assert.deepEqual(new Set(glslShaderSpec.blockType.properties.map(p => p.key)), new Set(Object.keys(glslShaderDataSchema.shape)));
   const u = base().uniforms[0];
-  for (const patch of [ { question: '' }, { uniforms: Array(5).fill(u) }, { uniforms: [u, u] }, { uniforms: [{ ...u, name: 'u_time' }] },
+  for (const patch of [ { controls: 'sideways' }, { reset: 'yes' }, { uniforms: Array(5).fill(u) }, { uniforms: [u, u] }, { uniforms: [{ ...u, name: 'u_time' }] },
     { uniforms: [{ ...u, name: '__proto__' }] }, { uniforms: [{ ...u, value: 13 }] }, { uniforms: [{ ...u, min: Infinity }] }, { uniforms: [{ ...u, max: 1 }] },
     { uniforms: [{ ...u, step: 0 }] }, { uniforms: [{ ...u, javascript: 'alert(1)' }] }, { maxPixelSize: 1025 }, { maxPixelSize: 15 }, { maxPixelSize: 1.5 },
     { fragmentSource: 'é'.repeat(2049) }, { fragmentSource: 'x'.repeat(4097) }, { html: '<input>' }, { fragmentSource: 'uniform sampler2D image; void main() {}' },
@@ -280,4 +282,49 @@ test('play is rejected offscreen, manual pause settles once, and readOnly transi
     assert.equal(h.events.length, 2); assert.equal(h.events[1][1].reason, 'read only'); assert.equal(find(a.render(), GLSurface).props.animated, false);
   } finally { a.close(); }
   p.assertFreed();
+});
+
+// ---- Optional chrome (docs/design.md §36.3).
+const fresh = (patch: Record<string, unknown> = {}) => glslShaderDataSchema.parse({ ...glslShaderSpec.blockType.defaults, ...patch });
+test('chrome: a new shader is the picture alone; a stored block with a question keeps its old face', async () => {
+  const { glslChrome } = await import('../plugin/shared/renderers/glsl-shader');
+  assert.equal('question' in glslShaderSpec.blockType.defaults, false, 'new blocks start without a question');
+  assert.deepEqual(glslChrome(fresh()), { question: '', title: false, controls: 'overlay', reset: false, autoplay: false });
+  assert.deepEqual(glslChrome(base()), { question: LEGACY.question, title: false, controls: 'below', reset: true, autoplay: false });
+  assert.deepEqual(glslChrome(base({ controls: 'overlay' })), { question: LEGACY.question, title: false, controls: 'overlay', reset: false, autoplay: false }, 'a newer choice opts out of the legacy face');
+  assert.deepEqual(glslChrome(fresh({ question: '  ', showTitle: true, controls: 'none', reset: true, autoplay: true })), { question: '', title: true, controls: 'none', reset: true, autoplay: true });
+});
+test('old shader data loads unchanged: the stored shape of the previous version still parses', () => {
+  const stored = { question: 'How does the spacing of the stripes change with the frequency?', fragmentSource: String(glslShaderSpec.blockType.defaults.fragmentSource), uniforms: [{ name: 'frequency', label: 'Frequency', min: 1, max: 12, value: 4, step: 0.1 }], builtins: { resolution: true, time: false }, maxPixelSize: 512, staticSummary: 'Static reference: grey vertical stripes.' };
+  assert.deepEqual(glslShaderDataSchema.parse(stored), stored);
+  assert.ok(glslShaderDataSchema.safeParse({ fragmentSource: stored.fragmentSource, uniforms: stored.uniforms }).success, 'no question needed');
+});
+test('a bare shader fills its card: no question, no Reset, a passive full-height surface; controls show on selection', () => {
+  const h = harness(fresh()), node = h.render();
+  try {
+    const surface = find(node, GLSurface); assert.equal(surface.props.passive, true); assert.equal(surface.props.height, '100%');
+    assert.equal(button(node, 'Reset'), undefined); assert.equal(find(node, WebRange), undefined, 'sliders wait for selection');
+    assert.ok(!text(node).includes('stripes'));
+    (h.props as any).selection = ['shader'];
+    const picked = h.render(); assert.ok(find(picked, WebRange), 'selected: the overlay shows the sliders');
+    assert.ok(all(picked).some(n => n.props.nativeID === 'lienzo-shader-shader-overlay'));
+  } finally { h.close(); }
+  const none = harness(fresh({ controls: 'none' })); (none.props as any).selection = ['shader'];
+  try { assert.equal(find(none.render(), WebRange), undefined); } finally { none.close(); }
+  const below = harness(fresh({ controls: 'below', reset: true }));
+  try { const node = below.render(); assert.ok(find(node, WebRange)); assert.ok(button(node, 'Reset')); } finally { below.close(); }
+  const titled = harness(fresh({ showTitle: true })); (titled.props as any).block = { id: 'shader', title: 'Plasma' };
+  try { assert.match(text(titled.render()), /Plasma/); } finally { titled.close(); }
+  const untitled = harness(fresh()); (untitled.props as any).block = { id: 'shader', title: 'Plasma' };
+  try { assert.ok(!text(untitled.render()).includes('Plasma'), 'the title shows only when asked'); } finally { untitled.close(); }
+});
+test('a timed bare shader offers Play over the picture; autoplay starts it in view, but not under reduced motion', () => {
+  const timedFresh = (patch: Record<string, unknown> = {}) => fresh({ builtins: { resolution: true, time: true }, fragmentSource: String(glslShaderSpec.blockType.defaults.fragmentSource).replace('void main()', 'uniform float u_time;\nvoid main()'), ...patch });
+  { const h = harness(timedFresh()), p = fakeGL(), a = adapter(h, p);
+    try { a.show(true); a.frame(); const node = a.render(); assert.ok(button(node, 'Play')); assert.equal(find(node, WebRange), undefined); } finally { a.close(); } p.assertFreed(); }
+  { const h = harness(timedFresh({ autoplay: true })), p = fakeGL(), a = adapter(h, p);
+    try { a.show(true); a.frame(); a.render(); a.frame(16); const node = a.render(); assert.equal(button(node, 'Play'), undefined, 'playing'); assert.ok(!all(node).some(n => n.props.nativeID === 'lienzo-shader-shader-overlay'), 'a playing, unselected shader is the picture alone'); } finally { a.close(); } p.assertFreed(); }
+  const globals = globalThis as any, old = globals.matchMedia; globals.matchMedia = () => ({ matches: true });
+  { const h = harness(timedFresh({ autoplay: true })), p = fakeGL(), a = adapter(h, p);
+    try { a.show(true); a.frame(); assert.ok(button(a.render(), 'Play'), 'reduced motion: waits for the person'); } finally { a.close(); globals.matchMedia = old; } p.assertFreed(); }
 });

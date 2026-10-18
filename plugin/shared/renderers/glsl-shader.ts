@@ -17,12 +17,21 @@ export const glslUniformSchema = z.object({
   step: z.number().finite().positive().max(2e6).optional(), unit: z.string().max(24).optional(),
 }).strict().refine(v => v.min < v.max && v.value >= v.min && v.value <= v.max, 'Expected min < max and a default inside the range.');
 export const glslShaderDataSchema = z.object({
-  question: z.string().trim().min(1).max(1000),
+  // Everything around the picture is optional (docs/design.md §36.3). Blocks stored before kept a question: it still shows.
+  question: z.string().trim().max(1000).optional(),
   fragmentSource: z.string().trim().min(1).max(GLSL_SOURCE_BYTES).refine(s => glslUtf8Length(s) <= GLSL_SOURCE_BYTES, 'Fragment source exceeds 4096 UTF-8 bytes.'),
   uniforms: z.array(glslUniformSchema).max(4).refine(v => new Set(v.map(u => u.name)).size === v.length, 'Uniform names must be unique.'),
   builtins: z.object({ resolution: z.boolean(), time: z.boolean() }).strict().default({ resolution: true, time: false }),
   maxPixelSize: z.number().int().min(16).max(1024).default(512),
   staticSummary: z.string().trim().min(1).max(1000).optional(),
+  /** Show the block's title over the picture. */
+  showTitle: z.boolean().optional(),
+  /** Where the uniform sliders live: a small overlay on the picture, a strip below it, or nowhere on the card. */
+  controls: z.enum(['overlay', 'below', 'none']).optional(),
+  /** Offer a Reset button with the controls. */
+  reset: z.boolean().optional(),
+  /** Start the clock when the shader comes into view (u_time only; never under reduced motion). */
+  autoplay: z.boolean().optional(),
 }).strict().superRefine((data, ctx) => {
   // Author declarations remain explicit. Unsupported declarations cannot create hidden controls,
   // samplers or a second source of values. GLSL syntax itself is checked by the GL compiler.
@@ -42,6 +51,15 @@ export const glslShaderDataSchema = z.object({
 export type GlslShaderData = z.infer<typeof glslShaderDataSchema>;
 export type GlslUniform = GlslShaderData['uniforms'][number];
 export type GlslShaderState = { values: Record<string, number>; time: number };
+export type GlslChrome = { question: string; title: boolean; controls: 'overlay' | 'below' | 'none'; reset: boolean; autoplay: boolean };
+/**
+ * What the card shows around the picture. New blocks are the shader alone, edge to edge; each piece appears only when
+ * set. A block stored with a question and no newer choices keeps its old face: question above, sliders and Reset below.
+ */
+export function glslChrome(data: Pick<GlslShaderData, 'question' | 'showTitle' | 'controls' | 'reset' | 'autoplay'>): GlslChrome {
+  const question = data.question?.trim() ?? '', legacy = !!question && data.controls === undefined && data.reset === undefined && data.showTitle === undefined && data.autoplay === undefined;
+  return { question, title: data.showTitle ?? false, controls: data.controls ?? (legacy ? 'below' : 'overlay'), reset: data.reset ?? legacy, autoplay: data.autoplay ?? false };
+}
 export function glslShaderState(data: GlslShaderData, raw: Record<string, JSONValue>): GlslShaderState {
   const values: Record<string, number> = {}, source = raw.values;
   for (const uniform of data.uniforms) {
@@ -52,20 +70,23 @@ export function glslShaderState(data: GlslShaderData, raw: Record<string, JSONVa
 }
 export const glslShaderSpec = {
   id: 'glsl-shader', dataSchema: glslShaderDataSchema, interactive: true,
-  minSize: { width: 260, height: 280 }, defaultSize: { width: 440, height: 440 },
-  guidance: 'Una pregunta, fragment GLSL WebGL1 completo de hasta 4096 bytes, hasta cuatro uniforms float declarados con rangos. Nombres iguales al scope enlazan valores compartidos. Declare u_resolution vec2 y u_time float solo si sus builtins están habilitados. Tiempo solo tras Reproducir. Lo que la persona probó (valores, tiempo, lastInteraction) queda en el estado del bloque: léelo con canvas_selection o canvas_read ids.',
+  minSize: { width: 200, height: 140 }, defaultSize: { width: 480, height: 320 },
+  guidance: 'A complete WebGL1 GLSL fragment of up to 4096 bytes and up to four float uniforms declared with ranges. Names equal to scope variables link shared values. Declare u_resolution vec2 and u_time float only when their builtins are on. By default the card is the shader alone, edge to edge; add only what helps: question (a line above), showTitle (the block title over the picture), controls (overlay = small sliders on the picture, the default; below = a strip under it; none = no sliders on the card), reset (a Reset button), autoplay (start u_time when in view). Without autoplay, time starts when the person presses play. What the person tried (values, time, lastInteraction) stays in the block state: read it with canvas_selection or canvas_read ids.',
   blockType: {
     id: 'glsl-shader', renderer: 'glsl-shader', name: 'GLSL shader', description: 'Explore an image computed from a few parameters. WebGL on desktop and web; a static reference on native.',
     properties: [
-      { key: 'question', label: 'Question', kind: 'text', required: true },
+      { key: 'question', label: 'Question', kind: 'text', required: false },
       { key: 'fragmentSource', label: 'Fragment GLSL', kind: 'text', required: true },
       { key: 'uniforms', label: 'Uniforms and ranges', kind: 'json', required: true },
       { key: 'builtins', label: 'Resolution and time', kind: 'json', required: false },
       { key: 'maxPixelSize', label: 'Resolution limit', kind: 'number', required: false },
       { key: 'staticSummary', label: 'Static reference', kind: 'text', required: false },
+      { key: 'showTitle', label: 'Show the title', kind: 'boolean', required: false },
+      { key: 'controls', label: 'Controls: overlay, below or none', kind: 'text', required: false },
+      { key: 'reset', label: 'Reset button', kind: 'boolean', required: false },
+      { key: 'autoplay', label: 'Play on its own', kind: 'boolean', required: false },
     ],
     defaults: {
-      question: 'How does the spacing of the stripes change with the frequency?',
       fragmentSource: 'precision mediump float;\nuniform vec2 u_resolution;\nuniform float frequency;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution;\n  float band = 0.5 + 0.5 * sin(uv.x * frequency * 6.283185);\n  gl_FragColor = vec4(vec3(band), 1.0);\n}',
       uniforms: [{ name: 'frequency', label: 'Frequency', min: 1, max: 12, value: 4, step: 0.1 }],
       builtins: { resolution: true, time: false }, maxPixelSize: 512,

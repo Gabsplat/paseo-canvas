@@ -134,6 +134,18 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
       </View>
     </Animated.View>;
   }
+  if (!outline && type && renderer === 'glsl-shader') {
+    // A shader is a picture: edge to edge in a rounded card, no header and no padding. The whole picture is the handle;
+    // a title, a question or controls appear only when the block asks for them (docs/design.md §36.3).
+    return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ opacity, height: sized ? height : undefined }}>
+      {(selected || focus) && <View pointerEvents="none" style={{ position: 'absolute', top: -3, bottom: -3, left: -3, right: -3, borderRadius: W.radius + 3, backgroundColor: selected ? u.halo : withAlpha(u.c.foregroundMuted, .3) }} />}
+      <Pressable nativeID={`lienzo-grab-${block.id}`} {...headerHandlers} accessibilityRole="button" accessibilityLabel={`${type.name}: ${block.title || 'untitled'}`} accessibilityState={{ selected }} onHoverIn={() => hover(true)} onHoverOut={() => hover(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onPress={e => onSelect(block.id, e)} onLongPress={e => onSelect(block.id, e, true)}
+        style={{ flex: sized ? 1 : undefined, borderRadius: W.radius, borderWidth: selected ? 2 : 1, borderColor: writeFailure ? u.c.statusDanger : selected || dragging ? u.c.accent : withAlpha(u.c.foreground, hovered ? .22 : .1), backgroundColor: u.c.surface1, overflow: 'hidden', ...grab }}>
+        <RegisteredRenderer block={block} id={renderer} controller={c} readOnly={disabled} fill={sized} />
+        {!!state && <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>{state}</View>}
+      </Pressable>
+    </Animated.View>;
+  }
   if (renderer === 'node') {
     // The compact card of the graph canvas: an eyebrow, a status, a name. The long text waits in a side note that
     // never changes the card's size, so selecting a node does not reflow the graph around it.
