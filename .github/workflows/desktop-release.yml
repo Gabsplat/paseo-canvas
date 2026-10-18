@@ -1,5 +1,6 @@
 # Lienzo desktop installers. Push a tag like desktop-v0.2.0 (or run it by hand) and three machines build the macOS
-# .dmg/.zip, the Windows .exe and the Linux .AppImage/.deb, then attach them to a GitHub Release for that tag.
+# .dmg/.zip, the Windows .exe and the Linux .AppImage/.deb, then attach them to a GitHub Release for that tag, with the
+# update feed files the app reads (latest*.yml and the .blockmap files; docs/desktop.md, "Updates").
 # Signing is optional: add the secrets listed in docs/desktop.md and the same workflow signs and notarizes.
 name: Desktop release
 
@@ -57,6 +58,8 @@ jobs:
             apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
+            apps/desktop/release/latest*.yml
+            apps/desktop/release/*.blockmap
 
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
@@ -71,6 +74,7 @@ jobs:
         with:
           name: Lienzo ${{ github.ref_name }}
           draft: false
-          prerelease: true
+          # A normal release: the app's feed is /releases/latest/download/, which skips pre-releases.
+          prerelease: false
           generate_release_notes: true
           files: dist/*

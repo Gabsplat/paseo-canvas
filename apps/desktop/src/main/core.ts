@@ -2,7 +2,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCanvasCore, type CanvasCore } from '../../../../plugin/server/core';
 import type { CanvasStore } from '../../../../plugin/server/store';
-import { DEFAULT_MCP_PORT, DESKTOP_WORKSPACE, desktopStatus, openExternal, writeClipboard, type InvokeResult } from '../shared/rpc';
+import { DEFAULT_MCP_PORT, DESKTOP_WORKSPACE, desktopStatus, openExternal, settingsRpc, updateSettings, writeClipboard, type InvokeResult } from '../shared/rpc';
 import { DesktopHost } from './host';
 import { McpHttpServer } from './mcp-http';
 
@@ -21,6 +21,8 @@ export interface DesktopOptions {
 }
 export interface Desktop {
   readonly host: DesktopHost;
+  /** "Automatically check for updates"; on unless turned off, and on when the settings cannot be read. */
+  autoCheckUpdates(): Promise<boolean>;
   readonly core: CanvasCore;
   readonly mcp: McpHttpServer;
   settle(name: unknown, input: unknown): Promise<InvokeResult>;
@@ -74,11 +76,16 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
     mcpError = code === 'EADDRINUSE' ? `Port ${mcp.port} is already in use, so agents cannot connect. Quit what uses it, or set another port in desktop.json.` : 'The MCP server could not start.';
     console.error('Lienzo MCP server did not start', error);
   }
+  host.registerSettings(updateSettings);
   host.handle(openExternal, async ({ url }) => ({ opened: /^https?:\/\//i.test(url) && !!options.shell && await options.shell.openExternal(url) }));
   host.handle(writeClipboard, async ({ text }) => ({ written: !!options.shell && await options.shell.writeClipboard(text) }));
   host.handle(desktopStatus, () => ({ version: options.version, dataDirectory: options.dataDirectory, mcp: { url: mcp.url, port: mcp.port, listening: mcp.listening, error: mcpError, clients: mcp.clients() } }));
   return {
     host, core, mcp,
+    async autoCheckUpdates() {
+      const result = await host.invoke(settingsRpc(updateSettings.id).read.name, {}) as { status: string; values?: { autoCheck?: boolean } };
+      return result.status !== 'ready' || result.values?.autoCheck !== false;
+    },
     settle: (name, input) => host.settle(name, input),
     async close() { await mcp.close(); await core.stop(); await core.store.close(); },
   };

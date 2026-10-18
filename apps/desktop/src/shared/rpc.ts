@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRpc } from '../../../../plugin/shared/contract';
+import { defineRpc, defineSettings } from '../../../../plugin/shared/contract';
 
 /** The one workspace every desktop document lives in. Documents copied in from Paseo are moved into it. */
 export const DESKTOP_WORKSPACE = 'desktop';
@@ -47,3 +47,26 @@ export function settingsRpc(id: string) {
 
 /** Invoke results across IPC and the preview HTTP bridge: errors travel as their message, which carries the code. */
 export type InvokeResult = { ok: true; value: unknown } | { ok: false; message: string };
+
+/**
+ * App updates (desktop only; the Paseo plugin has none). The main process owns the state; the renderer polls it.
+ * `off` covers development builds, the browser preview and copies that cannot update themselves; `blocked` is a
+ * copy that could update if it were moved (a Mac app run from a disk image, say).
+ */
+export const updateStateSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('off'), reason: z.string() }),
+  z.object({ kind: z.literal('blocked'), reason: z.string() }),
+  z.object({ kind: z.literal('idle'), checkedAt: z.iso.datetime().nullable() }),
+  z.object({ kind: z.literal('checking') }),
+  z.object({ kind: z.literal('downloading'), version: z.string(), percent: z.number().min(0).max(100) }),
+  z.object({ kind: z.literal('ready'), version: z.string() }),
+  z.object({ kind: z.literal('error'), message: z.string(), checkedAt: z.iso.datetime().nullable() }),
+]);
+export type UpdateState = z.infer<typeof updateStateSchema>;
+export const updateStatus = defineRpc({ name: 'desktop.updates.status', input: z.object({}).strict(), output: z.object({ version: z.string(), state: updateStateSchema }) });
+export const checkForUpdates = defineRpc({ name: 'desktop.updates.check', input: z.object({}).strict(), output: z.object({ version: z.string(), state: updateStateSchema }) });
+export const restartToUpdate = defineRpc({ name: 'desktop.updates.restart', input: z.object({}).strict(), output: z.object({ restarting: z.boolean(), state: updateStateSchema }) });
+/** Preview only: shows a made-up state so the pill and Settings → About can be checked without a release. */
+export const fakeUpdateState = defineRpc({ name: 'desktop.updates.fake', input: z.object({ state: updateStateSchema }).strict(), output: z.object({ ok: z.boolean() }) });
+/** "Automatically check for updates", kept in settings.json with the other host settings. */
+export const updateSettings = defineSettings({ id: 'desktop-updates', scope: 'host', version: 1, schema: z.object({ autoCheck: z.boolean().default(true) }) });
