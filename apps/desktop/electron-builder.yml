@@ -1,0 +1,25 @@
+# Unsigned builds: no code signing, no notarization, no auto-update.
+appId: dev.gabsplat.lienzo
+productName: Lienzo
+copyright: Copyright © 2026 gabsplat
+directories:
+  output: release
+  buildResources: build
+# Everything the app runs is bundled into dist/ by scripts/bundle.mjs; no node_modules ship.
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - package.json
+asar: true
+publish: null
+linux:
+  target: [AppImage]
+  category: Graphics
+  synopsis: A canvas you and your agent draw explanations on.
+  artifactName: Lienzo-${version}-${arch}.${ext}
+mac:
+  target: [dmg, zip]
+  category: public.app-category.productivity
+  identity: null
+  hardenedRuntime: false
+  artifactName: Lienzo-${version}-mac-${arch}.${ext}

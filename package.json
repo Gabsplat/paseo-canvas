@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "typecheck": "pnpm --dir plugin typecheck && tsc --noEmit -p tests/tsconfig.json",
+    "typecheck": "pnpm --dir plugin typecheck && tsc --noEmit -p tests/tsconfig.json && pnpm --dir apps/desktop typecheck",
     "test": "tsx --test tests/*.test.ts"
   },
   "devDependencies": {

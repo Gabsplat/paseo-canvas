@@ -144,6 +144,8 @@ function ContextTray({ composerRef, controller: c, note, setNote, sending, error
     {lastEvent && <Delivery event={lastEvent} retry={lastEvent.status === 'failed' && !disabled ? retry : undefined} />}
   </View>;
 }
+// Paseo delivers a queued action when its agent is free; elsewhere the agent has to come and read it.
+const queuedNotice = capabilities.runsAgents ? 'Queued: the agent is busy or not connected' : 'Queued: the agent reads it next time it checks the canvas';
 function Presence({ id, open }: { id: string | null; open: () => void }) {
   const u = useUI(), agent = useAgent(id ?? '', a => ({ title: a.title, status: a.status }));
   // A host without agents (the desktop app) knows who connected over MCP, not whether it is working: no status.
@@ -324,7 +326,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       if (c.current.current?.document.id !== request.documentId) return;
       if (!event) setSendError('Not sent. See the notice on the canvas.');
       else if (event.status === 'failed') setSendError(event.error ?? 'Not sent. See the notice on the canvas.');
-      else { if ((event.status === 'sent' || event.status === 'pending') && note === request.note) setNote(''); toast.show(event.status === 'pending' ? 'Queued: the agent is busy or not connected' : event.status === 'acked' ? 'Received by the agent' : 'Listo. Sent to the agent.', { variant: event.status === 'pending' ? 'info' : 'success' }); }
+      else { if ((event.status === 'sent' || event.status === 'pending') && note === request.note) setNote(''); toast.show(event.status === 'pending' ? queuedNotice : event.status === 'acked' ? 'Received by the agent' : 'Listo. Sent to the agent.', { variant: event.status === 'pending' ? 'info' : 'success' }); }
     } catch (e) { if (c.current.current?.document.id === request.documentId) setSendError(friendlyError(e)); } finally { if (c.current.current?.document.id === request.documentId) setSending(false); }
   }
   function retryFeedback() {
@@ -342,7 +344,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       const event = result.events.find(e => e.id === previous.id);
       setSendError(event?.status === 'failed' ? friendlyError(event.error) : '');
       if ((event?.status === 'sent' || event?.status === 'pending') && note === previous.action.payload.note) setNote('');
-      if (event?.status === 'pending') toast.show('Queued: the agent is busy or not connected');
+      if (event?.status === 'pending') toast.show(queuedNotice);
       else if (event?.status === 'sent' || event?.status === 'acked') toast.show(event.status === 'acked' ? 'Received by the agent' : 'Listo. Sent to the agent.', { variant: 'success' });
       return result;
     }).finally(() => { if (c.current.current?.document.id === documentId) setSending(false); });
