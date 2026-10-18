@@ -35,12 +35,19 @@ Blocks/groups/declarations deleted by content operations lose their runtime entr
 Old state/1 records default to empty runtime. `DocumentView.runtime` contains the complete
 channel, and `runtimeVersion` also tracks selection and connection changes.
 
-Documents/groups optionally declare `variables:[{name,value,min,max,label?,step?,unit?}]`
+Documents/groups optionally declare `variables:[{name,value,min,max,label?,step?,unit?,type?,options?}]`
 through normal revisioned document/group updates. Each scope has at most 24 unique names,
 matching `[a-zA-Z_][a-zA-Z0-9_]{0,31}` and excluding prototype keys. Resolution uses the
 nearest ancestor declaring a name, then the document; absent overrides use declared value.
+`type` says how a person sees and edits the value; values stay numbers everywhere. `number` (the default, and what
+every declaration without `type` is) is a range. `boolean` is on/off: `min:0,max:1`, value `0` or `1`. `choice` lists
+2–12 unique `options` and stores the index: `min:0,max:options.length-1`, an integer value. Only `choice` carries
+`options`. Runtime writes to a `boolean` or `choice` variable must be whole numbers; ranges apply as before.
 Packs carry declarations, never runtime overrides. `controls` lists variable names in
-`data.variables` with at most four names per block, has a declarative guiding `data.question` and a visible reset.
+`data.variables` with at most four names per block, shows a slider, a switch or option buttons by type, has an
+optional guiding `data.question` and a visible reset. People declare and edit variables in Properties (on the Lienzo,
+on each Frame and inside Controls); renaming or deleting one there also updates the `data.variables` of the Controls
+that resolve that name to that scope, in the same transaction.
 Renderer schemas validate JSON properties too. Registered renderer guidance appears in
 catalog list/read results and integration instructions. See [learning-blocks.md](learning-blocks.md).
 
@@ -50,6 +57,18 @@ renderer's own state, after flushing pending runtime writes; the payload is drop
 4 KiB. Controls record the variable moved and its visited range, animated flows the playhead and explored interval,
 shaders their values and time, a reset its kind; a quiz hint and a saved form record theirs too. Quiz answers and
 form fields stay in block data. Later renderer writes keep the last interaction.
+
+## Block type hints
+
+Block type properties (`propertySchema`) accept three optional hints for the Properties panel, in built-in types and in
+types an agent writes with `type.put`: `options` (up to 24 suggested values for a text property; any other text is
+still valid), `advanced` (shown under "More options" until it holds a value other than the default) and `help` (one
+line under the field, up to 200 characters). They change nothing in validation or in stored data. Built-in types use
+them: node `status` and `kind` have suggestions, `details` is advanced; code `language` and media `mediaKind` have
+suggestions; Window's `description` is no longer required. `controls.data.question` and `animated-flow.data.question`
+are optional (old data that has one keeps it); flow `question`, `travelMs`, `links` and `propagation`, file-tree
+`root` and `collapsed`, shader `builtins`, `maxPixelSize` and `staticSummary`, and the mini app's `height` are marked
+advanced.
 
 ## Graph canvas
 
