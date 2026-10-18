@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { HTML_APP_LIMITS, htmlAppEvent, type HtmlAppData } from '../../shared/renderers/html-app';
 import { isDark } from '../color';
@@ -6,7 +6,7 @@ import { Txt } from '../ui';
 import { WebHtml } from '../web';
 import type { RendererProps, ClientRenderer } from './types';
 function HtmlApp({ data, block, ui, document, selection = [], select, send }: RendererProps<HtmlAppData>) {
-  const [asked, setAsked] = useState<number | null>(null);
+  const [asked, setAsked] = useState<number | null>(null), woke = useRef(0);
   const height = block.size ? '100%' as const : asked ?? data.height ?? HTML_APP_LIMITS.defaultHeight;
   // What the page is told: enough to match the theme and to react to the selection, nothing it could not see on screen.
   const context = useMemo(() => ({
@@ -19,7 +19,11 @@ function HtmlApp({ data, block, ui, document, selection = [], select, send }: Re
     <WebHtml id={block.id} html={data.html} title={block.title || 'Mini app'} surface={ui.c.surface0} context={context} onMessage={message => {
       if (message.type === 'resize' && typeof message.height === 'number' && Number.isFinite(message.height)) setAsked(Math.max(HTML_APP_LIMITS.minHeight, Math.min(HTML_APP_LIMITS.maxHeight, Math.round(message.height))));
       else if (message.type === 'select' && typeof message.id === 'string' && [...document.blocks, ...document.groups].some(e => e.id === message.id)) select?.([message.id]);
-      else if (message.type === 'event') { const event = htmlAppEvent(message.kind, message.payload); if (event) void send('html.event', { event: event.kind, data: event.payload as never }, `Mini app “${block.title || block.id}”: ${event.kind}`, 'batched').catch(() => {}); }
+      else if (message.type === 'event') { const event = htmlAppEvent(message.kind, message.payload); if (event) {
+        // An event waits with the rest until the agent next hears from the canvas; { wake: true } is delivered now. At most one
+        // wake every few seconds per mini app, so a page cannot flood the conversation; the rest still travel with it.
+        const now = Date.now(), wake = message.wake === true && now - woke.current >= HTML_APP_LIMITS.wakeMs; if (wake) woke.current = now;
+        void send('html.event', { event: event.kind, data: event.payload as never }, `Mini app “${block.title || block.id}”: ${event.kind}`, wake ? 'immediate' : 'batched').catch(() => {}); } }
     }} />
   </View>;
 }

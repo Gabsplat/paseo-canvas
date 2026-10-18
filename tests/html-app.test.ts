@@ -21,7 +21,7 @@ test('what a mini app reports is a named, bounded, plain JSON event or nothing',
 });
 test('a mini app is created and rewritten through the real service, and the agent is told how to build one', async t => {
   const { service } = await setup(t), spec = getRendererSpec('html')!;
-  assert.match(spec.guidance, /lienzo\.send\(kind, payload\)/); assert.match(spec.guidance, /no preset components/);
+  assert.match(spec.guidance, /lienzo\.send\(kind, payload, options\)/); assert.match(spec.guidance, /no preset components/);
   await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'app', typeId: 'html', title: 'Ejemplo', data: { html: '<b>uno</b>' } } }]));
   const next = await service.mutate(mutation(1, [{ type: 'block.update', id: 'app', patch: { data: { html: '<b>dos</b>', height: 240 } } }]));
   assert.deepEqual(next.document.blocks.find(b => b.id === 'app')!.data, { html: '<b>dos</b>', height: 240 });
@@ -48,4 +48,16 @@ test('the bridge tells a mini app where its window is, and believes only the can
   assert.deepEqual(lienzo.frame, frame); assert.equal(lienzo.context, null);
   deliver({ lienzo: 1, type: 'context', context: { theme: { dark: true } } }); assert.deepEqual(lienzo.context, { theme: { dark: true } });
   assert.ok(getRendererSpec('html')!.guidance!.includes('lienzo.onFrame'));
+});
+test('a mini app event waits unless it asks to wake the agent', async () => {
+  const { readFile } = await import('node:fs/promises'), vm = await import('node:vm');
+  const source = await readFile('plugin/client/web.ts', 'utf8'), literal = /export const HTML_APP_BRIDGE = ("(?:[^"\\]|\\.)*");/.exec(source);
+  const script = (JSON.parse(literal![1]) as string).replace(/^<script>|<\/script>$/g, ''), sent: Record<string, unknown>[] = [], parent = { postMessage: (m: never) => { sent.push(m); } };
+  const window: Record<string, unknown> = {}; vm.runInNewContext(script, { window, parent, document: { documentElement: { style: {} } }, addEventListener() {} });
+  const lienzo = window.lienzo as { send(kind: string, payload?: unknown, options?: unknown): void };
+  lienzo.send('moved', { x: 1 }); lienzo.send('done', { ok: true }, { wake: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(sent.slice(1).map(m => [m.kind, m.wake]))), [['moved', false], ['done', true]]);
+  const renderer = await readFile('plugin/client/renderers/html-app.tsx', 'utf8');
+  assert.match(renderer, /wake \? 'immediate' : 'batched'/); assert.ok(HTML_APP_LIMITS.wakeMs >= 1000);
+  assert.ok(getRendererSpec('html')!.guidance!.includes('{ wake: true }'));
 });
