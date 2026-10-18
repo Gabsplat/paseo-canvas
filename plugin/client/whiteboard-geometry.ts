@@ -54,12 +54,30 @@ export function appendPreviewPoint(points:number[],p:Point,max=8192):void {
 }
 
 export type ResizeHandle = 'n'|'s'|'e'|'w'|'ne'|'nw'|'se'|'sw'|'start'|'end';
+/** Largest side a whiteboard box may take, in canvas units (the schema's limit). */
+export const WB_MAX_SIDE = 4096;
+/**
+ * The box that results from dragging one of the eight handles by `delta` (canvas units). The opposite edge or corner
+ * stays put. With `proportional` the start's aspect ratio is kept: a corner follows whichever axis moved more, and a
+ * side handle grows the other axis evenly about the centre. Sizes stay within [minimum, WB_MAX_SIDE]; only a box that
+ * is already larger than the limit is ever scaled down, never up.
+ */
 export function resizeWhiteboardBox(start:{x:number;y:number;width:number;height:number},delta:Point,handle:ResizeHandle,minimum:{width:number;height:number},proportional=false):{x:number;y:number;width:number;height:number} {
   const west=handle.includes('w'),north=handle.includes('n'),horizontal=handle.includes('e')||west,vertical=handle.includes('s')||north;
-  let width=Math.min(4096,Math.max(minimum.width,start.width+(horizontal?delta.x*(west?-1:1):0))),height=Math.min(4096,Math.max(minimum.height,start.height+(vertical?delta.y*(north?-1:1):0)));
-  if(proportional){const ratio=start.width/start.height;if(horizontal&&(!vertical||Math.abs(delta.x/start.width)>=Math.abs(delta.y/start.height)))height=width/ratio;else width=height*ratio;const factor=Math.min(4096/width,4096/height);width*=factor;height*=factor;const low=Math.max(minimum.width/width,minimum.height/height,1);width*=low;height*=low;}
+  const clamp=(v:number,low:number)=>Math.min(WB_MAX_SIDE,Math.max(low,v));
+  let width=clamp(start.width+(horizontal?delta.x*(west?-1:1):0),minimum.width),height=clamp(start.height+(vertical?delta.y*(north?-1:1):0),minimum.height);
+  if(proportional&&start.width>0&&start.height>0){
+    const sx=width/start.width,sy=height/start.height;
+    const scale=horizontal&&(!vertical||Math.abs(sx-1)>=Math.abs(sy-1))?sx:sy;
+    width=start.width*scale;height=start.height*scale;
+    // Grow to the minimum, then shrink to the limit; both keep the ratio. The limit wins if they disagree.
+    const up=Math.max(1,minimum.width/width,minimum.height/height);width*=up;height*=up;
+    const down=Math.min(1,WB_MAX_SIDE/width,WB_MAX_SIDE/height);width*=down;height*=down;
+  }
   width=Math.round(width);height=Math.round(height);
-  return{x:Math.round(start.x+(west?start.width-width:0)),y:Math.round(start.y+(north?start.height-height:0)),width,height};
+  const x=west?start.x+start.width-width:horizontal||!proportional?start.x:start.x+(start.width-width)/2;
+  const y=north?start.y+start.height-height:vertical||!proportional?start.y:start.y+(start.height-height)/2;
+  return{x:Math.round(x),y:Math.round(y),width,height};
 }
 export function resizeLineBox(start:{x:number;y:number;width:number;height:number},data:WbShapeData,delta:Point,handle:'start'|'end',snapAngle=false):{position:Point;size:{width:number;height:number};from:NonNullable<WbShapeData['from']>} {
   const ends=lineEnds(data,start.width,start.height).map(p=>({x:p.x+start.x,y:p.y+start.y})),at=handle==='start'?0:1,other=1-at;

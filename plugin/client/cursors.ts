@@ -1,12 +1,14 @@
 import { tokens } from './tokens';
 import type { CanvasTool } from './whiteboard-tools';
+import type { ResizeHandle } from './whiteboard-geometry';
 
 /**
  * Lienzo's own cursors, drawn in the theme's ink over a paper halo so they read on any surface, with the accent
  * marking the exact point that acts. Each is a CSS cursor value: an inline SVG, its hot spot, and the system
  * cursor to fall back on. No DOM here, only strings.
  */
-export type CanvasCursors = Record<'select' | 'hand' | 'handActive' | 'text' | 'shape' | 'draw' | 'eraser', string>;
+export type CanvasCursors = Record<'select' | 'hand' | 'handActive' | 'text' | 'shape' | 'draw' | 'eraser' | ResizeCursor, string>;
+export type ResizeCursor = 'resizeEW' | 'resizeNS' | 'resizeNWSE' | 'resizeNESW';
 const C = tokens.whiteboard.tools.cursor, S = C.size;
 const css = (body: string, x: number, y: number, fallback: string, size: number = S) =>
   `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>${body}</svg>`)}") ${x} ${y}, ${fallback}`;
@@ -20,6 +22,8 @@ export function canvasCursors(ink: string, paper: string, accent: string): Canva
   const key = `${ink}|${paper}|${accent}`, known = cache.get(key); if (known) return known;
   const m = S / 2, gap = 4, arm = 9, r = tokens.whiteboard.draw.eraserRadiusScreen, ring = Math.ceil(r * 2 + 6);
   const cross = `<path d='M${m} ${m - arm}V${m - gap}'/><path d='M${m} ${m + gap}V${m + arm}'/><path d='M${m - arm} ${m}H${m - gap}'/><path d='M${m + gap} ${m}H${m + arm}'/>`;
+  // One double arrow, drawn horizontally and turned to each axis (as tldraw does, so a turned box could turn it too).
+  const arrow = (deg: number) => `<g transform='rotate(${deg} ${m} ${m})'>${lined(`<path d='M${m - 7.5} ${m}H${m + 7.5}'/><path d='M${m - 4.5} ${m - 3.5}L${m - 8} ${m}L${m - 4.5} ${m + 3.5}'/><path d='M${m + 4.5} ${m - 3.5}L${m + 8} ${m}L${m + 4.5} ${m + 3.5}'/>`, ink, paper)}</g>`;
   const point = `<circle cx='${m}' cy='${m}' r='1.75' fill='${accent}' stroke='${paper}' stroke-width='1'/>`;
   const cursors: CanvasCursors = {
     select: css(`<path d='M5 3v16l4.4-4.1 2.9 6.3 2.6-1.2-2.9-6.2H18z' fill='${ink}' stroke='${paper}' stroke-width='1.5' stroke-linejoin='round'/>`, 5, 3, C.select),
@@ -28,8 +32,17 @@ export function canvasCursors(ink: string, paper: string, accent: string): Canva
     text: css(lined(`<path d='M${m} 5v14'/><path d='M${m - 3} 4h2a1 1 0 0 1 1 1a1 1 0 0 1 1-1h2'/><path d='M${m - 3} 20h2a1 1 0 0 0 1-1a1 1 0 0 0 1 1h2'/>`, ink, paper), m, m, C.text),
     shape: css(lined(cross, ink, paper) + point, m, m, C.shape),
     draw: css(`<circle cx='${m}' cy='${m}' r='5.5' fill='none' stroke='${paper}' stroke-width='${C.line + C.halo}'/><circle cx='${m}' cy='${m}' r='5.5' fill='none' stroke='${ink}' stroke-width='${C.line}'/>${point}`, m, m, C.draw),
+    resizeEW: css(arrow(0), m, m, C.resizeEW),
+    resizeNS: css(arrow(90), m, m, C.resizeNS),
+    resizeNWSE: css(arrow(45), m, m, C.resizeNWSE),
+    resizeNESW: css(arrow(-45), m, m, C.resizeNESW),
     eraser: css(`<circle cx='${ring / 2}' cy='${ring / 2}' r='${r}' fill='none' stroke='${paper}' stroke-width='${C.line + C.halo}'/><circle cx='${ring / 2}' cy='${ring / 2}' r='${r}' fill='none' stroke='${ink}' stroke-width='${C.line}'/>`, ring / 2, ring / 2, C.eraser, ring),
   };
   cache.set(key, cursors); return cursors;
 }
 export const cursorForTool = (cursors: CanvasCursors, tool: CanvasTool): string => tool === 'svg' ? cursors.select : cursors[tool];
+/** The cursor of a resize handle: the double arrow along the axis it moves; a line's end shows the precise cross. */
+export function cursorForHandle(cursors: CanvasCursors, handle: ResizeHandle): string {
+  if (handle === 'start' || handle === 'end') return cursors.shape;
+  return cursors[handle === 'nw' || handle === 'se' ? 'resizeNWSE' : handle === 'ne' || handle === 'sw' ? 'resizeNESW' : handle === 'e' || handle === 'w' ? 'resizeEW' : 'resizeNS'];
+}

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Icon } from './host';
-import { Pressable, View, type GestureResponderEvent } from 'react-native';
+import { Pressable, View, type Animated, type GestureResponderEvent } from 'react-native';
 import type { CanvasBlock } from '../shared/model';
 import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema, type WbRenderer } from '../shared/whiteboard';
 import { Txt, useUI } from './ui';
@@ -49,4 +49,20 @@ export function WhiteboardContent({ block, kind, width, height, scale = 1, outli
   else if(data.shape==='line'){const [a,b]=lineEnds(data,width,height);visual=<Pressable onPress={onSelect} style={{width:'100%',height:'100%',justifyContent:'center'}}><View style={{position:'absolute',left:a.x,top:a.y,width:Math.hypot(b.x-a.x,b.y-a.y),height:weight,backgroundColor:color,transformOrigin:'top left',transform:[{rotate:`${Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI}deg`}]}}/></Pressable>;}
   else visual=<Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:color}}><Txt kind="small">{label}; shown in the web app</Txt></Pressable>;
   return <View pointerEvents="box-none" style={{width:'100%',height:'100%'}}>{visual}{!!data.text&&!editing&&data.shape!=='line'&&<View pointerEvents="box-none" style={{position:'absolute',left:look.padding,right:look.padding,top:0,bottom:0,alignItems:'center',justifyContent:'center',overflow:'hidden'}}><Pressable onPress={onSelect} style={inheritCursor}><Txt style={{fontSize:look.fontSize,lineHeight:look.lineHeight,fontWeight:'500',textAlign:'center',color:look.text}}>{data.text}</Txt></Pressable></View>}</View>;
+}
+/**
+ * The content of a whiteboard box drawn at the box's live size. While a handle is held (and while the box springs to
+ * its saved size) the box's Animated width and height move ahead of the stored size; the drawing follows them so
+ * its fill, stroke and label fill the box at every frame instead of staying fitted at the old proportions.
+ */
+export function LiveWhiteboardContent({ w, h, width, height, ...props }: WhiteboardContentProps & { w: Animated.Value; h: Animated.Value }) {
+  const [live, setLive] = useState<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    let lw = width, lh = height;
+    const update = () => setLive(old => Math.abs(lw - width) <= .5 && Math.abs(lh - height) <= .5 ? null : old && old.width === lw && old.height === lh ? old : { width: lw, height: lh });
+    const a = w.addListener(({ value }) => { lw = value; update(); }), b = h.addListener(({ value }) => { lh = value; update(); });
+    setLive(null);
+    return () => { w.removeListener(a); h.removeListener(b); };
+  }, [w, h, width, height]);
+  return <WhiteboardContent {...props} width={live?.width ?? width} height={live?.height ?? height} />;
 }

@@ -321,6 +321,18 @@ export function isMacPlatform(): boolean {
  * and a Pressable there would take it as a press (selecting, or collapsing a multi-selection). Call this when a
  * gesture that moved ends: the one click that follows is dropped before React sees it. Nothing happens on native.
  */
+/**
+ * Show `cursor` everywhere for the length of a gesture (a resize, whose pointer soon leaves the small handle it
+ * started on), whatever element is under the pointer: inner elements that set their own cursor cannot override it.
+ * Null releases it. Nothing happens on native.
+ */
+export function holdCursor(cursor: string | null) {
+  const doc = browser().document; if (!doc) return;
+  const old = doc.getElementById?.('lienzo-held-cursor'); if (!cursor) { old?.remove(); return; }
+  const style = old ?? doc.createElement('style'); style.setAttribute('id', 'lienzo-held-cursor');
+  (style as unknown as { textContent: string }).textContent = `*,*::before,*::after{cursor:${cursor}!important}`;
+  if (!old) doc.body.appendChild(style);
+}
 /** While the primary button is held over `element`, show `cursor()` (the closed hand of the hand tool). Null leaves it alone. */
 export function attachPressCursor(element: unknown, cursor: () => string | null): () => void {
   const node = element as (BrowserElement & { style?: { cursor: string } }) | null, doc = browser().document; if (!doc || !node?.addEventListener || !node.style) return () => {};

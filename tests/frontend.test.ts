@@ -623,13 +623,19 @@ test('a selection box takes the cards it touches and only the areas it fully hol
 });
 
 test('canvas cursors are self-contained drawings in the theme colours with a system fallback', async () => {
-  const { canvasCursors, cursorForTool } = await import('../plugin/client/cursors');
-  const set = canvasCursors('#101010', '#fafafa', '#c05010'), fallback = { select: 'default', hand: 'grab', handActive: 'grabbing', text: 'text', shape: 'crosshair', draw: 'crosshair', eraser: 'cell' };
+  const { canvasCursors, cursorForTool, cursorForHandle } = await import('../plugin/client/cursors');
+  const set = canvasCursors('#101010', '#fafafa', '#c05010'), fallback = { select: 'default', hand: 'grab', handActive: 'grabbing', text: 'text', shape: 'crosshair', draw: 'crosshair', eraser: 'cell', resizeEW: 'ew-resize', resizeNS: 'ns-resize', resizeNWSE: 'nwse-resize', resizeNESW: 'nesw-resize' };
   for (const [name, value] of Object.entries(set)) {
-    assert.match(value, /^url\("data:image\/svg\+xml,[^"]+"\) \d+(\.\d+)? \d+(\.\d+)?, [a-z]+$/, name); assert.ok(value.endsWith(`, ${fallback[name as keyof typeof fallback]}`), name);
+    assert.match(value, /^url\("data:image\/svg\+xml,[^"]+"\) \d+(\.\d+)? \d+(\.\d+)?, [a-z-]+$/, name); assert.ok(value.endsWith(`, ${fallback[name as keyof typeof fallback]}`), name);
     const svg = decodeURIComponent(value.slice(value.indexOf(',') + 1, value.indexOf('")')));
     assert.ok(svg.includes('#101010') && svg.includes('#fafafa'), `${name} uses ink and paper`); assert.ok(!/https?:|<script|<image|href/i.test(svg.replace("xmlns='http://www.w3.org/2000/svg'", '')), `${name} loads nothing`);
   }
-  assert.equal(new Set(Object.values(set)).size, 7); assert.equal(canvasCursors('#101010', '#fafafa', '#c05010'), set, 'cached per palette');
+  assert.equal(new Set(Object.values(set)).size, 11); assert.equal(canvasCursors('#101010', '#fafafa', '#c05010'), set, 'cached per palette');
   assert.equal(cursorForTool(set, 'svg'), set.select); assert.equal(cursorForTool(set, 'eraser'), set.eraser);
+  // Resize handles: the same double arrow turned to the axis each handle moves along.
+  const axis = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', e: 'ew-resize', w: 'ew-resize', n: 'ns-resize', s: 'ns-resize' } as const;
+  for (const [handle, css] of Object.entries(axis)) assert.ok(cursorForHandle(set, handle as keyof typeof axis).endsWith(`, ${css}`), handle);
+  const turn = (value: string) => /rotate\((-?\d+) /.exec(decodeURIComponent(value))?.[1];
+  assert.deepEqual([set.resizeEW, set.resizeNS, set.resizeNWSE, set.resizeNESW].map(turn), ['0', '90', '45', '-45']);
+  assert.equal(cursorForHandle(set, 'start'), set.shape, 'a line end shows the precise cross');
 });

@@ -1755,6 +1755,10 @@ const baseTokens = {
         "shape": "crosshair",
         "draw": "crosshair",
         "eraser": "cell",
+        "resizeEW": "ew-resize",
+        "resizeNS": "ns-resize",
+        "resizeNWSE": "nwse-resize",
+        "resizeNESW": "nesw-resize",
         "size": 24,
         "line": 1.5,
         "halo": 2.5

@@ -911,7 +911,12 @@ or outside a group.
 - **Hover** 1 px `foregroundMuted`@0.35 box 4 outside. **Selected** 1.5 px `accent` box 4 outside,
   no halo, plus square 8 px handles (`surface1`, 1.5 `accent` border; hit 20, touch 44): eight on
   shapes, SVG and drawings, east/west only on text, two round end handles on a line. Shift keeps
-  proportion; SVG is always proportional. While moving: opacity 0.85, no lift shadow.
+  proportion; SVG is always proportional. A handle moves only its own edges: the opposite corner or
+  side stays put (a proportional side handle grows the other axis evenly about the centre), sizes
+  stay between 24 (8 for lines and drawings) and 4096, and nothing ever jumps. The box, its fill,
+  stroke and label are drawn at the live size during the drag; release only saves. While a box
+  shows its handles, the connect handle steps out past the middle one. While moving: opacity
+  0.85, no lift shadow.
 - **Hit area:** the box for text, SVG and filled shapes. For unfilled shapes, lines and drawings
   only an 8-screen-px band around the ink (plus a shape's label): the empty inside lets the
   pointer through to whatever is beneath.
@@ -1116,10 +1121,13 @@ accent marking the exact acting point. Each carries its hot spot and falls back 
 | Shape | cross with a 4 px gap and an accent point | centre | `crosshair` |
 | Pencil | ring of 5.5 with an accent point where the ink lands | centre | `crosshair` |
 | Eraser | ring of its 10 px reach | centre | `cell` |
+| Resize handle | double arrow along the handle's axis (one drawing, turned 0/90/45/−45°) | centre | `ew-resize` / `ns-resize` / `nwse-resize` / `nesw-resize` |
 
 Cards show the open hand with the select tool and the closed hand while carried; with any other tool its
-cursor shows through them. Buttons keep the system pointer. Verified with
-`design/whiteboard-harness/cursors.cjs`; sheet in `design/qa-shapes-legibility-2026-10-06/cursors.png`.
+cursor shows through them. Resize handles (whiteboard boxes and the card grip) show the double arrow of
+their axis; a line's ends show the shape cross. Once a handle is pressed its cursor holds over everything
+until release, whatever lies under the pointer. Buttons keep the system pointer. Verified with
+`design/whiteboard-harness/cursors.cjs` and `resize.cjs`; sheet in `design/qa-shapes-legibility-2026-10-06/cursors.png`.
 
 ## 28. Windows and mini apps (v15)
 
