@@ -181,7 +181,7 @@ test("node type has four optional text properties", async t => {
   const { service } = await setup(t);
   const type = (await service.catalog()).blockTypes.find(type => type.id === "node")!;
   assert.equal(type.renderer, "node");
-  assert.deepEqual(type.properties.map(property => property.key), ["kind", "status", "summary", "details"]);
+  assert.deepEqual(type.properties.map(property => property.key), ["summary", "status", "kind", "details"]);
   assert.ok(type.properties.every(property => property.kind === "text" && !property.required));
   await service.mutate(mutation(0, [{ type: "block.create", block: { id: "n", typeId: "node", title: "Compact", data: {} } }]));
   for (const key of ["kind", "status", "summary", "details"]) await assert.rejects(service.mutate(mutation(1, [{ type: "block.update", id: "n", patch: { data: { [key]: 42 } } }])), rejectCode("VALIDATION"));

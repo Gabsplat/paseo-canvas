@@ -11,6 +11,8 @@ import { WebRange } from '../web';
 import { reducedMotion } from '../motion';
 import type { ClientRenderer, RendererProps } from './types';
 
+/** Milliseconds as a person reads them: 2.5 s, 0.25 s. */
+const flowSeconds = (ms: number) => `${flowNumber(Math.round(ms) / 1000)} s`;
 type Report = { kind: string; payload: CanvasBlock['data']; label: string };
 type Ink = { surface0: string; foreground: string; foregroundMuted: string; border: string; accent: string };
 /** A timeline only. Tokens belong to the host's real link paths, never a second graph. */
@@ -19,14 +21,14 @@ export function drawFlowTimeline(ctx: Canvas2DContext, frame: SurfaceFrame, data
   ctx.clearRect(0, 0, frame.width, frame.height); ctx.fillStyle = ink.surface0; ctx.fillRect(0, 0, frame.width, frame.height);
   ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(frame.width, 0); ctx.lineTo(frame.width, frame.height); ctx.lineTo(0, frame.height); ctx.closePath(); ctx.clip();
   ctx.fillStyle = ink.foreground; ctx.font = '14px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(`Time: ${flowNumber(time)} ms`, left, 26);
+  ctx.fillText(`Time: ${flowSeconds(time)}`, left, 26);
   ctx.strokeStyle = ink.border; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + width, y); ctx.stroke();
   ctx.strokeStyle = ink.foregroundMuted; ctx.lineWidth = 1;
   // At most 64 authored ticks, rather than hundreds of loop-generated marks.
   for (const event of data.events) { ctx.beginPath(); ctx.moveTo(x(event.t), y - 8); ctx.lineTo(x(event.t), y + 8); ctx.stroke(); }
   ctx.fillStyle = ink.accent; ctx.beginPath(); ctx.arc(x(time), y, 5, 0, Math.PI * 2); ctx.fill();
   ctx.font = '12px monospace'; ctx.fillStyle = ink.foregroundMuted;
-  ctx.fillText('0 ms', left, y + 26); ctx.textAlign = 'right'; ctx.fillText(`${flowNumber(data.duration)} ms`, left + width, y + 26); ctx.textAlign = 'left';
+  ctx.fillText('0 s', left, y + 26); ctx.textAlign = 'right'; ctx.fillText(flowSeconds(data.duration), left + width, y + 26); ctx.textAlign = 'left';
   const activity = flowActivityAt(simulation, time);
   ctx.fillText(started ? `In transit: ${activity.active}; arrived: ${activity.completed}` : 'Not started', left, 136);
   ctx.restore();
@@ -120,19 +122,19 @@ function AnimatedFlow(props: RendererProps<AnimatedFlowData>) {
   };
   const time = flowTimeAt(data, state.current, Date.now()), activity = flowActivityAt(simulation, time);
   const currentEvent = (time < simulation.horizon ? simulation.events.find(e => time >= e.t && time < e.arrival) : undefined) ?? [...simulation.events].reverse().find(e => e.arrival <= Math.min(time, simulation.horizon));
-  const eventRow = !data.events.length ? 'Add events between connected nodes of this Lienzo.' : !started.current ? 'Not started. Move through time to watch the events.'
+  const eventRow = !data.events.length ? 'No events yet. Add them in Properties; each one travels along a link of this Lienzo.' : !started.current ? 'Not started. Move through time to watch the events.'
     : currentEvent ? flowEventText(currentEvent, document) : 'No events at this moment.';
   const wasPlaying = state.current.playing;
   return <View nativeID={`lienzo-interactive-animated-flow-${block.id}`} style={{ gap: 8 }}>
-    <Txt>{data.question}</Txt>
+    {!!data.question && <Txt>{data.question}</Txt>}
     {isWeb ? <View style={{ backgroundColor: ui.c.surface0, borderRadius: 8, borderWidth: 1, borderColor: ui.c.border, overflow: 'hidden' }}>
       <CanvasSurface id={`animated-flow-${block.id}`} label="Flow time and activity" height={160} summary={eventRow}
         animated={state.current.playing} maxPixelSize={1024} draw={draw}
         onVisibilityChange={value => { visible.current = value; if (!value) pause('hidden'); }}
         onError={() => { pause('surface-error'); if (mounted.current) setError('The timeline could not be drawn. Use the time control to step through the events.'); }} />
-    </View> : <View style={{ gap: 4 }}><Txt kind="label" muted>Static</Txt><NativeLearningFallback summary={`${flowNumber(time)} ms. ${eventRow}`} /></View>}
+    </View> : <View style={{ gap: 4 }}><Txt kind="label" muted>Static</Txt><NativeLearningFallback summary={`${flowSeconds(time)}. ${eventRow}`} /></View>}
     <View nativeID={`lienzo-interactive-animated-flow-time-${block.id}`} style={{ gap: 4 }}>
-      <Txt kind="code">Time: {flowNumber(time)} of {flowNumber(data.duration)} ms</Txt>
+      <Txt kind="code">Time: {flowSeconds(time)} of {flowSeconds(data.duration)}</Txt>
       {isWeb && <View style={{ minHeight: 44, justifyContent: 'center' }}><WebRange id={`animated-flow-${block.id}`} label="Flow time in milliseconds" min={0} max={data.duration} step="any"
         value={time} disabled={readOnly} color={ui.c.accent} onChange={seek} onSettle={release} /></View>}
     </View>

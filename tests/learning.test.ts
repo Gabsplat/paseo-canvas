@@ -40,7 +40,8 @@ test('registry validates registered JSON data, keeps the legacy names and expose
   const catalog = await router.call('canvas_catalog', { action: 'list' }, 'owner') as any;
   assert.ok(catalog.blockTypes.find((entry: any) => entry.id === 'controls').guidance.includes('data.question'));
   assert.ok(drawingGuide.includes('canvas_runtime'));
-  assert.equal(controlsDataSchema.parse({ variables: [] }).question, 'How does the result change as you adjust these variables?');
+  // The question is optional: a person can add Controls without writing one, and old data that has one keeps it.
+  assert.equal(controlsDataSchema.parse({ variables: [] }).question, undefined);
 });
 test('runtime uses last-write-wins without revisions/history/undo, coalesces disk writes and survives reopen', async t => {
   const { store, service, directory } = await setup(t);
