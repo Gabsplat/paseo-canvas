@@ -11,7 +11,7 @@ const settingsFileSchema = z.record(z.string(), z.object({ version: z.number().i
 
 /**
  * The desktop implementation of the server host boundary. It runs no agents: there is no agent API, no lifecycle
- * hooks, and canvas actions are never pushed anywhere. Agents connect over MCP and pull them with canvas_events.
+ * hooks. Agents connect over MCP; they draw and read the selection and block state with the canvas tools.
  * Handlers are called through `invoke`, from Electron IPC or the local preview server, with input validated here.
  */
 export class DesktopHost implements ServerHost {

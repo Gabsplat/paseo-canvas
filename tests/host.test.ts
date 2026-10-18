@@ -38,14 +38,13 @@ async function directory(t: TestContext) {
   return path;
 }
 
-test("a host without agents runs the whole panel contract, and actions wait for an agent to read them", async t => {
+test("a host without agents runs the whole panel contract; the agent reads the selection through the tools", async t => {
   const host = new FakeHost(false), core = createCanvasCore(host, { directory: await directory(t) });
   t.after(async () => { await core.stop(); await core.store.close(); });
   assert.deepEqual(host.settings.map(definition => definition.id), ["onboarding", "interface"]);
   assert.equal(host.hooks.size, 0, "no lifecycle hooks on a host that does not run agents");
   // Every panel RPC has a handler, so the same client works on this host.
   for (const contract of (Object.values(rpc) as unknown[]).filter((value): value is RpcContract => !!value && typeof value === "object" && "name" in value && "input" in value)) assert.ok(host.handlers.has(contract.name), contract.name);
-  assert.equal(core.feedback, null);
 
   const created = await host.call(rpc.createDocument, { workspaceId, id: "doc", content: content() });
   assert.equal(created.document.revision, 0);
@@ -60,51 +59,39 @@ test("a host without agents runs the whole panel contract, and actions wait for 
   // Connecting needs no agent registry here and never asks for a reload.
   const connected = await host.call(rpc.connectAgent, { workspaceId, documentId: "doc", expectedRevision: 2, connection: { agentId: "mcp:claude-code", workspaceId } });
   assert.deepEqual([connected.requiresReload, connected.view.connection?.agentId, connected.view.connection?.pinned], [false, "mcp:claude-code", true]);
-  // An immediate action is recorded and stays pending: nothing can wake the agent on this host.
-  const event = await host.call(rpc.agentAction, { workspaceId, documentId: "doc", expectedRevision: 3, eventId: "evt_1", action: { kind: "ask", label: "Explain this", payload: {}, targetIds: ["b"], delivery: "immediate" } });
-  assert.deepEqual([event.status, event.agentId], ["pending", "mcp:claude-code"]);
-  const flushed = await host.call(rpc.flushAgentEvents, { workspaceId, documentId: "doc" });
-  assert.equal(flushed.events[0].status, "pending");
   await assert.rejects(host.call(rpc.agentSetup, { workspaceId, agentId: "mcp:claude-code", provider: "claude" }), /connects agents over MCP/);
 
-  // The agent pulls it through the same tool router the plugin uses, under the scope the host resolves.
+  // The person selects; the agent reads it through the same tool router the plugin uses.
+  const selected = await host.call(rpc.setSelection, { workspaceId, documentId: "doc", expectedSelectionVersion: connected.view.selectionVersion, ids: ["b"] });
   const scoped = new ToolRouter(core.service, async owner => ({ agentId: owner, workspaceId }), core.copilot);
-  const read = await scoped.call("canvas_events", { documentId: "doc" }, "mcp:claude-code") as { events: { id: string; status: string }[] };
-  assert.deepEqual(read.events.map(item => [item.id, item.status]), [["evt_1", "pending"]]);
-  await scoped.call("canvas_events", { documentId: "doc", ack: ["evt_1"] }, "mcp:claude-code");
-  assert.equal((await host.call(rpc.readAgentEvents, { workspaceId, documentId: "doc" })).events[0].status, "acked");
+  const read = await scoped.call("canvas_selection", {}, "mcp:claude-code") as { documentId: string; ids: string[]; selectionVersion: number };
+  assert.deepEqual([read.documentId, read.ids, read.selectionVersion], ["doc", ["b"], selected.selectionVersion]);
 });
 
-test("a host that runs agents verifies them, wakes the recipient with actions and drains at turn end", async t => {
+test("a host that runs agents verifies them, and nothing the panel does sends a message to an agent", async t => {
   const host = new FakeHost(true), core = createCanvasCore(host, { directory: await directory(t) });
   // The fake agent registry is the shared test helper's: agent "a" and "b" in this workspace, "outsider" elsewhere.
   const mock = fakeGateway(core.service); host.api = mock.paseo;
   t.after(async () => { await core.stop(); await core.store.close(); });
-  assert.ok(core.feedback);
   assert.deepEqual([...host.hooks.keys()].sort(), ["agent.archived", "agent.turn_ended", "agent.turn_started"]);
+  // No RPC is left that sends to an agent: no action, event, flush or acknowledgement method exists.
+  const names = [...host.handlers.keys()];
+  assert.deepEqual(names.filter(name => /agent\.(action|events|send)|\.flush$|\.ack$/.test(name)), []);
+  for (const gone of ["agentAction", "readAgentEvents", "flushAgentEvents"]) assert.equal(gone in rpc, false, gone);
 
   await host.call(rpc.createDocument, { workspaceId, id: "doc", content: content() });
   await assert.rejects(host.call(rpc.connectAgent, { workspaceId, documentId: "doc", expectedRevision: 0, connection: { agentId: "outsider", workspaceId } }), /another workspace/);
   const connected = await host.call(rpc.connectAgent, { workspaceId, documentId: "doc", expectedRevision: 0, connection: { agentId: "a", workspaceId } });
   assert.equal(connected.requiresReload, true, "agent a holds no Lienzo tools yet");
 
-  const event = await host.call(rpc.agentAction, { workspaceId, documentId: "doc", expectedRevision: 1, eventId: "evt_now", action: { kind: "ask", label: "Explain this", payload: {}, targetIds: ["b"], delivery: "immediate" } });
-  assert.equal(event.status, "sent");
-  assert.equal(mock.sends.length, 1); assert.equal(mock.sends[0].agentId, "a"); assert.match(mock.sends[0].text, /canvas\.feedback/);
-
-  // A working agent is not interrupted: the action waits for the end of its turn.
-  mock.agents.get("a")!.status = "running";
-  const waiting = await host.call(rpc.agentAction, { workspaceId, documentId: "doc", expectedRevision: 1, eventId: "evt_turn", action: { kind: "ask", label: "And this", payload: {}, targetIds: ["c"], delivery: "immediate" } });
-  assert.deepEqual([waiting.status, mock.sends.length], ["pending", 1]);
-  mock.agents.get("a")!.status = "idle";
+  // Everything the person can do in the panel, with the agent idle and connected: none of it reaches the agent.
+  const edited = await host.call(rpc.mutateDocument, { workspaceId, documentId: "doc", expectedRevision: 1, label: "Edit", operations: [{ type: "block.update", id: "b", patch: { title: "B2" } }] });
+  await host.call(rpc.setSelection, { workspaceId, documentId: "doc", expectedSelectionVersion: edited.selectionVersion, ids: ["b", "c"] });
+  await host.call(rpc.setRuntime, { workspaceId, documentId: "doc", blocks: [{ id: "b", state: { lastInteraction: { kind: "quiz.hint", label: "Hint", at: new Date().toISOString() } } }] });
+  await host.call(rpc.setCopilot, { workspaceId, agentId: "a", patch: { enabled: true, cadence: "step" } });
+  await host.call(rpc.createSheet, { workspaceId, documentId: "doc", expectedRevision: 2, title: "Hoja" });
   await host.emit("agent.turn_ended", { agent: { id: "a" }, turnId: "t1", outcome: { kind: "completed" }, timeline: [] });
-  assert.equal(mock.sends.length, 2);
-  assert.equal((await host.call(rpc.readAgentEvents, { workspaceId, documentId: "doc" })).events.find(item => item.id === "evt_turn")?.status, "sent");
-  // A batched one goes when the person flushes the queue.
-  await host.call(rpc.agentAction, { workspaceId, documentId: "doc", expectedRevision: 1, eventId: "evt_later", action: { kind: "note", label: "Later", payload: {}, targetIds: [], delivery: "batched" } });
-  assert.equal(mock.sends.length, 2);
-  await host.call(rpc.flushAgentEvents, { workspaceId, documentId: "doc" });
-  assert.equal(mock.sends.length, 3);
+  assert.equal(mock.sends.length, 0);
 
   // Archiving the agent frees its canvases.
   await host.emit("agent.archived", { agent: { id: "a" } });

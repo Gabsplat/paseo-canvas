@@ -11,51 +11,54 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 } });
 const { useLearning } = require('../plugin/client/useLearning') as typeof import('../plugin/client/useLearning');
 
-test('a settled attempt retries a lost response with the same event ID and creates one event', async t => {
+test('record persists the interaction as the block state lastInteraction, keeps the renderer state and stays under 4 KiB', async t => {
   const { service } = await setup(t);
   const reference = { documentId: 'd', workspaceId };
   const view = await service.read(reference);
   const block = view.document.blocks.find(b => b.id === 'b')!;
-  let loseResponse = true, flushes = 0;
-  const ids: string[] = [];
+  let snapshot = { blocks: {} as Record<string, Record<string, unknown>>, scopes: {} }, flushes = 0;
+  const pending: { id: string; state: Record<string, unknown> | null }[] = [];
   const controller = {
     view, current: { current: view },
-    learning: { subscribe: () => () => {}, getSnapshot: () => view.runtime, flush: async () => { flushes++; } },
-    send: async (action: Parameters<CanvasController['send']>[0], eventId: string) => {
-      ids.push(eventId);
-      const result = await service.action({ ...reference, expectedRevision: view.document.revision, action, eventId });
-      if (loseResponse) { loseResponse = false; return undefined; }
-      return result;
+    learning: {
+      subscribe: () => () => {}, getSnapshot: () => snapshot,
+      setBlock: (id: string, state: Record<string, unknown> | null) => { pending.push({ id, state }); snapshot = { ...snapshot, blocks: { ...snapshot.blocks, ...(state ? { [id]: state } : {}) } }; },
+      flush: async () => { flushes++; while (pending.length) { const entry = pending.shift()!; await service.runtimeSet({ ...reference, blocks: [{ id: entry.id, state: entry.state as never }], scopes: [] }); } },
     },
   } as unknown as CanvasController;
   const { runtime } = useLearning(block, controller);
-  const payload = { attemptId: 'attempt-one', guess: 2, outcome: 3 };
-  await assert.rejects(runtime.settle('attempt.attempt-one', payload, 'Comparar intento', 'evt_attempt-one'), /not saved/);
-  await runtime.settle('attempt.attempt-one', payload, 'Comparar intento', 'evt_attempt-one');
-  assert.deepEqual(ids, ['evt_attempt-one', 'evt_attempt-one']);
-  assert.equal(flushes, 2);
-  assert.equal((await service.events(reference)).events.length, 1);
-  await assert.rejects(runtime.settle('attempt.attempt-one', { ...payload, guess: 9 }, 'Comparar intento', 'evt_attempt-one'), /different action/);
+  runtime.set({ playhead: 4 });
+  await runtime.record('attempt.one', { guess: 2, outcome: 3 }, 'Compare attempt');
+  let stored = (await service.read(reference)).runtime.blocks.b as Record<string, any>;
+  assert.equal(stored.playhead, 4);
+  assert.deepEqual([stored.lastInteraction.kind, stored.lastInteraction.label, stored.lastInteraction.payload], ['attempt.one', 'Compare attempt', { guess: 2, outcome: 3 }]);
+  assert.ok(flushes >= 2, 'the renderer state is flushed before the record');
+  // A later state write keeps the record; a payload too big for the block is dropped and the kind kept.
+  runtime.set({ playhead: 9 }); await controller.learning.flush();
+  stored = (await service.read(reference)).runtime.blocks.b as Record<string, any>;
+  assert.deepEqual([stored.playhead, stored.lastInteraction.kind], [9, 'attempt.one']);
+  await runtime.record('attempt.big', { text: 'x'.repeat(5000) }, 'Big');
+  stored = (await service.read(reference)).runtime.blocks.b as Record<string, any>;
+  assert.deepEqual([stored.lastInteraction.kind, 'payload' in stored.lastInteraction], ['attempt.big', false]);
 });
 
-test('settled delivery waits for runtime flush and stops if the learner switched documents', async t => {
+test('record waits for the runtime flush and records nothing if the learner switched documents', async t => {
   const { service } = await setup(t);
   const view = await service.read({ documentId: 'd', workspaceId });
-  let sends = 0, failFlush = true;
+  let writes = 0, failFlush = true;
   const controller = {
     view, current: { current: view },
-    learning: { subscribe: () => () => {}, getSnapshot: () => view.runtime,
+    learning: { subscribe: () => () => {}, getSnapshot: () => view.runtime, setBlock: () => { writes++; },
       flush: async () => {
         if (failFlush) throw new Error('offline runtime');
         controller.current.current = { ...view, document: { ...view.document, id: 'another' } };
       },
     },
-    send: async () => { sends++; },
   } as unknown as CanvasController;
   const { runtime } = useLearning(view.document.blocks[0], controller);
-  await assert.rejects(runtime.settle('attempt.one', {}, 'Comparar', 'evt_one'), /offline runtime/);
-  assert.equal(sends, 0);
+  await assert.rejects(runtime.record('attempt.one', {}, 'Compare'), /offline runtime/);
+  assert.equal(writes, 0);
   failFlush = false;
-  await runtime.settle('attempt.one', {}, 'Comparar', 'evt_one');
-  assert.equal(sends, 0);
+  await runtime.record('attempt.one', {}, 'Compare');
+  assert.equal(writes, 0);
 });

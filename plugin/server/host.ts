@@ -4,8 +4,8 @@ import type { CanvasService } from "./service";
 
 /**
  * Everything the Lienzo server core needs from whatever runs it. The Paseo plugin implements it with the plugin SDK
- * (server/paseo.ts); the desktop app implements it in its main process. Nothing in service, store, tools, feedback or
- * copilot imports a host SDK: they depend on these shapes only.
+ * (server/paseo.ts); the desktop app implements it in its main process. Nothing in service, store, tools or copilot
+ * imports a host SDK: they depend on these shapes only.
  */
 export type AgentStatus = "initializing" | "idle" | "running" | "error" | "closed";
 
@@ -18,7 +18,7 @@ export interface HostAgentRef {
   readonly activeTurn?: { turnId: string } | null;
   /** Rereads the agent; resolves falsy when it no longer exists. */
   refresh(): Promise<unknown>;
-  /** Sends a message to the agent, starting a turn when it is idle. */
+  /** Sends a message to the agent, starting a turn when it is idle. Used only by the optional copilot reminder. */
   send(text: string, options: { messageId: string }): Promise<unknown>;
 }
 /** The agents a host can reach. Absent on hosts that do not run agents (the desktop app). */
@@ -45,7 +45,7 @@ export interface LifecycleEvents {
 export interface ServerHost {
   /** "paseo" or "desktop"; informational. */
   readonly kind: string;
-  /** True when the host runs agents and can deliver messages to them: canvas actions can wake an agent. */
+  /** True when the host runs agents: their IDs can be verified and the optional copilot reminder can reach them. */
   readonly runsAgents: boolean;
   registerSettings(definition: SettingsDefinition): void;
   handle<C extends RpcContract>(contract: C, handler: (input: RpcInput<C>, context: HandlerContext) => Promise<RpcOutput<C>> | RpcOutput<C>): void;

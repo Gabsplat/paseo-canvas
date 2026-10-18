@@ -1,14 +1,14 @@
 /**
  * The command palette's model (docs/redesign-2026-10.md, "Command palette"): fuzzy matching on titles and keywords,
- * results grouped in a fixed order, Recent on an empty query, and "Ask the agent" always last.
+ * results grouped in a fixed order, and Recent on an empty query.
  */
-export type PaletteGroup = 'Recent' | 'Tools' | 'Actions' | 'Hojas' | 'Lienzos' | 'Extensions' | 'Settings' | 'Ask the agent';
-export const PALETTE_GROUPS: readonly PaletteGroup[] = ['Recent', 'Tools', 'Actions', 'Hojas', 'Lienzos', 'Extensions', 'Settings', 'Ask the agent'];
+export type PaletteGroup = 'Recent' | 'Tools' | 'Actions' | 'Hojas' | 'Lienzos' | 'Extensions' | 'Settings';
+export const PALETTE_GROUPS: readonly PaletteGroup[] = ['Recent', 'Tools', 'Actions', 'Hojas', 'Lienzos', 'Extensions', 'Settings'];
 export type PaletteItem = {
   id: string; group: Exclude<PaletteGroup, 'Recent'>; title: string; subtitle?: string; icon: string; keywords?: string;
   /** Combinations from the shortcut registry, shown as chips. */
   shortcut?: string;
-  /** The verb on the right of the footer: Open, Run, Ask… */
+  /** The verb on the right of the footer: Open, Run… */
   verb?: string;
   disabled?: boolean;
   /** `background` is true for ⌘↵: run and keep the palette open. */
@@ -55,15 +55,15 @@ export function itemScore(query: string, item: Pick<PaletteItem, 'title' | 'keyw
 }
 /**
  * The sections the palette shows. Without a query: Recent first, then every group. With one: matches by score in
- * each group, at most `perGroup`, and the "Ask the agent" item (already in `items`) last.
+ * each group, at most `perGroup`.
  */
 export function paletteSections(items: readonly PaletteItem[], query: string, recent: readonly string[] = [], perGroup = 6): PaletteSection[] {
   const q = query.trim(), out: PaletteSection[] = [];
   if (!q) {
-    const recentItems = recent.map(id => items.find(i => i.id === id)).filter((i): i is PaletteItem => !!i && i.group !== 'Ask the agent');
+    const recentItems = recent.map(id => items.find(i => i.id === id)).filter((i): i is PaletteItem => !!i);
     if (recentItems.length) out.push({ group: 'Recent', items: recentItems });
     for (const group of PALETTE_GROUPS) {
-      if (group === 'Recent' || group === 'Ask the agent') continue;
+      if (group === 'Recent') continue;
       const list = items.filter(i => i.group === group && !recentItems.includes(i));
       if (list.length) out.push({ group, items: list });
     }
@@ -71,7 +71,6 @@ export function paletteSections(items: readonly PaletteItem[], query: string, re
   }
   for (const group of PALETTE_GROUPS) {
     if (group === 'Recent') continue;
-    if (group === 'Ask the agent') { const ask = items.filter(i => i.group === group); if (ask.length) out.push({ group, items: ask }); continue; }
     const scored = items.filter(i => i.group === group).map(item => ({ item, score: itemScore(q, item) })).filter((e): e is { item: PaletteItem; score: number } => e.score !== null).sort((a, b) => b.score - a.score).slice(0, perGroup);
     if (scored.length) out.push({ group, items: scored.map(e => e.item) });
   }

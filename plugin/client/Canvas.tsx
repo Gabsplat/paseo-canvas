@@ -57,17 +57,16 @@ type BlockItemProps = {
   handlers: GestureResponderHandlers; controller: CanvasController; accent: string; shadow: string;
   onSelect: (id: string, event?: GestureResponderEvent, multi?: boolean) => void; onInspect: () => void; onPacks: () => void; onReorder: (id: string, direction: number) => void; onHover: (id: string, inside: boolean) => void; onMeasure: (id: string, height: number) => void;
 };
-const lastEvent = (c: CanvasController, id: string) => { for (let i = c.events.length - 1; i >= 0; i--) if (c.events[i].action.targetIds?.includes(id)) return c.events[i]; return undefined; };
 // A card re-renders for what it shows. Where it sits, whether it is dimmed, hover elsewhere, the camera and polls that
 // brought nothing new for it are handled around it without touching its contents.
 type CardProps = Pick<BlockItemProps, 'interacting' | 'block' | 'height' | 'selected' | 'lifted' | 'detailsSide' | 'cursor' | 'controller' | 'onSelect' | 'onInspect' | 'onPacks' | 'onReorder' | 'onHover' | 'onMeasure'>;
 function sameCard(a: CardProps, b: CardProps) {
-  const id = a.block.id, p = a.controller, n = b.controller, pe = lastEvent(p, id), ne = lastEvent(n, id);
+  const id = a.block.id, p = a.controller, n = b.controller;
   return a.interacting === b.interacting && a.block === b.block && a.selected === b.selected && a.lifted === b.lifted && a.height === b.height && a.detailsSide === b.detailsSide && a.cursor === b.cursor
     && (p.selection === n.selection || p.catalog?.blockTypes.find(t => t.id === a.block.typeId)?.renderer !== 'file-tree')
     && p.catalog === n.catalog && p.offline === n.offline && p.failure === n.failure && p.pendingIds.includes(id) === n.pendingIds.includes(id) && (!a.selected || (p.selection.length === 1) === (n.selection.length === 1))
     && (p.busy === n.busy || p.catalog?.blockTypes.find(t => t.id === a.block.typeId)?.renderer === 'node')
-    && p.view?.document.example === n.view?.document.example && pe?.id === ne?.id && pe?.status === ne?.status && pe?.error === ne?.error;
+    && p.view?.document.example === n.view?.document.example;
 }
 const Card = React.memo(function Card({ interacting, block, height, selected, lifted, detailsSide, cursor, controller, onSelect, onInspect, onPacks, onReorder, onHover, onMeasure }: CardProps) {
   return <ContentInteractionProvider value={interacting}><BlockCard controller={controller} onSelect={onSelect} onInspect={onInspect} onPacks={onPacks} onReorder={onReorder} block={block} height={height} selected={selected} dragging={lifted} onHover={onHover} detailsSide={detailsSide} cursor={cursor} onMeasure={h => onMeasure(block.id, h)} /></ContentInteractionProvider>;
@@ -630,8 +629,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const beaconId = c.selection.length === 1 && !drag && !wb.editor ? c.selection[0] : null, beaconBox = beaconId ? rects.get(beaconId) : undefined;
   // Lenses: the same canvas, tinted by a variable it does not otherwise show. Marks sit over the cards and never move them.
   const [lens, setLens] = useState<LensId>('none'), stored = useHistory(c, lens === 'author' || lens === 'age' || lens === 'agent');
-  const tint = useMemo(() => lensMarks(lens, doc, stored.changes ?? [], c.events), [lens, doc.blocks, doc.revision, stored.changes, c.events]);
-  const lensNote = lens === 'none' ? undefined : stored.failed ? 'The history could not be read.' : lens === 'talk' ? undefined : !stored.changes ? 'Reading the history…' : 'From the 50 most recent changes.';
+  const tint = useMemo(() => lensMarks(lens, doc, stored.changes ?? []), [lens, doc.blocks, doc.revision, stored.changes]);
+  const lensNote = lens === 'none' ? undefined : stored.failed ? 'The history could not be read.' : !stored.changes ? 'Reading the history…' : 'From the 50 most recent changes.';
   const showMap = !u.compact && size.width >= tokens.canvas.minimap.minPanelWidth && doc.blocks.length + doc.groups.length >= tokens.canvas.minimap.minItems;
   const lensLayer = lens !== 'none' && !drag ? doc.blocks.map(b => { const r = rects.get(b.id), key = tint.marks.get(b.id), entry = tint.legend.find(l => l.key === key); if (!r || r.hidden || !entry) return null; const tone = u.tone(entry.tone), L = tokens.lens;
     return <View key={b.id} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x - L.outset, top: r.y - bound.y - L.outset, width: r.width + 2 * L.outset, height: r.height + 2 * L.outset, zIndex: 7, borderRadius: L.radius, borderWidth: L.border, borderColor: entry.tone === 'neutro' ? withAlpha(u.c.foregroundMuted, .5) : tone, backgroundColor: withAlpha(entry.tone === 'neutro' ? u.c.foregroundMuted : tone, entry.tone === 'neutro' ? L.fill / 2 : L.fill) }} />; }) : null;

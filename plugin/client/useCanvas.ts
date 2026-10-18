@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRpc } from './host';
 import type { RpcInput } from '../shared/contract';
 import * as rpc from '../shared/rpc';
-import type { AgentEvent, CanvasCatalog, CanvasOperation, DocumentView } from '../shared/model';
+import type { CanvasCatalog, CanvasOperation, DocumentView } from '../shared/model';
 import { useHostId } from './ui';
 import { initialDocumentId, rememberOpenDocument } from './session';
 import { reuseDocumentEntities } from './logic';
@@ -16,18 +16,18 @@ export function useCanvas(workspaceId: string) {
     undo: useRpc(rpc.undoDocument), redo: useRpc(rpc.redoDocument), watch: useRpc(rpc.watchDocument), selection: useRpc(rpc.setSelection),
     catalog: useRpc(rpc.readCatalog), catalogMutate: useRpc(rpc.mutateCatalog), validate: useRpc(rpc.validatePack), import: useRpc(rpc.importPack), export: useRpc(rpc.exportPack),
     instantiate: useRpc(rpc.instantiatePack), exportGroup: useRpc(rpc.exportGroup), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
-    runtimeSet: useRpc(rpc.setRuntime), action: useRpc(rpc.agentAction), events: useRpc(rpc.readAgentEvents), flush: useRpc(rpc.flushAgentEvents), history: useRpc(rpc.readHistory),
+    runtimeSet: useRpc(rpc.setRuntime), history: useRpc(rpc.readHistory),
   };
   const apiRef = useRef(api); apiRef.current = api;
   const [view, setView] = useState<DocumentView | null>(null), current = useRef(view);
   const [documents, setDocuments] = useState<Awaited<ReturnType<typeof api.list>>['documents']>([]);
-  const [catalog, setCatalog] = useState<CanvasCatalog | null>(null), [events, setEvents] = useState<AgentEvent[]>([]);
+  const [catalog, setCatalog] = useState<CanvasCatalog | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), locked = useRef(false);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const [offline, setOffline] = useState(false), [failure, setFailure] = useState<Failure | null>(null);
   const [selection, setSelection] = useState<string[]>([]), desired = useRef<string[] | null>(null), selecting = useRef(false);
   const generation = useRef(0), active = useRef(true);
-  const selectionScope = useRef(0), eventEpoch = useRef(0);
+  const selectionScope = useRef(0);
   // IDs already seen in this workspace. A document that appears later without being opened here was created elsewhere
   // (normally by the agent through canvas_create), so the panel follows it.
   const knownIds = useRef<Set<string> | null>(null), [arrival, setArrival] = useState<{ id: string; title: string } | null>(null);
@@ -44,17 +44,13 @@ export function useCanvas(workspaceId: string) {
     if (desired.current === null) setSelection(next.document.selectedIds);
   }
   function clearFailure() { setFailure(null); }
-  function setScopedEvents(value: AgentEvent[] | ((events: AgentEvent[]) => AgentEvent[])) {
-    if (current.current?.document.id !== view?.document.id) return;
-    eventEpoch.current++; setEvents(value);
-  }
   function fail(e: unknown, retry?: () => Promise<unknown>, revision?: number, affectedIds?: string[], operationKey?: string) {
     if (!active.current) return;
     const message = errorText(e); setFailure({ message, retry, revision, affectedIds, operationKey, conflict: /REVISION_CONFLICT|revision conflict|latest revision|Expected revision|selection version/i.test(message) });
   }
   async function refreshList() { const g = generation.current; const result = await apiRef.current.list({ workspaceId }); if (active.current && g === generation.current) setDocuments(result.documents); return result.documents; }
   async function open(id: string) {
-    learning.reset(); const g = ++generation.current; desired.current = null; current.current = null; setView(null); setSelection([]); setEvents([]); setLoading(true); setFailure(null);
+    learning.reset(); const g = ++generation.current; desired.current = null; current.current = null; setView(null); setSelection([]); setLoading(true); setFailure(null);
     try {
       const next = await apiRef.current.read({ workspaceId, documentId: id }); if (g !== generation.current || !active.current) return;
       accept(next); setOffline(false);
@@ -74,18 +70,18 @@ export function useCanvas(workspaceId: string) {
   }
   useLayoutEffect(() => {
     learning.reset(); active.current = true; const g = ++generation.current;
-    current.current = null; desired.current = null; knownIds.current = null; setArrival(null); setView(null); setSelection([]); setEvents([]); setDocuments([]); setCatalog(null); setFailure(null); setOffline(false); setLoading(true);
+    current.current = null; desired.current = null; knownIds.current = null; setArrival(null); setView(null); setSelection([]); setDocuments([]); setCatalog(null); setFailure(null); setOffline(false); setLoading(true);
     void loadInitial(g);
     return () => { learning.reset(); active.current = false; ++generation.current; };
   }, [hostId, workspaceId]);
   useEffect(() => {
     let stopped = false, timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      const v = current.current, g = generation.current, eventVersion = eventEpoch.current;
+      const v = current.current, g = generation.current;
       if (v) {
         try {
-          const [change, delivery] = await Promise.all([apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion }), apiRef.current.events({ workspaceId, documentId: v.document.id })]);
-          if (!stopped && g === generation.current) { if (change.view) accept(change.view); if (eventVersion === eventEpoch.current) setEvents(delivery.events); setOffline(false); }
+          const change = await apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion });
+          if (!stopped && g === generation.current) { if (change.view) accept(change.view); setOffline(false); }
         } catch { if (!stopped && g === generation.current) setOffline(true); }
       }
       try {
@@ -163,31 +159,18 @@ export function useCanvas(workspaceId: string) {
     while ((locked.current || selecting.current && selectionScope.current === g) && g === generation.current && active.current) await new Promise<void>(resolve => setTimeout(resolve, 20));
     if (g !== generation.current || !active.current) throw new Error('The Lienzo changed before the action finished.');
   }
-  async function send(action: RpcInput<typeof rpc.agentAction>['action'], eventId: string): Promise<AgentEvent | undefined> {
-    const v = current.current; if (!v) return;
-    const g = generation.current;
-    const request = { workspaceId, documentId: v.document.id, expectedRevision: v.document.revision, action, eventId };
-    if (action.settled) {
-      try {
-        const result = await apiRef.current.action(request);
-        if (!active.current || g !== generation.current) return undefined;
-        eventEpoch.current++; setEvents(old => [...old.filter(e => e.id !== result.id && !(e.status === 'pending' && e.action.settled && e.action.kind === result.action.kind && e.action.targetIds?.[0] === result.action.targetIds?.[0])), result]); return result;
-      } catch (error) { fail(error); return undefined; }
-    }
-    return task(async () => { const result = await apiRef.current.action(request); if (!active.current || g !== generation.current) return undefined; eventEpoch.current++; setEvents(old => [...old.filter(e => e.id !== result.id), result]); return result; }, () => { if (current.current?.document.id !== request.documentId) return Promise.resolve(); return send(action, eventId); });
-  }
   async function create(content: RpcInput<typeof rpc.createDocument>['content']) {
     const g = generation.current;
-    return task(async () => { const next = await apiRef.current.create({ workspaceId, content }); if (!active.current || g !== generation.current) return undefined; ++generation.current; desired.current = null; setFailure(null); setEvents([]); accept(next); await refreshList().catch(error => fail(error, refreshList)); return next; });
+    return task(async () => { const next = await apiRef.current.create({ workspaceId, content }); if (!active.current || g !== generation.current) return undefined; ++generation.current; desired.current = null; setFailure(null); accept(next); await refreshList().catch(error => fail(error, refreshList)); return next; });
   }
   async function example(packId: string, index = 0) {
     const g = generation.current;
-    return task(async () => { const next = await apiRef.current.instantiate({ workspaceId, packId, documentIndex: index }); if (!active.current || g !== generation.current) return undefined; ++generation.current; desired.current = null; setFailure(null); setEvents([]); accept(next); await refreshList().catch(error => fail(error, refreshList)); return next; });
+    return task(async () => { const next = await apiRef.current.instantiate({ workspaceId, packId, documentIndex: index }); if (!active.current || g !== generation.current) return undefined; ++generation.current; desired.current = null; setFailure(null); accept(next); await refreshList().catch(error => fail(error, refreshList)); return next; });
   }
   async function refresh() {
     const v = current.current; if (!v) return;
     try { accept(await apiRef.current.read({ workspaceId, documentId: v.document.id })); setOffline(false); } catch (e) { fail(e, refresh); }
   }
-  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, events, setEvents: setScopedEvents, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, send, task, create, example, refreshList, settle, arrival };
+  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, task, create, example, refreshList, settle, arrival };
 }
 export type CanvasController = ReturnType<typeof useCanvas>;

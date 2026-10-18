@@ -5,9 +5,7 @@ import React, { useRef, useState } from 'react';
 import { Animated, Image, Pressable, View, type GestureResponderEvent } from 'react-native';
 import { openExternalUrl } from './host';
 import { copyText, Icon, ScrollView, useToast } from './host';
-import type { RpcInput } from '../shared/contract';
-import type { agentAction } from '../shared/rpc';
-import type { AgentEvent, BlockType, CanvasBlock, CanvasDocument } from '../shared/model';
+import type { BlockType, CanvasBlock, CanvasDocument } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { connectionsOf, hasCommunication, newId, propertyValue, safeUrl, nodeDensity } from './logic';
 import { tokens } from './tokens';
@@ -20,6 +18,7 @@ import { getClientRenderer } from './renderers';
 import { RegisteredRenderer } from './renderers/RegisteredRenderer';
 import { usePresentation } from './usePresentation';
 import { HiddenResult } from './HiddenResult';
+import { recordInteraction } from './useLearning';
 /** Blocks that are a window onto something else, drawn without a card around them. */
 const WINDOW_RENDERERS = ['preview-frame', 'image-ref', 'html'], W = { radius: 10, border: 1.5, borderAlpha: .55, borderHoverAlpha: .8, bar: 28, barCompact: 36 };
 export const visual = (type?: BlockType) => getClientRenderer(type?.renderer)?.visual ?? tokens.renderers[type ? type.renderer ?? 'generic' : 'unknown'];
@@ -38,11 +37,6 @@ export function ConnectionRows({ doc, id, onOpen, onLink }: { doc: CanvasDocumen
     <Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{relation[link.kind][outgoing ? 0 : 1]} <Txt kind="small" style={{ fontWeight: '600' }}>{title}</Txt>{link.label ? ` · ${link.label}` : ''}</Txt>
   </Pressable>)}</View>;
 }
-export function Delivery({ event, retry }: { event?: AgentEvent; retry?: () => void }) {
-  const u = useUI(); if (!event) return null;
-  const text = event.status === 'pending' ? 'Queued' : event.status === 'sent' ? `Sent · ${new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : event.status === 'acked' ? 'Received by the agent' : 'Not sent';
-  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}><Icon name={event.status === 'pending' ? 'Clock' : event.status === 'sent' ? 'Check' : event.status === 'acked' ? 'CheckCheck' : 'CircleAlert'} size={12} color={event.status === 'failed' ? u.c.statusDanger : event.status === 'acked' ? u.c.statusSuccess : u.c.foregroundMuted} /><Txt kind="small" muted>{text}</Txt>{event.status === 'failed' && <><Txt kind="small" numberOfLines={1} style={{ color: u.c.statusDanger }}>{event.error}</Txt>{retry && <Button small label="Retry" variant="ghost" onPress={retry} />}</>}</View>;
-}
 function UrlPreview({ block, fill = false, bare = false }: { block: CanvasBlock; fill?: boolean; bare?: boolean }) {
   const u = useUI(), toast = useToast(), url = safeUrl(block.data.url), [loaded, setLoaded] = useState(false), [timeout, setTimeoutState] = useState(false);
   React.useEffect(() => { setLoaded(false); setTimeoutState(false); }, [url]);
@@ -56,14 +50,14 @@ function UrlPreview({ block, fill = false, bare = false }: { block: CanvasBlock;
     <Txt kind="small" muted>If the site refuses to be embedded, use Open in the browser.</Txt>{!!block.data.description && <Txt>{str(block.data.description)}</Txt>}
   </View>;
 }
-function FormBody({ block, type, controller: c, submit }: { block: CanvasBlock; type: BlockType; controller: CanvasController; submit: (values: CanvasBlock['data']) => Promise<void> }) {
+function FormBody({ block, type, controller: c, saved }: { block: CanvasBlock; type: BlockType; controller: CanvasController; saved: () => Promise<void> }) {
   const values = useRef<Record<string, unknown>>(Object.fromEntries(type.properties.map(p => [p.key, p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : block.data[p.key] ?? '']))), dirty = useRef(new Set<string>());
   const [submitting, setSubmitting] = useState(false), [error, setError] = useState(''), [, render] = useState(0);
   React.useEffect(() => { for (const p of type.properties) if (!dirty.current.has(p.key)) values.current[p.key] = p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : block.data[p.key] ?? ''; render(n => n + 1); }, [block.data]);
   const save = async (p: BlockType['properties'][number], raw: unknown) => {
     const value = propertyValue(p.kind, raw); const result = await c.edit([{ type: 'block.update', id: block.id, patch: { data: { [p.key]: value } } }], `Edit “${p.label}”`); if (result) dirty.current.delete(p.key); return result;
   };
-  return <View style={{ gap: 8 }}>{type.properties.map(p => p.kind === 'boolean' ? <CheckRow key={p.key} label={p.label} checked={values.current[p.key] === true} disabled={c.offline || submitting} onPress={() => { const checked = values.current[p.key] !== true; values.current[p.key] = checked; dirty.current.add(p.key); render(n => n + 1); void save(p, checked).catch(e => setError(String(e))); }} /> : <Field key={p.key} label={p.label} required={p.required} value={p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : str(block.data[p.key])} disabled={c.offline || submitting} multiline={p.kind === 'json'} mono={p.kind !== 'text'} onDraft={value => { values.current[p.key] = value; dirty.current.add(p.key); }} onSave={value => save(p, value)} />)}{error && <Txt kind="small">{error}</Txt>}<Button label={submitting ? 'Sending…' : 'Send'} variant="primary" small disabled={c.offline || submitting} onPress={() => { void (async () => { setSubmitting(true); setError(''); try { const documentId = c.current.current?.document.id; await c.settle(); if (documentId !== c.current.current?.document.id) return; const data = Object.fromEntries(type.properties.map(p => [p.key, propertyValue(p.kind, values.current[p.key])])) as CanvasBlock['data']; const result = await c.edit([{ type: 'block.update', id: block.id, patch: { data } }], `Save form “${block.title}”`); if (!result) throw new Error('The form was not saved.'); const committed = result.document.blocks.find(b => b.id === block.id); if (committed) await submit(committed.data); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSubmitting(false); } })(); }} /></View>;
+  return <View style={{ gap: 8 }}>{type.properties.map(p => p.kind === 'boolean' ? <CheckRow key={p.key} label={p.label} checked={values.current[p.key] === true} disabled={c.offline || submitting} onPress={() => { const checked = values.current[p.key] !== true; values.current[p.key] = checked; dirty.current.add(p.key); render(n => n + 1); void save(p, checked).catch(e => setError(String(e))); }} /> : <Field key={p.key} label={p.label} required={p.required} value={p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : str(block.data[p.key])} disabled={c.offline || submitting} multiline={p.kind === 'json'} mono={p.kind !== 'text'} onDraft={value => { values.current[p.key] = value; dirty.current.add(p.key); }} onSave={value => save(p, value)} />)}{error && <Txt kind="small">{error}</Txt>}<Button label={submitting ? 'Saving…' : 'Save'} variant="primary" small disabled={c.offline || submitting} onPress={() => { void (async () => { setSubmitting(true); setError(''); try { const documentId = c.current.current?.document.id; await c.settle(); if (documentId !== c.current.current?.document.id) return; const data = Object.fromEntries(type.properties.map(p => [p.key, propertyValue(p.kind, values.current[p.key])])) as CanvasBlock['data']; const result = await c.edit([{ type: 'block.update', id: block.id, patch: { data } }], `Save form “${block.title}”`); if (!result) throw new Error('The form was not saved.'); await saved(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSubmitting(false); } })(); }} /></View>;
 }
 function Media({ block, fill = false, bare = false }: { block: CanvasBlock; fill?: boolean; bare?: boolean }) {
   const u = useUI(), toast = useToast(), source = mediaSource(block.data.url, block.data.mediaKind), [failed, setFailed] = useState(false), [playing, setPlaying] = useState(false), [expanded, setExpanded] = useState(false);
@@ -83,8 +77,7 @@ function Media({ block, fill = false, bare = false }: { block: CanvasBlock; fill
   return <View style={{ gap: 8, flexGrow: fill ? 1 : undefined }}>{player}{embed && playing && <Button label="Close player" small variant="ghost" onPress={() => setPlaying(false)} />}<Button label="Open reference" small variant="ghost" icon="ExternalLink" onPress={open} />{!!block.data.caption && <Txt kind="small" muted>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
 }
 export function BlockCard({ block, controller: c, selected, onSelect, onInspect, onPacks, onReorder, headerHandlers, onMeasure, outline = false, dragging = false, dim = false, onHover, detailsSide = 'right', cursor, height }: { block: CanvasBlock; controller: CanvasController; selected: boolean; onSelect: (id: string, event?: GestureResponderEvent, multi?: boolean) => void; onInspect: () => void; onPacks: () => void; onReorder: (id: string, direction: number) => void; headerHandlers?: object; onMeasure?: (height: number) => void; outline?: boolean; dragging?: boolean; dim?: boolean; onHover?: (id: string, inside: boolean) => void; detailsSide?: 'right' | 'bottom'; cursor?: string; height?: Animated.Value }) {
-  const u = useUI(), toast = useToast(), type = c.catalog?.blockTypes.find(t => t.id === block.typeId), v = visual(type), [focus, setFocus] = useState(false), [hovered, setHovered] = useState(false), [answer, setAnswer] = useState(str(block.data.answer)), [hint, setHint] = useState(false), [sending, setSending] = useState(false), [sendError, setSendError] = useState('');
-  const retry = useRef<null | { action: RpcInput<typeof agentAction>['action']; id: string }>(null);
+  const u = useUI(), toast = useToast(), type = c.catalog?.blockTypes.find(t => t.id === block.typeId), v = visual(type), [focus, setFocus] = useState(false), [hovered, setHovered] = useState(false), [answer, setAnswer] = useState(str(block.data.answer)), [hint, setHint] = useState(false);
   React.useEffect(() => setAnswer(str(block.data.answer)), [block.data.answer]);
   const presentation = usePresentation(c), gateIds = presentation?.hiddenBy.get(block.id);
   if (gateIds?.length) return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ height: height && !outline ? height : undefined }}>
@@ -95,22 +88,13 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   const sized = !!height && !outline;
   const pending = c.pendingIds.includes(block.id), writeFailure = c.failure?.affectedIds?.includes(block.id) ? c.failure : null;
   const disabled = pending || c.offline;
-  const event = [...c.events].reverse().find(e => e.action.targetIds?.includes(block.id));
-  async function send(kind: string, payload: CanvasBlock['data'], label: string, delivery: 'immediate' | 'batched' = 'immediate', again = false) {
-    if (sending) return;
-    if (!again) retry.current = { action: { kind, label, payload, targetIds: [block.id], delivery }, id: newId('evt') };
-    setSending(true); setSendError('');
-    try { const request = retry.current!; const result = await c.send(request.action, request.id); if (!result) setSendError('Not sent. See the notice on the canvas.'); else if (result.status === 'failed') setSendError(result.error ?? 'Not sent'); }
-    finally { setSending(false); }
-  }
-  const retrySend = () => { if (event?.status === 'failed') { void c.task(async () => { const result = await c.api.flush({ workspaceId: c.workspaceId, documentId: c.view!.document.id }); c.setEvents(result.events); }); } else if (retry.current) void send('', {}, '', 'immediate', true); };
   const fieldSave = (key: string, value: unknown) => c.edit([{ type: 'block.update', id: block.id, patch: { data: { [key]: value } as CanvasBlock['data'] } }], `Edit “${key}”`);
   const generic = () => <View style={{ gap: 8 }}>{(type?.properties ?? Object.keys(block.data).map(key => ({ key, label: key, kind: 'json' }))).map(p => <View key={p.key} style={{ gap: 4 }}><Txt kind="label" muted>{p.label}</Txt><Txt kind={p.kind === 'json' || p.kind === 'number' ? 'code' : 'body'} selectable numberOfLines={outline ? undefined : p.kind === 'json' ? 4 : 8}>{typeof block.data[p.key] === 'boolean' ? block.data[p.key] ? 'Yes' : 'No' : str(block.data[p.key])}</Txt></View>)}</View>;
   let body: React.ReactNode = generic(), qualifier = '';
   const renderer = type?.renderer;
   if (isWhiteboardRenderer(renderer)) return <WhiteboardContent block={block} kind={renderer} width={block.size?.width ?? 160} height={block.size?.height ?? 104} outline={outline} onSelect={event => onSelect(block.id,event)} onMeasure={onMeasure} />;
   if (!type) body = <View style={{ gap: 8 }}><Txt>This type is not in your catalog. Import the collection that defines it.</Txt><Button label="Open collections" small variant="ghost" onPress={onPacks} /></View>;
-  else if (getClientRenderer(renderer)) body = <RegisteredRenderer block={block} id={renderer!} controller={c} readOnly={disabled} send={send} />;
+  else if (getClientRenderer(renderer)) body = <RegisteredRenderer block={block} id={renderer!} controller={c} readOnly={disabled} />;
   else if (['note', 'text', 'callout', 'step'].includes(renderer ?? '') && typeof block.data.text === 'string') body = <Txt selectable numberOfLines={outline || sized ? undefined : 8}>{block.data.text}</Txt>;
   else if (renderer === 'code' && typeof block.data.code === 'string') {
     const lines = block.data.code.split('\n'); qualifier = ['', 'text', 'plain', 'txt'].includes(str(block.data.language).trim().toLowerCase()) ? '' : str(block.data.language);
@@ -120,13 +104,13 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
     body = <View style={{ marginVertical: -3 }}>{items.map((item, i) => <CheckRow key={i} label={item.label} checked={item.done} tone="exito" strike={item.done} disabled={disabled} onPress={() => { void fieldSave('items', items.map((old, index) => index === i ? { ...old, done: !old.done } : old)); }} />)}</View>;
   } else if (renderer === 'quiz' && Array.isArray(block.data.options)) {
     qualifier = `${block.data.options.length} options`;
-    body = <View style={{ gap: 6 }}><Txt style={{ marginBottom: 2 }}>{str(block.data.question)}</Txt>{block.data.options.map((option, i) => <OptionRow key={i} label={str(option)} selected={answer === str(option)} disabled={c.offline || sending} onPress={() => setAnswer(str(option))} />)}<Button label={sending ? 'Sending…' : 'Send answer'} variant="primary" small icon="SendHorizontal" style={{ alignSelf: 'flex-start', marginTop: 2 }} disabled={disabled || sending || !answer || answer === block.data.answer} onPress={() => { void (async () => { const result = await fieldSave('answer', answer); if (result) await send('block.answer', { answer }, `Answer “${block.title}”`); })(); }} />{renderer === 'quiz' && block.data.hint && <><Button label="Show hint" small variant="ghost" style={{ alignSelf: 'flex-start' }} disabled={disabled || hint} onPress={() => { setHint(true); void send('block.hint', {}, `Hint for “${block.title}”`, 'batched'); }} />{hint && <View style={{ backgroundColor: u.wash('turquesa'), padding: 8, borderRadius: 6 }}><Txt>{str(block.data.hint)}</Txt></View>}</>}{block.data.answer && block.data.explanation && <Txt>{str(block.data.explanation)}</Txt>}</View>;
+    body = <View style={{ gap: 6 }}><Txt style={{ marginBottom: 2 }}>{str(block.data.question)}</Txt>{block.data.options.map((option, i) => <OptionRow key={i} label={str(option)} selected={answer === str(option)} disabled={c.offline} onPress={() => setAnswer(str(option))} />)}<Button label="Answer" variant="primary" small icon="Check" style={{ alignSelf: 'flex-start', marginTop: 2 }} disabled={disabled || !answer || answer === block.data.answer} onPress={() => { void fieldSave('answer', answer); }} />{renderer === 'quiz' && block.data.hint && <><Button label="Show hint" small variant="ghost" style={{ alignSelf: 'flex-start' }} disabled={disabled || hint} onPress={() => { setHint(true); void recordInteraction(c, block.id, 'quiz.hint', null, `Hint for “${block.title}”`).catch(() => {}); }} />{hint && <View style={{ backgroundColor: u.wash('turquesa'), padding: 8, borderRadius: 6 }}><Txt>{str(block.data.hint)}</Txt></View>}</>}{block.data.answer && block.data.explanation && <Txt>{str(block.data.explanation)}</Txt>}</View>;
   } else if (renderer === 'preview-frame') { body = <UrlPreview block={block} fill={sized} />; }
   else if (renderer === 'image-ref') body = <Media block={block} fill={sized} />;
   else if (renderer === 'metric') body = <View><Txt kind="display">{str(block.data.value)} {str(block.data.unit)}</Txt><Txt kind="small" muted>{str(block.data.label)}</Txt></View>;
-  else if (renderer === 'form') body = <FormBody block={block} type={type} controller={c} submit={values => send('block.submit', { values }, `Send “${block.title}”`)} />;
+  else if (renderer === 'form') body = <FormBody block={block} type={type} controller={c} saved={() => recordInteraction(c, block.id, 'form.save', null, `Save “${block.title}”`)} />;
   const doc = presentation?.document ?? c.view?.document, connections = outline && doc ? <ConnectionRows doc={doc} id={block.id} onOpen={id => onSelect(id)} /> : null;
-  const state = (hasCommunication(block.communication) && renderer !== 'node' || pending || writeFailure || sending || sendError || event) ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderColor: u.c.border }}>{hasCommunication(block.communication) && renderer !== 'node' && <Chip label="Has instructions" tone="acento" icon="Compass" center />}{pending ? <Txt kind="small" muted>Saving…</Txt> : writeFailure ? <View><Txt kind="small" style={{ color: u.c.statusDanger }}>Not saved</Txt>{writeFailure.retry && <Button label="Retry" small variant="ghost" onPress={() => { void writeFailure.retry?.().catch(e => c.fail(e)); }} />}</View> : sending ? <Txt kind="small" muted>Sending…</Txt> : sendError ? <View><Txt kind="small" style={{ color: u.c.statusDanger }}>{sendError}</Txt><Button label="Retry" small variant="ghost" onPress={retrySend} /></View> : <Delivery event={event} retry={retrySend} />}</View> : null;
+  const state = (hasCommunication(block.communication) && renderer !== 'node' || pending || writeFailure) ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderColor: u.c.border }}>{hasCommunication(block.communication) && renderer !== 'node' && <Chip label="Has instructions" tone="acento" icon="Compass" center />}{pending ? <Txt kind="small" muted>Saving…</Txt> : writeFailure ? <View><Txt kind="small" style={{ color: u.c.statusDanger }}>Not saved</Txt>{writeFailure.retry && <Button label="Retry" small variant="ghost" onPress={() => { void writeFailure.retry?.().catch(e => c.fail(e)); }} />}</View> : null}</View> : null;
   // A lifted card stays solid: the lift is told by scale and shadow (Canvas), not by fading it.
   const opacity = dragging ? 1 : pending ? tokens.alpha.pending : dim ? G.dim.node : 1, grab = cursor ? { cursor } as object : null;
   const hover = (inside: boolean) => { setHovered(inside); onHover?.(block.id, inside); };

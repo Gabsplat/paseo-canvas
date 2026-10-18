@@ -3,7 +3,7 @@ import { mkdir, open, readFile, rename, rm, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { agentEventSchema, connectionSchema, copilotSettingsSchema, documentSchema, sharingModeSchema, type CanvasDocument } from "../shared/model";
+import { connectionSchema, copilotSettingsSchema, documentSchema, sharingModeSchema, type CanvasDocument } from "../shared/model";
 import { catalogStorageSchema, catalogView } from "./catalog";
 import { CanvasError } from "../shared/errors";
 import { clone, validateDocument } from "./reducer";
@@ -15,21 +15,23 @@ const historyEntrySchema = z.object({
   undone: z.boolean().default(false), target: z.string().optional(),
   agentId: z.string().optional(),
 }).strict();
-// Private outbox records. These never cross plugin RPC or MCP contracts.
-const outboundBatchSchema = z.object({
-  messageId: z.string(), agentId: z.string(), eventIds: z.array(z.string()).min(1),
-  prompt: z.string(), createdAt: z.string(),
-  status: z.enum(["prepared", "failed", "completed"]),
-}).strict();
-const recordSchema = z.object({
+/**
+ * State written while the canvas still sent the person's actions to the agent carries an event queue and outbound
+ * message batches on every document. The canvas is one-way now: those are dropped on read and never written again.
+ */
+const RETIRED_RECORD_KEYS = ["events", "outboundBatches"];
+const withoutRetiredKeys = (value: unknown) => value && typeof value === "object" && RETIRED_RECORD_KEYS.some(key => Object.hasOwn(value, key))
+  ? Object.fromEntries(Object.entries(value).filter(([key]) => !RETIRED_RECORD_KEYS.includes(key))) : value;
+const recordSchema = z.preprocess(withoutRetiredKeys, z.object({
   document: documentSchema, history: z.array(historyEntrySchema),
   connection: connectionSchema.nullable(), selectionVersion: z.number().int().nonnegative(),
   runtime: runtimeStateSchema.default({ blocks: {}, scopes: {} }),
-  runtimeVersion: z.number().int().nonnegative(), events: z.array(agentEventSchema),
-  outboundBatches: z.array(outboundBatchSchema).default([]),
+  runtimeVersion: z.number().int().nonnegative(),
+  // When the person last changed the selection: canvas_selection without a documentId reads the latest one.
+  selectedAt: z.iso.datetime().optional(),
   // Agent that created the document through MCP. Scopes access when the workspace keeps one canvas per agent.
   ownerAgentId: z.string().optional(),
-}).strict();
+}).strict());
 // Private per-agent copilot record: the settings the person chose plus what the reminder rule needs to remember.
 const copilotRecordSchema = copilotSettingsSchema.extend({
   workspaceId: z.string().min(1).max(200).optional(),
@@ -47,7 +49,6 @@ const stateSchema = z.object({
   copilot: z.record(z.string(), copilotRecordSchema).default({}),
 }).strict();
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
-export type OutboundBatch = z.infer<typeof outboundBatchSchema>;
 export type DocumentRecord = z.infer<typeof recordSchema>;
 export type RuntimeRecord = Pick<DocumentRecord, "document" | "runtime" | "runtimeVersion">;
 export type CanvasState = z.infer<typeof stateSchema>;

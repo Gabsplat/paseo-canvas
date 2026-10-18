@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { flatten, fuzzyScore, itemScore, paletteSections, remember, type PaletteItem } from '../plugin/client/palette';
 
 const item = (id: string, group: PaletteItem['group'], title: string, keywords?: string): PaletteItem => ({ id, group, title, keywords, icon: 'Dot', run() {} });
-const items = [item('pencil', 'Tools', 'Pencil', 'draw freehand'), item('rect', 'Tools', 'Rectangle', 'shape box'), item('marco', 'Tools', 'Marco', 'frame group container'), item('dup', 'Actions', 'Duplicate'), item('doc', 'Lienzos', 'Árbol de clases'), item('keys', 'Settings', 'Keyboard shortcuts'), item('ask', 'Ask the agent', 'Ask the agent: pen')];
+const items = [item('pencil', 'Tools', 'Pencil', 'draw freehand'), item('rect', 'Tools', 'Rectangle', 'shape box'), item('marco', 'Tools', 'Marco', 'frame group container'), item('dup', 'Actions', 'Duplicate'), item('doc', 'Lienzos', 'Árbol de clases'), item('keys', 'Settings', 'Keyboard shortcuts')];
 test('fuzzy matching needs every character in order and prefers word starts and runs', () => {
   assert.equal(fuzzyScore('pcl', 'Pencil') !== null, true);
   assert.equal(fuzzyScore('lcp', 'Pencil'), null);
@@ -12,17 +12,17 @@ test('fuzzy matching needs every character in order and prefers word starts and 
   assert.notEqual(fuzzyScore('arbol', 'Árbol de clases'), null, 'accents do not matter');
 });
 test('keywords match too', () => { assert.notEqual(itemScore('frame', items[2]), null); assert.equal(itemScore('zzz', items[2]), null); });
-test('an empty query shows Recent first, then the groups, without Ask', () => {
+test('an empty query shows Recent first, then the groups', () => {
   const sections = paletteSections(items, '', ['dup', 'gone']);
   assert.deepEqual(sections.map(s => s.group), ['Recent', 'Tools', 'Lienzos', 'Settings']);
   assert.deepEqual(sections[0].items.map(i => i.id), ['dup']);
   assert.equal(flatten(sections).filter(i => i.id === 'dup').length, 1, 'a recent item is not repeated');
 });
-test('a query groups matches in order and always ends with Ask the agent', () => {
+test('a query groups matches in order; there is no Ask the agent group', () => {
   const sections = paletteSections(items, 'pen', []);
-  assert.deepEqual(sections.map(s => s.group), ['Tools', 'Ask the agent']);
+  assert.deepEqual(sections.map(s => s.group), ['Tools']);
   assert.equal(sections[0].items[0].id, 'pencil');
-  assert.deepEqual(paletteSections(items, 'xyzq').map(s => s.group), ['Ask the agent']);
+  assert.deepEqual(paletteSections(items, 'xyzq'), []);
 });
 test('recent keeps the latest first without duplicates', () => { assert.deepEqual(remember(['a', 'b', 'c'], 'b', 3), ['b', 'a', 'c']); });
 test('long descriptions do not match everything: subtitles and keywords match by whole words', () => {

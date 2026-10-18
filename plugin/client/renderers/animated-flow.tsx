@@ -11,8 +11,7 @@ import { WebRange } from '../web';
 import { reducedMotion } from '../motion';
 import type { ClientRenderer, RendererProps } from './types';
 
-let interactionSequence = 0;
-type Report = { kind: string; payload: CanvasBlock['data']; label: string; eventId: string };
+type Report = { kind: string; payload: CanvasBlock['data']; label: string };
 type Ink = { surface0: string; foreground: string; foregroundMuted: string; border: string; accent: string };
 /** A timeline only. Tokens belong to the host's real link paths, never a second graph. */
 export function drawFlowTimeline(ctx: Canvas2DContext, frame: SurfaceFrame, data: AnimatedFlowData, simulation: FlowSimulation, time: number, started: boolean, ink: Ink): void {
@@ -56,7 +55,7 @@ function AnimatedFlow(props: RendererProps<AnimatedFlowData>) {
   };
   const deliver = (report: Report) => {
     pending.current = report; setError('');
-    void live.current.props.runtime.settle(report.kind, report.payload, report.label, report.eventId).then(() => {
+    void live.current.props.runtime.record(report.kind, report.payload, report.label).then(() => {
       if (pending.current === report) pending.current = null;
     }).catch(() => { if (pending.current === report) fail(); });
   };
@@ -67,8 +66,7 @@ function AnimatedFlow(props: RendererProps<AnimatedFlowData>) {
       write(next, true, reset);
       deliver({ kind: `animated-flow.${kind}`, payload: { playhead: next.playhead, visited: next.visited, reason,
         active: reset ? 0 : activity.active, completed: reset ? 0 : activity.completed, unresolved: live.current.simulation.issues.length, limitedBy: [...live.current.simulation.limitedBy] },
-        label: reset ? 'Reset flow' : 'Explore the flow',
-        eventId: `flow.${Date.now().toString(36)}.${(++interactionSequence).toString(36)}.${Math.random().toString(36).slice(2, 10)}` });
+        label: reset ? 'Reset flow' : 'Explore the flow' });
     } catch { fail(); }
   };
   const pause = (reason: string, feedback = true) => {

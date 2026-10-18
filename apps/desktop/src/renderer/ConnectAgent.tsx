@@ -19,8 +19,7 @@ function ago(iso: string, now: number) {
 
 /**
  * Replaces Paseo's agent dialog in the desktop app. The app runs no agents: an agent connects to Lienzo's MCP server
- * from its own app, and reads what the person sends with canvas_events. This says so, gives the command, and shows
- * which agents have actually called in.
+ * from its own app. This gives the command and shows which agents have actually called in.
  */
 export function ConnectAgentSheet({ open, close, connectedAgentId }: AgentSheetProps) {
   const u = useUI(), toast = useToast(), status = useDesktopStatus(), [client, setClient] = useState<Client>('claude'), [now, setNow] = useState(Date.now());
@@ -48,11 +47,11 @@ export function ConnectAgentSheet({ open, close, connectedAgentId }: AgentSheetP
         <Txt style={{ flexShrink: 1 }} numberOfLines={1}>{entry.name}{entry.version ? ` ${entry.version}` : ''}</Txt>
         <Txt kind="small" muted>{recent.includes(entry) ? 'connected' : 'last seen'} {ago(entry.lastSeenAt, now)}{entry.toolCalls ? ` · ${entry.toolCalls} tool ${entry.toolCalls === 1 ? 'call' : 'calls'}` : ''}</Txt>
       </View>)}
-      {receiver && <Txt kind="small" muted>This Lienzo’s actions go to {receiver}.</Txt>}
+      {receiver && <Txt kind="small" muted>{receiver} last worked on this Lienzo.</Txt>}
     </View>
     <View style={{ gap: 4, borderTopWidth: 1, borderColor: u.c.border, paddingTop: 14 }}>
-      <Txt kind="bodyStrong">Lienzo cannot wake an agent</Txt>
-      <Txt kind="small" muted>What you send from the canvas waits in a queue. The agent reads it with its canvas_events tool the next time it works: mention the canvas in your conversation, or ask it to check. Agents seen are the ones that called in; Lienzo cannot tell whether they are working.</Txt>
+      <Txt kind="bodyStrong">Talk to the agent in its own app</Txt>
+      <Txt kind="small" muted>The canvas never messages the agent. Select something here and say “look at what I selected” in your conversation: the agent reads the selection with its tools. Agents seen are the ones that called in; Lienzo cannot tell whether they are working.</Txt>
     </View>
   </Modal.Content></Modal>;
 }

@@ -99,17 +99,11 @@ test('the eraser works on anchored drawings where they are shown, and appending 
   const kept = draws(h.doc())[0], next = appendStroke({ position: kept.position, size: kept.size, data: kept.data }, [60, 60, 90, 90], { color: 'rojo', weight: 'l' });
   assert.deepEqual([next.data.author, next.data.anchor, next.data.strokes.length], ['learner', 'a', 2]);
 });
-test('leaving pencil and eraser settles one bounded summary; drawing itself sends nothing', async () => {
+test('drawing and changing tools send nothing: strokes are only wb-draw blocks the agent can read', async () => {
   const h = harness(); await h.stroke([[250, 150], [350, 150]]); await h.stroke([[40, 40], [90, 40]]);
-  assert.equal(h.sent.length, 0, 'No event per stroke.');
-  await h.setTool('eraser'); assert.equal(h.sent.length, 0, 'Pencil to eraser is still the same activity.');
-  await h.setTool('select');
-  assert.equal(h.sent.length, 1); const action = h.sent[0];
-  assert.deepEqual([action.kind, action.delivery, action.settled], ['whiteboard.strokes', 'batched', true]);
-  assert.deepEqual(action.payload, { learner: { drawings: 2, strokes: 2 }, assistant: { strokes: 0 }, authored: { strokes: 0 }, anchors: [{ id: 'a', title: 'Tarjeta a' }] });
-  assert.equal(JSON.stringify(action).includes('points'), false); assert.equal(action.targetIds.length, 2);
-  await h.setTool('draw'); await h.setTool('select'); assert.equal(h.sent.length, 1, 'Picking the pencil up and putting it down without drawing reports nothing.');
-  const offline = harness(); await offline.stroke([[40, 40], [90, 40]]); offline.c.offline = true; await offline.setTool('select'); assert.equal(offline.sent.length, 0);
+  await h.setTool('eraser'); await h.setTool('select'); await h.setTool('draw'); await h.setTool('select');
+  assert.equal(h.sent.length, 0);
+  assert.deepEqual(draws(h.doc()).map((d: any) => d.data.author), ['learner', 'learner']);
 });
 test('a stroke that cannot fit is refused with the size message and the earlier layer is untouched', async () => {
   const filler = (length: number) => ({ id: 'big', typeId: 'note', title: 'Relleno de ejemplo', position: { x: 2000, y: 2000 }, data: { text: 'x'.repeat(length) } });

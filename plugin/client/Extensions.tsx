@@ -1,22 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import { View } from 'react-native';
-import { EXTENSION_API, EXTENSION_FORBIDDEN_OPERATIONS, EXTENSION_LIMITS, extensionDocument, extensionEvent } from '../shared/extensions';
+import { EXTENSION_API, EXTENSION_FORBIDDEN_OPERATIONS, EXTENSION_LIMITS, extensionDocument } from '../shared/extensions';
 import type { CanvasOperation, CatalogExtension, ExtensionPermission } from '../shared/model';
 import { isDark } from './color';
-import { layoutCanvas, newId } from './logic';
+import { layoutCanvas } from './logic';
 import { Button, IconButton, Txt, useUI } from './ui';
 import { capabilities } from './host';
 import type { CanvasController } from './useCanvas';
 import { WebExtension, type ExtensionCall } from './web';
 
-const PERMISSION: Record<ExtensionPermission, string> = { edit: 'change the canvas', agent: 'ask the agent for things', network: 'load things from the internet' };
+const PERMISSION: Record<ExtensionPermission, string> = { edit: 'change the canvas', network: 'load things from the internet' };
 export const extensionIcon = (extension: CatalogExtension) => extension.icon ?? 'Puzzle';
 const list = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 
 /**
  * One extension running: its frame, the context it is told, and the answers to what it asks for. Everything an
  * extension does goes through here, so what it may do is decided in one place: reading and selecting are always
- * allowed, editing and asking the assistant only with the permission, and an imported one holds none until granted.
+ * allowed, editing only with the permission, and an imported one holds none until granted. Nothing reaches the agent.
  */
 function ExtensionFrame({ extension, controller: c, onOpen, onClose }: { extension: CatalogExtension; controller: CanvasController; onOpen(id: string): void; onClose?(): void }) {
   const u = useUI(), doc = c.view!.document, allowed = extension.granted ? extension.permissions : [];
@@ -44,12 +44,6 @@ function ExtensionFrame({ extension, controller: c, onOpen, onClose }: { extensi
       if (c.offline) throw new Error(`No connection to ${capabilities.name}.`);
       const label = typeof args.label === 'string' && args.label.trim() ? args.label.trim().slice(0, 200) : extension.name, next = await c.edit(operations as CanvasOperation[], `${extension.name}: ${label}`.slice(0, 300));
       if (!next) throw new Error(c.failure?.message ?? 'The canvas rejected the change.'); return { revision: next.document.revision };
-    }
-    if (method === 'ask') {
-      need('agent'); const event = extensionEvent(args.kind, args.payload); if (!event) throw new Error(`The request needs a short name and JSON data of up to ${EXTENSION_LIMITS.payload} characters.`);
-      const targetIds = (Array.isArray(args.targetIds) ? args.targetIds : []).filter(known).slice(0, 20), label = typeof args.label === 'string' && args.label.trim() ? args.label.trim().slice(0, 240) : `${extension.name}: ${event.kind}`;
-      const result = await c.send({ kind: 'extension.event', label, payload: { extension: extension.id, event: event.kind, data: event.payload as never }, targetIds, delivery: 'immediate' }, newId('evt'));
-      if (!result || result.status === 'failed') throw new Error(result?.error ?? 'Not sent.'); return { status: result.status };
     }
     throw new Error(`lienzo.${method} does not exist in API ${EXTENSION_API}.`);
   };

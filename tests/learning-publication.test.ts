@@ -48,7 +48,7 @@ function host(flush: () => Promise<void> = async () => {}) {
     './index': { getClientRenderer: () => ({ Component: Probe }) },
     '../HiddenResult': { HiddenResult: 'HiddenResult' },
     '../usePresentation': { usePresentation: () => presentation },
-    '../useLearning': { useLearning: (block: { id: string }) => ({ runtime: { state: runtime.blocks[block.id] ?? {}, set: (...args: unknown[]) => writes.push(args), flush, settle: async (...args: unknown[]) => { events.push(args); } }, scope: { set: (...args: unknown[]) => writes.push(args) } }) },
+    '../useLearning': { useLearning: (block: { id: string }) => ({ runtime: { state: runtime.blocks[block.id] ?? {}, set: (...args: unknown[]) => writes.push(args), flush, record: async (...args: unknown[]) => { events.push(args); } }, scope: { set: (...args: unknown[]) => writes.push(args) } }) },
   };
   function load(file: string) {
     const source = readFileSync(new URL(`../plugin/client/renderers/${file}.tsx`, import.meta.url), 'utf8');
@@ -104,12 +104,12 @@ test('direct hidden target mounts return HiddenResult before dispatch', () => {
   assert.doesNotMatch(JSON.stringify(hidden.tree), /SECRET/);
 });
 
-test('callbacks pending during reset or document switch cannot restore old runtime or settle in the new lifetime', async () => {
+test('callbacks pending during reset or document switch cannot restore old runtime or record in the new lifetime', async () => {
   for (const switched of [false, true]) {
     let release!: () => void;
     const f = fixture(), h = host(() => new Promise<void>(resolve => { release = resolve; }));
     const old = h.render(f.document, f.catalog, f.runtime).element!;
-    const pending = old.props.runtime.settle('gate.old', {}, 'Comparar');
+    const pending = old.props.runtime.record('gate.old', {}, 'Comparar');
     h.render(switched ? { ...f.document, id: 'two' } : f.document, f.catalog, { blocks: {}, scopes: {} });
     old.props.runtime.set(f.runtime.blocks.gate);
     old.props.scope.set('x', 7);

@@ -6,7 +6,7 @@ const baseTokens = {
     "subtitle": "Paseo Canvas",
     "version": 7,
     "language": "es",
-    "note": "Fuente de verdad visual, alineada con plugin/shared. Los neutros, el acento y los estados vienen SIEMPRE de theme.colors del host; aquí solo se fijan los valores propios de Lienzo. v6: interfaz flotante (island, toolbar, popover, menu, tooltip, contextChip, inlineEditor, composer, handles, zoomThresholds, hint, elevation), gramática de bloques interactivos (learn) y paleta categórica (viz). Ver docs/design.md §3–§5, §8–§12 y §18. Contraste: python3 design/floating/contrast.py. v7: pizarra libre (whiteboard): texto sin tarjeta, formas, SVG, dibujo, isla Herramientas e isla Estilo. Ver design/whiteboard-spec.md y docs/design.md §20.",
+    "note": "Fuente de verdad visual, alineada con plugin/shared. Los neutros, el acento y los estados vienen SIEMPRE de theme.colors del host; aquí solo se fijan los valores propios de Lienzo. v6: interfaz flotante (island, toolbar, popover, menu, tooltip, contextChip, inlineEditor, handles, zoomThresholds, hint, elevation), gramática de bloques interactivos (learn) y paleta categórica (viz). Ver docs/design.md §3–§5, §8–§12 y §18. Contraste: python3 design/floating/contrast.py. v7: pizarra libre (whiteboard): texto sin tarjeta, formas, SVG, dibujo, isla Herramientas e isla Estilo. Ver design/whiteboard-spec.md y docs/design.md §20.",
     "authorship": "Tokens originales: Claude Opus 5.5 Medium. Especificación y correcciones finales: GPT 6.1 Sol High, autorizadas por el dueño. v7 (whiteboard): Claude Opus 5.5 Medium."
   },
   "hostColorRoles": {
@@ -471,14 +471,11 @@ const baseTokens = {
     "step": {
       "ms": 240,
       "note": "constancia de objeto: lo que persiste se mueve, lo nuevo entra con motion.enter"
-    },
-    "composer": {
-      "growMs": 160
     }
   },
   "breakpoints": {
     "$doc": "Se mide el ancho del panel con onLayout. Nada está acoplado: los umbrales solo resuelven choques entre islas (§3.3).",
-    "compact": "layout.compact === true → vista Lista, barra superior y compositor acoplados, hojas",
+    "compact": "layout.compact === true → vista Lista, barra superior y barra de herramientas acopladas abajo, hojas",
     "narrow": 560,
     "tight": 880,
     "rules": {
@@ -528,8 +525,6 @@ const baseTokens = {
     "exportPack": "FileOutput",
     "pickFile": "FolderOpen",
     "openExternal": "ExternalLink",
-    "queued": "Clock",
-    "acked": "CheckCheck",
     "stepPrev": "SkipBack",
     "stepNext": "SkipForward",
     "connect": "Spline",
@@ -543,7 +538,6 @@ const baseTokens = {
     "addNote": "StickyNote",
     "addNode": "CircleDot",
     "addGroup": "Group",
-    "ask": "MessageCircleQuestion",
     "assistant": "Bot",
     "instruction": "Compass",
     "layout": "LayoutGrid",
@@ -1044,7 +1038,7 @@ const baseTokens = {
     "lift": "motion.drag.shadow (objeto levantado, §16)"
   },
   "island": {
-    "$doc": "Superficie flotante persistente (§4.1). Cuatro en reposo (A lienzo, B herramientas, C asistente, D vista); la quinta (E estilo) solo con herramienta de creación o selección de pizarra.",
+    "$doc": "Superficie flotante persistente (§4.1). Tres en reposo (A lienzo, B herramientas, D vista); la quinta (E estilo) solo con herramienta de creación o selección de pizarra.",
     "fill": "surface1",
     "radius": 12,
     "padding": 4,
@@ -1083,7 +1077,7 @@ const baseTokens = {
   "face": {
     "$doc": "Stage 1 layout (docs/redesign-2026-10.md, docs/design.md §33). Islands float over the one canvas.",
     "top": { "height": 44, "islandGap": 8 },
-    "toolbar": { "height": 44, "button": 36, "buttonTouch": 44, "gap": 4, "icon": 18, "radius": 8, "activeWash": 0.14, "divider": { "width": 1, "height": 20, "marginH": 4 }, "aboveComposer": 8, "chevron": 10, "pinBadge": 9, "maxPinned": 9 },
+    "toolbar": { "height": 44, "button": 36, "buttonTouch": 44, "gap": 4, "icon": 18, "radius": 8, "activeWash": 0.14, "divider": { "width": 1, "height": 20, "marginH": 4 }, "bottom": 12, "compactPadding": { "top": 6, "bottom": 8 }, "chevron": 10, "pinBadge": 9, "maxPinned": 9 },
     "shapes": { "width": 208, "row": 32 },
     "catalog": { "width": 360, "maxHeight": 480, "search": 36, "row": 44, "tile": 28, "tileIcon": 16, "sectionHeader": 28, "offset": 8, "pinIcon": 14 },
     "rightPanel": { "width": 300, "inset": 12, "tabs": 36, "header": 40, "sectionHeader": 32, "sectionLabel": 12, "padding": 12, "gap": 12, "bottomClearance": 64 },
@@ -1199,35 +1193,6 @@ const baseTokens = {
     "idleCommitMs": null,
     "minZoom": 0.5,
     "zoomToMs": 280
-  },
-  "composer": {
-    "$doc": "Isla del asistente, abajo al centro (§9).",
-    "width": {
-      "rest": 360,
-      "max": 560,
-      "min": 320
-    },
-    "height": 44,
-    "radius": 14,
-    "paddingH": 6,
-    "inputLines": 4,
-    "avatar": {
-      "size": 32,
-      "icon": "Bot",
-      "dot": 8
-    },
-    "send": {
-      "size": 32,
-      "icon": "ArrowUp",
-      "radius": 16
-    },
-    "chipsRow": {
-      "paddingTop": 6,
-      "gap": 4
-    },
-    "statusRow": {
-      "height": 24
-    }
   },
   "handles": {
     "$doc": "Asas + de un nodo o grupo seleccionado (§8). Tamaño constante en pantalla.",
@@ -1779,12 +1744,12 @@ const baseTokens = {
       }
     },
     "style": {
-      "$doc": "Isla E. Vertical a la derecha, centrada; horizontal sobre el compositor entre 560 y 879.",
+      "$doc": "Isla E. Vertical a la derecha, centrada; horizontal sobre la barra de herramientas entre 560 y 879.",
       "width": 168,
       "padding": 8,
       "gap": 8,
       "inset": 12,
-      "aboveComposerGap": 8,
+      "aboveToolbarGap": 8,
       "swatch": {
         "columns": 4,
         "button": 32,

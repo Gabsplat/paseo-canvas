@@ -6,7 +6,6 @@ import { CanvasStore } from "./store";
 import { CanvasService } from "./service";
 import { ToolRouter, toolNames, type CallerScope } from "./tools";
 import { CopilotService } from "./copilot";
-import { FeedbackDispatcher } from "./feedback";
 import { AgentGateway, type HandlerContext, type ServerHost } from "./host";
 
 export interface CanvasCoreOptions {
@@ -26,16 +25,15 @@ export interface CanvasCore {
   readonly copilot: CopilotService;
   readonly gateway: AgentGateway;
   readonly router: ToolRouter;
-  /** Present only when the host runs agents: canvas actions are sent to them as messages. */
-  readonly feedback: FeedbackDispatcher | null;
-  /** Removes the lifecycle hooks and waits for deliveries in flight. The store stays open. */
+  /** Removes the lifecycle hooks. The store stays open. */
   stop(): Promise<void>;
 }
 
 /**
  * The Lienzo server: one store, its service, the MCP tool router, the copilot and every panel RPC, registered on a
- * host. What depends on running agents (waking them with actions, copilot reminders, verifying agent IDs) is wired
- * only when the host says it runs agents; elsewhere actions stay queued until an agent reads them with canvas_events.
+ * host. The canvas is one-way: no RPC sends anything to an agent. Agents draw and read (the selection, block state)
+ * through the tools. What depends on running agents (the optional copilot reminder, verifying agent IDs) is wired
+ * only when the host says it runs agents.
  */
 export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): CanvasCore {
   host.registerSettings(canvasPreferences);
@@ -43,7 +41,6 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   const store = new CanvasStore(options.directory), service = new CanvasService(store), gateway = new AgentGateway(service);
   const copilot = new CopilotService(service, toolNames);
   const router = new ToolRouter(service, options.resolveScope ?? (owner => gateway.scope(owner)), copilot);
-  const feedback = host.runsAgents ? new FeedbackDispatcher(service, gateway) : null;
   const agents = host.runsAgents;
   const ensureTools = options.ensureTools ?? (async () => {});
 
@@ -65,7 +62,6 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.exportPack, input => service.exportPack(input));
   host.handle(rpc.instantiatePack, input => service.instantiatePack(input));
   host.handle(rpc.exportGroup, input => service.exportGroup(input));
-  host.handle(rpc.readAgentEvents, input => service.events(input));
   host.handle(rpc.readSharing, input => service.sharing(input));
   host.handle(rpc.configureSharing, input => service.configureSharing(input));
   host.handle(rpc.createSheet, input => service.createSheet(input));
@@ -81,7 +77,7 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.connectAgent, async (input, { api }) => {
     if (agents) { gateway.bind(api); if (input.connection) await gateway.verify(input.connection.agentId, input.workspaceId); }
     await ensureTools();
-    // A recipient chosen in the panel is pinned: automatic connection never replaces it.
+    // An agent chosen in the panel is pinned: automatic connection never replaces it.
     const result = await service.connect({ ...input, connection: input.connection && { ...input.connection, pinned: true } });
     if (!agents) return result;
     const state = await store.read();
@@ -90,30 +86,6 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.agentSetup, async (input, context) => {
     if (!options.agentSetup) throw new CanvasError("UNAVAILABLE", "This app connects agents over MCP. Open Connect an agent for the command.");
     return options.agentSetup(input, context);
-  });
-  host.handle(rpc.agentAction, async (input, { api }) => {
-    if (agents) {
-      gateway.bind(api);
-      // Nobody receives this canvas yet: hand it to the most recent agent of this workspace that has the tools.
-      if (!(await service.read(input)).connection) for (const agentId of (await service.toolAgents()).slice(0, 20)) {
-        try {
-          const agent = await gateway.verify(agentId, input.workspaceId);
-          if (agent.status === "closed" || agent.status === "error") continue;
-          await service.autoConnect(input.documentId, input.workspaceId, agentId, false); break;
-        } catch { /* archived or in another workspace */ }
-      }
-    }
-    await service.action(input);
-    if (feedback && input.action.delivery === "immediate") await feedback.drain();
-    return (await service.events(input)).events.find(event => event.id === input.eventId)!;
-  });
-  host.handle(rpc.flushAgentEvents, async (input, { api }) => {
-    if (feedback) {
-      gateway.bind(api);
-      const current = await service.read(input);
-      if (current.connection) await feedback.drain(current.connection.agentId, true);
-    }
-    return service.events(input);
   });
 
   const removers: (() => void)[] = [];
@@ -125,8 +97,6 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
     }));
     removers.push(host.on("agent.turn_ended", async (event, { api }) => {
       gateway.bind(api);
-      try { await feedback?.drain(event.agent.id); } catch { console.error("Canvas feedback remains pending; retry from the canvas panel."); }
-      // After feedback: if feedback just started a new turn, the reminder sees a busy agent and stays quiet.
       try { await copilot.turnEnded(event, gateway); } catch { console.error("Lienzo copilot reminder skipped."); }
     }));
     removers.push(host.on("agent.archived", async event => {
@@ -134,7 +104,7 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
     }));
   }
   return {
-    host, store, service, copilot, gateway, router, feedback,
-    async stop() { for (const remove of removers.reverse()) remove(); await feedback?.close(); },
+    host, store, service, copilot, gateway, router,
+    async stop() { for (const remove of removers.reverse()) remove(); },
   };
 }

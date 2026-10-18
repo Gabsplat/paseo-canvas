@@ -13,7 +13,7 @@ import { tokens } from './tokens';
 import { activateRendererReset } from './web';
 import { usePresentation } from './usePresentation';
 import { RegisteredRenderer } from './renderers/RegisteredRenderer';
-import { newId } from './logic';
+import { recordInteraction } from './useLearning';
 import { NumberPropertyField } from './NumberPropertyField';
 import { needsContentInteraction } from './interaction';
 import { linkTone } from './Links';
@@ -35,11 +35,11 @@ function BarButton({ label, icon, onPress, disabled, shortcut, detail, active, d
 }
 
 /**
- * The small bar over the selection: colour, Marco, duplicate, ask the agent, delete. Detail lives in the right panel.
+ * The small bar over the selection: colour, Marco, duplicate, delete. Detail lives in the right panel.
  * A selected link gets its own: colour, kind, reverse, delete.
  */
-export function SelectionBar({ controller: c, disabled, linkId, colour, ask, duplicate, remove, wrap, unwrap, keyLabel, onProperties }: {
-  controller: CanvasController; disabled: boolean; linkId?: string | null; colour?: Colour; ask(): void; duplicate(): void; remove(): void; wrap(): void; unwrap(): void; keyLabel(id: string): string | undefined; onProperties?(): void;
+export function SelectionBar({ controller: c, disabled, linkId, colour, duplicate, remove, wrap, unwrap, keyLabel, onProperties }: {
+  controller: CanvasController; disabled: boolean; linkId?: string | null; colour?: Colour; duplicate(): void; remove(): void; wrap(): void; unwrap(): void; keyLabel(id: string): string | undefined; onProperties?(): void;
 }) {
   const u = useUI(), doc = c.view!.document, [swatches, setSwatches] = useState(false);
   const selected = [...doc.groups, ...doc.blocks].filter(e => c.selection.includes(e.id)), link = linkId ? doc.links.find(l => l.id === linkId) : undefined;
@@ -59,7 +59,6 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, ask, dup
         {group ? <BarButton nativeID="lienzo-selection-unwrap" label="Unwrap Marco" icon="Ungroup" shortcut={keyLabel('edit.unwrap')} detail="Keeps what is inside; removes the frame." disabled={disabled} onPress={unwrap} />
           : <BarButton nativeID="lienzo-selection-marco" label="Wrap in a Marco" icon="SquareDashed" shortcut={keyLabel('edit.wrap')} detail={MARCO} disabled={disabled} onPress={wrap} />}
         <BarButton nativeID="lienzo-selection-duplicate" label="Duplicate" icon="CopyPlus" shortcut={keyLabel('edit.duplicate')} disabled={disabled} onPress={duplicate} />
-        <BarButton nativeID="lienzo-selection-ask" label="Ask the agent" icon="MessageCircleQuestion" detail="Write about the selection in the composer." onPress={ask} />
       </>}
       <BarButton nativeID="lienzo-selection-delete" label="Delete" icon="Trash2" danger shortcut={keyLabel('edit.delete')} disabled={disabled} onPress={remove} />
       {onProperties && <BarButton label="Properties" icon="SlidersHorizontal" shortcut={keyLabel('panel.right')} onPress={onProperties} />}
@@ -75,8 +74,8 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, ask, dup
  * What the right panel shows for the selection: its content fields, style, instructions, connections and every
  * other action, in collapsible sections. Each edit is one transaction, labelled for history and undo.
  */
-export function SelectionProperties({ controller: c, panelRoot, disabled, ask, add, duplicate, remove, groupSelection, connectSelection, release, template, exportSelection, rects, editText, undoNotice, linkId, onLink, interact, style, focus }: {
-  controller: CanvasController; panelRoot: React.RefObject<View | null>; disabled: boolean; ask(): void; add(): void; duplicate(): void; remove(): void; groupSelection(): void; connectSelection(): void; release(ids: string[], label?: string): void; template(group: CanvasGroup): void; exportSelection(): void; rects(): Map<string, Rect>; editText(): void; interact(): void; undoNotice(label: string): void;
+export function SelectionProperties({ controller: c, panelRoot, disabled, add, duplicate, remove, groupSelection, connectSelection, release, template, exportSelection, rects, editText, undoNotice, linkId, onLink, interact, style, focus }: {
+  controller: CanvasController; panelRoot: React.RefObject<View | null>; disabled: boolean; add(): void; duplicate(): void; remove(): void; groupSelection(): void; connectSelection(): void; release(ids: string[], label?: string): void; template(group: CanvasGroup): void; exportSelection(): void; rects(): Map<string, Rect>; editText(): void; interact(): void; undoNotice(label: string): void;
   linkId?: string | null; onLink(id: string | null): void; style?: React.ReactNode;
   /** A section to open and scroll to: `instruction` from the menu. */
   focus?: string | null;
@@ -111,7 +110,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, ask, a
     if (type?.renderer === 'controls') { const variables = resolveScope(latest, blockId, c.learning.getSnapshot()); for (const name of block.data.variables as string[] ?? []) if (variables[name]) c.learning.setVariable(blockId, name, null); }
     else c.learning.setBlock(blockId, null);
     await c.learning.flush(); if (c.current.current?.document.id !== documentId) return;
-    if (['controls', 'animated-flow', 'glsl-shader'].includes(type?.renderer ?? '')) await c.send({ kind: type!.renderer + '.reset', label: 'Reset ' + type!.name, payload: {}, targetIds: [blockId], delivery: 'batched', settled: true }, newId('evt'));
+    if (['controls', 'animated-flow', 'glsl-shader'].includes(type?.renderer ?? '')) await recordInteraction(c, blockId, type!.renderer + '.reset', null, 'Reset ' + type!.name);
   };
   const row = (label: string, icon: string, press: () => void, writes = true, danger = false, unavailable = false) => <Pressable key={label} accessibilityRole="menuitem" accessibilityLabel={label} accessibilityState={{ disabled: unavailable || writes && disabled }} disabled={unavailable || writes && disabled} onPress={event => { event.stopPropagation(); press(); }}
     style={({ pressed, ...state }) => ({ minHeight: u.compact ? 44 : tokens.menu.row.height, paddingHorizontal: tokens.menu.row.paddingH, marginHorizontal: -tokens.menu.row.paddingH, borderRadius: tokens.menu.row.radius, flexDirection: 'row', alignItems: 'center', gap: tokens.menu.row.gap, backgroundColor: pressed ? u.c.surface2 : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .05) : 'transparent', opacity: unavailable || writes && disabled ? .45 : 1 })}><Icon name={icon} size={16} color={danger ? u.c.statusDanger : u.c.foregroundMuted} /><Txt style={{ flex: 1, color: danger ? u.c.statusDanger : u.c.foreground }}>{label}</Txt></Pressable>;
@@ -126,7 +125,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, ask, a
   const kindName = link ? 'Link' : selected.length > 1 ? 'Selection' : group ? 'Marco' : type?.name ?? 'Block';
   const head = <View style={{ paddingHorizontal: tokens.face.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>{kindName}</Txt><Txt kind="bodyStrong" numberOfLines={2}>{heading}</Txt></View>;
 
-  if (gate) return <View>{head}<PanelSection title="Data"><RegisteredRenderer block={block!} id={type!.renderer!} controller={c} readOnly={disabled} send={async (kind, payload, label, delivery = 'batched') => { await c.send({ kind, payload, label, delivery, targetIds: [block!.id] }, newId('evt')); }} /></PanelSection></View>;
+  if (gate) return <View>{head}<PanelSection title="Data"><RegisteredRenderer block={block!} id={type!.renderer!} controller={c} readOnly={disabled} /></PanelSection></View>;
   if (concealed?.length) return <View>{head}<View style={{ padding: 12 }}><HiddenResult gateIds={concealed} open={id => { void c.select([id]); }} /></View></View>;
   if (link) return <View nativeID="lienzo-properties-link">{head}
     <PanelSection title="Link">
@@ -156,7 +155,6 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, ask, a
     {selected.length > 1 && row('Wrap in a Marco', 'SquareDashed', groupSelection)}
     {selected.length === 2 && row('Connect the two', 'Spline', connectSelection)}
     {row('Duplicate', 'CopyPlus', duplicate)}
-    {!isWhiteboardSelection(c, selected) && row('Ask the agent', 'MessageCircleQuestion', ask, false)}
     {group && row('Unwrap Marco', 'Ungroup', () => { void apply([{ type: 'group.delete', id: group.id, ungroup: true }], 'Unwrap Marco'); })}
     {group && row('Save as template…', 'LibraryBig', () => template(group))}
     {row('Export selection', 'FileOutput', exportSelection, false)}

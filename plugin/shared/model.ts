@@ -89,17 +89,25 @@ export const templateSchema = z.object({
 }).strict();
 // An extension is the one kind of pack entry that carries code: a self-contained page that runs sandboxed in its own
 // frame and reaches the canvas only through the versioned `lienzo` API (docs/extensions.md). It never imports plugin code.
-export const extensionPermissionSchema = z.enum(["edit", "agent", "network"]);
+// The canvas never sends anything to the agent, so there is no "agent" permission: a new extension that asks for it is
+// refused, and a stored or imported one that carried it loads without it (extensionListSchema).
+export const extensionPermissionSchema = z.enum(["edit", "network"]);
 // Only tools remain: the canvas is the one way to look at a document. Stored entries of the retired kind "view" are
 // dropped on read (extensionListSchema), so catalogs and packs written before keep loading.
 export const extensionSchema = z.object({
   id: idSchema, kind: z.literal("tool"), api: z.literal(1),
   name: z.string().min(1).max(80), description: z.string().max(600).default(""), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(),
-  html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(3).default([]),
+  html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(2).default([]),
 }).strict();
 const isRetiredExtension = (entry: unknown) => !!entry && typeof entry === "object" && (entry as { kind?: unknown }).kind === "view";
-/** A list of extensions that silently drops entries of a retired kind. */
-export const extensionListSchema = (max: number) => z.preprocess(value => Array.isArray(value) ? value.filter(entry => !isRetiredExtension(entry)) : value, z.array(extensionSchema).max(max));
+/** Drops the retired "agent" permission from a stored or imported extension; everything else is left to validation. */
+const withoutRetiredPermissions = (entry: unknown) => {
+  if (!entry || typeof entry !== "object" || !Array.isArray((entry as { permissions?: unknown }).permissions)) return entry;
+  const permissions = (entry as { permissions: unknown[] }).permissions;
+  return permissions.includes("agent") ? { ...entry, permissions: permissions.filter(permission => permission !== "agent") } : entry;
+};
+/** A list of extensions that silently drops entries of a retired kind and retired permissions. */
+export const extensionListSchema = (max: number) => z.preprocess(value => Array.isArray(value) ? value.filter(entry => !isRetiredExtension(entry)).map(withoutRetiredPermissions) : value, z.array(extensionSchema).max(max));
 export const packSchema = z.object({
   format: z.literal("paseo-canvas-pack"), version: z.literal(1),
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
@@ -115,7 +123,7 @@ export const catalogSchema = z.object({
 }).strict();
 export const connectionSchema = z.object({
   agentId: z.string().min(1).max(200), workspaceId: z.string().min(1).max(200),
-  // Set when the user picks the recipient by hand. Automatic connection never replaces a pinned one.
+  // Set when the person picks the agent by hand. Automatic connection never replaces a pinned one.
   pinned: z.boolean().optional(),
 }).strict();
 export const sharingModeSchema = z.enum(["shared", "agent"]);
@@ -183,17 +191,6 @@ export const catalogMutationSchema = z.discriminatedUnion("type", [
 export const catalogMutateInputSchema = z.object({
   expectedRevision: revisionSchema, action: catalogMutationSchema,
 }).strict();
-export const agentActionInputSchema = revisionInputSchema.extend({
-  eventId: idSchema,
-  action: z.object({ kind: idSchema, label: z.string().min(1).max(300), payload: jsonObjectSchema, targetIds: z.array(idSchema).max(100).optional(), delivery: z.enum(["immediate", "batched"]).default("immediate"), settled: z.boolean().optional() }).strict(),
-});
-export const agentEventSchema = z.object({
-  id: idSchema, documentId: idSchema, agentId: z.string().nullable(), workspaceId: z.string(),
-  createdAt: z.iso.datetime(), revision: revisionSchema,
-  action: agentActionInputSchema.shape.action,
-  context: documentContentSchema,
-  status: z.enum(["pending", "sent", "failed", "acked"]), error: z.string().optional(),
-}).strict();
 
 export type CanvasBlock = z.infer<typeof blockSchema>;
 export type CanvasLink = z.infer<typeof linkSchema>;
@@ -211,5 +208,4 @@ export type CatalogExtension = z.infer<typeof catalogExtensionSchema>;
 export type ExtensionPermission = z.infer<typeof extensionPermissionSchema>;
 export type BlockType = z.infer<typeof blockTypeSchema>;
 export type GroupTemplate = z.infer<typeof templateSchema>;
-export type AgentEvent = z.infer<typeof agentEventSchema>;
 export type AgentConnection = z.infer<typeof connectionSchema>;

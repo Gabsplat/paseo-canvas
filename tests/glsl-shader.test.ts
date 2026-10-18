@@ -70,7 +70,7 @@ function harness(data = base(), readOnly = false, platform = 'web') {
   const props = { data, document: {}, block: { id: 'shader' }, compact: false, availableWidth: 400, readOnly,
     ui: { layout: { platform }, c: { surface0: '#fff', foreground: '#111', foregroundMuted: '#555', border: '#ccc', accent: '#246', statusDanger: '#933' } },
     scope: { variables: {}, values: {}, get: () => NaN, set: (...args: unknown[]) => scopeWrites.push(args) },
-    runtime: { state: {}, set(state: Record<string, unknown> | null) { writes.push(state); (props.runtime as any).state = state ?? {}; }, flush: async () => {}, settle: async (...args: unknown[]) => { events.push(args); } }, send: async () => {},
+    runtime: { state: {}, set(state: Record<string, unknown> | null) { writes.push(state); (props.runtime as any).state = state ?? {}; }, flush: async () => {}, record: async (...args: unknown[]) => { events.push(args); } }, send: async () => {},
   } as unknown as RendererProps<GlslShaderData>;
   return { props, writes, events, scopeWrites,
     render() { const node = run(owned, () => (glslShaderRenderer.Component as Function)(props) as Element); commit(owned); return node; },
@@ -242,15 +242,15 @@ test('no WebGL and native fallback are honest, controls/reset remain visible and
   button(fallback, 'Reset').props.onPress(); assert.equal(native.writes.length, 0); native.close(); Platform.OS = 'web';
 });
 
-test('reset returns locals and time to defaults, preserves authored data, and hints do not pretend to solve', async () => {
+test('reset returns locals and time to defaults, preserves authored data, and no button asks the agent for anything', async () => {
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p), authored = JSON.stringify(h.props.data);
   try {
     a.show(true); a.render(); a.frame(); find(a.render(), WebRange).props.onChange(10); a.render(); a.frame();
     button(a.render(), 'Play').props.onPress(); a.render(); a.frame(100); a.frame(200);
     button(a.render(), 'Reset').props.onPress(); a.render(); a.frame(300); assert.deepEqual(p.uniforms.frequency, [4]); assert.deepEqual(p.uniforms.u_time, [0]); assert.equal(find(a.render(), GLSurface).props.animated, false);
     assert.deepEqual(h.events.map(e => e[0]), ['glsl-shader.reset']); assert.equal(JSON.stringify(h.props.data), authored);
-    button(a.render(), 'Ask for a hint').props.onPress(); assert.match(h.events.at(-1)![1].request, /without giving the answer away/);
-    h.props.runtime.settle = async () => { throw new Error('/private/transport/path'); };
+    assert.ok(!text(a.render()).includes('Ask for a hint'));
+    h.props.runtime.record = async () => { throw new Error('/private/transport/path'); };
     find(a.render(), WebRange).props.onSettle(6); await Promise.resolve(); await Promise.resolve(); assert.match(text(a.render()), /The setting could not be saved/); assert.ok(!text(a.render()).includes('/private'));
   } finally { a.close(); }
   p.assertFreed();

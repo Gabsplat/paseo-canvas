@@ -65,7 +65,7 @@ function headless(presentation: ReturnType<typeof canvasPresentation>, document:
     './logic': {}, './color': {}, './web': {}, './media': {}, './ImageViewer': {},
     './renderers': { getClientRenderer: () => undefined },
     './renderers/RegisteredRenderer': { RegisteredRenderer: 'RegisteredRenderer' },
-    './HiddenResult': { HiddenResult: 'HiddenResult' }, './Blocks': {}, './Links': {}, './WhiteboardContent': { WhiteboardContent: 'WhiteboardContent' }, './whiteboard-visuals': { islandStyle: () => ({}) }, '../shared/whiteboard': { isWhiteboardRenderer: (id?:string) => id?.startsWith('wb-') },
+    './HiddenResult': { HiddenResult: 'HiddenResult' }, './useLearning': { recordInteraction: async () => {} }, './Blocks': {}, './Links': {}, './WhiteboardContent': { WhiteboardContent: 'WhiteboardContent' }, './whiteboard-visuals': { islandStyle: () => ({}) }, '../shared/whiteboard': { isWhiteboardRenderer: (id?:string) => id?.startsWith('wb-') },
   };
   function load(name: string) {
     const source = readFileSync(new URL(`../plugin/client/${name}.tsx`, import.meta.url), 'utf8');

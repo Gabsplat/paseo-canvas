@@ -89,7 +89,6 @@ test('registered bridge reads optimistic runtime, filters gated endpoints/source
   assert.equal(sample(runtime, epoch + 5000, new Map()).playing, false);
   runtime.blocks.flow = {}; assert.deepEqual(sample(runtime, epoch, new Map()), { tokens: [], playing: false });
   assert.equal(JSON.stringify(view.document), original);
-  assert.equal((await service.events(reference)).events.length, 0);
   assert.deepEqual((await service.read(reference)).document, view.document);
   const copies = await service.mutate(mutation(1, [
     { type: 'group.create', group: { id: 'g', title: 'Sistema', description: '', groupIds: [], blockIds: ['b', 'c', 'flow'], layout: { mode: 'graph' } } },

@@ -136,13 +136,6 @@ export function strokeLayers(blocks: readonly StrokeBlock[], isDraw: (block: Str
 }
 /** The learner's own experiment: what "Borrar mis trazos" removes. Assistant and authored layers stay. */
 export const learnerLayerIds = (layers: readonly StrokeLayer[]) => layers.filter(layer => layer.author === 'learner').map(layer => layer.id);
-/** Bounded settled description of the stroke layers: counts and anchor titles, never points. */
-export function strokeSummary(blocks: readonly StrokeBlock[], isDraw: (block: StrokeBlock) => boolean) {
-  const layers = strokeLayers(blocks, isDraw), count = (author: StrokeLayer['author']) => layers.filter(l => l.author === author).reduce((sum, l) => sum + l.strokes, 0);
-  const anchors = [...new Set(layers.filter(l => l.author === 'learner' && l.anchor).map(l => l.anchor!))];
-  return { learner: { drawings: layers.filter(l => l.author === 'learner').length, strokes: count('learner') }, assistant: { strokes: count('assistant') }, authored: { strokes: count('authored') },
-    anchors: anchors.slice(0, 8).map(id => ({ id, title: (blocks.find(b => b.id === id)?.title ?? '').slice(0, 80) })), ...(anchors.length > 8 ? { moreAnchors: anchors.length - 8 } : {}) };
-}
 export const WB_LAYER_LIMIT_MESSAGE = 'La capa alcanzó su límite de tamaño. Se conserva el dibujo anterior.';
 const utf8Length = (text: string) => { let bytes = 0; for (const char of text) { const code = char.codePointAt(0)!; bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4; } return bytes; };
 /**

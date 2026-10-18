@@ -44,7 +44,7 @@ test("the desktop MCP server lists the canvas tools, creates a document and read
   const app = await desktop(t);
   assert.ok(app.mcp.listening); assert.match(app.mcp.url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
   const client = await connect(t, app.mcp.url);
-  assert.match(client.getInstructions() ?? "", /nothing can wake you/);
+  assert.match(client.getInstructions() ?? "", /never messages you/); assert.match(client.getInstructions() ?? "", /canvas_selection/);
 
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map(tool => tool.name).sort(), [...toolNames].sort());
@@ -68,19 +68,19 @@ test("the desktop MCP server lists the canvas tools, creates a document and read
   const clients = (status.value as { mcp: { clients: { agentId: string; name: string; toolCalls: number }[] } }).mcp.clients;
   assert.deepEqual(clients.map(entry => [entry.agentId, entry.name, entry.toolCalls]), [["mcp:test-agent", "Test Agent", 3]]);
   const view = await settle(app, "canvas.read", { workspaceId: DESKTOP_WORKSPACE, documentId: "map" });
-  assert.equal((view.value as { connection: { agentId: string } | null }).connection?.agentId, "mcp:test-agent", "using a canvas makes the agent its recipient");
+  assert.equal((view.value as { connection: { agentId: string } | null }).connection?.agentId, "mcp:test-agent", "using a canvas connects the agent to it");
 });
 
-test("actions from the panel wait until the agent pulls them; browsers and foreign hosts are refused", async t => {
+test("the person selects in the app and the agent reads it over MCP; no method sends to the agent; browsers and foreign hosts are refused", async t => {
   const app = await desktop(t), client = await connect(t, app.mcp.url, "Codex");
   json(await client.callTool({ name: "canvas_create", arguments: { id: "map", content: content() } }));
-  const sent = await settle(app, "canvas.agent.action", { workspaceId: DESKTOP_WORKSPACE, documentId: "map", expectedRevision: 0, eventId: "evt_ask", action: { kind: "ask", label: "Explain B", payload: {}, targetIds: ["b"], delivery: "immediate" } });
-  assert.ok(sent.ok); assert.equal((sent.value as { status: string }).status, "pending", "nothing is pushed to the agent");
-  const events = json(await client.callTool({ name: "canvas_events", arguments: { documentId: "map" } }));
-  assert.deepEqual(events.events.map((event: { id: string; status: string }) => [event.id, event.status]), [["evt_ask", "pending"]]);
-  json(await client.callTool({ name: "canvas_events", arguments: { documentId: "map", ack: ["evt_ask"] } }));
-  const after = await settle(app, "canvas.agent.events", { workspaceId: DESKTOP_WORKSPACE, documentId: "map" });
-  assert.equal((after.value as { events: { status: string }[] }).events[0].status, "acked");
+  const view = (await settle(app, "canvas.read", { workspaceId: DESKTOP_WORKSPACE, documentId: "map" })).value as { selectionVersion: number };
+  assert.ok((await settle(app, "canvas.selection.set", { workspaceId: DESKTOP_WORKSPACE, documentId: "map", expectedSelectionVersion: view.selectionVersion, ids: ["b"] })).ok);
+  const selected = json(await client.callTool({ name: "canvas_selection", arguments: {} }));
+  assert.deepEqual([selected.documentId, selected.ids, selected.entities[0].entity.title], ["map", ["b"], "B"]);
+  for (const gone of ["canvas.agent.action", "canvas.agent.events", "canvas.agent.events.flush"]) assert.deepEqual(await settle(app, gone, {}), { ok: false, message: `NOT_FOUND: Unknown method ${gone}.` });
+  const events = await client.callTool({ name: "canvas_events", arguments: { documentId: "map" } });
+  assert.equal(events.isError, true);
 
   const port = new URL(app.mcp.url).port;
   assert.equal(await raw(app.mcp.url, { origin: "http://evil.example" }), 403);

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wbDrawDataSchema, strokeLayers, learnerLayerIds, strokeSummary, remapDrawAnchor } from '../plugin/shared/whiteboard';
+import { wbDrawDataSchema, strokeLayers, learnerLayerIds, remapDrawAnchor } from '../plugin/shared/whiteboard';
 import { getRendererSpec } from '../plugin/shared/renderers';
 import type { CanvasBlock, CanvasOperation } from '../plugin/shared/model';
-import { feedbackPrompt } from '../plugin/server/feedback';
+import { ToolRouter } from '../plugin/server/tools';
 import { setup, workspaceId, mutation } from './helpers';
 
 // Real service, store and reducer on a temporary directory. Documents start with the note blocks "b" and "c".
@@ -90,15 +90,13 @@ test('copies keep annotations on the right card, and layers describe themselves 
   assert.deepEqual(remapDrawAnchor({ anchor: 'x', strokes: [] }, new Map()), { anchor: 'x', strokes: [] });
   const layers = strokeLayers(view.document.blocks, isDraw);
   assert.deepEqual(learnerLayerIds(layers).sort(), ['copy.mine', 'loose', 'mine', 'solo.mine']);
-  const summary = strokeSummary(view.document.blocks, isDraw);
-  assert.deepEqual(summary, { learner: { drawings: 4, strokes: 7 }, assistant: { strokes: 2 }, authored: { strokes: 1 }, anchors: [{ id: 'b', title: 'B' }, { id: 'copy.b', title: 'B' }] });
-  assert.equal(JSON.stringify(summary).includes('points'), false);
   // "Borrar mis trazos": one ordinary transaction, one undo.
   const reset = await service.mutate({ ...mutation(view.document.revision, learnerLayerIds(layers).map(id => ({ type: 'block.delete' as const, id }))), label: 'Borrar mis trazos' });
   assert.deepEqual(strokeLayers(reset.document.blocks, isDraw).map(l => [l.id, l.author]).sort(), [['copy.hint', 'assistant'], ['given', 'authored'], ['hint', 'assistant']]);
   const undone = await service.undo({ documentId: 'd', workspaceId, expectedRevision: reset.document.revision });
   assert.equal(strokeLayers(undone.document.blocks, isDraw).length, 7);
-  const event = await service.action({ documentId: 'd', workspaceId, expectedRevision: undone.document.revision, eventId: 'ask-strokes', action: { kind: 'ask', label: 'Preguntar', payload: {}, targetIds: ['mine', 'hint'], delivery: 'immediate' } });
-  const prompt = feedbackPrompt([event]);
-  assert.match(prompt, /"author":"learner","anchor":"b"/); assert.match(prompt, /"author":"assistant"/); assert.doesNotMatch(prompt, /"points"/);
+  // The agent reads the learner's strokes as blocks: author and anchor, never the points, through the selection.
+  await service.selection({ documentId: 'd', workspaceId, expectedSelectionVersion: undone.selectionVersion, ids: ['mine', 'hint'] });
+  const selected = JSON.stringify(await new ToolRouter(service, async () => ({ agentId: 'a', workspaceId })).call('canvas_selection', { documentId: 'd' }, 'owner'));
+  assert.match(selected, /"author":"learner","anchor":"b"/); assert.match(selected, /"author":"assistant"/); assert.doesNotMatch(selected, /"points"/);
 });

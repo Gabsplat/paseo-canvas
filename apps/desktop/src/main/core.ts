@@ -8,7 +8,7 @@ import { McpHttpServer } from './mcp-http';
 
 /** What the agent reads when it connects. The plugin's version speaks of Paseo's copilot chip, which is not here. */
 export const desktopInstructions = `[Lienzo]
-Lienzo is a desktop canvas app the person keeps open next to you. Its canvas_* tools edit persistent documents ("Lienzos") that the person sees and edits at the same time. Draw when the person asks you to explain, map or sketch something there; otherwise leave the canvas alone. Before your first drawing, call canvas_list: it returns the drawing guide. The person's actions on a canvas (questions, notes, selections sent to you) are queued as events, and nothing can wake you: read them with canvas_events when the person mentions the canvas, and acknowledge the ones you handled. Claim only tool-confirmed changes.`;
+Lienzo is a desktop canvas app the person keeps open next to you. Its canvas_* tools edit persistent documents ("Lienzos") that the person sees and edits at the same time. Draw when the person asks you to explain, map or sketch something there; otherwise leave the canvas alone. Before your first drawing, call canvas_list: it returns the drawing guide. The canvas never messages you: the person talks to you here, and when they point at the canvas ("this", "what I selected", "mirá esto"), call canvas_selection to see what they selected, its instructions and the state their interaction left. Claim only tool-confirmed changes.`;
 
 export interface DesktopOptions {
   /** The app's private data directory (Electron userData). State lives in its canvas/ folder. */
@@ -49,9 +49,7 @@ export async function adoptDocuments(store: CanvasStore, workspaceId = DESKTOP_W
       moved++;
       record.document.workspaceId = workspaceId;
       for (const entry of record.history) { entry.before.workspaceId = workspaceId; entry.after.workspaceId = workspaceId; }
-      for (const event of record.events) event.workspaceId = workspaceId;
       record.connection = null;
-      record.outboundBatches = record.outboundBatches.filter(batch => batch.status === 'completed');
     }
     for (const copilot of Object.values(state.copilot)) if (copilot.workspaceId && copilot.workspaceId !== workspaceId) copilot.workspaceId = workspaceId;
     return moved;

@@ -14,7 +14,7 @@ export function KeyChips({ parts, inverse = false }: { parts: readonly string[];
 }
 /**
  * ⌘K. Centred, 640 px wide, its top at 18 % of the panel. Search, then results under small headers, Recent when the
- * query is empty, and "Ask the agent: ‹query›" always last. ↵ runs and closes, ⌘↵ runs and stays, Esc closes.
+ * query is empty. ↵ runs and closes, ⌘↵ runs and stays, Esc closes.
  */
 export function CommandPalette({ open, items, recent, onRun, onClose, width, height, chips, onQuery }: {
   open: boolean; items: (query: string) => readonly PaletteItem[]; recent: readonly string[]; onRun(item: PaletteItem, background: boolean): void; onClose(): void;
@@ -34,7 +34,7 @@ export function CommandPalette({ open, items, recent, onRun, onClose, width, hei
     <View nativeID="lienzo-palette" accessibilityRole="search" style={[islandStyle(u, true), { position: 'absolute', top, left: Math.max(12, (width - w) / 2), width: w, padding: 0, gap: 0, overflow: 'hidden' }]}>
       <View style={{ height: P.search, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderColor: u.c.border }}>
         <Icon name="Search" size={18} color={u.c.foregroundMuted} />
-        <TextInput nativeID="lienzo-palette-input" autoFocus accessibilityLabel="Search commands, tools and Lienzos" placeholder="Search tools, actions, Lienzos… or ask the agent" placeholderTextColor={u.c.foregroundMuted} value={query}
+        <TextInput nativeID="lienzo-palette-input" autoFocus accessibilityLabel="Search commands, tools and Lienzos" placeholder="Search tools, actions, Lienzos…" placeholderTextColor={u.c.foregroundMuted} value={query}
           onChangeText={value => { setQuery(value); setCursor(0); onQuery?.(value); }}
           onKeyPress={e => {
             const event = e.nativeEvent as unknown as { key: string; metaKey?: boolean; ctrlKey?: boolean }, key = event.key;
