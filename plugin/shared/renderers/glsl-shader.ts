@@ -53,16 +53,16 @@ export function glslShaderState(data: GlslShaderData, raw: Record<string, JSONVa
 export const glslShaderSpec = {
   id: 'glsl-shader', dataSchema: glslShaderDataSchema, interactive: true,
   minSize: { width: 260, height: 280 }, defaultSize: { width: 440, height: 440 },
-  guidance: 'Una pregunta, fragment GLSL WebGL1 completo de hasta 4096 bytes, hasta cuatro uniforms float declarados con rangos. Nombres iguales al scope enlazan valores compartidos. Declare u_resolution vec2 y u_time float solo si sus builtins están habilitados. Tiempo solo tras Reproducir. Lo que la persona probó (valores, tiempo, lastInteraction) queda en el estado del bloque: léelo con canvas_selection o canvas_read ids.',
+  guidance: 'A question, a complete WebGL1 fragment shader of up to 4096 bytes, and up to four float uniforms declared with ranges. A uniform named like a variable of its Frame or the Lienzo takes that shared value. Declare u_resolution vec2 and u_time float only when their builtins are on. Time runs only after Play. What the person tried (values, time, lastInteraction) stays in the block state: read it with canvas_selection or canvas_read ids.',
   blockType: {
     id: 'glsl-shader', renderer: 'glsl-shader', name: 'GLSL shader', description: 'Explore an image computed from a few parameters. WebGL on desktop and web; a static reference on native.',
     properties: [
       { key: 'question', label: 'Question', kind: 'text', required: true },
       { key: 'fragmentSource', label: 'Fragment GLSL', kind: 'text', required: true },
-      { key: 'uniforms', label: 'Uniforms and ranges', kind: 'json', required: true },
-      { key: 'builtins', label: 'Resolution and time', kind: 'json', required: false },
-      { key: 'maxPixelSize', label: 'Resolution limit', kind: 'number', required: false },
-      { key: 'staticSummary', label: 'Static reference', kind: 'text', required: false },
+      { key: 'uniforms', label: 'Parameters', kind: 'json', required: true, help: 'Each one is a float uniform with a slider. The shader code declares it.' },
+      { key: 'builtins', label: 'Resolution and time', kind: 'json', required: false, advanced: true },
+      { key: 'maxPixelSize', label: 'Resolution limit', kind: 'number', required: false, advanced: true, help: 'Largest side drawn, in pixels (16 to 1024).' },
+      { key: 'staticSummary', label: 'Static reference', kind: 'text', required: false, advanced: true, help: 'What the picture shows, for devices that cannot run it.' },
     ],
     defaults: {
       question: 'How does the spacing of the stripes change with the frequency?',

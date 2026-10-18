@@ -1,4 +1,4 @@
-import { cleanRuntime, DOCUMENT_SCOPE, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
+import { cleanRuntime, DOCUMENT_SCOPE, isDiscreteVariable, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
 import { safeJson } from "./reducer";
 import type { RpcInput } from "../shared/contract";
 import * as rpc from "../shared/rpc";
@@ -215,6 +215,7 @@ export class CanvasService {
           if (value === null) delete values[name];
           else {
             if (value < variable.min || value > variable.max) throw new CanvasError('VALIDATION', `Variable ${name} is outside its declared range.`);
+            if (isDiscreteVariable(variable) && !Number.isInteger(value)) throw new CanvasError('VALIDATION', `Variable ${name} takes whole values: 0 or 1 for on/off, an option index for a choice.`);
             values[name] = value;
           }
         }

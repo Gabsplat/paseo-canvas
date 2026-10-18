@@ -11,7 +11,7 @@ const eventSchema = z.object({
   kind: z.enum(['message', 'signal', 'value']),
 }).strict();
 export const animatedFlowDataSchema = z.object({
-  question: z.string().trim().min(1).max(1000),
+  question: z.string().trim().max(1000).optional(),
   events: z.array(eventSchema).max(64),
   duration: milliseconds.refine(n => n >= 1),
   travelMs: z.number().finite().min(1).max(10_000).default(1000),
@@ -53,18 +53,18 @@ export const animatedFlowSpec = {
   id: 'animated-flow', dataSchema: animatedFlowDataSchema, interactive: true,
   minSize: { width: 280, height: 320 }, defaultSize: { width: 440, height: 430 },
   remapReferences: remapAnimatedFlowReferences,
-  guidance: 'Set question, duration/travelMs in milliseconds, events [{t,from,to,payload,kind,linkId?}] over existing directed document blocks/groups and links. Kinds: message/signal/value; payload: bounded number or text. Parallel routes require linkId. Optional links {realLinkId:{sign:1|-1,delay:ms}} and propagation {maxEvents:1..256,horizon:ms} propagate numeric arrivals only along declared links. Arrival=t+delay+travelMs. Runtime is local transport; reset preserves the graph. What the person explored (playhead, visited range) stays in the block state and its lastInteraction, read with canvas_selection or canvas_read ids.',
+  guidance: 'Set duration/travelMs in milliseconds and optionally a question, events [{t,from,to,payload,kind,linkId?}] over existing directed document blocks/groups and links. Kinds: message/signal/value; payload: bounded number or text. Parallel routes require linkId. Optional links {realLinkId:{sign:1|-1,delay:ms}} and propagation {maxEvents:1..256,horizon:ms} propagate numeric arrivals only along declared links. Arrival=t+delay+travelMs. Runtime is local transport; reset preserves the graph. What the person explored (playhead, visited range) stays in the block state and its lastInteraction, read with canvas_selection or canvas_read ids.',
   blockType: {
     id: 'animated-flow', renderer: 'animated-flow', name: 'Animated flow', description: 'Time and cause travelling along the real links of the Lienzo.',
     properties: [
-      { key: 'question', label: 'Guiding question', kind: 'text', required: true },
-      { key: 'events', label: 'Declared events', kind: 'json', required: true },
-      { key: 'duration', label: 'Duration in milliseconds', kind: 'number', required: true },
-      { key: 'travelMs', label: 'Travel time in milliseconds', kind: 'number', required: false },
-      { key: 'links', label: 'Sign and delay per link', kind: 'json', required: false },
-      { key: 'propagation', label: 'Propagation limits', kind: 'json', required: false },
+      { key: 'events', label: 'Events', kind: 'json', required: true, help: 'What leaves where, and when. Each event travels along a link of the Lienzo.' },
+      { key: 'duration', label: 'Duration', kind: 'number', required: true },
+      { key: 'question', label: 'Question', kind: 'text', required: false, advanced: true, help: 'Shown above the timeline.' },
+      { key: 'travelMs', label: 'Travel time', kind: 'number', required: false, advanced: true, help: 'How long one event takes to cross a link.' },
+      { key: 'links', label: 'Sign and delay per link', kind: 'json', required: false, advanced: true },
+      { key: 'propagation', label: 'Keep travelling', kind: 'json', required: false, advanced: true },
     ],
-    defaults: { question: 'How does the signal change as it travels along the links?', events: [], duration: 10_000, travelMs: 1000, links: {} },
+    defaults: { events: [], duration: 10_000, travelMs: 1000, links: {} },
   },
 } satisfies RendererSpec;
 
@@ -116,7 +116,7 @@ export function simulateAnimatedFlow(data: AnimatedFlowData, document: AnimatedF
     const link = event.linkId ? explicit?.from === event.from && explicit.to === event.to ? explicit : undefined : candidates.length === 1 ? candidates[0] : undefined;
     if (!nodes.has(event.from) || !nodes.has(event.to) || !link) {
       const parallel = !event.linkId && candidates.length > 1 && nodes.has(event.from) && nodes.has(event.to);
-      issues.push({ eventIndex, reason: parallel ? 'parallel' : 'missing', message: parallel ? 'Hay varias conexiones entre estos nodos. Elige una ruta para este evento.' : MISSING_FLOW_ROUTE });
+      issues.push({ eventIndex, reason: parallel ? 'parallel' : 'missing', message: parallel ? 'There are several links between these two. Pick one for this event.' : MISSING_FLOW_ROUTE });
     } else append(event, link.id, false);
   });
   if (data.propagation) {
