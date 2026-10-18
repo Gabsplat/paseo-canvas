@@ -1,5 +1,5 @@
 /**
- * The icon library (docs/design.md §36.2): a curated Lucide set that ships offline, and a search over Iconify's public
+ * The icon library (docs/design.md §37.2): a curated Lucide set that ships offline, and a search over Iconify's public
  * API (https://api.iconify.design) limited to open-licence sets, so every icon carries its set and licence when it is
  * inserted as an SVG drawing. Pure logic: no React and no DOM; the network goes through an injectable `fetch`.
  */

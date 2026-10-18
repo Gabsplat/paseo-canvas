@@ -1,5 +1,5 @@
 /**
- * The icon library popover (docs/design.md §36.2): search, categories, recent icons, a paged grid of the curated
+ * The icon library popover (docs/design.md §37.2): search, categories, recent icons, a paged grid of the curated
  * Lucide set that ships offline, and, for anything else, Iconify's open-licence sets searched online. Every icon is
  * inserted as a static SVG drawing that keeps its set and licence. Click to add at the centre, or drag onto the canvas.
  */

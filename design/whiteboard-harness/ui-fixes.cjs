@@ -1,4 +1,4 @@
-// UI fixes, October 2026 (docs/design.md §36): the add sheets with live link previews, Import SVG as tabs, the icon
+// UI fixes, October 2026 (docs/design.md §37): the add sheets with live link previews, Import SVG as tabs, the icon
 // library (offline Lucide and Iconify search), the shader block without forced chrome, and screens that fit their
 // content. Example data only. Run with: node ui-fixes.cjs [oscuro|papel] [sheets,icons,shader,screens]. Captures go to
 // $LIENZO_SHOTS (default /tmp)/lienzo-ui-<theme>-*.png. Online steps (thumbnails, oEmbed, Iconify) need the network

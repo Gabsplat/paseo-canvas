@@ -48,7 +48,7 @@ export function frameSandbox(url: string, ownOrigin?: string): string {
   return sameOrigin || !ownOrigin ? tokens.preview.sandbox : `${tokens.preview.sandbox} allow-same-origin allow-popups allow-popups-to-escape-sandbox`;
 }
 
-// ---- What a pasted link will become (docs/design.md §36.1). Pure: the add sheets show it live as the person types.
+// ---- What a pasted link will become (docs/design.md §37.1). Pure: the add sheets show it live as the person types.
 export type LinkIntent = 'page' | 'image' | 'video' | 'audio';
 export type LinkKind = 'page' | 'image' | 'video' | 'audio' | 'reference';
 export type LinkDescription =

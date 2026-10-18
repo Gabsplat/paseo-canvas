@@ -29,7 +29,7 @@ export function sheetFrame(panel: { width: number; height: number }, compact: bo
 
 export type RailItem = { id: string; label: string; icon: string; detail?: string };
 /**
- * A sheet that fits its content (docs/design.md §36.4): as tall as what it shows, up to the usual frame. `center`
+ * A sheet that fits its content (docs/design.md §37.4): as tall as what it shows, up to the usual frame. `center`
  * keeps it in the middle of the panel; `top` holds its top edge still, for screens with a rail whose sections change.
  */
 export type ScreenFit = 'center' | 'top';

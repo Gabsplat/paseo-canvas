@@ -4,17 +4,17 @@ import { Icon, TextInput } from './host';
 import type { CanvasGroup, CanvasLink, CanvasOperation } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { Button, CheckRow, Field, IconButton, Segments, Txt, useTooltip, useUI } from './ui';
-import { ancestors, connectOperations, containerMode, hasCommunication, instructionLevels, pinnedChildren, safeUrl, type Rect } from './logic';
+import { ancestors, connectOperations, containerMode, hasCommunication, instructionLevels, pinnedChildren, type Rect } from './logic';
 import { communicationOperation, layoutIcons, layoutOperations, leaveGroupOperations, reorderOperation, typeSlot } from './panel-actions';
 import { isWhiteboardRenderer, WB_COLORS, type WbColor } from '../shared/whiteboard';
-import { resolveScope, variablesSchema } from '../shared/learning';
+import { resolveScope } from '../shared/learning';
 import { islandStyle, wbColor } from './whiteboard-visuals';
 import { tokens } from './tokens';
 import { activateRendererReset } from './web';
 import { usePresentation } from './usePresentation';
 import { RegisteredRenderer } from './renderers/RegisteredRenderer';
 import { recordInteraction } from './useLearning';
-import { NumberPropertyField } from './NumberPropertyField';
+import { BlockContent, VariablesEditor } from './PropertyEditors';
 import { needsContentInteraction } from './interaction';
 import { linkTone } from './Links';
 import { HiddenResult } from './HiddenResult';
@@ -114,7 +114,6 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
   };
   const row = (label: string, icon: string, press: () => void, writes = true, danger = false, unavailable = false) => <Pressable key={label} accessibilityRole="menuitem" accessibilityLabel={label} accessibilityState={{ disabled: unavailable || writes && disabled }} disabled={unavailable || writes && disabled} onPress={event => { event.stopPropagation(); press(); }}
     style={({ pressed, ...state }) => ({ minHeight: u.compact ? 44 : tokens.menu.row.height, paddingHorizontal: tokens.menu.row.paddingH, marginHorizontal: -tokens.menu.row.paddingH, borderRadius: tokens.menu.row.radius, flexDirection: 'row', alignItems: 'center', gap: tokens.menu.row.gap, backgroundColor: pressed ? u.c.surface2 : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .05) : 'transparent', opacity: unavailable || writes && disabled ? .45 : 1 })}><Icon name={icon} size={16} color={danger ? u.c.statusDanger : u.c.foregroundMuted} /><Txt style={{ flex: 1, color: danger ? u.c.statusDanger : u.c.foreground }}>{label}</Txt></Pressable>;
-  const parse = (kind: string, value: string) => { if (kind === 'json') { try { return JSON.parse(value); } catch { throw new Error('Invalid JSON'); } } if (kind === 'number') { const n = Number(value); if (!Number.isFinite(n)) throw new Error('Invalid number'); return n; } return value; };
   const concealed = entity && presentation?.hiddenBy.get(entity.id), gate = block && presentation?.activeGates.has(block.id);
   const levels = instructionLevels(doc, targetEntity).filter(level => level.id !== target && !!level.communication.instructions.trim());
   const candidates = entity ? [...doc.blocks, ...doc.groups].filter(e => e.id !== entity.id && !ancestors(doc, entity).some(g => g.id === e.id) && !ancestors(doc, e).some(g => g.id === entity.id) && !presentation?.hiddenBy.has(e.id) && (!query.trim() || e.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))) : [];
@@ -138,14 +137,8 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
     </PanelSection>
   </View>;
 
-  const fields = block && (type ? <>
-    <Field key={block.id + ':title'} label="Title" value={block.title} disabled={disabled} onSave={title => patchEntity({ title }, 'Edit title')} />
-    {type.properties.map(p => p.kind === 'boolean' ? <CheckRow key={p.key} label={p.label} checked={!!block.data[p.key]} disabled={disabled} onPress={() => { void patchEntity({ data: { [p.key]: !block.data[p.key] } }, 'Edit ' + p.label); }} />
-      : p.kind === 'number' ? <NumberPropertyField key={block.id + ':' + p.key} label={p.label} value={String(block.data[p.key] ?? '')} required={p.required} disabled={disabled} save={value => patchEntity({ data: { [p.key]: value } }, 'Edit ' + p.label)} />
-      : <Field key={block.id + ':' + p.key} label={p.label} required={p.required} value={p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : String(block.data[p.key] ?? '')} multiline={p.kind === 'text' || p.kind === 'json'} mono={p.kind !== 'text'} inputStyle={p.kind === 'json' ? { minHeight: 120 } : undefined} disabled={disabled}
-        placeholder={p.key === 'url' ? 'https://…' : undefined} onSave={value => { if (p.key === 'url' && value && !safeUrl(value)) throw new Error('VALIDATION'); return patchEntity({ data: { [p.key]: parse(p.kind, value) } }, 'Edit ' + p.label); }} />)}
-    {slot?.kind === 'status' && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{['Done', 'In progress', 'Blocked', 'New'].map(status => <Button key={status} label={status} small active={block.data.status === status} disabled={disabled} onPress={() => { void patchEntity({ data: { status } }, 'Change status'); }} />)}</View>}
-  </> : <Txt kind="small" muted>This block’s type is not in the catalog any more, so its properties cannot be edited here. The agent can still read them.</Txt>);
+  const fields = block && (type ? <BlockContent key={block.id} controller={c} block={block} type={type} disabled={disabled} />
+    : <Txt kind="small" muted>This block’s type is not in the catalog any more, so its properties cannot be edited here. The agent can still read them.</Txt>);
   const actions = <>
     {entity && row(group ? 'Edit title on the canvas' : 'Edit text on the canvas', 'Type', editText, true)}
     {block && needsContentInteraction(type?.renderer) && !u.compact && row('Interact', 'MousePointerClick', interact, false)}
@@ -176,7 +169,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
       {layoutMode === 'graph' && <Segments value={layout?.direction ?? 'down'} options={[{ value: 'down', label: 'Downwards' }, { value: 'right', label: 'To the right' }]} disabled={disabled} onChange={direction => saveLayout({ ...layout, mode: 'graph', direction })} />}
       {layoutMode === 'grid' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Txt>Columns</Txt><IconButton icon="Minus" label="Fewer columns" disabled={disabled || (layout?.columns ?? 2) <= 1} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) - 1 })} /><Txt>{layout?.columns ?? 2}</Txt><IconButton icon="Plus" label="More columns" disabled={disabled || (layout?.columns ?? 2) >= 4} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) + 1 })} /></View>}
     </PanelSection>}
-    {group?.variables?.length ? <PanelSection title="Variables" defaultOpen={false}><Field label="Variables" value={JSON.stringify(group.variables, null, 2)} multiline mono disabled={disabled} onSave={value => patchEntity({ variables: variablesSchema.parse(JSON.parse(value)) }, 'Edit Frame variables')} /></PanelSection> : null}
+    {group && <PanelSection title="Variables" defaultOpen={!!group.variables?.length}><VariablesEditor controller={c} scopeId={group.id} disabled={disabled} /></PanelSection>}
     {entity && <PanelSection title="Instructions for the agent" defaultOpen={focus === 'instruction' || hasCommunication(entity.communication)}>
       <Field key={'instruction:' + (target ?? doc.id)} label={target === entity.id ? 'How the agent should talk about this' : target ? `Frame “${targetEntity?.title}”` : 'The whole Lienzo'} value={communication?.instructions ?? ''} multiline inputStyle={{ minHeight: 72, maxHeight: 192 }} disabled={disabled} placeholder="For example: explain it to a beginner, step by step." onSave={instructions => saveCommunication({ instructions })} />
       {levels.length > 0 && <><Txt kind="small" muted>Also applies:</Txt>{levels.map(level => <Button key={level.id} label={level.id === doc.id ? 'The whole Lienzo' : 'Frame “' + level.title + '”'} icon="Compass" variant="ghost" small onPress={() => setInstructionTarget(level.id === doc.id ? null : level.id)} />)}</>}

@@ -17,7 +17,7 @@ export const glslUniformSchema = z.object({
   step: z.number().finite().positive().max(2e6).optional(), unit: z.string().max(24).optional(),
 }).strict().refine(v => v.min < v.max && v.value >= v.min && v.value <= v.max, 'Expected min < max and a default inside the range.');
 export const glslShaderDataSchema = z.object({
-  // Everything around the picture is optional (docs/design.md §36.3). Blocks stored before kept a question: it still shows.
+  // Everything around the picture is optional (docs/design.md §37.3). Blocks stored before kept a question: it still shows.
   question: z.string().trim().max(1000).optional(),
   fragmentSource: z.string().trim().min(1).max(GLSL_SOURCE_BYTES).refine(s => glslUtf8Length(s) <= GLSL_SOURCE_BYTES, 'Fragment source exceeds 4096 UTF-8 bytes.'),
   uniforms: z.array(glslUniformSchema).max(4).refine(v => new Set(v.map(u => u.name)).size === v.length, 'Uniform names must be unique.'),
@@ -71,20 +71,20 @@ export function glslShaderState(data: GlslShaderData, raw: Record<string, JSONVa
 export const glslShaderSpec = {
   id: 'glsl-shader', dataSchema: glslShaderDataSchema, interactive: true,
   minSize: { width: 200, height: 140 }, defaultSize: { width: 480, height: 320 },
-  guidance: 'A complete WebGL1 GLSL fragment of up to 4096 bytes and up to four float uniforms declared with ranges. Names equal to scope variables link shared values. Declare u_resolution vec2 and u_time float only when their builtins are on. By default the card is the shader alone, edge to edge; add only what helps: question (a line above), showTitle (the block title over the picture), controls (overlay = small sliders on the picture, the default; below = a strip under it; none = no sliders on the card), reset (a Reset button), autoplay (start u_time when in view). Without autoplay, time starts when the person presses play. What the person tried (values, time, lastInteraction) stays in the block state: read it with canvas_selection or canvas_read ids.',
+  guidance: 'A complete WebGL1 GLSL fragment of up to 4096 bytes and up to four float uniforms declared with ranges. A uniform named like a variable of its Frame or the Lienzo takes that shared value. Declare u_resolution vec2 and u_time float only when their builtins are on. By default the card is the shader alone, edge to edge; add only what helps: question (a line above), showTitle (the block title over the picture), controls (overlay = small sliders on the picture, the default; below = a strip under it; none = no sliders on the card), reset (a Reset button), autoplay (start u_time when in view). Without autoplay, time starts when the person presses play. What the person tried (values, time, lastInteraction) stays in the block state: read it with canvas_selection or canvas_read ids.',
   blockType: {
     id: 'glsl-shader', renderer: 'glsl-shader', name: 'GLSL shader', description: 'Explore an image computed from a few parameters. WebGL on desktop and web; a static reference on native.',
     properties: [
       { key: 'question', label: 'Question', kind: 'text', required: false },
       { key: 'fragmentSource', label: 'Fragment GLSL', kind: 'text', required: true },
-      { key: 'uniforms', label: 'Uniforms and ranges', kind: 'json', required: true },
-      { key: 'builtins', label: 'Resolution and time', kind: 'json', required: false },
-      { key: 'maxPixelSize', label: 'Resolution limit', kind: 'number', required: false },
-      { key: 'staticSummary', label: 'Static reference', kind: 'text', required: false },
-      { key: 'showTitle', label: 'Show the title', kind: 'boolean', required: false },
-      { key: 'controls', label: 'Controls: overlay, below or none', kind: 'text', required: false },
+      { key: 'uniforms', label: 'Parameters', kind: 'json', required: true, help: 'Each one is a float uniform with a slider. The shader code declares it.' },
+      { key: 'builtins', label: 'Resolution and time', kind: 'json', required: false, advanced: true },
+      { key: 'maxPixelSize', label: 'Resolution limit', kind: 'number', required: false, advanced: true, help: 'Largest side drawn, in pixels (16 to 1024).' },
+      { key: 'staticSummary', label: 'Static reference', kind: 'text', required: false, advanced: true, help: 'What the picture shows, for devices that cannot run it.' },
+      { key: 'controls', label: 'Controls', kind: 'text', required: false, options: ['overlay', 'below', 'none'], help: 'Where the sliders sit: over the picture when selected, under it, or not on the card.' },
+      { key: 'showTitle', label: 'Show the title on the picture', kind: 'boolean', required: false },
       { key: 'reset', label: 'Reset button', kind: 'boolean', required: false },
-      { key: 'autoplay', label: 'Play on its own', kind: 'boolean', required: false },
+      { key: 'autoplay', label: 'Play on its own', kind: 'boolean', required: false, help: 'Starts time when it comes into view, never under reduced motion.' },
     ],
     defaults: {
       fragmentSource: 'precision mediump float;\nuniform vec2 u_resolution;\nuniform float frequency;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution;\n  float band = 0.5 + 0.5 * sin(uv.x * frequency * 6.283185);\n  gl_FragColor = vec4(vec3(band), 1.0);\n}',

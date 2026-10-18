@@ -1,5 +1,5 @@
 /**
- * The add sheets (docs/design.md §36.1): a Window, an image, a video, a sound, and an SVG. One compact sheet per kind,
+ * The add sheets (docs/design.md §37.1): a Window, an image, a video, a sound, and an SVG. One compact sheet per kind,
  * in the language of the screens: a labelled field, a live preview of what the link will become, an optional caption
  * labelled as such, and Enter to add, Escape to close. Links can be dropped onto the sheet; SVG files too.
  */

@@ -122,3 +122,16 @@ test('controls presents its guiding question and visible reset, removes override
   const button = find(node, 'Button')!; assert.equal(button.props.label, 'Reset'); button.props.onPress(); await Promise.resolve();
   assert.deepEqual(writes, [['amplitude', null]]); assert.deepEqual(events, [['controls.reset', { values: { amplitude: 1 } }, 'Reset controls']]);
 });
+
+test('controls shows an on/off variable as a switch and a choice as option buttons, writing whole values and recording each change', async () => {
+  reset(); const writes: unknown[] = [], events: unknown[] = [];
+  const variables = { trail: { label: 'Show trail', type: 'boolean', value: 0, current: 0, min: 0, max: 1, step: 1, scopeId: '$document' }, mode: { label: 'Mode', type: 'choice', options: ['Walk', 'Run'], value: 0, current: 0, min: 0, max: 1, step: 1, scopeId: 'g' } };
+  const node = (controlsRenderer.Component as Function)({ data: { variables: ['trail', 'mode'] }, block: { id: 'b' }, ui: { layout: { platform: 'web' }, c: { accent: '#246', statusDanger: '#933', border: '#888', foreground: '#111' } }, scope: { variables, get: (n: string) => (variables as any)[n].current, set: (...args: unknown[]) => writes.push(args) }, runtime: { record: async (...args: unknown[]) => { events.push(args); } } }) as Element;
+  const all = (n: Element): Element[] => [n, ...children(n).flatMap(all)];
+  const toggle = all(node).find(n => n.type === 'CheckRow')!; assert.equal(toggle.props.label, 'Show trail'); assert.equal(toggle.props.checked, false);
+  toggle.props.onPress(); await Promise.resolve();
+  const run = all(node).find(n => n.type === 'Pressable' && n.props.accessibilityLabel === 'Run')!; run.props.onPress({ stopPropagation() {} }); await Promise.resolve();
+  assert.deepEqual(writes.filter(w => (w as unknown[]).length === 3), [['trail', 1, true], ['mode', 1, true]]);
+  assert.deepEqual(events.map(e => (e as unknown[])[0]), ['controls.trail', 'controls.mode']);
+  assert.deepEqual((events[1] as unknown[])[1], { name: 'mode', value: 1, visited: [0, 1], scopeId: 'g' });
+});

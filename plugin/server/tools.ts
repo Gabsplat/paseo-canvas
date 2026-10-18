@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as rpc from "../shared/rpc";
 import { idSchema, groupSchema, groupPatchSchema, revisionSchema, extensionSchema, layoutSchema, type CanvasDocument } from "../shared/model";
 import { EXTENSION_GUIDE } from "../shared/extensions";
+import { allWikiPages, getWikiPage, pageForBlockType, searchWiki, wikiContents, wikiPageMarkdown } from "../shared/wiki";
 import { CanvasError } from "../shared/errors";
 import { CanvasService } from "./service";
 import { CopilotService } from "./copilot";
@@ -25,6 +26,7 @@ const catalogInput = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save_type"), expectedRevision: revisionSchema, blockType: rpc.mutateCatalog.input.shape.action.options[0].shape.blockType }).strict(),
   z.object({ action: z.literal("save_extension"), expectedRevision: revisionSchema, extension: extensionSchema }).strict(),
   z.object({ action: z.literal("remove_extension"), expectedRevision: revisionSchema, id: idSchema }).strict(),
+  z.object({ action: z.literal("help"), page: z.string().min(1).max(140).optional(), query: z.string().min(1).max(200).optional() }).strict(),
 ]);
 const sheetInput = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), documentId: idSchema, expectedRevision: revisionSchema, title: z.string().min(1).max(300), description: z.string().max(4000).optional(), id: idSchema.optional(), layout: layoutSchema.optional() }).strict(),
@@ -44,7 +46,7 @@ const tools = [
   { name: "canvas_read", description: "Read outline first; outline/full include links, root/group layouts and the current selectedIds. Full view or ids returns content and entity instructions, most-specific first; ids can also retrieve links, and for a block its state (what the person did with it: runtime values, a quiz answer, a mini app's stored state, lastInteraction). Outline marks such blocks with hasState. Large responses ask you to read by ids. sinceRevision reports changed and removed IDs, including links.", schema: readInput, readOnly: true },
   { name: "canvas_apply", description: "Atomically apply 1..200 operations with expectedRevision; failures roll back. On REVISION_CONFLICT reread and retry. Build node blocks + graph groups, then link.create:{link:{id,from,to,kind?,label?,tone?}}; kind is flow (default), depends or reference. from is drawn before to, so link in reading order; from/to accept group IDs, and one area-to-area link beats many block-to-block links across areas. If the result carries legibility.warnings, restructure before adding more. link.update uses {id,patch}; link.delete uses {id}. Endpoints are existing block/group IDs, distinct; (from,to,kind) is unique. Deleting entities removes touching links. document.update accepts layout. Group positions are relative. block.update data is an RFC 7396 merge patch; arrays replace. Use summary/details for text, few prose notes, and an html mini app when something should be tried rather than read.", schema: rpc.mutateDocument.input.omit({ workspaceId: true }), readOnly: false },
   { name: "canvas_group", description: "Create/update area groups (Frames) with layout.mode graph, or ungroup children. Membership moves children to one parent; groups nest to depth 4.", schema: groupInput, readOnly: false },
-  { name: "canvas_catalog", description: "List/read block types and extensions. Writes require catalog expectedRevision. save_type adds a local block type. save_extension adds or replaces a tool the person can use from then on, in Paseo and in the desktop app (list returns extensionGuide with the whole API; remove_extension deletes a local one). Extension pages run only sandboxed in a frame. Library writes require normal user permission.", schema: catalogInput, readOnly: false },
+  { name: "canvas_catalog", description: "List/read block types and extensions. Writes require catalog expectedRevision. save_type adds a local block type. save_extension adds or replaces a tool the person can use from then on, in Paseo and in the desktop app (list returns extensionGuide with the whole API; remove_extension deletes a local one). help {page?, query?} reads the person's Help pages (contents, a search, or one page as Markdown): use it to tell the person how to do something by hand; each listed block type names its page. Extension pages run only sandboxed in a frame. Library writes require normal user permission.", schema: catalogInput, readOnly: false },
   { name: "canvas_selection", description: "Read what the person has selected on the canvas. Call it whenever the person points at the canvas in conversation: \"this\", \"these\", \"what I selected\", \"look at this\", \"mirá esto\", \"esto de acá\". Returns each selected block or group with its effective instructions (most specific first) and, for a block, the state its interaction left: controls and simulations, a quiz answer, a mini app's stored state, and lastInteraction (what the person last did with it). Omit documentId to read the Lienzo whose selection the person changed most recently. The canvas never messages you; this read is how you see what the person means.", schema: selectionInput, readOnly: true },
   { name: "canvas_history", description: "Read recent real transactions, actor class and affected IDs before undo.", schema: scopedRead, readOnly: true },
   { name: "canvas_undo", description: "Undo your latest edit only if later edits have not touched those entities. Adds a new monotonic revision; fails with UNDO_BLOCKED instead of reverting another actor's edit.", schema: rpc.undoDocument.input.omit({ workspaceId: true }), readOnly: false },
@@ -149,9 +151,16 @@ export class ToolRouter {
       }
       case "canvas_catalog": {
         const args = catalogInput.parse(input);
+        if (args.action === "help") {
+          // The person's Help pages, the same data the Help screen shows: to explain how something is done by hand.
+          const pages = allWikiPages((await this.service.catalog()).extensions);
+          if (args.page) { const page = getWikiPage(args.page, pages); if (!page) throw new CanvasError("NOT_FOUND", "No Help page has that id; call help without a page for the contents."); return { page: page.id, markdown: wikiPageMarkdown(page) }; }
+          if (args.query) return { results: searchWiki(pages, args.query).slice(0, 8).map(({ id, title, summary }) => ({ id, title, summary })) };
+          return { contents: wikiContents(pages) };
+        }
         if (args.action === "list") {
           const catalog = await this.service.catalog();
-          return { revision: catalog.revision, blockTypes: catalog.blockTypes.map(({ id, name, description, renderer }) => ({ id, name, description, renderer, guidance: getRendererSpec(renderer)?.guidance })),
+          return { revision: catalog.revision, blockTypes: catalog.blockTypes.map(({ id, name, description, renderer }) => ({ id, name, description, renderer, guidance: getRendererSpec(renderer)?.guidance, help: pageForBlockType(id)?.id })),
             extensions: catalog.extensions.map(({ id, kind, name, description, permissions, source }) => ({ id, kind, name, description, permissions, source })), extensionGuide: EXTENSION_GUIDE };
         }
         if (args.action === "read") {

@@ -888,3 +888,32 @@ export function prefersReducedMotion(): boolean {
   const host = browser() as unknown as { matchMedia?: (query: string) => { matches: boolean } };
   try { return !!host.matchMedia?.('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 }
+/**
+ * The extensions catalog (shared/marketplace.ts) on web and desktop: a bounded, credential-free download of public
+ * text, SHA-256 from Web Crypto, and the last list kept in this browser's storage. Native has none of them.
+ */
+export async function fetchPublicText(url: string, limit: number): Promise<string> {
+  if (!browser().document || !/^https:\/\//i.test(url)) throw new Error('Downloads run in the web and desktop apps.');
+  type Response = { ok: boolean; headers: { get(name: string): string | null }; body?: { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel(): Promise<void> } } | null };
+  const host = globalThis as unknown as { fetch(url: string, options: { credentials: string; signal: unknown; cache: string }): Promise<Response>; AbortController: new () => { signal: unknown; abort(): void }; TextDecoder: new () => { decode(value: Uint8Array): string } };
+  const abort = new host.AbortController(), timeout = setTimeout(() => abort.abort(), 10000), tooLarge = () => new Error(`The file is larger than ${Math.round(limit / 1048576)} MB.`);
+  try {
+    const response = await host.fetch(url, { credentials: 'omit', signal: abort.signal, cache: 'no-cache' });
+    if (!response.ok) throw new Error('The download failed.');
+    if (Number(response.headers.get('content-length')) > limit) throw tooLarge();
+    const reader = response.body?.getReader(); if (!reader) throw new Error('The download could not be read.');
+    const chunks: Uint8Array[] = []; let bytes = 0;
+    for (;;) { const part = await reader.read(); if (part.done) break; if (!part.value) continue; bytes += part.value.byteLength; if (bytes > limit) { await reader.cancel(); throw tooLarge(); } chunks.push(part.value); }
+    const content = new Uint8Array(bytes); let offset = 0; for (const chunk of chunks) { content.set(chunk, offset); offset += chunk.byteLength; }
+    return new host.TextDecoder().decode(content);
+  } finally { clearTimeout(timeout); }
+}
+export async function sha256Hex(text: string): Promise<string | null> {
+  const subtle = (globalThis as unknown as { crypto?: { subtle?: { digest(algorithm: string, data: Uint8Array): Promise<ArrayBuffer> } } }).crypto?.subtle;
+  if (!browser().document || !subtle) return null;
+  try { const digest = new Uint8Array(await subtle.digest('SHA-256', new TextEncoder().encode(text))); return Array.from(digest, b => b.toString(16).padStart(2, '0')).join(''); } catch { return null; }
+}
+export function browserCache(key: string): { read(): string | null; write(text: string): void } {
+  const storage = () => (browser() as unknown as { localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void } }).localStorage;
+  return { read: () => { try { return storage()?.getItem(key) ?? null; } catch { return null; } }, write: text => { try { storage()?.setItem(key, text); } catch { /* storage full or blocked */ } } };
+}

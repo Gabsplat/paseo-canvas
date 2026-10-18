@@ -785,9 +785,11 @@ style. Prefer four or fewer series per figure.
 
 Slider row has a visible name, value with unit, bounded track and default tick. Values use
 value typography with tabular numerals. While dragging the current value updates every frame.
-Keyboard arrows use declared step; Home/End reach bounds. Touch targets are 44. Missing variables
-show "Falta declarar la variable {name}" and disable only the affected control. A collapsed group
-may show a short variables strip, but no empty strip appears without declarations.
+Keyboard arrows use declared step; Home/End reach bounds. Touch targets are 44. An on/off variable is a check row
+(the label, checked when 1); a choice is a row of pill buttons, the chosen one in the accent; both save at once. A
+missing variable shows "{name} is not declared on this Frame or the Lienzo. Declare it in Properties → Variables." and
+disables only that control. A collapsed group may show a short variables strip, but no empty strip appears without
+declarations.
 
 ### 18.4 Transport and readouts
 
@@ -825,7 +827,7 @@ can be inspected. Reset clears playhead and transient tokens, preserving graph c
 
 ### 18.10 GLSL shader
 
-A single declared fragment shader draws inside the existing WebGL adapter. Since §36.3 the card is the picture
+A single declared fragment shader draws inside the existing WebGL adapter. Since §37.3 the card is the picture
 alone by default; the question, title, sliders, Reset and autoplay are optional. Declared uniforms
 produce only the few controls that support what is being explored. Uniform names matching numeric
 scope variables bind to those values; local uniforms retain local defaults. Renderer-owned time
@@ -1167,8 +1169,9 @@ use. There is no view switcher, no alternative readings and no extension views.
 under the top islands, its height to above the zoom. It shows when something is selected, when the tool in hand has
 options, or when an extension tool is open, with a tab per source: Properties (the selection), "<Tool> options", and
 one tab per extension tool; picking a drawing tool brings its tab forward. The pin keeps it open with nothing
-selected, showing the Lienzo (description, instructions for the agent, layout); ⌘\ and the `PanelRight` button hide
-it or bring it back. Sections fold under 12 px headers. A block shows Content (title and every field of its type),
+selected, showing the Lienzo (description, instructions for the agent, layout, Variables); ⌘\ and the `PanelRight` button hide
+it or bring it back. Sections fold under 12 px headers. A block shows Content (title, the fields that matter, More
+options and Raw data (JSON), §36),
 Style for drawings, Instructions for the agent (with those it inherits), Connect (search a target) and Actions (edit
 on the canvas, interact, reset, duplicate, export, release position, take out of the Frame, move
 earlier/later, automatic size, delete). A Frame adds its title and purpose, Layout and Variables. A link shows label,
@@ -1241,7 +1244,7 @@ way. Logic in `plugin/client/Hojas.tsx` and `hojas-model.ts`; verified with `des
 
 ## 35. The screens around the canvas
 
-Lienzos, the guide, Settings, Extensions and History are screens, not small modals (`client/Screen.tsx`, tokens
+Lienzos, the guide, Help, Settings, Extensions and History are screens, not small modals (`client/Screen.tsx`, tokens
 `face.screens`). They share one language; the logic behind them lives in `client/screens.ts` and is tested on its own
 (`tests/screens.test.ts`). Verified with `design/whiteboard-harness/screens.cjs` (dark, `papel`, compact) and
 `desktop-screens.cjs` (the desktop preview); captures in `design/qa-screens-2026-10/`.
@@ -1322,12 +1325,108 @@ happened (the transaction label) and the time; undo and redo entries show their 
 things that still exist; pressing one closes the sheet, selects it and flies the camera there. Undo and Redo sit on
 the title row. Empty: "Nothing yet."
 
-## 36. Adding things: sheets, icons, shaders and screens that fit (October 2026)
+### 35.7 Help
+
+Help is the in-app wiki: menu → Help, ⌘K ("Help", and matching pages under a Help group while searching), the
+`CircleHelp` button in the header of the Properties panel (the page of what is selected: its block type, a Frame or a
+Sheet, a link, several things) and of an extension tool's tab, and Help on each extension card. It uses the sheet of
+§35.1 with its own wider rail (`face.wiki`: 248, rows of 32) on `surface0`: the small-caps title, a search field, and
+every page grouped under its section label (Start here, Drawing, Shapes, Text, Frames, Sheets, Windows & media,
+Interactive blocks, Mini apps, Lenses, Shortcuts, Agents, Extensions, Make your own), scrolling on its own. While
+there is a query the rail lists the matching pages instead ("3 pages"; "Nothing matches …"). The page is at most 720
+wide: the section in accent small caps with its icon, the serif display title, the summary in 15/22 muted, the
+shortcut as key chips (the keys in use, with the person's changes), and a 200-wide picture in a card beside the title
+(above it below 560). Then the purpose in 14/22, **By hand** as numbered steps in accent-washed circles, **Ask your
+agent** as prompt rows (a chat glyph, the prompt in quotes, a copy button; one line says the canvas never sends to
+the agent), **Tips** with a lightbulb in the warning tone, longer Markdown, and **Related** as pill links. The
+Keyboard shortcuts page lists the live registry. Compact: full screen; the index ("Help", search, topics) and the
+page alternate, with "All topics" to go back.
+
+Pictures are data (`shared/wiki/art.ts`, a 160 × 100 box of cards, boxes, ellipses, lines, strokes, windows, sliders,
+keys) drawn with views in the theme's tones (`client/WikiArt.tsx`); they are hidden from screen readers. Markdown
+(Help bodies and extension `docs`) is drawn by `client/Markdown.tsx`: headings in `title`/`heading`, paragraphs at
+21 line height, notes on an accent wash with a 3 px rule, code in a bordered `surface0` box with its language and a
+copy button, links in the accent. Installed extensions add pages under Extensions; one without `docs` says so.
+
+The Extensions screen (§35.5) gains a segmented control, Installed · Discover. Discover: a search field and Refresh,
+cards in the same grid (turquoise icon tile, name, "By …" or "From the catalog", description, permission chips,
+Source, and Install… or an "Installed" chip or Update…), an offline strip in the warning tone with the age of the kept
+list, an empty "out of reach" card with Try again, and a "Share yours here" card. Publish… on one's own card shows a
+three-step card in the accent border (Checked, Saved extension.json, Propose it on GitHub with Open GitHub).
+Verified with `design/whiteboard-harness/wiki.cjs` (dark, `papel`, compact); captures in `design/qa-wiki-2026-10/`.
+
+## 36. Properties for people
+
+Owner's direction: everything an agent can set, a person can set by hand, without JSON and without the docs. The
+same data goes to the server; editors only change how it is entered. Logic in `client/property-model.ts`, components in
+`client/PropertyEditors.tsx`, tokens in `face.properties`, audit in `docs/ux-audit-2026-10.md`.
+
+**Content, in order.** Title (optional, placeholder "Untitled"); the fields that matter; "More options" with a count,
+holding the fields a type marks `advanced` until they hold a value other than the default; "Raw data (JSON)" last.
+Required fields carry `*` only while empty. A field's `help` is one muted line under its label. Fields a structured
+editor writes together with another (a tree's closed folders) do not show on their own.
+
+**Disclosures.** A 28 px row (44 on compact): a 12 px chevron, a small muted semibold label, the count on the right.
+Closed by default. They fold in place inside the section; nothing floats over the panel.
+
+**List editors** (checklist, file tree, flow events, link settings, choices of a variable). Rows of 30 px (44 on
+compact) with 2 px between them and a 6 px radius. Inputs in a row are borderless until the row is active; the
+active row is washed in the foreground at 8 % and shows its tools on the right or on a second line: move up, move
+down, remove (danger tone), and for trees outdent, indent, highlight, mute, starts closed and the card it opens. Small
+tools are 24 px icon buttons with tooltips. Adding is a ghost button or an "Add an item and press Enter" field at the
+end, so the list grows where the person is looking. A list never asks for an index or an ID.
+
+**Pickers.** A 30 px field with the current choice and a chevron that opens a list in place under it (at most 280 px,
+then it scrolls), never a floating menu that could clip in the panel. Rows show a name and a muted detail ("Number ·
+Frame “Physics”", "Frame"). Links read "From → To · label".
+
+**Words with a vocabulary.** Status is a wrap of pill chips: None, the type's statuses, Other…; each known word has
+its tone's dot and, when chosen, its tone's border and wash, the same colour as the chip on the card. Other… opens a
+one-line field. Kind, language and other text with `options` keep a free field; suggestions show as chips under it
+while it is in use (always, when there are six or fewer), filtered by what is typed, and include words this Lienzo
+already uses for that field.
+
+**Numbers in human units.** Durations are typed in seconds next to a slider; they are stored in milliseconds. Small
+number boxes carry a 11 px muted label above them ("Lowest", "Highest", "Step", "At (s)") and keep what is typed until
+it is a number.
+
+**Variables** (on the Lienzo, on every Frame, and inside Controls). A row per variable: its mark (the `viz.series`
+colour and shape of its declaration order, §18.3), its label, a muted line with the type or range and how many
+Controls show it, its current value in code type, a chevron. Opening a row edits it in place: Label; Type as segments
+(Number · On / off · Choice); for numbers Lowest, Highest, Step, Unit and "Starts at" with a slider; for on/off
+"Starts on"; for choices a radio and a field per choice, "Add a choice"; "Name in code" (filled from the label until
+edited); "Now at …, moved by a control" with "Back to start" when the runtime value differs; "Delete variable".
+"Number", "On / off" and "Choice" buttons add one. Renaming or deleting carries the Controls that show it.
+
+**Controls.** "Variables shown, n of 4": a row per variable (mark, label, type and where it lives, move up/down,
+stop showing), opening into the same variable form. "Show a variable…" lists what the block can reach; "New variable"
+opens a small card: label, type, and "Shared by" (This Frame · The Lienzo) when the block sits in a Frame.
+
+**Shader parameters.** Rows like variables; adding, renaming or removing one rewrites its declaration in the code;
+"Use a shared variable" binds it by name. Resolution and time are two check rows.
+
+**Raw data (JSON).** One line saying it is exactly what the agent reads and writes; a monospaced box (140–360 px);
+while edited, a muted "Looks right." or the first problem in the danger tone; Apply (primary, only when valid) and
+Revert. Applying replaces the whole object in one transaction.
+
+**Saving.** Edits save 600 ms after the last keystroke, at once for structural actions (add, remove, move, tick,
+choose), each as one labelled transaction with undo. Editing stays open while an earlier change is saving: edits
+queue. A refusal says why in words under the editor ("Not saved · Two parameters have the same name.") with Retry;
+the draft stays.
+
+**On the canvas.** A selected checklist ends with a "+ Add an item" row: type and press Enter. A second press on a
+selected card within 400 ms (a double click) turns its title into a field: Enter or leaving saves, Escape keeps the old
+one. An empty Controls card says where to pick variables.
+
+Verified with `design/whiteboard-harness/ux.cjs` (headless Chromium, example data, dark and light); captures in
+`design/qa-ux-2026-10/`.
+
+## 37. Adding things: sheets, icons, shaders and screens that fit (October 2026)
 
 Verified with `design/whiteboard-harness/ui-fixes.cjs` (RN-web, plain headless Chromium, dark, light and compact) and in the desktop preview; captures in
 `design/qa-ui-fixes-2026-10/`.
 
-### 36.1 The add sheets
+### 37.1 The add sheets
 
 A Window, an image, a video, a sound and an SVG are added through one compact sheet per kind (`client/AddSheets.tsx`,
 tokens `face.addSheet`), in the language of the screens: the canvas dimmed, a 520 wide sheet at 14 % of the panel's
@@ -1354,7 +1453,7 @@ action is never full width.
   anywhere on the sheet loads into it. URL has its field and Load, then the preview. ⌘↵ inserts from Paste code; ↵
   from File and URL.
 
-### 36.2 The icon library
+### 37.2 The icon library
 
 "Icons" in the + catalog opens a 420 × 484 popover above the toolbar (`client/IconLibrary.tsx`, logic in
 `client/icon-library.ts`, tokens `face.icons`): the title with "293 offline · open sets online", a search field
@@ -1377,7 +1476,7 @@ onto the canvas drops it there; ↵ in the search adds the first result; Escape 
 - **Recent**: the last 16 icons used, in the host's `interface` settings (`recentIcons`; online ones keep their SVG up
   to 4 KB so they work offline). With recents, the popover opens on Recent, followed by all icons.
 
-### 36.3 The shader block
+### 37.3 The shader block
 
 A shader is a picture. By default its card has no header and no padding: the shader fills it edge to edge inside the
 radius-10 border (`foreground` at 0.1, 0.22 on hover, accent when selected), and the whole picture is the handle to
@@ -1390,10 +1489,10 @@ button over its bottom-left corner. Errors cover the picture in words. A block s
 of these choices, keeps its old face: question above, sliders and Reset below (`glslChrome` in
 `shared/renderers/glsl-shader.ts`).
 
-### 36.4 Screens that fit
+### 37.4 Screens that fit
 
 A screen's sheet is as tall as its content, up to the usual 960 × 680 frame, so a short screen leaves no empty well at
-the bottom. Extensions and History stay centred. Settings and Lienzos keep their top edge still while the section or
-the search changes their height. A longer content scrolls inside the frame as before; compact stays full screen; the
+the bottom. History stays centred. Settings, Extensions (Installed · Discover) and Lienzos keep their top edge still
+while the section, the tab or the search changes their height. A longer content scrolls inside the frame as before; compact stays full screen; the
 guide keeps its fixed stage.
 

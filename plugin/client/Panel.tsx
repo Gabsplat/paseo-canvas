@@ -8,6 +8,8 @@ import { Button, Chip, IconButton, Field, friendlyError, Modal, Txt, UIProvider,
 import { Canvas, type CanvasApi } from './Canvas';
 import { DocumentActions } from './DocumentActions';
 import { SelectionBar, SelectionProperties } from './SelectionActions';
+import { VariablesEditor } from './PropertyEditors';
+import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
 import { visual } from './Blocks';
 import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
@@ -39,12 +41,14 @@ import { Screen, sheetFrame } from './Screen';
 import { LienzosScreen } from './LienzosScreen';
 import { HistoryScreen } from './HistoryScreen';
 import { ExtensionsContent } from './ExtensionsScreen';
+import { WikiContent } from './WikiScreen';
+import { HOME_PAGE, allWikiPages, pageForSelection, searchWiki } from '../shared/wiki';
 import { SettingsContent, settingsRail, type SettingsSection } from './SettingsScreen';
 
 type ViewMode = 'canvas' | 'outline';
 type InspectorSection = 'document' | 'communication' | 'history';
 /** The one screen open over the canvas, if any (docs/redesign-2026-10.md, "UI pass"). */
-type ScreenState = { kind: 'lienzos' } | { kind: 'history' } | { kind: 'extensions' } | { kind: 'settings'; section: SettingsSection };
+type ScreenState = { kind: 'lienzos' } | { kind: 'history' } | { kind: 'extensions' } | { kind: 'settings'; section: SettingsSection } | { kind: 'help'; page: string };
 type VentanaKind = 'page' | 'image' | 'video' | 'audio';
 const F = tokens.face;
 /** What ⌘K ran last, per host and workspace, for as long as this client runs. */
@@ -187,6 +191,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   };
   const openScreen = (next: ScreenState) => { setAddOpen(false); setLibraryOpen(false); setOverflow(false); setPaletteOpen(false); setImmersive(false); setScreen(next); };
   const openExtensions = () => openScreen({ kind: 'extensions' });
+  const openHelp = (page: string = HOME_PAGE) => openScreen({ kind: 'help', page });
   const openSettings = (section: SettingsSection = 'shortcuts') => openScreen({ kind: 'settings', section });
   function openDocuments() { openScreen({ kind: 'lienzos' }); }
   async function newCanvas() {
@@ -406,12 +411,21 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const documentProperties = doc ? <View nativeID="lienzo-properties-document">
     <View style={{ paddingHorizontal: F.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>Lienzo</Txt><Txt kind="bodyStrong" numberOfLines={2}>{doc.title}</Txt><Txt kind="small" muted>{GLOSSARY.lienzo}</Txt></View>
     <PanelSection title="This Lienzo"><DocumentActions controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
+    <PanelSection title="Variables" defaultOpen={!!doc.variables?.length}><VariablesEditor controller={c} scopeId={DOCUMENT_SCOPE} disabled={disabled} /></PanelSection>
   </View> : null;
   const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Frame', ventana: 'Window' }[toolId] : 'Tool';
   const tabs: PanelTab[] = [];
-  if (hasSelection) tabs.push({ id: 'properties', label: 'Properties', icon: 'SlidersHorizontal', content: selectionProperties });
+  // The "?" of Properties opens the Help page of what is selected.
+  const selectionHelp = (() => {
+    if (!doc || !hasSelection) return HOME_PAGE;
+    if (!c.selection.length) return pageForSelection({ kind: 'link' });
+    if (c.selection.length > 1) return pageForSelection({ kind: 'many' });
+    const group = doc.groups.find(g => g.id === c.selection[0]), block = doc.blocks.find(b => b.id === c.selection[0]);
+    return group ? pageForSelection({ kind: 'frame', sheet: !!group.sheet }) : pageForSelection({ kind: 'block', typeId: block?.typeId ?? '' });
+  })();
+  if (hasSelection) tabs.push({ id: 'properties', label: 'Properties', icon: 'SlidersHorizontal', content: selectionProperties, help: () => openHelp(selectionHelp) });
   if (toolOptions && styleNode) tabs.push({ id: 'tool', label: toolName + ' options', icon: tool === 'draw' ? 'Pencil' : tool === 'text' ? 'Type' : tool === 'eraser' ? 'Eraser' : 'Shapes', content: <View nativeID="lienzo-tool-options" style={{ padding: F.rightPanel.padding }}>{styleNode}</View> });
-  for (const id of extTools) { const extension = extensionTools.find(e => e.id === id); if (extension && doc) tabs.push({ id: 'ext:' + id, label: extension.name, icon: extensionIcon(extension), scroll: false, content: <ExtensionTool key={id} extension={extension} controller={c} onOpen={id => { void c.select([id]); }} onClose={() => setExtTools(open => open.filter(x => x !== extension.id))} height={Math.min(440, Math.max(240, panelHeight - F.top.height - 2 * tokens.island.inset - F.rightPanel.bottomClearance - F.rightPanel.tabs - 20))} /> }); }
+  for (const id of extTools) { const extension = extensionTools.find(e => e.id === id); if (extension && doc) tabs.push({ id: 'ext:' + id, label: extension.name, icon: extensionIcon(extension), help: () => openHelp(pageForSelection({ kind: 'extension', id: extension.id })), scroll: false, content: <ExtensionTool key={id} extension={extension} controller={c} onOpen={id => { void c.select([id]); }} onClose={() => setExtTools(open => open.filter(x => x !== extension.id))} height={Math.min(440, Math.max(240, panelHeight - F.top.height - 2 * tokens.island.inset - F.rightPanel.bottomClearance - F.rightPanel.tabs - 20))} /> }); }
   if (!tabs.length && (panel.pinned || panel.forced) && documentProperties) tabs.push({ id: 'properties', label: 'Lienzo', icon: 'Frame', content: documentProperties });
   const panelVisible = !!doc && !immersive && !panel.hidden && tabs.length > 0 && (u.compact ? panel.forced : true);
   const activeTab = tabs.some(t => t.id === panel.tab) ? panel.tab : tabs[0]?.id ?? 'properties';
@@ -459,9 +473,12 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       { id: 'settings.agent', group: 'Settings', title: 'Agent connection', icon: 'Plug', keywords: 'assistant connect', disabled: !doc, run: () => setAgentsOpen(true) },
       { id: 'settings.instructions', group: 'Settings', title: 'Instructions for the agent', subtitle: 'How it should explain on this Lienzo', icon: 'Compass', disabled: !doc, run: () => inspectorOpen('communication') },
       { id: 'settings.history', group: 'Settings', title: 'History', subtitle: 'Every change, by day', icon: 'History', keywords: 'activity timeline changes', disabled: !doc, run: () => inspectorOpen('history') },
+      { id: 'help.open', group: 'Settings', title: 'Help', subtitle: 'How every tool and block works, and what to ask your agent', icon: 'CircleHelp', keywords: 'help wiki docs guide manual how', run: () => openHelp() },
       { id: 'settings.guide', group: 'Settings', title: 'Lienzo guide', subtitle: 'Four short scenes', icon: 'BookOpen', keywords: 'tour onboarding help', run: () => { setScreen(null); setGuideOpen(true); } },
     );
     const q = query.trim();
+    // Help pages join the results once there is something to search for.
+    if (q) for (const page of searchWiki(allWikiPages(c.catalog?.extensions ?? []), q).slice(0, 6)) items.push({ id: 'help.' + page.id, group: 'Help', title: page.title, subtitle: page.summary, icon: page.icon, keywords: page.keywords, verb: 'Read', run: () => openHelp(page.id) });
     return items;
   };
   const runPaletteItem = (item: PaletteItem) => { const next = remember(recent, item.id, F.palette.recent); recentByScope.set(scope, next); setRecent(next); item.run(false); };
@@ -558,6 +575,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <MenuRow icon="Puzzle" label="Extensions" onPress={openExtensions} />
       <MenuRow icon="Settings" label="Settings" onPress={() => openSettings('shortcuts')} />
       <MenuRow icon="Keyboard" label="Keyboard shortcuts" hint={keyLabel('help.shortcuts')} onPress={() => openSettings('shortcuts')} />
+      <MenuRow icon="CircleHelp" label="Help" onPress={() => openHelp()} />
       <MenuRow icon="BookOpen" label="Lienzo guide" onPress={() => { setOverflow(false); setGuideOpen(true); }} />
   </>;
   const colour = selectedWhiteboard.length && !linkId ? { kind: 'whiteboard' as const, value: displayedStyle.color, set: (color: ToolStyle['color']) => changeStyle({ color }) } : undefined;
@@ -588,12 +606,15 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <HistoryScreen c={c} open={screen?.kind === 'history'} onUndo={() => { void changeRevision('undo'); }} onRedo={() => { void changeRevision('redo'); }}
         onFly={ids => { setScreen(null); void c.select(ids); setTimeout(() => canvas.current?.flyToIds(ids), 0); }} />
     </Screen>
-    <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions" fit="center">
-      <ExtensionsContent c={c} width={frame.width} />
+    <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions" fit="top">
+      <ExtensionsContent c={c} width={frame.width} onHelp={openHelp} />
     </Screen>
     <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" fit="top" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
       {screen?.kind === 'settings' && <SettingsContent key={screen.section} section={screen.section} c={c} width={frame.width - railWidth} list={resolved.list} defs={shortcutRegistry.all()} overrides={overrides} chips={chips}
         saveShortcuts={next => savePrefs({ shortcuts: next })} pinned={pinnedRows} savePinned={ids => savePrefs({ pinned: ids })} onGuide={() => { setScreen(null); setGuideOpen(true); }} />}
+    </Screen>
+    <Screen open={screen?.kind === 'help'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-help" label="Help">
+      {screen?.kind === 'help' && <WikiContent width={frame.width} page={screen.page} onPage={page => setScreen({ kind: 'help', page })} extensions={c.catalog?.extensions ?? []} shortcuts={resolved.list} chips={chips} onTour={() => { setScreen(null); setGuideOpen(true); }} />}
     </Screen>
   </>;
   const empty = !!doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select';

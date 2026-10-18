@@ -6,7 +6,8 @@ import { withAlpha } from './color';
 import { IconButton, Modal, Txt, useUI } from './ui';
 import { islandStyle } from './whiteboard-visuals';
 
-export type PanelTab = { id: string; label: string; icon: string; content: React.ReactNode; scroll?: boolean };
+/** `help` puts a "?" in the panel's header that opens the Help page of what the tab shows. */
+export type PanelTab = { id: string; label: string; icon: string; content: React.ReactNode; scroll?: boolean; help?: () => void };
 const R = tokens.face.rightPanel;
 /** Sections remember being folded per panel, by title, while the panel lives. */
 const Folded = createContext<{ folded: ReadonlySet<string>; toggle(title: string): void; open?: string } | null>(null);
@@ -38,11 +39,12 @@ export function RightPanel({ tabs, active, onTab, pinned, onPin, onClose, top, m
       style={({ pressed }) => ({ height: R.tabs - 8, paddingHorizontal: 8, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: t.id === tab.id ? u.c.surface2 : pressed ? withAlpha(u.c.foreground, .08) : 'transparent' })}>
       <Icon name={t.icon} size={14} color={t.id === tab.id ? u.c.foreground : u.c.foregroundMuted} /><Txt kind="small" numberOfLines={1} style={{ fontWeight: '600', color: t.id === tab.id ? u.c.foreground : u.c.foregroundMuted, maxWidth: 140 }}>{t.label}</Txt>
     </Pressable>)}</ScrollView> : <Txt kind="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{title ?? tab.label}</Txt>}
+    {tab.help && <IconButton icon="CircleHelp" label={`Help: ${tab.label}`} detail="How it works and what to ask your agent." onPress={tab.help} />}
     {!u.compact && <IconButton icon={pinned ? 'PinOff' : 'Pin'} label={pinned ? 'Unpin panel' : 'Keep panel open'} active={pinned} detail={pinned ? undefined : 'Stays open when nothing is selected.'} onPress={() => onPin(!pinned)} />}
     {!u.compact && <IconButton icon="PanelRightClose" label="Hide panel" shortcut={shortcut} onPress={onClose} />}
   </View>;
   const body = <Folded.Provider value={folding}>{tab.scroll === false ? <View style={{ flexShrink: 1, minHeight: 0 }}>{tab.content}</View> : <ScrollView style={{ flexShrink: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 4 }} keyboardShouldPersistTaps="handled">{tab.content}</ScrollView>}</Folded.Provider>;
-  if (u.compact) return <Modal title={title ?? tab.label} open={open} onOpenChange={value => { if (!value) onClose(); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}><View nativeID="lienzo-right-panel" style={{ maxHeight, minHeight: 240 }}>{tabs.length > 1 && header}{body}</View></Modal.Content></Modal>;
+  if (u.compact) return <Modal title={title ?? tab.label} open={open} onOpenChange={value => { if (!value) onClose(); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}><View nativeID="lienzo-right-panel" style={{ maxHeight, minHeight: 240 }}>{(tabs.length > 1 || tab.help) && header}{body}</View></Modal.Content></Modal>;
   return <View nativeID="lienzo-right-panel" accessibilityLabel={title ?? tab.label} style={[islandStyle(u, true), { position: 'absolute', right: R.inset, top, width: R.width, maxHeight, padding: 0, gap: 0, overflow: 'hidden', zIndex: 25 }]}>
     {header}{body}
   </View>;

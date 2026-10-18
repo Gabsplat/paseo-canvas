@@ -834,6 +834,7 @@ const baseTokens = {
       ],
       "aviso": [
         "wip",
+        "in progress",
         "review",
         "pending",
         "partial",
@@ -1080,15 +1081,28 @@ const baseTokens = {
     "toolbar": { "height": 44, "button": 36, "buttonTouch": 44, "gap": 4, "icon": 18, "radius": 8, "activeWash": 0.14, "divider": { "width": 1, "height": 20, "marginH": 4 }, "bottom": 12, "compactPadding": { "top": 6, "bottom": 8 }, "chevron": 10, "pinBadge": 9, "maxPinned": 9 },
     "shapes": { "width": 208, "row": 32 },
     "catalog": { "width": 360, "maxHeight": 480, "search": 36, "row": 44, "tile": 28, "tileIcon": 16, "sectionHeader": 28, "offset": 8, "pinIcon": 14 },
+    "properties": {
+      "$doc": "Properties editors (design.md §36): list rows, disclosures, small icon buttons, the active-row wash and the variable mark.",
+      "row": 30,
+      "rowGap": 2,
+      "rowRadius": 6,
+      "indent": 14,
+      "iconButton": 24,
+      "dot": 8,
+      "activeAlpha": 0.08,
+      "disclosure": 28,
+      "maxListHeight": 280
+    },
     "rightPanel": { "width": 300, "inset": 12, "tabs": 36, "header": 40, "sectionHeader": 32, "sectionLabel": 12, "padding": 12, "gap": 12, "bottomClearance": 64 },
     "selectionBar": { "button": 32, "buttonTouch": 44, "offset": 10, "swatch": 18 },
     "palette": { "width": 640, "top": 0.18, "search": 52, "row": 40, "header": 28, "footer": 36, "maxHeight": 440, "perGroup": 6, "recent": 6, "activeWash": 0.12, "scrim": 0.24 },
     "sheet": { "width": 560, "row": 36, "keyChip": 22 },
     "hojas": { "$doc": "Sheet menu and following the agent (stage 2).", "button": 32, "menuWidth": 280, "row": 34, "glow": 6 },
     "eggs": { "$doc": "Small, discreet, never over content; off under reduced motion.", "mate": 84, "steamMs": 2400, "kettle": 44, "kettleMs": 4200, "loader": 20, "loaderMs": 1800, "loaderChance": 0.25 },
+    "wiki": { "$doc": "Help, the in-app wiki (§35.7): a wider rail with search, and pages up to 720 wide with a picture beside the title.", "rail": 248, "railRow": 32, "pageMax": 720, "sideBySide": 560, "art": 200 },
     "screens": { "$doc": "Screens around the canvas (docs/redesign-2026-10.md, UI pass): one large sheet over the dimmed canvas.", "maxWidth": 960, "maxHeight": 680, "margin": 24, "radius": 16, "dim": 0.4, "rail": 220, "railRow": 36, "railWash": 0.12, "padding": 32, "gap": 16, "title": { "size": 30, "lineHeight": 36, "letterSpacing": -0.4 }, "card": { "radius": 12, "padding": 18, "hoverBorder": 0.2, "lift": 1, "hoverMs": 160 }, "label": { "size": 11, "tracking": 0.06 }, "enterMs": 220, "enterScale": 0.98, "staggerMs": 30, "staggerMax": 12, "thumb": { "height": 136, "minColumn": 228, "padding": 14 }, "shadow": { "light": [[0,2,6,0,0.06],[0,28,72,0,0.2]], "dark": [[0,2,6,0,0.4],[0,28,72,0,0.6]] }, "onboarding": { "sceneMs": 6000, "stage": 0.6, "minStage": 300 } },
-    "addSheet": { "$doc": "The add sheets for a Window, an image, a video, a sound and an SVG (docs/design.md §36.1): one compact sheet with a live preview.", "width": 520, "top": 0.14, "radius": 16, "padding": 20, "gap": 14, "tile": 36, "field": 40, "preview": { "height": 200, "radius": 12 }, "tab": 32 },
-    "icons": { "$doc": "The icon library popover (docs/design.md §36.2).", "width": 420, "height": 484, "cell": 48, "glyph": 26, "searchDebounceMs": 350 }
+    "addSheet": { "$doc": "The add sheets for a Window, an image, a video, a sound and an SVG (docs/design.md §37.1): one compact sheet with a live preview.", "width": 520, "top": 0.14, "radius": 16, "padding": 20, "gap": 14, "tile": 36, "field": 40, "preview": { "height": 200, "radius": 12 }, "tab": 32 },
+    "icons": { "$doc": "The icon library popover (docs/design.md §37.2).", "width": 420, "height": 484, "cell": 48, "glyph": 26, "searchDebounceMs": 350 }
   },
   "toolbar": {
     "$doc": "Barra contextual sobre la selección (§5). Usa island + elevation.popover.",

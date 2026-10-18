@@ -1,10 +1,25 @@
 import { z } from 'zod';
 import type { CanvasDocument } from './model';
 export const variableNameSchema = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]{0,31}$/).refine(name => !['__proto__', 'constructor', 'prototype'].includes(name), 'Reserved variable name.');
+/**
+ * A shared value a person or the agent declares on the Lienzo or on a Frame. Values stay numbers everywhere (runtime,
+ * canvas_runtime, shader uniforms), so the type only says how to show and edit one: `number` (the default when absent)
+ * is a range; `boolean` is on/off stored as 0 or 1 with min 0, max 1; `choice` is one of `options`, stored as the
+ * option's index with min 0 and max options.length - 1. Declarations written before types existed are numbers.
+ */
+export const VARIABLE_TYPES = ['number', 'boolean', 'choice'] as const;
+export type VariableType = typeof VARIABLE_TYPES[number];
 export const variableSchema = z.object({
-  name: variableNameSchema, label: z.string().max(200).optional(), value: z.number().finite(),
+  name: variableNameSchema, label: z.string().max(200).optional(), type: z.enum(VARIABLE_TYPES).optional(),
+  options: z.array(z.string().trim().min(1).max(60)).min(2).max(12).optional(), value: z.number().finite(),
   min: z.number().finite(), max: z.number().finite(), step: z.number().finite().positive().optional(), unit: z.string().max(40).optional(),
-}).strict().refine(v => v.min <= v.max && v.value >= v.min && v.value <= v.max, 'Expected min <= value <= max.');
+}).strict().refine(v => v.min <= v.max && v.value >= v.min && v.value <= v.max, 'Expected min <= value <= max.')
+  .refine(v => v.type === 'choice' ? !!v.options : !v.options, 'Only a choice variable lists options, and a choice variable needs at least two.')
+  .refine(v => v.type !== 'boolean' || v.min === 0 && v.max === 1 && (v.value === 0 || v.value === 1), 'An on/off variable has min 0, max 1 and the value 0 or 1.')
+  .refine(v => v.type !== 'choice' || !v.options || v.min === 0 && v.max === v.options.length - 1 && Number.isInteger(v.value), 'A choice variable has min 0, max options.length - 1 and an option index as value.')
+  .refine(v => !v.options || new Set(v.options).size === v.options.length, 'Choice options must be unique.');
+/** Whether a variable only takes whole steps (on/off and choices). */
+export const isDiscreteVariable = (v: { type?: VariableType }) => v.type === 'boolean' || v.type === 'choice';
 export const variablesSchema = z.array(variableSchema).max(24).refine(v => new Set(v.map(x => x.name)).size === v.length, 'Variable names must be unique within a scope.');
 export type JSONValue = z.infer<ReturnType<typeof z.json>>;
 const runtimeKeySchema = z.string().max(100).refine(key => !['__proto__', 'constructor', 'prototype'].includes(key), 'Reserved JSON key.');

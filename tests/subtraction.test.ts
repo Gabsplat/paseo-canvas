@@ -13,6 +13,7 @@ import { tokens } from '../plugin/client/tokens';
 import { canvasPreferences, interfacePreferences } from '../plugin/shared/preferences';
 import * as shortcuts from '../plugin/client/shortcuts';
 import * as palette from '../plugin/client/palette';
+import * as wiki from '../plugin/shared/wiki';
 import { builtinTypes } from '../plugin/shared/builtins';
 import { createInputSchema, blockTypeSchema, type CanvasDocument } from '../plugin/shared/model';
 
@@ -40,7 +41,7 @@ function runtime(controller: any) {
     '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {} }, './motion': {},
     './panel-actions': panelActions, '../shared/learning': learning,
     './DocumentActions': { DocumentActions: control('DocumentActions') },
-    './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') },
+    './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') }, './PropertyEditors': { BlockContent: control('BlockContent'), VariablesEditor: control('VariablesEditor') },
     './Canvas': { Canvas: control('Canvas') }, '../shared/model': { blockTypeSchema }, './Blocks': { visual: () => ({ icon: 'StickyNote', tone: 'neutro' }), Delivery: control('Delivery'), ConnectionRows: control('ConnectionRows') },
     './Links': { linkTone: () => 'neutro' }, './color': { withAlpha: (color: string) => color, isDark: () => false },
     './AgentModal': { AgentModal: control('AgentModal') }, './Onboarding': { Onboarding: control('Onboarding') },
@@ -54,7 +55,7 @@ function runtime(controller: any) {
     './AddMenu': { AddMenu: control('AddMenu') }, './RightPanel': { RightPanel: control('RightPanel'), PanelSection: control('PanelSection') },
     './CommandPalette': { CommandPalette: control('CommandPalette') },
     './Screen': { Screen: control('Screen'), sheetFrame: () => ({ left: 0, top: 0, width: 960, height: 680 }) }, './LienzosScreen': { LienzosScreen: control('LienzosScreen') }, './HistoryScreen': { HistoryScreen: control('HistoryScreen') },
-    './ExtensionsScreen': { ExtensionsContent: control('ExtensionsContent') }, './SettingsScreen': { SettingsContent: control('SettingsContent'), settingsRail: () => [] },
+    './ExtensionsScreen': { ExtensionsContent: control('ExtensionsContent') }, './WikiScreen': { WikiContent: control('WikiContent') }, '../shared/wiki': wiki, './SettingsScreen': { SettingsContent: control('SettingsContent'), settingsRail: () => [] },
     './Eggs': { EmptyMate: control('EmptyMate'), Kettle: control('Kettle'), LoadingEgg: control('LoadingEgg'), MateDrawing: control('MateDrawing') },
     './shortcuts': shortcuts, './palette': palette,
   };
