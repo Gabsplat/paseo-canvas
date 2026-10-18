@@ -62,7 +62,7 @@ function Rail({ items, active, onPick, title }: { items: readonly RailItem[]; ac
     {items.map(item => { const on = item.id === active;
       return <Pressable key={item.id} nativeID={`lienzo-rail-${item.id}`} accessibilityRole={'tab' as never} accessibilityLabel={item.label} accessibilityState={{ selected: on }} onPress={() => onPick(item.id)}
         style={({ pressed, ...state }) => ({ minHeight: S.railRow, paddingHorizontal: 10, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: on ? withAlpha(u.c.accent, S.railWash) : pressed ? withAlpha(u.c.foreground, .08) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .05) : 'transparent', ...transition('background-color') })}>
-        <Icon name={item.icon} size={16} color={on ? u.c.accent : u.c.foregroundMuted} /><Txt numberOfLines={1} style={{ flex: 1, fontWeight: on ? '600' : '400', color: on ? u.c.foreground : u.c.foreground }}>{item.label}</Txt>
+        <Icon name={item.icon} size={16} color={on ? u.c.accent : u.c.foregroundMuted} /><Txt numberOfLines={1} style={{ flex: 1, fontWeight: on ? '600' : '400' }}>{item.label}</Txt>
       </Pressable>; })}
   </View>;
 }

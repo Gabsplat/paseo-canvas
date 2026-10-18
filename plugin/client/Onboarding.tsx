@@ -186,9 +186,18 @@ function SceneTools({ t }: { t: T }) {
         <Animated.View style={{ width: seg(t, .6, .7, [0, 40]) }} />
       </View>
     </View>
-    <Animated.View style={[{ position: 'absolute', right: 20, top: 40, gap: 8, alignItems: 'flex-end' }, appear(t, .8, .86)]}>
+    <Animated.View style={[{ position: 'absolute', left: 24, top: 28, gap: 8, alignItems: 'flex-start' }, appear(t, .84, .9)]}>
       <Pill><Icon name="Sparkles" size={13} color={u.c.accent} /><Txt kind="small" style={{ fontWeight: '600' }}>Works in Paseo</Txt></Pill>
-      <Pill style={{ opacity: seg(t, .84, .9) }}><Icon name="Monitor" size={13} color={u.c.accent} /><Txt kind="small" style={{ fontWeight: '600' }}>and the desktop app</Txt></Pill>
+      <Pill style={{ opacity: seg(t, .88, .94) }}><Icon name="Monitor" size={13} color={u.c.accent} /><Txt kind="small" style={{ fontWeight: '600' }}>and the desktop app</Txt></Pill>
+    </Animated.View>
+    {/* Pressed, the new tool opens beside the canvas like any other: a tab of the right panel. */}
+    <Animated.View style={[{ position: 'absolute', right: 20, top: 28, width: 184, borderRadius: 12, borderWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1, overflow: 'hidden', boxShadow: `0 10px 24px ${withAlpha('#000000', .14)}` } as object, appear(t, .76, .84)]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderBottomWidth: 1, borderColor: u.c.border }}><Icon name="Timer" size={13} color={u.c.accent} /><Txt kind="small" style={{ fontWeight: '700' }}>Timer</Txt></View>
+      <View style={{ padding: 14, gap: 10, alignItems: 'center' }}>
+        <Txt style={{ fontSize: 34, lineHeight: 40, fontWeight: '600', fontVariant: ['tabular-nums'] }}>5:00</Txt>
+        <View style={{ alignSelf: 'stretch', height: 4, borderRadius: 2, backgroundColor: withAlpha(u.c.foreground, .1), overflow: 'hidden' }}><Animated.View style={{ height: 4, backgroundColor: u.c.accent, width: seg(t, .84, 1, [0, 60]) }} /></View>
+        <Txt kind="label" muted>For the selected Marco</Txt>
+      </View>
     </Animated.View>
     <Animated.View style={{ position: 'absolute', left: 60, top: 196, opacity: seg(t, .42, .62, [0, 1, 1, 1, 0]), transform: [{ translateY: fold.interpolate({ inputRange: [0, 1], outputRange: [0, 6] }) }] }}>
       <Txt kind="small" muted>Your agent wrote it. Lienzo installs it.</Txt>
