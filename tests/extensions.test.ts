@@ -4,6 +4,7 @@ import vm from "node:vm";
 import { catalogStorageSchema, catalogView } from "../plugin/server/catalog";
 import { ToolRouter } from "../plugin/server/tools";
 import { EXTENSION_GUIDE, EXTENSION_RUNTIME, extensionDocument } from "../plugin/shared/extensions";
+import { EXAMPLE_HTML } from "../plugin/shared/wiki";
 import { findAndReplace } from "./fixtures/find-replace";
 import { extensionSchema, packSchema } from "../plugin/shared/model";
 import { setup, workspaceId } from "./helpers";
@@ -84,7 +85,7 @@ test("the assistant saves and removes an extension through MCP and is told the w
   const { service } = await setup(t), router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }));
   const listed = await router.call("canvas_catalog", { action: "list" }, "owner") as { revision: number; extensions: { id: string; kind: string; source: string }[]; extensionGuide: string };
   assert.equal(listed.extensions.length, 0); assert.ok(!/ejemplos|shipped example/.test(listed.extensionGuide), "the guide carries its own short example");
-  assert.ok(listed.extensionGuide.includes("lienzo.onContext(function(c)"));
+  assert.ok(listed.extensionGuide.includes(EXAMPLE_HTML), "the guide ends with the Help tutorial's complete example");
   assert.ok(listed.extensions.every(e => e.kind === "tool") && !/kind "view"|Cambiar vista|mosaico/.test(listed.extensionGuide), "views are gone from the catalog and the guide");
   for (const word of ["lienzo.onContext", "lienzo.select", "lienzo.edit", "lienzo.kit.stage", "save_extension", "api: 1"]) assert.ok(listed.extensionGuide.includes(word), word);
   assert.equal(listed.extensionGuide, EXTENSION_GUIDE);

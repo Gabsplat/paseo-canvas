@@ -2,7 +2,8 @@
  * The logic behind the screens around the canvas (docs/redesign-2026-10.md, "UI pass"): Lienzos, Settings,
  * Extensions and History. Pure functions, no React and no DOM, so the tests run them directly.
  */
-import type { CanvasCatalog, CanvasDocument, CanvasPack, CatalogExtension, documentSummarySchema } from '../shared/model';
+import { packSchema, type CanvasCatalog, type CanvasDocument, type CanvasPack, type CatalogExtension, type documentSummarySchema } from '../shared/model';
+import { MARKETPLACE, MARKETPLACE_LIMITS, submission, type MarketplaceConfig, type MarketplaceEntry } from '../shared/marketplace';
 import type { z } from 'zod';
 import type { Tone } from './color';
 import { layoutDocument, minimapFit, type Rect } from './logic';
@@ -201,4 +202,33 @@ export function extensionActions(c: ExtensionHost) {
       c.setCatalog(await c.api.catalogMutate({ expectedRevision: catalog.revision, action: { type: 'extension.grant', id: extension.id, granted: true } }));
     },
   };
+}
+
+/**
+ * Publishing one's own extension to the catalog (shared/marketplace.ts): the file it becomes, what keeps it out, what
+ * would make its listing better, and the GitHub page that proposes it. Only extensions made here can be published.
+ */
+export type PublishPlan = { file: CanvasPack; text: string; fileName: string; issues: string[]; warnings: string[]; path: string; url: string; method: 'prefilled' | 'upload' };
+export function publishPlan(extension: CatalogExtension, config: MarketplaceConfig = MARKETPLACE): PublishPlan {
+  const file = exportOne(extension), text = JSON.stringify(file, null, 2), issues: string[] = [], warnings: string[] = [];
+  if (extension.source !== 'local') issues.push('Only extensions made here, by you or your agent, can be published. This one came from a file.');
+  const parsed = packSchema.safeParse(file);
+  if (!parsed.success) issues.push(...parsed.error.issues.slice(0, 3).map(issue => issue.message));
+  if (text.length > MARKETPLACE_LIMITS.file) issues.push('The file is over 1 MB.');
+  if (!extension.description.trim()) warnings.push('Add a one-line description: it is the first thing people read in Discover.');
+  if (!extension.docs) warnings.push('Add a Help page (docs) so people know how to use it.');
+  if (extension.permissions.includes('network')) warnings.push('It asks to load things from the internet; say why in its Help page.');
+  // Saved as extension.json, the name it has in the catalog, so the upload page needs no renaming.
+  return { file, text, fileName: 'extension.json', issues, warnings, ...submission(file, text, config) };
+}
+/** Discover: whether an entry is installed, and whether the installed file differs from the published one. */
+export function entryStatus(entry: MarketplaceEntry, catalog: Pick<CanvasCatalog, 'packs'> | null): 'new' | 'installed' | 'update' {
+  const pack = catalog?.packs.find(p => p.id === entry.id); if (!pack) return 'new';
+  const installed = new Map(pack.extensions.map(e => [e.id, e])), same = entry.extensions.length === pack.extensions.length && entry.extensions.every(e => installed.has(e.id) && installed.get(e.id)!.name === e.name);
+  return same ? 'installed' : 'update';
+}
+/** Discover's entries matching every word of the query, in the order the catalog lists them. */
+export function filterEntries(entries: readonly MarketplaceEntry[], query: string): MarketplaceEntry[] {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  return entries.filter(e => { const text = fold([e.name, e.description, e.author ?? '', ...e.extensions.map(x => `${x.name} ${x.description}`)].join(' ')); return words.every(w => text.includes(w)); });
 }

@@ -1,4 +1,5 @@
 import type { CanvasExtension } from "./model";
+import { EXAMPLE_HTML } from "./wiki/tutorial";
 
 /**
  * The contract between Lienzo and code it did not write. An extension is one self-contained page; it runs sandboxed in
@@ -96,5 +97,5 @@ export const EXTENSION_GUIDE = `An extension adds a tool to Lienzo without chang
 - lienzo.edit(operations, label) -> Promise<{ revision }>. Needs permission "edit". operations are the same transactional operations as canvas_apply (block.create/update/delete, group.*, link.*, entity.move, entity.duplicate, document.update), so undo and revision conflicts work; selection.set and communication.set are refused.
 - Permission "network" lets the page load things from the internet; without it only inline code and data: URLs work.
 - lienzo.kit.stage({ layout(context) -> [{ id, x, y, w, h }], draw(g, view), onMove?(ids, dx, dy), onOpen?(id), onHover?(id) }) gives a tool that draws things the canvas' own behaviour on a 2D canvas it creates: wheel pans, command-wheel zooms, press selects, shift adds, drag on nothing box-selects, drag on a thing moves the selection (only if onMove is given), double press opens, Escape clears. draw runs in world units with view = { scale, selected: { [id]: true }, hover, drag, theme, context, items }. lienzo.kit.card(g, item, view, { title, subtitle, color }) draws a thing with the standard selection and hover look. Prefer the kit whenever a tool shows things: it is what keeps interactions consistent.
-Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. A small example, a tool that counts the selection:
-<p id="n"></p><script>lienzo.onContext(function(c){var k=c.theme.colors;document.body.style.cssText="margin:0;padding:12px;font:13px system-ui;background:"+k.surface+";color:"+k.foreground;document.getElementById("n").textContent=c.selection.length+" selected of "+(c.document.blocks.length+c.document.groups.length)})</script>`;
+Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. Optional docs: the extension's own Help page, shown to the person in Help → Extensions: short Markdown (headings, paragraphs, lists, code, links, bold, italic; no HTML, http(s) or mailto links only, up to 20000 characters) or up to 12 sections [{ title, body }]. Write one that says what it is for and how to use it. The person's Help has a "Make your own" walkthrough (canvas_catalog help { page: "make.overview" }). The complete example from it, a tool that rewrites the selected titles in one undoable edit, saved with permissions ["edit"] and its docs:
+${EXAMPLE_HTML}`
