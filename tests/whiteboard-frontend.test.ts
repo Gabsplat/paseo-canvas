@@ -137,6 +137,34 @@ test('eight-handle resizing anchors opposite edges, preserves SVG proportions, a
   assert.deepEqual(erasedStrokes({extent:{width:10,height:10},strokes:[{points:[0,0,10,10],color:'tinta',weight:'m'}]},{x:50,y:50},{width:100,height:100},2),[0]);assert.deepEqual(erasedStrokes({extent:{width:10,height:10},strokes:[{points:[0,0,10,10],color:'tinta',weight:'m'}]},{x:50,y:10},{width:100,height:100},2),[]);
 });
 
+test('resize regression: an icon or a shape follows every handle, smaller and larger, and never jumps to the limit',()=>{
+  const min={width:24,height:24},icon={x:200,y:120,width:96,height:96},rect={x:100,y:80,width:160,height:104};
+  const cases:[string,{x:number;y:number}][]= [['nw',{x:-1,y:-1}],['n',{x:0,y:-1}],['ne',{x:1,y:-1}],['e',{x:1,y:0}],['se',{x:1,y:1}],['s',{x:0,y:1}],['sw',{x:-1,y:1}],['w',{x:-1,y:0}]];
+  const right=(b:any)=>b.x+b.width,bottom=(b:any)=>b.y+b.height;
+  for(const [handle,out] of cases)for(const [dir,amount] of [['grow',30],['shrink',-30]] as const){
+    const d={x:out.x*amount,y:out.y*amount};
+    // An icon (SVG) always keeps its proportions and scales by the handle's movement, about the opposite corner/edge.
+    const svg=resizeWhiteboardBox(icon,d,handle,min,true),expect=96+amount,why=`icon ${handle} ${dir}`;
+    assert.equal(svg.width,expect,why);assert.equal(svg.height,expect,why);
+    if(handle.includes('w'))assert.equal(right(svg),right(icon),why);else if(handle.includes('e'))assert.equal(svg.x,icon.x,why);else assert.equal(svg.x+svg.width/2,icon.x+icon.width/2,why);
+    if(handle.includes('n'))assert.equal(bottom(svg),bottom(icon),why);else if(handle.includes('s'))assert.equal(svg.y,icon.y,why);else assert.equal(svg.y+svg.height/2,icon.y+icon.height/2,why);
+    // A shape follows the handle freely; the axis a side handle does not move stays as it was.
+    const box=resizeWhiteboardBox(rect,d,handle,min),w=rect.width+(out.x?amount:0),h=rect.height+(out.y?amount:0),why2=`shape ${handle} ${dir}`;
+    assert.equal(box.width,w,why2);assert.equal(box.height,h,why2);
+    assert.equal(handle.includes('w')?right(box):box.x,handle.includes('w')?right(rect):rect.x,why2);assert.equal(handle.includes('n')?bottom(box):box.y,handle.includes('n')?bottom(rect):rect.y,why2);
+  }
+  // The bug: a small drag of a proportional box scaled it up to 4096. Small moves stay small, in both directions.
+  for(const handle of ['nw','ne','se','sw','n','e','s','w'] as const){const b=resizeWhiteboardBox(icon,{x:3,y:3},handle,min,true);assert.ok(b.width<=99&&b.width>=93&&b.width===b.height,`${handle}: ${b.width}`);}
+  // Proportional shapes (Shift) keep their ratio, and the corner follows the axis that moved more.
+  const shifted=resizeWhiteboardBox(rect,{x:-80,y:-10},'se',min,true);assert.equal(shifted.width,80);assert.equal(shifted.height,52);assert.deepEqual([shifted.x,shifted.y],[rect.x,rect.y]);
+  // Minimum size: a shrink past it stops at 24, anchored, with the ratio kept for icons and no flip.
+  assert.deepEqual(resizeWhiteboardBox(icon,{x:500,y:500},'nw',min,true),{x:right(icon)-24,y:bottom(icon)-24,width:24,height:24});
+  assert.deepEqual(resizeWhiteboardBox(rect,{x:-500,y:0},'e',min),{...rect,width:24});
+  const wide=resizeWhiteboardBox({x:0,y:0,width:200,height:50},{x:-400,y:0},'e',min,true);assert.equal(wide.height,24);assert.equal(wide.width,96);
+  // The limit applies, keeping the ratio, and only ever scales a box down.
+  const huge=resizeWhiteboardBox(icon,{x:9000,y:9000},'se',min,true);assert.deepEqual([huge.width,huge.height],[4096,4096]);
+  const tall=resizeWhiteboardBox({x:0,y:0,width:100,height:200},{x:0,y:9000},'s',min,true);assert.deepEqual([tall.width,tall.height],[2048,4096]);
+});
 test('canvas shortcuts delegate to focused learning controls and deep interaction, but Space on background temporarily pans', () => {
   const { attachCanvasKeys } = require('../plugin/client/web');
   const h = harness(), keys: string[] = [], hand: boolean[] = [];

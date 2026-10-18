@@ -55,6 +55,11 @@ chromium --headless=new --no-first-run --disable-gpu --remote-debugging-port=922
 LIENZO_SHOTS="$PWD/dist/shots" node dist/panel-qa/screens.cjs papel
 ```
 
+`resize.cjs [oscuro|papel]` inserts an icon and a filled rectangle and drags each of their eight handles larger and
+smaller: it checks the cursor on hover and while held, the box and its drawing at the live size with nothing saved
+yet, and the stored and drawn size after release. Captures `resize-*-<theme>.png` to `$LIENZO_SHOTS`; takes
+`LIENZO_HTTP` and `LIENZO_CDP`.
+
 `ux.cjs` edits every overhauled block by hand through Properties and the canvas (checklist, node, file tree, Controls
 with new variables, animated flow, raw JSON, the Lienzo's Variables) and writes `ux-*-<theme>.png` to `$LIENZO_SHOTS`.
 It needs a window at least 1600 wide so the right panel does not cover the cards: start Chromium with

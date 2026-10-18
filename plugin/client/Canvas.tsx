@@ -13,16 +13,16 @@ import { getClientRenderer } from './renderers';
 import { LinkLayer, type LinkLayerHandle, type LinkDraft } from './Links';
 import { MagnetCue } from './MagnetCue';
 import { Chip, Tooltip, Txt, useUI } from './ui';
-import { attachEntityDrag, attachMiddlePan, attachPressCursor, attachWheel, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
+import { attachEntityDrag, attachMiddlePan, attachPressCursor, attachWheel, holdCursor, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
 import { Appear, NATIVE, easeOut, frame, glide, reducedMotion, settle, useReducedMotion } from './motion';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type CanvasToolProps, type SvgInsertOptions } from './whiteboard-tools';
 import { isWhiteboardRenderer, whiteboardMinSize, type WbRenderer } from '../shared/whiteboard';
 import { useWhiteboard } from './useWhiteboard';
-import { WhiteboardContent } from './WhiteboardContent';
+import { LiveWhiteboardContent, WhiteboardContent } from './WhiteboardContent';
 import { LensControl, Minimap, SelectionBeacon } from './Wayfinding';
 import { LENSES, lensMarks, type LensId } from './lenses';
 import { useHistory } from './useHistory';
-import { canvasCursors, cursorForTool, type CanvasCursors } from './cursors';
+import { canvasCursors, cursorForHandle, cursorForTool, type CanvasCursors } from './cursors';
 import { WhiteboardEditor, WhiteboardPreview } from './WhiteboardOverlay';
 import { LinkLabelEditor, SelectionOverlay, type LinkLabelSession } from './SelectionOverlay';
 import { ZoomControl } from './ZoomControl';
@@ -53,7 +53,7 @@ function createAnim(native: boolean): Anim {
 }
 type Gesture = { documentId: string; epoch: number; id: string; ids: string[]; tops: string[]; moving: string[]; origin: Map<string, Point>; grab: Point; pointer: Point; vp: Point; measured: boolean; home: string | null; target: string | null; delta: Point; aligned: { x: boolean; y: boolean }; others: Box[]; grown: Set<string> };
 type BlockItemProps = {
-  interacting: boolean; block: CanvasBlock; left: number; top: number; width: number; height?: Animated.Value; resizeHandlers?: GestureResponderHandlers; anim: Anim; selected: boolean; lifted: boolean; dim: boolean; ringed: boolean; detailsSide: 'right' | 'bottom'; cursor?: string;
+  interacting: boolean; block: CanvasBlock; left: number; top: number; width: number; height?: Animated.Value; resizeHandlers?: GestureResponderHandlers; resizeCursor?: string; anim: Anim; selected: boolean; lifted: boolean; dim: boolean; ringed: boolean; detailsSide: 'right' | 'bottom'; cursor?: string;
   handlers: GestureResponderHandlers; controller: CanvasController; accent: string; shadow: string;
   onSelect: (id: string, event?: GestureResponderEvent, multi?: boolean) => void; onInspect: () => void; onPacks: () => void; onReorder: (id: string, direction: number) => void; onHover: (id: string, inside: boolean) => void; onMeasure: (id: string, height: number) => void;
 };
@@ -71,16 +71,16 @@ function sameCard(a: CardProps, b: CardProps) {
 const Card = React.memo(function Card({ interacting, block, height, selected, lifted, detailsSide, cursor, controller, onSelect, onInspect, onPacks, onReorder, onHover, onMeasure }: CardProps) {
   return <ContentInteractionProvider value={interacting}><BlockCard controller={controller} onSelect={onSelect} onInspect={onInspect} onPacks={onPacks} onReorder={onReorder} block={block} height={height} selected={selected} dragging={lifted} onHover={onHover} detailsSide={detailsSide} cursor={cursor} onMeasure={h => onMeasure(block.id, h)} /></ContentInteractionProvider>;
 }, sameCard);
-const BlockItem = React.memo(function BlockItem({ left, top, width, resizeHandlers, anim, dim, ringed, handlers, accent, shadow, ...card }: BlockItemProps) {
+const BlockItem = React.memo(function BlockItem({ left, top, width, resizeHandlers, resizeCursor, anim, dim, ringed, handlers, accent, shadow, ...card }: BlockItemProps) {
   return <Animated.View nativeID={`lienzo-entity-${card.block.id}`} {...handlers} style={{ position: 'absolute', left, top, width: anim.target ? anim.w : width, zIndex: card.lifted || card.selected ? 3 : 2, ...noSelect, opacity: anim.enter, transform: [{ translateX: anim.x }, { translateY: anim.y }, { scale: anim.scale }] }}>
     <Animated.View pointerEvents="none" style={{ position: 'absolute', inset: 0, borderRadius: tokens.radius.block, boxShadow: shadow, opacity: anim.lift }} />
     <View nativeID={card.interacting ? `lienzo-using-${card.block.id}` : undefined} style={{ opacity: dim && !card.lifted ? G.dim.node : 1 }}><Card {...card} /></View>
-    {resizeHandlers && <View nativeID={`lienzo-interactive-resize-${card.block.id}`} {...resizeHandlers} style={{ position: 'absolute', right: -12, bottom: -12, width: tokens.canvas.resize.hit, height: tokens.canvas.resize.hit, zIndex: 4 }}><Pressable accessibilityRole="button" accessibilityLabel={`Resize: ${card.block.title}`} accessibilityHint="Drag the corner. Shift keeps the proportions. Properties takes exact sizes." onPress={e => { e.stopPropagation(); card.onInspect(); }} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', ...({ cursor: 'nwse-resize' } as object) }}><View pointerEvents="none" style={{ width: tokens.canvas.resize.size, height: tokens.canvas.resize.size, borderRadius: tokens.canvas.resize.radius, borderWidth: 1.5, borderColor: accent }} /></Pressable></View>}
+    {resizeHandlers && <View nativeID={`lienzo-interactive-resize-${card.block.id}`} {...resizeHandlers} style={{ position: 'absolute', right: -12, bottom: -12, width: tokens.canvas.resize.hit, height: tokens.canvas.resize.hit, zIndex: 4 }}><Pressable accessibilityRole="button" accessibilityLabel={`Resize: ${card.block.title}`} accessibilityHint="Drag the corner. Shift keeps the proportions. Properties takes exact sizes." onPress={e => { e.stopPropagation(); card.onInspect(); }} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', ...({ cursor: resizeCursor ?? 'nwse-resize' } as object) }}><View pointerEvents="none" style={{ width: tokens.canvas.resize.size, height: tokens.canvas.resize.size, borderRadius: tokens.canvas.resize.radius, borderWidth: 1.5, borderColor: accent }} /></Pressable></View>}
 
     {card.interacting && <View pointerEvents="none" style={{position:"absolute",inset:2,borderRadius:tokens.radius.block-2,borderWidth:2,borderColor:accent}}/>}
     {ringed && <View pointerEvents="none" style={{ position: 'absolute', inset: -4, borderRadius: tokens.radius.block + 4, borderWidth: 2, borderColor: accent }} />}
   </Animated.View>;
-}, (a, b) => a.left === b.left && a.top === b.top && a.width === b.width && a.anim === b.anim && a.dim === b.dim && a.ringed === b.ringed && a.handlers === b.handlers && a.resizeHandlers === b.resizeHandlers && a.accent === b.accent && a.shadow === b.shadow && sameCard(a, b));
+}, (a, b) => a.left === b.left && a.top === b.top && a.width === b.width && a.anim === b.anim && a.dim === b.dim && a.ringed === b.ringed && a.handlers === b.handlers && a.resizeHandlers === b.resizeHandlers && a.resizeCursor === b.resizeCursor && a.accent === b.accent && a.shadow === b.shadow && sameCard(a, b));
 export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, obscuredRight = 0, glowIds = [], onUserCamera }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
   /** Keys the panel's shortcut registry owns: the canvas lets them through instead of typing them into a selected label. */
   reservedKey?: (key: string) => boolean; lensShortcut?: string;
@@ -180,7 +180,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       userCamera.current?.();
       if (!e.command) { halt(); setCam({ scale: cam.current.scale, offset: { x: cam.current.offset.x - e.dx, y: cam.current.offset.y - e.dy } }); return; }
       // A trackpad pinch arrives as many small steps and is followed exactly; a wheel notch is one big step and is eased.
-      const from = goal.current ?? cam.current, next = zoomAround(from, from.scale * Math.exp(-e.dy * .002), e);
+      const from = goal.current ?? cam.current, next = zoomAround(from, from.scale * Math.exp(-e.dy * (Math.abs(e.dy) >= C.wheelNotch ? C.wheelZoom : C.pinchZoom)), e);
       if (Math.abs(e.dy) >= C.wheelNotch) flyTo(next, C.wheelMs); else { halt(); setCam(next); }
     });
     const middle = attachMiddlePan(viewport.current, e => { userCamera.current?.(); halt(); setCam({ scale: cam.current.scale, offset: { x: cam.current.offset.x + e.dx, y: cam.current.offset.y + e.dy } }); }, v => momentum(v.vx, v.vy));
@@ -265,6 +265,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   useEffect(() => { if (interactionRef.current && !c.selection.includes(interactionRef.current)) setInteractionMode(null); }, [c.selection, doc.id]);
   useEffect(() => { setLinkLabel(null); }, [doc.id, linkId]);
   useEffect(() => { setInteractionMode(null); dragEnd(0,0,true); resizeEnd(true); clearLinkGesture(); }, [doc.id]);
+  useEffect(() => () => holdCursor(null), []);
   useEffect(() => {
     if (!web || mode !== 'canvas') return;
     measureViewport();
@@ -423,6 +424,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     const start = { ...r, width: a.extent.width || r.width, height: a.extent.height || r.height };
     resize.current = { id, documentId: doc.id, start, pointer: pointer(event, g), next: { width: start.width, height: start.height }, proportional: false, held: true, handle, nextPosition: { x: start.x, y: start.y }, parents: layout.index.chain(id).slice(1).filter(Boolean) };
     busyHands.current = true; setResizeId(id); a.w.setValue(start.width); a.h.setValue(start.height);
+    // The pointer soon leaves the small handle: its cursor holds over everything until the button comes up.
+    if (cursorsRef.current) holdCursor(cursorForHandle(cursorsRef.current, handle));
   }
   function resizeMove(event: GestureResponderEvent, g: PanResponderGestureState) {
     const state = resize.current; if (!state?.held) return;
@@ -448,7 +451,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   }
   function resizeEnd(cancelled: boolean) {
     const state = resize.current; if (!state?.held) return;
-    state.held = false; busyHands.current = false; swallowClick();
+    state.held = false; busyHands.current = false; swallowClick(); holdCursor(null);
     const { c, doc } = latest.current, block = doc.blocks.find(b => b.id === state.id), a = animOf(state.id, NATIVE);
     const changed = Math.abs(state.next.width - state.start.width) + Math.abs(state.next.height - state.start.height) + Math.abs(state.nextPosition.x - state.start.x) + Math.abs(state.nextPosition.y - state.start.y) >= 1 || !!state.from && state.from !== block?.data.from;
     const finish = (saved?: CanvasDocument) => {
@@ -594,7 +597,11 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const excludedLink = (id: string) => { const b = doc.blocks.find(b => b.id === id), kind = b && c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer; return kind === 'wb-draw' || kind === 'wb-shape' && b?.data.shape === 'line'; };
   const handleFor = linkDraft?.from ?? (toolRef.current !== 'select' || u.compact || c.offline || c.busy || drag || resizeId ? null : hover && !excludedLink(hover) && doc.blocks.some(b => b.id === hover) ? hover : c.selection.length === 1 && !excludedLink(c.selection[0]) ? c.selection[0] : null);
   const handleRect = handleFor ? rects.get(handleFor) : undefined, handleSide = handleFor && index.direction(index.parent.get(handleFor) || null) === 'right' ? 'right' as const : 'bottom' as const;
-  const handlePoint = handleRect && !handleRect.hidden ? handleSide === 'right' ? { x: handleRect.x + handleRect.width, y: handleRect.y + handleRect.height / 2 } : { x: handleRect.x + handleRect.width / 2, y: handleRect.y + handleRect.height } : null;
+  // A selected whiteboard box has a resize handle in the middle of each side: the connect handle steps out past it so
+  // both can be reached (the resize handle keeps its 20 screen px, the connect disc its world size).
+  const handleWb = !!handleFor && c.selection.length === 1 && c.selection[0] === handleFor && canDrag && cam.current.scale >= .25 && isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === doc.blocks.find(b => b.id === handleFor)?.typeId)?.renderer);
+  const handleOut = handleWb ? 10 / cam.current.scale + G.handle.hit / 2 + 2 : 0;
+  const handlePoint = handleRect && !handleRect.hidden ? handleSide === 'right' ? { x: handleRect.x + handleRect.width + handleOut, y: handleRect.y + handleRect.height / 2 } : { x: handleRect.x + handleRect.width / 2, y: handleRect.y + handleRect.height + handleOut } : null;
   // The pin: shown on the frame in focus when it holds a place of its own inside an automatic layout. Pressing it lets go.
   const pinFor = !linkDraft && handleFor && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === doc.blocks.find(b => b.id === handleFor)?.typeId)?.renderer) && handleRect && !handleRect.hidden && index.entities.get(handleFor)?.position && !manual(index.mode(index.parent.get(handleFor) || null)) ? handleFor : null;
   const worldX = useMemo(() => Animated.add(camX, Animated.multiply(camS, bound.x)), [bound.x]), worldY = useMemo(() => Animated.add(camY, Animated.multiply(camS, bound.y)), [bound.y]);
@@ -622,9 +629,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       const ends = line ? lineEnds(b.data as unknown as Parameters<typeof lineEnds>[0], r.width, r.height) : null;
       const hpos = (handle: ResizeHandle) => ends && (handle === 'start' || handle === 'end') ? { x: ends[handle === 'start' ? 0 : 1].x / r.width, y: ends[handle === 'start' ? 0 : 1].y / r.height } : { x: handle.includes('w') ? 0 : handle.includes('e') ? 1 : .5, y: handle.includes('n') ? 0 : handle.includes('s') ? 1 : .5 };
       return <Animated.View key={b.id} nativeID={`lienzo-entity-${b.id}`} pointerEvents="box-none" {...(!web && canDrag ? dragHandlers(b.id) : {})} style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: a.target ? a.w : r.width, height: kind === 'wb-text' && resizeId !== b.id ? r.height : a.target ? a.h : r.height, zIndex: kind === 'wb-text' ? 4 : kind === 'wb-draw' ? 5 : 0, ...(web ? { cursor: cursor(lifted) } as object : null), opacity: lifted ? .85 : 1, transform: [{ translateX: a.x }, { translateY: a.y }, ...(ride ? [{ translateX: ride.x }, { translateY: ride.y }] : [])] }}>
-        <WhiteboardContent block={b} kind={kind} width={r.width} height={r.height} scale={cam.current.scale} editing={wb.editor?.blockId === b.id} onSelect={event => select(b.id,event)} onHover={inside => hovering(b.id,inside)} onMeasure={height => measure(b.id,height)} />
+        <LiveWhiteboardContent w={a.w} h={a.h} block={b} kind={kind} width={r.width} height={r.height} scale={cam.current.scale} editing={wb.editor?.blockId === b.id} onSelect={event => select(b.id,event)} onHover={inside => hovering(b.id,inside)} onMeasure={height => measure(b.id,height)} />
         {(selected || hover === b.id) && <View pointerEvents="none" style={{position:'absolute',inset:-4,borderWidth:selected?1.5:1,borderColor:selected?u.c.accent:withAlpha(u.c.foregroundMuted,.35)}}/>}
-        {selected && canDrag && c.selection.length === 1 && cam.current.scale >= .25 && handles.map(handle => { const p = hpos(handle); return <View key={handle} nativeID={`lienzo-interactive-resize-${b.id}-${handle}`} {...resizeHandlers(b.id,handle)} style={{position:'absolute',left:`${p.x*100}%`,top:`${p.y*100}%`,width:20,height:20,marginLeft:-10,marginTop:-10,zIndex:8,alignItems:'center',justifyContent:'center',transform:[{scale:Animated.divide(1,camS)}]}}><View pointerEvents="none" style={{width:line?10:8,height:line?10:8,borderRadius:line?5:2,backgroundColor:u.c.surface1,borderColor:u.c.accent,borderWidth:1.5}}/></View>; })}
+        {selected && canDrag && c.selection.length === 1 && cam.current.scale >= .25 && handles.map(handle => { const p = hpos(handle); return <View key={handle} nativeID={`lienzo-interactive-resize-${b.id}-${handle}`} {...resizeHandlers(b.id,handle)} style={{position:'absolute',left:`${p.x*100}%`,top:`${p.y*100}%`,width:20,height:20,marginLeft:-10,marginTop:-10,zIndex:8,alignItems:'center',justifyContent:'center',...(web?{cursor:cursorForHandle(cursors,handle)} as object:null),transform:[{scale:Animated.divide(1,camS)}]}}><View pointerEvents="none" style={{width:line?10:8,height:line?10:8,borderRadius:line?5:2,backgroundColor:u.c.surface1,borderColor:u.c.accent,borderWidth:1.5}}/></View>; })}
       </Animated.View>;
     });
   }
@@ -671,7 +678,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       {whiteboardItems(['wb-shape','wb-svg'])}
       <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
       {doc.blocks.filter(b => !rects.get(b.id)!.hidden && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer)).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
-        return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) ? resizeHandlers(b.id) : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!lit(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
+        return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) ? resizeHandlers(b.id) : undefined} resizeCursor={web ? cursors.resizeNWSE : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!lit(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
       {lensLayer}
       {whiteboardItems(['wb-text'])}{whiteboardItems(['wb-draw'])}
       <WhiteboardPreview store={wb.store} origin={bound} />
