@@ -9,7 +9,9 @@ nothing from the plugin, so a plugin update cannot break it.
 ```json
 { "id": "my-tool", "kind": "tool", "api": 1, "name": "My tool", "description": "The job it does.",
   "icon": "Wrench", "permissions": ["edit"], "html": "<script>…</script>",
-  "docs": "## Use it\n\n1. Select some cards.\n2. Press **Go**." }
+  "docs": "## Use it\n\n1. Select some cards.\n2. Press **Go**.",
+  "actions": [{ "name": "go", "description": "Does the job on the given cards.",
+    "input": { "type": "object", "properties": { "ids": { "type": "array", "items": { "type": "string" } } } } }] }
 ```
 
 - `kind`: `tool`, the only kind. A tool is listed in the Extensions section of the + catalog (and in ⌘K) and opens
@@ -29,6 +31,9 @@ nothing from the plugin, so a plugin update cannot break it.
   mailto addresses. An extension without `docs` still gets a page in Help, made from its name, description and
   permissions. A Lienzo older than this field refuses a file that carries it, so leave it out for those.
 
+- `actions` (optional, added to API 1): what the extension offers an agent. See "Actions" below. A Lienzo older than
+  this field refuses a file that carries it.
+
 A walkthrough for writing one with your agent, with a complete example, is in
 [extensions-tutorial.md](extensions-tutorial.md) (the same pages as Help → Make your own).
 
@@ -43,6 +48,9 @@ A walkthrough for writing one with your agent, with a complete example, is in
 | `lienzo.open(id)` | — | Goes to the canvas on that thing. |
 | `lienzo.close()` | — | Closes a tool panel. |
 | `lienzo.edit(operations, label)` | `edit` | One transaction of canvas operations. Resolves `{ revision }`, rejects with the reason. Undoable. `selection.set` and `communication.set` are refused. At most 200 operations. |
+| `lienzo.action(name, fn)` | — | Registers the handler of a declared action, `fn(input, context)`; it returns the result or a promise of it. See "Actions". |
+| `lienzo.run(name, input)` | — | Runs a registered action here, in the page: resolves its result. The page's buttons use it, so the work is written once. |
+| `lienzo.headless` | — | `false` in the frame, `true` when an action runs for an agent. |
 | `lienzo.kit.stage(options)` | — | A 2D surface that behaves like the canvas. See below. |
 | `lienzo.kit.card(g, item, view, options)` | — | Draws a thing with the standard selection, hover and drag look. |
 
@@ -73,6 +81,76 @@ shared one. `draw` runs in world units with `view = { scale, width, height, item
 drag, theme, context }`. It returns `{ canvas, fit(), redraw(), items(), selection(), at(x, y) }`.
 
 A tool that shows things should use the kit: it is what keeps interactions the same everywhere.
+
+## Actions
+
+An action is a job the extension offers an agent: the agent calls `canvas_extension_run { extension, action, input,
+documentId? }` (docs/mcp.md) and gets the result back. One extension file serves both the person and the agent, with
+the work written once:
+
+- The manifest declares each action: `name` (a letter, then up to 39 letters, digits or `_`), a plain-text
+  `description`, an optional `input` and an optional `returns`, both in a small JSON Schema subset (`type` object,
+  array, string, number, integer or boolean; `properties`, `required`, `additionalProperties`, `items`, `enum`,
+  `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `description`; up to 6 levels). `input` is an
+  object schema, closed unless `additionalProperties: true`, so a misspelt argument is an error. Up to 20 actions.
+- The page registers the handlers in a script marked `<script data-lienzo="actions">`, with
+  `lienzo.action(name, function (input, context) { … })`. That script is plain JavaScript that uses `lienzo` and never
+  the page (no `document`, no buttons): in the frame it runs like any other script, so the page calls
+  `lienzo.run(name, input)`; for an agent, the server extracts the marked scripts and runs them headless. An extension
+  that declares actions without such a script is refused when it is saved or imported.
+
+The Title Case example (Help → Make your own) does exactly this: its button calls `lienzo.run('titleCase', {})`, and the
+agent runs `titleCase { ids? }`, the same function, on the selection or on the cards it names.
+
+### Headless runtime
+
+For an agent the actions script runs in **QuickJS compiled to WebAssembly, inside the plugin server process** (the
+Paseo plugin server, or the desktop app's main process): no new server, port or process. `server/sandbox.ts` is the
+interpreter wrapper, `server/actions.ts` the headless `lienzo`, `CanvasService.runExtension` the commit. Each call:
+
+1. checks the input against the action's schema (16 KiB at most);
+2. starts a **new WebAssembly instance, runtime and context**, evaluates a prelude, then the actions scripts, then calls
+   the handler; nothing persists between calls except what the extension writes to the document;
+3. gives it the headless `lienzo`: `api`, `headless: true`, `context` (as in the frame without `theme` and `layout`:
+   `extension`, `document`, `selection`), `onContext(fn)` (calls `fn` once), `action`, `run`, `select(ids)` and
+   `edit(operations, label)`; both return promises like in the frame; `console.log` lines come back as `logs`;
+4. checks each `lienzo.edit` against a working copy of the document (the frame's rules: `edit` held, at most 200
+   operations in all, `selection.set` and `communication.set` refused, the canvas' own validation), so a bad operation
+   rejects there with the reason and `lienzo.context` shows the edits so far;
+5. when the handler settles, commits every edit of the run as **one transaction**, actor agent, labelled
+   `‹extension name› (agent): ‹label of the first edit›`, which History shows and Undo (the agent's `canvas_undo`)
+   reverses; then applies its last `lienzo.select`. If the handler fails, or the document changed meanwhile, nothing is
+   written.
+
+There is no DOM, no network, no timers (`setTimeout` and friends do not exist), no module loader and no host object:
+the only bridge is a function the prelude receives as an argument (never a global) that carries JSON strings both
+ways; the host parses and validates everything it receives (`safeJson`: no `__proto__`, `constructor` or `prototype`
+keys, 32 levels at most). Limits per call: **2 s** (the run is synchronous, so this is CPU time; the interrupt handler
+also stops catastrophic regular expressions), **64 MiB** of interpreter memory, a **64 KiB interpreter stack** (about 370
+plain nested calls; QuickJS must stop recursion before the host's stack does, and a host stack overflow or a WebAssembly
+trap is caught too and only drops that instance), **100 000** promise jobs, **20** edit and select calls, a
+**16 KiB** JSON result. Permissions are the frame's: an extension that came in a file holds none until the person
+allows it, so its actions can read and select but `lienzo.edit` is refused with "ask the person to allow it in
+Extensions"; one that never declared `edit` cannot edit at all.
+
+Tested in `tests/extension-actions.test.ts`: the Title Case action end to end through MCP, the listing, permissions,
+input validation, and escapes (globals, constructor chains, dynamic import, prototype pollution, unsafe keys),
+infinite loops, memory and buffer bombs, huge results, deep recursion (calls, the parser, nested data), promise floods,
+never-settling promises, partial edits that then throw, and bad operations, each leaving the document and history
+untouched.
+
+### Packaging
+
+The interpreter is `quickjs-emscripten-core` with the variant `@jitl/quickjs-singlefile-browser-release-sync` (both
+0.32.0, MIT, by Jake Teton-Landis; QuickJS itself is MIT, 2025-09-13). The variant embeds the WebAssembly in its
+JavaScript, which matters twice: Paseo compiles the plugin server with esbuild into one CommonJS bundle that it
+evaluates from a string (no file beside it, no `__dirname`, no `import.meta.url`), and the desktop app bundles
+everything into `dist/` inside an asar. No packaging step is needed in either. The "browser" build is the one that
+survives Paseo's compiler: the CommonJS build's exports are read before they are assigned once the compiler rewrites
+esbuild's interop getters into values, and the Node ES module build calls `createRequire(import.meta.url)`. The
+browser build needs neither Node modules nor `import.meta` and decodes its own base64, so it runs the same in Node.
+Size: about 920 KiB more in the plugin server bundle (283 → 1201 KiB unminified), about 3.8 MB in `node_modules`
+(most of it source maps). It is a runtime dependency of `plugin/package.json`.
 
 ## Trust
 
@@ -110,7 +188,8 @@ repository until the owner publishes them as their own repository (see "Publishi
 extensions/<id>/extension.json   one extension file, exactly as Export writes it; <id> is the file's id
 extensions/<id>/README.md        optional
 extensions/<id>/screenshot.png   optional, up to 512 KB
-index.json                       built by CI: per file its name, description, extensions, permissions, SHA-256, size
+index.json                       built by CI: per file its name, description, extensions, permissions, actions,
+                                 SHA-256, size, content hash
 schema/                          JSON Schemas of extension.json and index.json
 scripts/build-index.mjs          the checks and the builder (Node, no dependencies)
 .github/workflows/catalog.yml    --check on every pull request; rebuild and commit index.json on main
@@ -121,8 +200,11 @@ scripts/build-index.mjs          the checks and the builder (Node, no dependenci
   10 s timeout, and keeps the last good copy in the browser's storage. Offline it shows the kept list and says when it
   was read; with nothing kept it says the catalog is out of reach. **Install…** downloads the entry's file, checks its
   size, its SHA-256 against the index (where Web Crypto exists) and its id, then shows the same review as **Add from
-  file…**. An installed catalog file holds no permission until allowed, like any file. A card whose published
-  extensions differ in name, description, permissions or Help page from the installed file says **Update…**.
+  file…**. An installed catalog file holds no permission until allowed, like any file. A card says **Update…** when the published file differs from the installed one in anything, code included:
+  the index carries a `contentHash` per entry (SHA-256 of the file's extensions as canonical JSON, the defaults filled
+  in, so formatting does not count), the server keeps the same hash of each installed file (`packHashes` in the
+  catalog), and Discover compares them. An index without hashes falls back to names, descriptions, permissions, Help
+  pages and action names.
 - **Publish…** (on the card of an extension made here) checks it (only local extensions, a valid file under 1 MB;
   suggestions when it has no description or no `docs`, or asks for `network`), saves it as `extension.json`, and
   offers **Open GitHub**: a short file opens GitHub's new-file page at `extensions/<id>/extension.json` with the
@@ -152,7 +234,7 @@ the page like any missing function. A future API 2 would live beside
 it. Nothing ships with Lienzo. The find-and-replace tool in `tests/fixtures/find-replace.ts` is written against API 1
 only and is the contract example; `tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract
 broke. The guide the agent gets ends with the complete example of Help → Make your own (`shared/wiki/tutorial.ts`), the
-same one the catalog ships as `extensions/title-case`. `docs` was added to API 1 as an optional field. (The kind `view` was retired
+same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`). (The kind `view` was retired
 with the one-canvas redesign; the frame API itself did not change.)
 
 ## Not in API 1
