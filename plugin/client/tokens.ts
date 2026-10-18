@@ -834,6 +834,7 @@ const baseTokens = {
       ],
       "aviso": [
         "wip",
+        "in progress",
         "review",
         "pending",
         "partial",
@@ -1080,6 +1081,18 @@ const baseTokens = {
     "toolbar": { "height": 44, "button": 36, "buttonTouch": 44, "gap": 4, "icon": 18, "radius": 8, "activeWash": 0.14, "divider": { "width": 1, "height": 20, "marginH": 4 }, "bottom": 12, "compactPadding": { "top": 6, "bottom": 8 }, "chevron": 10, "pinBadge": 9, "maxPinned": 9 },
     "shapes": { "width": 208, "row": 32 },
     "catalog": { "width": 360, "maxHeight": 480, "search": 36, "row": 44, "tile": 28, "tileIcon": 16, "sectionHeader": 28, "offset": 8, "pinIcon": 14 },
+    "properties": {
+      "$doc": "Properties editors (design.md §36): list rows, disclosures, small icon buttons, the active-row wash and the variable mark.",
+      "row": 30,
+      "rowGap": 2,
+      "rowRadius": 6,
+      "indent": 14,
+      "iconButton": 24,
+      "dot": 8,
+      "activeAlpha": 0.08,
+      "disclosure": 28,
+      "maxListHeight": 280
+    },
     "rightPanel": { "width": 300, "inset": 12, "tabs": 36, "header": 40, "sectionHeader": 32, "sectionLabel": 12, "padding": 12, "gap": 12, "bottomClearance": 64 },
     "selectionBar": { "button": 32, "buttonTouch": 44, "offset": 10, "swatch": 18 },
     "palette": { "width": 640, "top": 0.18, "search": 52, "row": 40, "header": 28, "footer": 36, "maxHeight": 440, "perGroup": 6, "recent": 6, "activeWash": 0.12, "scrim": 0.24 },
