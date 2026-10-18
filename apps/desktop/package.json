@@ -12,7 +12,8 @@
     "dev": "node scripts/bundle.mjs && electron .",
     "preview": "node scripts/bundle.mjs && node dist/preview.cjs",
     "build": "node scripts/bundle.mjs --production && electron-builder --linux AppImage --publish never",
-    "build:mac": "node scripts/bundle.mjs --production && electron-builder --mac dmg zip --publish never",
+    "build:mac": "node scripts/bundle.mjs --production && tiffutil -cathidpicheck build/background.png build/background@2x.png -out build/background.tiff && electron-builder --mac dmg zip --publish never",
+    "art": "bash build-src/render.sh",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
