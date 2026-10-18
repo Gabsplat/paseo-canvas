@@ -42,7 +42,7 @@ function runtime(controller: any) {
     './panel-actions': panelActions, '../shared/learning': learning,
     './DocumentActions': { DocumentActions: control('DocumentActions') },
     './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') }, './PropertyEditors': { BlockContent: control('BlockContent'), VariablesEditor: control('VariablesEditor') },
-    './Canvas': { Canvas: control('Canvas') }, '../shared/model': { blockTypeSchema }, './Blocks': { visual: () => ({ icon: 'StickyNote', tone: 'neutro' }), Delivery: control('Delivery'), ConnectionRows: control('ConnectionRows') },
+    './Canvas': { Canvas: control('Canvas') }, '../shared/model': { blockTypeSchema }, './Blocks': { visual: () => ({ icon: 'StickyNote', tone: 'neutro' }), requestTitleEdit: () => false, Delivery: control('Delivery'), ConnectionRows: control('ConnectionRows') },
     './Links': { linkTone: () => 'neutro' }, './color': { withAlpha: (color: string) => color, isDark: () => false },
     './AgentModal': { AgentModal: control('AgentModal') }, './Onboarding': { Onboarding: control('Onboarding') },
     './guide': { claimFirstGuide: async () => false },

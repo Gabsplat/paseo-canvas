@@ -6,7 +6,7 @@ import type { CanvasController } from './useCanvas';
 import { alignmentGuides, anchorCard, boundsOf, connectOperations, descriptionKey, dropTarget, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
-import { BlockCard, ConnectionRows } from './Blocks';
+import { BlockCard, ConnectionRows, requestTitleEdit } from './Blocks';
 import { usePresentation } from './usePresentation';
 import { prepareLinkMotion } from './link-motion';
 import { getClientRenderer } from './renderers';
@@ -256,7 +256,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const wb = useWhiteboard({ controller: c, layout, world: p => toWorld({ x: p.x, y: p.y }, vp.current ?? { x: 0, y: 0 }), center, scale: () => cam.current.scale, tool: () => toolRef.current, choose: chooseTool, style: () => styleRef.current, locked: () => lockedRef.current, pan: (dx, dy) => { halt(); setCam({ scale: cam.current.scale, offset: { x: cam.current.offset.x + dx, y: cam.current.offset.y + dy } }); } });
   const wbRef = useRef(wb); wbRef.current = wb;
   const cancelAll = () => { wbRef.current.cancel(); dragEnd(0, 0, true); resizeEnd(true); clearLinkGesture(); setInteractionMode(null); };
-  const beginInteraction = (id?: string) => { const target = id ?? latest.current.c.selection[0]; if (!target) return; const block = latest.current.doc.blocks.find(b => b.id === target); if (!block) return; const renderer = latest.current.c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer; if (isWhiteboardRenderer(renderer)) wbRef.current.edit(target); else if (needsContentInteraction(renderer)) setInteractionMode(target); };
+  const beginInteraction = (id?: string) => { const target = id ?? latest.current.c.selection[0]; if (!target) return; const block = latest.current.doc.blocks.find(b => b.id === target); if (!block) return; const renderer = latest.current.c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer; if (isWhiteboardRenderer(renderer)) wbRef.current.edit(target); else if (needsContentInteraction(renderer)) setInteractionMode(target); else requestTitleEdit(target); };
   useImperativeHandle(api, () => ({ flyToIds: ids => fit(ids), cycleLens: () => setLens(current => LENSES[(LENSES.indexOf(current) + 1) % LENSES.length]), fit: () => fit(), zoomToSelection: () => fit(latest.current.c.selection), zoomStep, zoomTo: scale => zoomTo(scale), instant: () => { instantUntil.current = Date.now() + 600; }, setTool: next => { cancelAll(); chooseTool(next); }, getTool: () => toolRef.current, cancelGesture: cancelAll, viewportCenter: center, insertSvg: (svg, options) => {
     if (options?.atPage) { const point = options.atPage, origin = vp.current ?? { x: 0, y: 0 }, size = latest.current.size;
       if (point.x < origin.x || point.y < origin.y || point.x > origin.x + size.width || point.y > origin.y + size.height) return Promise.resolve(false);

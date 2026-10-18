@@ -98,6 +98,21 @@ test('renaming or deleting a variable follows the Controls that show it, only wh
   assert.equal(model.scopeHolder(document, 'g', 'x'), 'inner'); assert.equal(model.scopeHolder(document, DOCUMENT_SCOPE, 'x'), 'outer');
   assert.deepEqual(model.scopesOf(document, 'inner').map(s => s.id), ['g', DOCUMENT_SCOPE]);
 });
+test('renaming a variable renames the shader parameter that takes it, and its code', () => {
+  const v = (name: string) => ({ name, value: 1, min: 0, max: 2 });
+  const fragmentSource = 'precision mediump float;\nuniform float freq;\nvoid main() { gl_FragColor = vec4(freq); }';
+  const document = doc({ variables: [v('freq')], groups: [], blocks: [
+    { id: 'shader', typeId: 'glsl-shader', title: '', data: { fragmentSource, uniforms: [{ name: 'freq', label: 'Frequency', min: 0, max: 2, value: 1 }] } },
+    { id: 'other', typeId: 'glsl-shader', title: '', data: { fragmentSource: fragmentSource.replace(/freq/g, 'amp'), uniforms: [{ name: 'amp', label: 'Amp', min: 0, max: 2, value: 1 }] } },
+  ] });
+  const ops = model.variableOperations(document, DOCUMENT_SCOPE, [v('speed')], { freq: 'speed' }, new Set(['controls']));
+  const update = ops.find(op => op.type === 'block.update' && op.id === 'shader');
+  assert.ok(update && update.type === 'block.update');
+  const data = update.patch.data as { uniforms: { name: string }[]; fragmentSource: string };
+  assert.deepEqual(data.uniforms.map(u => u.name), ['speed']); assert.match(data.fragmentSource, /uniform float speed;/); assert.match(data.fragmentSource, /vec4\(speed\)/); assert.doesNotMatch(data.fragmentSource, /freq/);
+  assert.ok(!ops.some(op => op.type === 'block.update' && op.id === 'other'), 'a shader that does not take it is untouched');
+  assert.ok(!model.variableOperations(document, DOCUMENT_SCOPE, [], { freq: null }, new Set()).some(op => op.type === 'block.update'), 'deleting the variable leaves the shader with its own parameter');
+});
 
 test('flow events are made along real links, in seconds, with numeric values', () => {
   const document = { blocks: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }], groups: [], links: [{ id: 'ab', from: 'a', to: 'b', label: 'orders' }] };
