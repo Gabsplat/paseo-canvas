@@ -4,15 +4,15 @@ import { type PanelProps, AgentSheet, capabilities, useAgent, useSettings } from
 import { Icon, ScrollView, useToast } from './host';
 import type { BlockType, CanvasGroup, CanvasOperation } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
-import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Txt, UIProvider, useUI, MenuRow, MenuDivider, TooltipProvider, TooltipLayer } from './ui';
+import { Button, Chip, IconButton, Field, friendlyError, Modal, Txt, UIProvider, useUI, MenuRow, MenuDivider, TooltipProvider, TooltipLayer } from './ui';
 import { Canvas, type CanvasApi } from './Canvas';
 import { DocumentActions } from './DocumentActions';
 import { SelectionBar, SelectionProperties } from './SelectionActions';
 import { VariablesEditor } from './PropertyEditors';
 import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
-import { visual } from './Blocks';
-import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, safeUrl, type Point, type Rect } from './logic';
+import { requestTitleEdit, visual } from './Blocks';
+import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
 import { isMacPlatform, keyboard, type PanelKey } from './web';
 import { Onboarding } from './Onboarding';
 import { claimFirstGuide } from './guide';
@@ -21,10 +21,12 @@ import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
 import { usePresentation } from './usePresentation';
 import { ExtensionTool, extensionIcon } from './Extensions';
-import { StyleIsland, LibraryPopover, SvgImportDialog } from './FloatingTools';
+import { StyleIsland, LibraryPopover } from './FloatingTools';
+import type { RecentIcon } from './icon-library';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
-import { mediaSource } from './media';
+import { type linkBlock } from './media';
+import { LinkSheet, SvgSheet } from './AddSheets';
 import { isWhiteboardRenderer, learnerLayerIds, strokeLayers, type WbRenderer, type WbDrawData, type WbShape } from '../shared/whiteboard';
 import { Toolbar, GLOSSARY, shapeIcon, type ToolId, type PinnedTool } from './Toolbar';
 import { AddMenu, type ToolEntry } from './AddMenu';
@@ -131,12 +133,12 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const [paletteOpen, setPaletteOpen] = useState(false), [kettle, setKettle] = useState(0);
   const scope = `${hostId}:${workspaceId}`, [recent, setRecent] = useState<string[]>(() => recentByScope.get(scope) ?? []);
   const [panel, setPanel] = useState<{ pinned: boolean; hidden: boolean; forced: boolean; tab: string; focus: string | null }>({ pinned: false, hidden: false, forced: false, tab: 'properties', focus: null });
-  const [pinnedLocal, setPinnedLocal] = useState<string[] | null>(null), [overridesLocal, setOverridesLocal] = useState<Record<string, string> | null>(null), [, setRegistryTick] = useState(0);
+  const [pinnedLocal, setPinnedLocal] = useState<string[] | null>(null), [overridesLocal, setOverridesLocal] = useState<Record<string, string> | null>(null), [, setRegistryTick] = useState(0), [recentLocal, setRecentLocal] = useState<RecentIcon[] | null>(null);
   const [undoLabel, setUndoLabel] = useState('');
   useEffect(() => { if (!undoLabel) return; const timer = setTimeout(() => setUndoLabel(''), 5000); return () => clearTimeout(timer); }, [undoLabel]);
   useEffect(() => shortcutRegistry.subscribe(() => setRegistryTick(t => t + 1)), []);
   const [saveSlow, setSaveSlow] = useState(false);
-  const [ventana, setVentana] = useState<VentanaKind | null>(null), [mediaUrl, setMediaUrl] = useState(''), [mediaCaption, setMediaCaption] = useState(''), [mediaError, setMediaError] = useState('');
+  const [ventana, setVentana] = useState<VentanaKind | null>(null);
   // Hide all UI (⌘.) hides the floating controls. Failures and the canvas zoom stay visible.
   const [immersive, setImmersive] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false), guideClaim = useRef(false), guideMounted = useRef(true);
@@ -154,12 +156,13 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const disabled = c.busy || c.offline || c.loading;
   const mac = isMacPlatform();
   // ---- Shortcuts and pins: the person's choices live in the host's `interface` settings; the registry resolves them.
-  const savedPrefs = prefs.status === 'ready' ? prefs.values as { pinned?: string[]; shortcuts?: Record<string, string> } : undefined;
-  const pinnedIds = pinnedLocal ?? savedPrefs?.pinned ?? [], overrides = overridesLocal ?? savedPrefs?.shortcuts ?? {};
-  const savePrefs = (patch: { pinned?: string[]; shortcuts?: Record<string, string> }) => {
-    if (patch.pinned) setPinnedLocal(patch.pinned); if (patch.shortcuts) setOverridesLocal(patch.shortcuts);
+  const savedPrefs = prefs.status === 'ready' ? prefs.values as { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[] } : undefined;
+  const pinnedIds = pinnedLocal ?? savedPrefs?.pinned ?? [], overrides = overridesLocal ?? savedPrefs?.shortcuts ?? {}, recentIcons = recentLocal ?? savedPrefs?.recentIcons ?? [];
+  const savePrefs = (patch: { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[] }) => {
+    if (patch.pinned) setPinnedLocal(patch.pinned); if (patch.shortcuts) setOverridesLocal(patch.shortcuts); if (patch.recentIcons) setRecentLocal(patch.recentIcons);
     if (prefs.status !== 'ready') return;
-    void prefs.save({ pinned: patch.pinned ?? pinnedIds, shortcuts: patch.shortcuts ?? overrides }, prefs.revision).then(saved => { if (!saved) toast.error('Your choice was not saved for next time. It still applies now.'); });
+    // Recent icons are a convenience: losing one is not worth a notice.
+    void prefs.save({ pinned: patch.pinned ?? pinnedIds, shortcuts: patch.shortcuts ?? overrides, recentIcons: patch.recentIcons ?? recentIcons }, prefs.revision).then(saved => { if (!saved && !patch.recentIcons) toast.error('Your choice was not saved for next time. It still applies now.'); });
   };
   const resolved = shortcutRegistry.resolve(overrides);
   const copilot = useCopilotCanvas({ c, fly: ids => canvas.current?.flyToIds(ids), geometry, center: () => canvas.current?.viewportCenter(), active: !(u.compact && ['select', 'svg'].includes(tool)) && !!c.view });
@@ -206,7 +209,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   function editSelectedText() {
     const block = doc?.blocks.find(b => b.id === c.selection[0]);
     if (!u.compact && block && isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer)) canvas.current?.editSelection();
-    else showPanel();
+    else if (!(block && mode === 'canvas' && requestTitleEdit(block.id))) showPanel();
   }
   function reorder(id: string, delta: number) {
     if (!doc || disabled) return; const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id), group = doc.groups.find(g => g.id === entity?.parentGroupId); if (!entity || !group) return;
@@ -256,15 +259,15 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (copies.length > 200) { toast.error('Duplicate at most 200 things at a time.'); return; }
     void c.edit(copies.map(({ item, prefix }) => ({ type: 'entity.duplicate', id: item.id, idPrefix: prefix })), 'Duplicate selection').then(next => { if (next) void c.select(copies.map(({ item, prefix }) => prefix + '.' + item.id)); });
   }
-  function insert(type: BlockType, data = type.defaults) {
-    if (!doc) { openDocuments(); return; } if (disabled) return;
-    if (isWhiteboardRenderer(type.renderer)) { if (type.renderer === 'wb-svg') setSvgOpen(true); else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return; }
+  function insert(type: BlockType, data = type.defaults, title = type.name): Promise<boolean> {
+    if (!doc) { openDocuments(); return Promise.resolve(false); } if (disabled) return Promise.resolve(false);
+    if (isWhiteboardRenderer(type.renderer)) { if (type.renderer === 'wb-svg') setSvgOpen(true); else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return Promise.resolve(false); }
     const parent = c.selection.length === 1 ? doc.groups.find(g => g.id === c.selection[0]) : undefined;
     const activeBlock = c.selection.length === 1 ? doc.blocks.find(block => block.id === c.selection[0]) : undefined, rect = activeBlock ? rectsNow().get(activeBlock.id) : undefined;
     const parentGroupId = parent?.id ?? activeBlock?.parentGroupId ?? null, parentRect = parentGroupId ? rectsNow().get(parentGroupId) : undefined;
     const position = rect ? { x: rect.x + rect.width + tokens.graph.gap.node - (parentRect?.x ?? 0), y: rect.y - (parentRect?.y ?? 0) } : parent ? undefined : geometry.current.center;
     const id = newId('block');
-    void (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title: type.name, typeId: type.id, data, parentGroupId, ...(position ? { position } : {}) } }], `Add ${type.name}`); if (next) await c.select([id]); })();
+    return (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title, typeId: type.id, data, parentGroupId, ...(position ? { position } : {}) } }], `Add ${type.name}`); if (next) await c.select([id]); return !!next; })();
   }
   /** M: a new, empty Frame in the middle of the view (inside the selected Frame, if one is selected). */
   function createGroup() {
@@ -272,17 +275,13 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     const parent = c.selection.length === 1 ? doc.groups.find(group => group.id === c.selection[0]) : undefined, id = newId('group');
     void c.edit([{ type: 'group.create', group: { id, title: 'Untitled Frame', description: '', blockIds: [], groupIds: [], parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], 'Add Frame').then(next => { if (next) void c.select([id]); });
   }
-  const openVentana = (kind: VentanaKind) => { if (!doc) { openDocuments(); return; } setAddOpen(false); setMediaError(''); setVentana(kind); };
-  /** W: a Window. A web page becomes a live preview; an image, video or audio link becomes a player. */
-  function insertVentana() {
-    if (!doc || disabled || !ventana) return;
-    const url = safeUrl(mediaUrl), source = url ? mediaSource(url) : null;
-    if (!url) { setMediaError('Use a valid HTTP or HTTPS address.'); return; }
-    const page = ventana === 'page' && source?.kind !== 'video' && source?.kind !== 'audio' && source?.kind !== 'image';
-    const type = page ? c.catalog?.blockTypes.find(type => type.renderer === 'preview-frame') : c.catalog?.blockTypes.find(type => type.id === 'media' && type.renderer === 'image-ref');
-    if (!type) { setMediaError('That kind of Window is not in the local catalog.'); return; }
-    insert(type, page ? { ...type.defaults, url, description: mediaCaption || url } : { ...type.defaults, url, caption: mediaCaption, mediaKind: source?.kind ?? (ventana === 'page' ? 'reference' : ventana) });
-    setVentana(null); setMediaUrl(''); setMediaCaption(''); setMediaError('');
+  const openVentana = (kind: VentanaKind) => { if (!doc) { openDocuments(); return; } setAddOpen(false); setVentana(kind); };
+  /** W: a Window. A web page becomes a live preview; an image, video or audio link becomes a player (AddSheets.tsx). */
+  async function insertLink(link: ReturnType<typeof linkBlock>): Promise<boolean> {
+    if (!doc || disabled) return false;
+    const type = link.renderer === 'preview-frame' ? c.catalog?.blockTypes.find(type => type.renderer === 'preview-frame') : c.catalog?.blockTypes.find(type => type.id === 'media' && type.renderer === 'image-ref');
+    if (!type) { toast.error('That kind of Window is not in the local catalog.'); return false; }
+    return insert(type, { ...type.defaults, ...link.data }, link.title);
   }
   const rendererOf = (typeId: string) => c.catalog?.blockTypes.find(type => type.id === typeId)?.renderer;
   const selectedWhiteboard = doc?.blocks.filter(block => c.selection.includes(block.id) && isWhiteboardRenderer(rendererOf(block.typeId))) ?? [];
@@ -319,7 +318,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (!c.busy) { setSaveSlow(false); return; }
     const timer = setTimeout(() => setSaveSlow(true), 400); return () => clearTimeout(timer);
   }, [c.busy]);
-  useEffect(() => { setTool('select'); setToolLocked(false); setAddOpen(false); setLibraryOpen(false); setSvgOpen(false); setLibraryError(''); setInteractionId(null); setRename(false); setVentana(null); setMediaUrl(''); setMediaCaption(''); setMediaError(''); }, [doc?.id]);
+  useEffect(() => { setTool('select'); setToolLocked(false); setAddOpen(false); setLibraryOpen(false); setSvgOpen(false); setLibraryError(''); setInteractionId(null); setRename(false); setVentana(null); }, [doc?.id]);
   function changeStyle(patch: Partial<ToolStyle>) {
     if (disabled) return;
     setToolStyle(previous => ({ ...previous, ...patch }));
@@ -384,7 +383,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       { id: 'text', section: 'Shapes & drawing', name: 'Text', description: 'A free label, without a card.', icon: 'Type', keywords: 'label write', shortcut: keyLabel('tool.text'), active: toolId === 'text', run: () => chooseToolId('text') },
       { id: 'eraser', section: 'Shapes & drawing', name: 'Eraser', description: 'Removes whole strokes; Undo brings them back.', icon: 'Eraser', keywords: 'delete rub', shortcut: keyLabel('tool.eraser'), active: toolId === 'eraser', run: () => chooseToolId('eraser') },
       { id: 'marco', section: 'Shapes & drawing', name: 'Frame', description: GLOSSARY.marco, icon: 'SquareDashed', keywords: 'frame group area container', shortcut: keyLabel('tool.marco'), run: createGroup },
-      { id: 'icons', section: 'Shapes & drawing', name: 'Architecture icons', description: 'Twelve Tabler icons for systems drawings.', icon: 'Library', keywords: 'svg library server database', run: () => chooseTool('svg') },
+      { id: 'icons', section: 'Shapes & drawing', name: 'Icons', description: 'Search icons to drop on the canvas: a set that works offline, and open sets online.', icon: 'Shapes', keywords: 'svg library icon lucide iconify logo server database architecture', run: () => chooseTool('svg') },
       { id: 'svg', section: 'Shapes & drawing', name: 'Import SVG…', description: 'A vector drawing from code, a file or a link.', icon: 'Upload', keywords: 'vector image', run: () => setSvgOpen(true) },
       { id: 'ventana', section: 'Embeds', name: 'Window', description: GLOSSARY.ventana, icon: 'AppWindow', keywords: 'web page iframe embed preview window site', shortcut: keyLabel('tool.ventana'), run: () => openVentana('page') },
       { id: 'image', section: 'Embeds', name: 'Image', description: 'A picture from a link.', icon: 'Image', keywords: 'photo picture media', run: () => openVentana('image') },
@@ -600,17 +599,17 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const closeScreen = () => setScreen(null);
   const pinnedRows = pinnedEntries.map(e => ({ id: e.id, name: e.name, icon: e.icon, description: e.description }));
   const screens = <>
-    <Screen open={screen?.kind === 'lienzos'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-lienzos" label="Lienzos">
+    <Screen open={screen?.kind === 'lienzos'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-lienzos" label="Lienzos" fit="top">
       <LienzosScreen c={c} width={frame.width} open={screen?.kind === 'lienzos'} onNew={() => { void newCanvas(); }} onOpen={id => { setScreen(null); if (id !== doc?.id) void c.open(id); }} />
     </Screen>
-    <Screen open={screen?.kind === 'history'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-history" label="History">
+    <Screen open={screen?.kind === 'history'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-history" label="History" fit="center">
       <HistoryScreen c={c} open={screen?.kind === 'history'} onUndo={() => { void changeRevision('undo'); }} onRedo={() => { void changeRevision('redo'); }}
         onFly={ids => { setScreen(null); void c.select(ids); setTimeout(() => canvas.current?.flyToIds(ids), 0); }} />
     </Screen>
-    <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions">
+    <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions" fit="top">
       <ExtensionsContent c={c} width={frame.width} onHelp={openHelp} />
     </Screen>
-    <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
+    <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" fit="top" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
       {screen?.kind === 'settings' && <SettingsContent key={screen.section} section={screen.section} c={c} width={frame.width - railWidth} list={resolved.list} defs={shortcutRegistry.all()} overrides={overrides} chips={chips}
         saveShortcuts={next => savePrefs({ shortcuts: next })} pinned={pinnedRows} savePinned={ids => savePrefs({ pinned: ids })} onGuide={() => { setScreen(null); setGuideOpen(true); }} />}
     </Screen>
@@ -658,7 +657,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {doc && !immersive && <LatestPill copilot={copilot} bottom={u.compact ? compactDock + 12 : toolbarBottom + F.toolbar.height + 12} label={c.view?.latestAgent?.label} />}
       {doc && !u.compact && <HojaMenu copilot={copilot} left={tokens.island.inset} top={tokens.island.inset + F.top.height + 6} maxHeight={Math.max(200, panelHeight - 220)} />}
       {libraryOpen && !immersive && <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 8, alignItems: 'center' } : { position: 'absolute', bottom: toolbarBottom + F.toolbar.height + 8, left: 0, right: 0, alignItems: 'center' }}>
-        <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} />
+        <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} recent={recentIcons} onRecent={list => savePrefs({ recentIcons: list })} online={!c.offline} maxHeight={Math.max(280, panelHeight - toolbarBottom - F.toolbar.height - 40)} />
       </View>}
       {immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: 12, right: 12 }}><View style={islandStyle(u)}><IconButton icon="Minimize2" label="Show the interface" shortcut={keyLabel('ui.hide')} onPress={() => setImmersive(false)} /></View></View>}
       <Kettle serial={kettle} bottom={u.compact ? compactDock + 12 : 60} />
@@ -675,14 +674,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + F.top.height + 6, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
     <CommandPalette open={paletteOpen} items={paletteItems} recent={recent} chips={chips} width={width} height={panelHeight} onClose={() => setPaletteOpen(false)} onRun={(item, background) => { runPaletteItem(item); if (background) toast.show('Running: ' + item.title, { variant: 'info' }); }} onQuery={query => { if (query.trim().toLowerCase() === 'mate') setKettle(k => k + 1); }} />
     <TooltipLayer />
-    <Modal title={ventana === 'image' ? 'Image' : ventana === 'video' ? 'Video' : ventana === 'audio' ? 'Audio' : 'Window'} open={!!ventana} onOpenChange={open => { if (!open) setVentana(null); }}><Modal.Content>
-      <Txt kind="small" muted>{ventana === 'page' ? GLOSSARY.ventana + ' Paste a link to a page, a video or a sound.' : 'Paste a link. Players never start on their own.'}</Txt>
-      <Input label={ventana === 'page' ? 'Address of the page or media' : 'Address'} placeholder="https://…" value={mediaUrl} onChange={setMediaUrl} readOnly={disabled} />
-      <Input label={ventana === 'page' ? 'What it shows (optional)' : 'Caption (optional)'} value={mediaCaption} onChange={setMediaCaption} readOnly={disabled} />
-      {!!mediaError && <Txt kind="small" style={{ color: u.c.statusDanger }}>{mediaError}</Txt>}
-      <Button label={ventana === 'page' ? 'Add Window' : 'Add'} variant="primary" disabled={disabled || !mediaUrl.trim()} onPress={insertVentana} />
-    </Modal.Content></Modal>
-    <SvgImportDialog open={svgOpen} onClose={() => setSvgOpen(false)} onInsert={insertSvg} />
+    <LinkSheet intent={ventana} onClose={() => setVentana(null)} panel={panelBox} disabled={disabled} onAdd={insertLink} />
+    <SvgSheet open={svgOpen} onClose={() => setSvgOpen(false)} panel={panelBox} onInsert={insertSvg} />
     <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
     <Modal title="Menu" open={overflow && u.compact} onOpenChange={setOverflow}><Modal.Content><View>{menuRows}</View></Modal.Content></Modal>
     {settings.saveError && <View style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, right: 12, padding: 8, backgroundColor: u.c.surface1 }}><Txt kind="small" muted>Could not remember that you saw the guide.</Txt><Button label="Retry" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}

@@ -118,8 +118,8 @@ test('draw sessions append complete strokes, scale old points correctly and eras
   h.wb.begin(pointer(55,60));await h.wb.finish(pointer(55,60),false);assert.equal(h.transactions.length,4);assert.equal(h.doc().blocks.length,0);
 });
 test('SVG library insertion uses validated catalog data, visible center and parent-relative position',async()=>{
-  const h=toolHarness('svg');const {SVG_LIBRARY}=require('../plugin/client/SvgLibrary');const entry=SVG_LIBRARY[0];assert.equal(await h.wb.insertSvg(entry.svg,{caption:entry.caption,source:entry.source,license:entry.license}),true);
-  assert.equal(h.transactions.length,1);const b=h.doc().blocks[0];assert.deepEqual(b.position,{x:352,y:252});assert.deepEqual(b.size,{width:96,height:96});assert.equal(b.data.source,'tabler:server');assert.equal(b.data.license,'MIT · Tabler Icons');
+  const h=toolHarness('svg');const {offlineIcons,insertMeta}=require('../plugin/client/icon-library');const entry=offlineIcons()[0];assert.equal(await h.wb.insertSvg(entry.svg,insertMeta(entry)),true);
+  assert.equal(h.transactions.length,1);const b=h.doc().blocks[0];assert.deepEqual(b.position,{x:352,y:252});assert.deepEqual(b.size,{width:96,height:96});assert.equal(b.data.source,'lucide:server');assert.equal(b.data.license,'ISC · Lucide');assert.equal(b.data.caption,'Server');
   h.c.view.document.groups.push({id:'group',title:'Group',description:'',blockIds:[],groupIds:[],position:{x:700,y:50},layout:{mode:'stack'}});h.c.selection=['group'];assert.equal(await h.wb.insertSvg(entry.svg),true);const child=h.doc().blocks[1];assert.equal(child.parentGroupId,'group');assert.ok(child.position.x<700);assert.ok(child.position.y<100);
 });
 test('rejected gesture transaction discards preview and leaves the document unchanged',async()=>{
@@ -232,10 +232,10 @@ test('library drag keeps short clicks, drops at page coordinates inside Canvas a
   } finally { stop(); h.close(); }
 });
 test('SVG pointer placement converts through world adapter and chooses the actual group under release', async () => {
-  const h = toolHarness('svg'), { SVG_LIBRARY } = require('../plugin/client/SvgLibrary');
+  const h = toolHarness('svg'), { offlineIcons } = require('../plugin/client/icon-library');
   h.c.view.document.groups.push({id:'group',title:'Group',description:'',blockIds:[],groupIds:[],position:{x:700,y:50},layout:{mode:'stack'}});
   const frame = layoutCanvas(h.doc(), {}, catalog).rects.get('group'); const atPage = { x: frame.x + 80, y: frame.y + 80 };
-  assert.equal(await h.wb.insertSvg(SVG_LIBRARY[0].svg, { atPage }), true);
+  assert.equal(await h.wb.insertSvg(offlineIcons()[0].svg, { atPage }), true);
   const b = h.doc().blocks[0]; assert.equal(b.parentGroupId, 'group'); assert.deepEqual(b.position, { x:32,y:32 });
 });
 test('automatic layout release preserves mandatory whiteboard positions alongside ordinary cards', () => {
@@ -265,7 +265,7 @@ test('Canvas imperative editSelection routes whiteboard editing and deep card in
   const c:any={view:{document:doc},selection:['frame'],catalog,events:[],pendingIds:[],learning:{getSnapshot:()=>({})}};
   const modules:Record<string,any>={
     react,'react-native':{Animated:{Value,View:'Animated.View',add:()=>0,subtract:()=>0,multiply:()=>0,divide:()=>1},PanResponder:{create:(handlers:any)=>({panHandlers:handlers})},Pressable:'Pressable',View:'View'},'./host':{},
-    './SelectionOverlay': {}, './ZoomControl':{ZoomControl:()=>null},'./logic':logic,'./tokens':{tokens},'./color':{isDark:()=>false,withAlpha:()=>''},'./Blocks':{},'./usePresentation':{usePresentation:()=>undefined},'./link-motion':{prepareLinkMotion:()=>undefined},'./renderers':{},'./Links':{},'./MagnetCue':{},'./ui':{useUI:()=>({layout:{platform:'web'},c:{surface0:'#fff'},font:()=>({})})},'./web':{},
+    './SelectionOverlay': {}, './ZoomControl':{ZoomControl:()=>null},'./logic':logic,'./tokens':{tokens},'./color':{isDark:()=>false,withAlpha:()=>''},'./Blocks':{requestTitleEdit:()=>false},'./usePresentation':{usePresentation:()=>undefined},'./link-motion':{prepareLinkMotion:()=>undefined},'./renderers':{},'./Links':{},'./MagnetCue':{},'./ui':{useUI:()=>({layout:{platform:'web'},c:{surface0:'#fff'},font:()=>({})})},'./web':{},
     './motion':{NATIVE:false,reducedMotion:{current:true},useReducedMotion:()=>{}},'./Wayfinding':{Minimap:'Minimap',SelectionBeacon:'SelectionBeacon'},'./cursors':{canvasCursors:()=>({}),cursorForTool:()=>undefined},'./lenses':{LENSES:['none'],lensMarks:()=>({marks:new Map(),legend:[]})},'./useHistory':{useHistory:()=>({changes:null,failed:false})},'./whiteboard-tools':{DEFAULT_TOOL_STYLE},'../shared/whiteboard':wb,'./useWhiteboard':{useWhiteboard:()=>({editor:null,store:{},edit:(id:string)=>edits.push(id)})},'./WhiteboardContent':{},'./WhiteboardOverlay':{},'./interaction':require('../plugin/client/interaction'),'./whiteboard-geometry':require('../plugin/client/whiteboard-geometry'),'./whiteboard-visuals':{islandStyle:()=>({})},
   };
   const output=ts.transpileModule(readFileSync('plugin/client/Canvas.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;

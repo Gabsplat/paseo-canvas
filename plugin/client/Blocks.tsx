@@ -61,8 +61,9 @@ function FormBody({ block, type, controller: c, saved }: { block: CanvasBlock; t
 }
 /** The title, typed in place: Enter or leaving the field saves it, Escape keeps the old one. */
 function TitleEditor({ title, save, close }: { title: string; save(title: string): Promise<unknown>; close(): void }) {
-  const u = useUI(), [text, setText] = useState(title), done = useRef(false);
-  const finish = (keep: boolean) => { if (done.current) return; done.current = true; const next = text.replace(/\s*\n\s*/g, ' ').trim().slice(0, 300); close(); if (keep && next !== title) void save(next); };
+  const u = useUI(), [text, setText] = useState(title), done = useRef(false), born = useRef(Date.now());
+  // Opened from the keyboard (Enter, F2), the same key's release must not submit or blur it straight away.
+  const finish = (keep: boolean) => { if (done.current || keep && Date.now() - born.current < 250) return; done.current = true; const next = text.replace(/\s*\n\s*/g, ' ').trim().slice(0, 300); close(); if (keep && next !== title) void save(next); };
   return <TextInput nativeID="lienzo-title-editor" accessibilityLabel="Title" autoFocus selectTextOnFocus value={text} onChangeText={setText} placeholder="Untitled" placeholderTextColor={u.c.foregroundMuted}
     onSubmitEditing={() => finish(true)} onBlur={() => finish(true)} onKeyPress={e => { if (e.nativeEvent.key === 'Escape') finish(false); }}
     style={[u.font('heading'), { padding: 0, margin: 0, borderWidth: 0, borderBottomWidth: 1.5, borderColor: u.c.accent, backgroundColor: 'transparent', outlineStyle: 'none' } as object]} />;
@@ -93,10 +94,15 @@ function Media({ block, fill = false, bare = false }: { block: CanvasBlock; fill
   if (bare) return <View style={{ flexGrow: fill ? 1 : undefined }}>{player}{!!block.data.caption && <Txt kind="small" muted style={{ paddingHorizontal: 10, paddingVertical: 6 }}>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
   return <View style={{ gap: 8, flexGrow: fill ? 1 : undefined }}>{player}{embed && playing && <Button label="Close player" small variant="ghost" onPress={() => setPlaying(false)} />}<Button label="Open reference" small variant="ghost" icon="ExternalLink" onPress={open} />{!!block.data.caption && <Txt kind="small" muted>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
 }
+// "Edit text on the canvas" (Enter, F2, Properties) asks the card itself to open its title for typing.
+const titleEditRequests = new Set<(id: string) => boolean>();
+/** True when a card on screen took the request; otherwise the caller falls back to the Properties panel. */
+export function requestTitleEdit(id: string): boolean { let taken = false; for (const listener of titleEditRequests) taken = listener(id) || taken; return taken; }
 export function BlockCard({ block, controller: c, selected, onSelect, onInspect, onPacks, onReorder, headerHandlers, onMeasure, outline = false, dragging = false, dim = false, onHover, detailsSide = 'right', cursor, height }: { block: CanvasBlock; controller: CanvasController; selected: boolean; onSelect: (id: string, event?: GestureResponderEvent, multi?: boolean) => void; onInspect: () => void; onPacks: () => void; onReorder: (id: string, direction: number) => void; headerHandlers?: object; onMeasure?: (height: number) => void; outline?: boolean; dragging?: boolean; dim?: boolean; onHover?: (id: string, inside: boolean) => void; detailsSide?: 'right' | 'bottom'; cursor?: string; height?: Animated.Value }) {
   const [renaming, setRenaming] = useState(false), lastPress = useRef(0);
   const u = useUI(), toast = useToast(), type = c.catalog?.blockTypes.find(t => t.id === block.typeId), v = visual(type), [focus, setFocus] = useState(false), [hovered, setHovered] = useState(false), [answer, setAnswer] = useState(str(block.data.answer)), [hint, setHint] = useState(false);
   React.useEffect(() => setAnswer(str(block.data.answer)), [block.data.answer]);
+  React.useEffect(() => { const listener = (id: string) => { if (id !== block.id || outline || c.offline || c.pendingIds.includes(block.id)) return false; setRenaming(true); return true; }; titleEditRequests.add(listener); return () => { titleEditRequests.delete(listener); }; }, [block.id, outline, c.offline, c.pendingIds]);
   const presentation = usePresentation(c), gateIds = presentation?.hiddenBy.get(block.id);
   if (gateIds?.length) return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ height: height && !outline ? height : undefined }}>
     <Pressable nativeID={`lienzo-grab-${block.id}`} {...headerHandlers} accessibilityRole="button" accessibilityLabel="Hidden result" accessibilityState={{ selected }} onPress={e => onSelect(block.id, e)} onLongPress={e => onSelect(block.id, e, true)} style={{ minHeight: tokens.size.blockMinHeight, padding: 14, backgroundColor: u.c.surface1, borderWidth: selected ? 2 : 1, borderColor: selected ? u.c.accent : u.c.border, borderStyle: 'dashed', borderRadius: 10 }}>
@@ -155,6 +161,18 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
         <View style={{ flex: sized ? 1 : undefined, minHeight: 0 }}>{content}</View>
         {!!state && <View style={{ paddingHorizontal: 10, paddingBottom: 8 }}>{state}</View>}
       </View>
+    </Animated.View>;
+  }
+  if (!outline && type && renderer === 'glsl-shader') {
+    // A shader is a picture: edge to edge in a rounded card, no header and no padding. The whole picture is the handle;
+    // a title, a question or controls appear only when the block asks for them (docs/design.md §37.3).
+    return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ opacity, height: sized ? height : undefined }}>
+      {(selected || focus) && <View pointerEvents="none" style={{ position: 'absolute', top: -3, bottom: -3, left: -3, right: -3, borderRadius: W.radius + 3, backgroundColor: selected ? u.halo : withAlpha(u.c.foregroundMuted, .3) }} />}
+      <Pressable nativeID={`lienzo-grab-${block.id}`} {...headerHandlers} accessibilityRole="button" accessibilityLabel={`${type.name}: ${block.title || 'untitled'}`} accessibilityState={{ selected }} onHoverIn={() => hover(true)} onHoverOut={() => hover(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onPress={e => onSelect(block.id, e)} onLongPress={e => onSelect(block.id, e, true)}
+        style={{ flex: sized ? 1 : undefined, borderRadius: W.radius, borderWidth: selected ? 2 : 1, borderColor: writeFailure ? u.c.statusDanger : selected || dragging ? u.c.accent : withAlpha(u.c.foreground, hovered ? .22 : .1), backgroundColor: u.c.surface1, overflow: 'hidden', ...grab }}>
+        <RegisteredRenderer block={block} id={renderer} controller={c} readOnly={disabled} fill={sized} />
+        {!!state && <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>{state}</View>}
+      </Pressable>
     </Animated.View>;
   }
   if (renderer === 'node') {

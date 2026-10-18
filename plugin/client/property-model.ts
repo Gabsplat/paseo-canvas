@@ -312,6 +312,18 @@ export function variableOperations(document: CanvasDocument, scopeId: string, ne
     }
   }
   for (const [id, variables] of touched) ops.push({ type: 'block.update', id, patch: { data: { variables } } });
+  // A shader parameter that takes this variable by name keeps taking it: its uniform and the code are renamed too.
+  const empty: RuntimeState = { blocks: {}, scopes: {} };
+  for (const [from, to] of Object.entries(renamed)) {
+    if (!to || from === to) continue;
+    for (const b of document.blocks) {
+      const uniforms = b.data.uniforms as GlslUniform[] | undefined, source = b.data.fragmentSource;
+      if (!Array.isArray(uniforms) || typeof source !== 'string' || !uniforms.some(u => u.name === from) || uniforms.some(u => u.name === to)) continue;
+      if (resolveScope(document, b.id, empty)[from]?.scopeId !== scopeId) continue;
+      const patch = uniformsPatch(source, uniforms, uniforms.map(u => u.name === from ? { ...u, name: to } : u), { [from]: to });
+      ops.push({ type: 'block.update', id: b.id, patch: { data: patch } });
+    }
+  }
   return ops;
 }
 /** A block that resolves `name` to this scope: the runtime writes a scope's current value through one. */

@@ -10,7 +10,7 @@ import type { CanvasPack, CatalogExtension } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { Button, CheckRow, Chip, Segments, Txt, friendlyError, useUI } from './ui';
 import { downloadJson, pickJsonFile } from './web';
-import { Card, ScreenBody, ScreenHeader, SectionLabel, Stagger } from './Screen';
+import { Card, ScreenBody, ScreenHeader, SectionLabel, Stagger, useScreenRoot } from './Screen';
 import { PERMISSION_WORDS, exportAllMine, exportOne, EXTENSION_MESSAGES, extensionActions, extensionOrigin, fileName, publishPlan, type ExtensionReview as Review, type PublishPlan } from './screens';
 import { DiscoverTab, PublishCard } from './Discover';
 import { extensionIcon } from './Extensions';
@@ -65,7 +65,7 @@ function ReviewCard({ review, busy, onInstall, onCancel }: { review: Review; bus
 }
 
 export function ExtensionsContent({ c, width, embedded = false, onHelp }: { c: CanvasController; width: number; embedded?: boolean; onHelp?(id: string): void }) {
-  const u = useUI(), actions = extensionActions(c as unknown as Parameters<typeof extensionActions>[0]), [review, setReview] = useState<Review | null>(null), [error, setError] = useState(''), [pending, setPending] = useState(false), [note, setNote] = useState('');
+  const u = useUI(), root = useScreenRoot(), actions = extensionActions(c as unknown as Parameters<typeof extensionActions>[0]), [review, setReview] = useState<Review | null>(null), [error, setError] = useState(''), [pending, setPending] = useState(false), [note, setNote] = useState('');
   const [tab, setTab] = useState<'installed' | 'discover'>('installed'), [publish, setPublish] = useState<{ plan: PublishPlan; saved: boolean } | null>(null);
   const installed = c.catalog?.extensions ?? [], mine = exportAllMine(c.catalog), busy = pending || c.offline, web = u.layout.platform === 'web';
   const run = async (work: () => Promise<unknown>) => { setPending(true); setError(''); setNote(''); try { await work(); } catch (e) { const message = e instanceof Error ? e.message : ''; setError((Object.values(EXTENSION_MESSAGES) as string[]).includes(message) ? message : friendlyError(e)); } finally { setPending(false); } };
@@ -103,7 +103,7 @@ export function ExtensionsContent({ c, width, embedded = false, onHelp }: { c: C
   </>;
   const tabs = <Segments value={tab} onChange={next => { setTab(next); setError(''); setNote(''); }} options={[{ value: 'installed', label: 'Installed' }, { value: 'discover', label: 'Discover' }]} />;
   if (embedded) return <View style={{ gap: 16 }}><View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}><View nativeID="lienzo-extension-tabs" style={{ width: 220 }}>{tabs}</View><View style={{ flex: 1 }} />{toolbar}</View>{body}</View>;
-  return <View nativeID="lienzo-extensions" style={{ flex: 1, minHeight: 0 }}>
+  return <View nativeID="lienzo-extensions" style={root}>
     <ScreenHeader title="Extensions" subtitle="Small tools for the + catalog and the Properties panel. Add them, discover what others made, share yours, or write your own." actions={toolbar}><View nativeID="lienzo-extension-tabs" style={{ width: 220 }}>{tabs}</View></ScreenHeader>
     <ScreenBody>{body}</ScreenBody>
   </View>;

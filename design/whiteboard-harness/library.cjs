@@ -23,7 +23,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');
  await check('library drag chooses the release destination instead of an unrelated selected group',async()=>{
   await click('#lienzo-entity-frame',{x:90,y:20});await wait('__panelQA.doc().selectedIds.includes("frame")');await openIcons();await wait(`!!document.querySelector(${JSON.stringify(label('Insert Server'))})`);
-  const b=await box('#lienzo-library-icon-server'),x=b.x+b.w/2,y=b.y+20,tx=1480,ty=720;await mouse('mousePressed',x,y,'left',1);for(let i=1;i<=24;i++){await mouse('mouseMoved',x+(tx-x)*i/24,y+(ty-y)*i/24,'left',1);await new Promise(r=>setTimeout(r,8));}await mouse('mouseReleased',tx,ty);await wait('__panelQA.doc().blocks.some(b=>b.typeId==="wb-svg")');assert.equal(await ev('__panelQA.doc().blocks.find(b=>b.typeId==="wb-svg").parentGroupId??null'),null);assert.equal(await ev('__panelQA.log.length'),1);
+  const b=await box('#lienzo-library-icon-lucide\\:server'),x=b.x+b.w/2,y=b.y+20,tx=1480,ty=720;await mouse('mousePressed',x,y,'left',1);for(let i=1;i<=24;i++){await mouse('mouseMoved',x+(tx-x)*i/24,y+(ty-y)*i/24,'left',1);await new Promise(r=>setTimeout(r,8));}await mouse('mouseReleased',tx,ty);await wait('__panelQA.doc().blocks.some(b=>b.typeId==="wb-svg")');assert.equal(await ev('__panelQA.doc().blocks.find(b=>b.typeId==="wb-svg").parentGroupId??null'),null);assert.equal(await ev('__panelQA.log.length'),1);
  });
  await shot('library');
  fs.writeFileSync('/tmp/lienzo-wb-library.json',JSON.stringify({checks,uncaught},null,2));assert.deepEqual(uncaught,[]);
