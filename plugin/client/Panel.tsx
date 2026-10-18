@@ -8,6 +8,8 @@ import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Txt, UIPr
 import { Canvas, type CanvasApi } from './Canvas';
 import { DocumentActions } from './DocumentActions';
 import { SelectionBar, SelectionProperties } from './SelectionActions';
+import { VariablesEditor } from './PropertyEditors';
+import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
 import { visual } from './Blocks';
 import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, safeUrl, type Point, type Rect } from './logic';
@@ -410,6 +412,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const documentProperties = doc ? <View nativeID="lienzo-properties-document">
     <View style={{ paddingHorizontal: F.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>Lienzo</Txt><Txt kind="bodyStrong" numberOfLines={2}>{doc.title}</Txt><Txt kind="small" muted>{GLOSSARY.lienzo}</Txt></View>
     <PanelSection title="This Lienzo"><DocumentActions controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
+    <PanelSection title="Variables" defaultOpen={!!doc.variables?.length}><VariablesEditor controller={c} scopeId={DOCUMENT_SCOPE} disabled={disabled} /></PanelSection>
   </View> : null;
   const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Frame', ventana: 'Window' }[toolId] : 'Tool';
   const tabs: PanelTab[] = [];

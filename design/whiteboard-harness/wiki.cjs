@@ -61,6 +61,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const pat
  if(compact)await click('#lienzo-help [aria-label="All topics"]');await click('#lienzo-help [aria-label="Clear the search"]');await wait('!document.querySelector("#lienzo-help-results")','search cleared');
  // 4. The live shortcut list, and the tutorial's complete example in Markdown.
  await topic('shortcuts.keys');await wait('!!document.querySelector("#lienzo-help-shortcuts")');assert.match(await text('#lienzo-help-shortcuts'),/Command palette/);await shot('shortcuts');
+ await topic('interactive.variables');assert.match(await text('[id="lienzo-help-page-interactive.variables"]'),/On \/ off/);await shot('variables');
  await topic('make.example');await wait(`!!document.querySelector('[id="lienzo-help-body-make.example"]')`);assert.match(await text('[id="lienzo-help-body-make.example"]'),/lienzo\.edit\(ops/);
  await ev(`document.querySelector('[id="lienzo-help-body-make.example"]').scrollIntoView({block:'start'})`);await shot('tutorial-example');
  await key('Escape','Escape');await wait('!document.querySelector("#lienzo-screen-help")','Escape closes Help');

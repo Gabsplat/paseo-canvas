@@ -42,6 +42,27 @@ Shortcut: ⇧1
 2. Hold ⌘ (Ctrl on Windows and Linux) and scroll to zoom around the pointer, or pinch on a trackpad.
 3. Press Shift+1 to fit everything, Shift+2 to fit the selection, 0 for 100 %.
 
+### Editing in Properties
+
+Everything an agent can set, you can set by hand, without JSON.
+
+Select something and the Properties panel shows its fields: the title, the fields that matter for its kind, and More options for the rest. Lists (checklist items, files, flow events, choices) are edited row by row, words with a known vocabulary are chips, and durations are typed in seconds. Changes save by themselves a moment after you stop typing, each one a step you can undo.
+
+Shortcut: ⌘\
+
+#### By hand
+
+1. Select one thing; the Properties panel opens on the right (⌘\ hides or shows it).
+2. Edit a field; it saves 600 ms after the last key. Adding, removing, moving and ticking save at once.
+3. Open More options for the less common fields.
+4. Press a row of a list to show its tools: move up or down, remove, and for files indent, highlight or mute.
+5. Double-click a selected card to rename it on the canvas: Enter saves, Escape keeps the old title.
+
+#### Tips
+
+- If a change is refused, the panel says why under the field and keeps your draft, with Retry.
+- Raw data (JSON), at the end, is exactly what the agent reads and writes. You never need it, but it is there.
+
 ## Drawing
 
 ### Select
@@ -242,7 +263,8 @@ A card (a node) is one idea: a title, a summary of one to three sentences, and m
 
 1. Double-click empty canvas, type a title and press Enter.
 2. Or press + and choose Node under Blocks.
-3. Edit the summary and the detail in the Properties panel.
+3. Edit the summary and the detail in the Properties panel; pick a status from its chips (or Other… for your own word).
+4. Double-click a selected card to rename it in place.
 
 #### Ask your agent
 
@@ -405,20 +427,40 @@ Media shows an image, plays a video (a file, YouTube or Vimeo) or a sound from a
 
 ### Controls
 
-Sliders for values shared by a Frame or the whole Lienzo.
+Sliders, switches and choices for values shared by a Frame or the whole Lienzo.
 
-Controls turn a question into something you can try: up to four sliders for named values, shared with the other blocks of the same Frame or Lienzo. Your agent reads where you left them and which one you moved last.
+Controls turn a question into something you can try: up to four variables (numbers as sliders, on/off switches, choices), shared with the other blocks of the same Frame or Lienzo. Your agent reads where you left them and which one you moved last.
 
 #### By hand
 
-1. Select a Frame and declare its variables in the Properties panel (Variables).
-2. Press + and choose Controls; list the variables it shows.
-3. Drag a slider. Reset puts them back.
+1. Press + and choose Controls under Blocks; write its question in Properties.
+2. Under Variables shown, press Show a variable… to pick one the block can reach, or New variable to make one: a label, a type, and whether this Frame or the whole Lienzo shares it.
+3. Open a variable's row to change its range, unit or choices; move rows up or down, or stop showing one.
+4. Use the controls on the canvas. Reset puts them back.
 
 #### Ask your agent
 
 - “Add controls for interest rate and years, and a card that explains the result.”
 - “Look at where I left the sliders and tell me what that means.”
+
+### Variables
+
+Named values a Frame or the Lienzo shares: numbers, on/off, choices.
+
+A variable is a value the blocks of a Frame (or the whole Lienzo) share: Controls show it, shaders and other blocks read it, and your agent sees where you left it. Each one has a label, a type (Number, On / off or Choice), where it starts, and a name in code that is filled in from the label.
+
+#### By hand
+
+1. Select a Frame, or nothing for the Lienzo (with the panel pinned), and open Variables in Properties.
+2. Press Number, On / off or Choice to add one.
+3. Open its row: set Lowest, Highest, Step, Unit and Starts at for a number, Starts on for a switch, or the list of choices.
+4. When a control has moved it, the row says Now at … with Back to start.
+5. Renaming or deleting a variable updates the Controls that show it.
+
+#### Ask your agent
+
+- “Add a variable for gravity from 0 to 20 m/s² on this Frame and show it in the controls.”
+- “Make the speed variable a choice between slow, normal and fast.”
 
 ### Animated flow
 
@@ -428,8 +470,10 @@ An animated flow plays events over the links already on the canvas: a request go
 
 #### By hand
 
-1. Your agent usually builds it from the links on the canvas.
-2. Press play to run it; step through it, or scrub along its timeline.
+1. Your agent usually builds it from the links on the canvas; you can also add Animated flow from the + catalog.
+2. In Properties, add events row by row: pick the link or the two ends from a list, what travels, and when (in seconds).
+3. Set the duration with its slider, in seconds.
+4. Press play to run it; step through it, or scrub along its timeline.
 
 #### Ask your agent
 
@@ -444,8 +488,10 @@ A shader draws a picture from code and a few sliders, so you can see what each p
 
 #### By hand
 
-1. Your agent writes the shader and its parameters.
-2. Move the sliders; press play when it uses time.
+1. Your agent usually writes the shader; you can edit its code in Properties.
+2. Add, rename or remove parameters as rows: the code's declarations follow. Use a shared variable to bind one to a Frame's variable.
+3. Tick resolution or time when the code uses them.
+4. Move the sliders; press play when it uses time.
 
 #### Ask your agent
 
@@ -460,7 +506,8 @@ A file tree shows the structure of a project with a few words about each entry, 
 #### By hand
 
 1. Press + and choose File tree under Embeds.
-2. Open and close folders on the canvas.
+2. In Properties, add files and folders row by row; select a row to indent or outdent it, write its note, highlight or mute it, or make a folder start closed.
+3. Open and close folders on the canvas.
 
 #### Ask your agent
 
@@ -475,7 +522,7 @@ A checklist is a short list of steps you tick as you go. Your agent can read wha
 #### By hand
 
 1. Press + and choose Checklist under Blocks.
-2. Edit the items in the Properties panel.
+2. Select it and type in the + Add an item row at its end, then press Enter; or add, reorder and remove items in Properties.
 3. Tick them on the canvas.
 
 #### Ask your agent

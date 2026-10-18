@@ -4,13 +4,13 @@ import { isWhiteboardRenderer } from '../shared/whiteboard';
 import React, { useRef, useState } from 'react';
 import { Animated, Image, Pressable, View, type GestureResponderEvent } from 'react-native';
 import { openExternalUrl } from './host';
-import { copyText, Icon, ScrollView, useToast } from './host';
+import { copyText, Icon, ScrollView, TextInput, useToast } from './host';
 import type { BlockType, CanvasBlock, CanvasDocument } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { connectionsOf, hasCommunication, newId, propertyValue, safeUrl, nodeDensity } from './logic';
 import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
-import { Modal, Button, CheckRow, Chip, Field, IconButton, OptionRow, Txt, useUI } from './ui';
+import { Modal, Button, CheckRow, Chip, Field, IconButton, Input, OptionRow, Txt, useUI } from './ui';
 import { WebFrame, WebMedia } from './web';
 import { mediaSource } from './media';
 import { ImageViewer } from './ImageViewer';
@@ -59,6 +59,23 @@ function FormBody({ block, type, controller: c, saved }: { block: CanvasBlock; t
   };
   return <View style={{ gap: 8 }}>{type.properties.map(p => p.kind === 'boolean' ? <CheckRow key={p.key} label={p.label} checked={values.current[p.key] === true} disabled={c.offline || submitting} onPress={() => { const checked = values.current[p.key] !== true; values.current[p.key] = checked; dirty.current.add(p.key); render(n => n + 1); void save(p, checked).catch(e => setError(String(e))); }} /> : <Field key={p.key} label={p.label} required={p.required} value={p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : str(block.data[p.key])} disabled={c.offline || submitting} multiline={p.kind === 'json'} mono={p.kind !== 'text'} onDraft={value => { values.current[p.key] = value; dirty.current.add(p.key); }} onSave={value => save(p, value)} />)}{error && <Txt kind="small">{error}</Txt>}<Button label={submitting ? 'Saving…' : 'Save'} variant="primary" small disabled={c.offline || submitting} onPress={() => { void (async () => { setSubmitting(true); setError(''); try { const documentId = c.current.current?.document.id; await c.settle(); if (documentId !== c.current.current?.document.id) return; const data = Object.fromEntries(type.properties.map(p => [p.key, propertyValue(p.kind, values.current[p.key])])) as CanvasBlock['data']; const result = await c.edit([{ type: 'block.update', id: block.id, patch: { data } }], `Save form “${block.title}”`); if (!result) throw new Error('The form was not saved.'); await saved(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSubmitting(false); } })(); }} /></View>;
 }
+/** The title, typed in place: Enter or leaving the field saves it, Escape keeps the old one. */
+function TitleEditor({ title, save, close }: { title: string; save(title: string): Promise<unknown>; close(): void }) {
+  const u = useUI(), [text, setText] = useState(title), done = useRef(false);
+  const finish = (keep: boolean) => { if (done.current) return; done.current = true; const next = text.replace(/\s*\n\s*/g, ' ').trim().slice(0, 300); close(); if (keep && next !== title) void save(next); };
+  return <TextInput nativeID="lienzo-title-editor" accessibilityLabel="Title" autoFocus selectTextOnFocus value={text} onChangeText={setText} placeholder="Untitled" placeholderTextColor={u.c.foregroundMuted}
+    onSubmitEditing={() => finish(true)} onBlur={() => finish(true)} onKeyPress={e => { if (e.nativeEvent.key === 'Escape') finish(false); }}
+    style={[u.font('heading'), { padding: 0, margin: 0, borderWidth: 0, borderBottomWidth: 1.5, borderColor: u.c.accent, backgroundColor: 'transparent', outlineStyle: 'none' } as object]} />;
+}
+/** The last row of a selected checklist: type an item and press Enter. It lands at the end, not done. */
+function ChecklistAdd({ onAdd }: { onAdd(label: string): Promise<unknown> }) {
+  const u = useUI(), [text, setText] = useState('');
+  const add = () => { const label = text.replace(/\s*\n\s*/g, ' ').trim(); if (!label) return; setText(''); void onAdd(label).then(result => { if (!result) setText(label); }); };
+  return <View nativeID="lienzo-checklist-add" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 0, marginTop: 2 }}>
+    <View style={{ width: 16, alignItems: 'center' }}><Icon name="Plus" size={14} color={u.c.foregroundMuted} /></View>
+    <View style={{ flex: 1 }}><Input label="Add an item" placeholder="Add an item" value={text} onChange={setText} onSubmit={add} style={{ height: u.compact ? 44 : 28, backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0 }} /></View>
+  </View>;
+}
 function Media({ block, fill = false, bare = false }: { block: CanvasBlock; fill?: boolean; bare?: boolean }) {
   const u = useUI(), toast = useToast(), source = mediaSource(block.data.url, block.data.mediaKind), [failed, setFailed] = useState(false), [playing, setPlaying] = useState(false), [expanded, setExpanded] = useState(false);
   const url = source?.url;
@@ -77,6 +94,7 @@ function Media({ block, fill = false, bare = false }: { block: CanvasBlock; fill
   return <View style={{ gap: 8, flexGrow: fill ? 1 : undefined }}>{player}{embed && playing && <Button label="Close player" small variant="ghost" onPress={() => setPlaying(false)} />}<Button label="Open reference" small variant="ghost" icon="ExternalLink" onPress={open} />{!!block.data.caption && <Txt kind="small" muted>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
 }
 export function BlockCard({ block, controller: c, selected, onSelect, onInspect, onPacks, onReorder, headerHandlers, onMeasure, outline = false, dragging = false, dim = false, onHover, detailsSide = 'right', cursor, height }: { block: CanvasBlock; controller: CanvasController; selected: boolean; onSelect: (id: string, event?: GestureResponderEvent, multi?: boolean) => void; onInspect: () => void; onPacks: () => void; onReorder: (id: string, direction: number) => void; headerHandlers?: object; onMeasure?: (height: number) => void; outline?: boolean; dragging?: boolean; dim?: boolean; onHover?: (id: string, inside: boolean) => void; detailsSide?: 'right' | 'bottom'; cursor?: string; height?: Animated.Value }) {
+  const [renaming, setRenaming] = useState(false), lastPress = useRef(0);
   const u = useUI(), toast = useToast(), type = c.catalog?.blockTypes.find(t => t.id === block.typeId), v = visual(type), [focus, setFocus] = useState(false), [hovered, setHovered] = useState(false), [answer, setAnswer] = useState(str(block.data.answer)), [hint, setHint] = useState(false);
   React.useEffect(() => setAnswer(str(block.data.answer)), [block.data.answer]);
   const presentation = usePresentation(c), gateIds = presentation?.hiddenBy.get(block.id);
@@ -88,6 +106,9 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   const sized = !!height && !outline;
   const pending = c.pendingIds.includes(block.id), writeFailure = c.failure?.affectedIds?.includes(block.id) ? c.failure : null;
   const disabled = pending || c.offline;
+  // A second press on a selected card within a moment renames it in place (double-click); one press selects it.
+  const press = (e: GestureResponderEvent) => { const now = Date.now(), again = selected && c.selection.length === 1 && !outline && !disabled && now - lastPress.current < 400; lastPress.current = now; if (again) { setRenaming(true); return; } onSelect(block.id, e); };
+  const titleEditor = renaming ? <TitleEditor title={block.title} save={title => c.edit([{ type: 'block.update', id: block.id, patch: { title } }], 'Edit title')} close={() => setRenaming(false)} /> : null;
   const fieldSave = (key: string, value: unknown) => c.edit([{ type: 'block.update', id: block.id, patch: { data: { [key]: value } as CanvasBlock['data'] } }], `Edit “${key}”`);
   const generic = () => <View style={{ gap: 8 }}>{(type?.properties ?? Object.keys(block.data).map(key => ({ key, label: key, kind: 'json' }))).map(p => <View key={p.key} style={{ gap: 4 }}><Txt kind="label" muted>{p.label}</Txt><Txt kind={p.kind === 'json' || p.kind === 'number' ? 'code' : 'body'} selectable numberOfLines={outline ? undefined : p.kind === 'json' ? 4 : 8}>{typeof block.data[p.key] === 'boolean' ? block.data[p.key] ? 'Yes' : 'No' : str(block.data[p.key])}</Txt></View>)}</View>;
   let body: React.ReactNode = generic(), qualifier = '';
@@ -101,7 +122,9 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
     body = <View style={{ gap: 4, backgroundColor: u.c.surface2, borderRadius: 6, padding: 8 }}><View style={{ position: 'absolute', right: 0, top: 0, zIndex: 1 }}><IconButton label="Copy code" icon="Copy" onPress={() => { void copyText(str(block.data.code)).then(() => toast.show('Code copied')).catch(() => toast.error('Select the code to copy it.')); }} /></View><ScrollView horizontal><Txt kind="code" selectable>{(outline || sized ? lines : lines.slice(0, 12)).join('\n')}</Txt></ScrollView>{!outline && !sized && lines.length > 12 && <Txt kind="label" muted>… {lines.length - 12} more lines</Txt>}</View>;
   } else if (renderer === 'checklist' && Array.isArray(block.data.items)) {
     const items = block.data.items.map(item => typeof item === 'string' ? { label: item, done: false } : { label: str((item as { label?: unknown })?.label), done: !!(item as { done?: unknown })?.done }); qualifier = `${items.filter(i => i.done).length}/${items.length}`;
-    body = <View style={{ marginVertical: -3 }}>{items.map((item, i) => <CheckRow key={i} label={item.label} checked={item.done} tone="exito" strike={item.done} disabled={disabled} onPress={() => { void fieldSave('items', items.map((old, index) => index === i ? { ...old, done: !old.done } : old)); }} />)}</View>;
+    body = <View style={{ marginVertical: -3 }}>{items.map((item, i) => <CheckRow key={i} label={item.label} checked={item.done} tone="exito" strike={item.done} disabled={disabled} onPress={() => { void fieldSave('items', items.map((old, index) => index === i ? { ...old, done: !old.done } : old)); }} />)}
+      {!items.length && !selected && <Txt kind="small" muted style={{ paddingVertical: 4 }}>No items yet. Select the card to add some.</Txt>}
+      {selected && !outline && !disabled && items.length < 200 && <ChecklistAdd onAdd={label => fieldSave('items', [...items, { label, done: false }])} />}</View>;
   } else if (renderer === 'quiz' && Array.isArray(block.data.options)) {
     qualifier = `${block.data.options.length} options`;
     body = <View style={{ gap: 6 }}><Txt style={{ marginBottom: 2 }}>{str(block.data.question)}</Txt>{block.data.options.map((option, i) => <OptionRow key={i} label={str(option)} selected={answer === str(option)} disabled={c.offline} onPress={() => setAnswer(str(option))} />)}<Button label="Answer" variant="primary" small icon="Check" style={{ alignSelf: 'flex-start', marginTop: 2 }} disabled={disabled || !answer || answer === block.data.answer} onPress={() => { void fieldSave('answer', answer); }} />{renderer === 'quiz' && block.data.hint && <><Button label="Show hint" small variant="ghost" style={{ alignSelf: 'flex-start' }} disabled={disabled || hint} onPress={() => { setHint(true); void recordInteraction(c, block.id, 'quiz.hint', null, `Hint for “${block.title}”`).catch(() => {}); }} />{hint && <View style={{ backgroundColor: u.wash('turquesa'), padding: 8, borderRadius: 6 }}><Txt>{str(block.data.hint)}</Txt></View>}</>}{block.data.answer && block.data.explanation && <Txt>{str(block.data.explanation)}</Txt>}</View>;
@@ -141,10 +164,10 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
     const note = selected && !outline && !dragging && c.selection.length === 1 && !!details;
     return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ opacity, height: sized ? height : undefined }}>
       {(selected || focus) && <View pointerEvents="none" style={{ position: 'absolute', top: -3, bottom: -3, left: -3, right: -3, borderRadius: G.node.radius + 3, backgroundColor: selected ? u.halo : withAlpha(u.c.foregroundMuted, .3) }} />}
-      <Pressable nativeID={`lienzo-grab-${block.id}`} {...headerHandlers} accessibilityRole="button" accessibilityLabel={`${kind || type!.name}: ${block.title}${status ? `, ${status}` : ''}`} accessibilityState={{ selected }} onHoverIn={() => hover(true)} onHoverOut={() => hover(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onPress={e => onSelect(block.id, e)} onLongPress={e => onSelect(block.id, e, true)}
+      <Pressable nativeID={`lienzo-grab-${block.id}`} {...headerHandlers} accessibilityRole="button" accessibilityLabel={`${kind || type!.name}: ${block.title}${status ? `, ${status}` : ''}`} accessibilityState={{ selected }} onHoverIn={() => hover(true)} onHoverOut={() => hover(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onPress={press} onLongPress={e => onSelect(block.id, e, true)}
         style={{ flex: sized ? 1 : undefined, minHeight: G.node.minHeight, overflow: 'hidden', backgroundColor: u.c.surface1, borderRadius: G.node.radius, borderWidth: selected ? 2 : 1, borderColor: writeFailure ? u.c.statusDanger : selected || dragging ? u.c.accent : hovered ? withAlpha(u.c.foregroundMuted, .5) : u.c.border, paddingVertical: G.node.paddingV - (selected ? 1 : 0), paddingHorizontal: G.node.paddingH - (selected ? 1 : 0), gap: G.node.gap, ...grab }}>
         {(!!kind || !!status || hasCommunication(block.communication)) && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 16 }}><Txt kind="label" muted numberOfLines={1} style={{ flex: 1 }}>{kind}</Txt>{hasCommunication(block.communication) && <Icon name="Compass" size={12} color={u.c.accent} />}{!!status && <View style={{ maxWidth: 96, minHeight: 16, paddingHorizontal: 6, borderRadius: tokens.radius.pill, backgroundColor: u.wash(tone), justifyContent: 'center' }}><Txt kind="label" numberOfLines={1} style={{ color: tone === 'neutro' ? u.c.foregroundMuted : u.tone(tone), textTransform: 'none', letterSpacing: 0, fontWeight: '600' }}>{status}</Txt></View>}</View>}
-        <Txt kind="heading" numberOfLines={outline ? undefined : G.node.titleLines}>{block.title || 'Untitled'}</Txt>
+        {titleEditor ?? <Txt kind="heading" numberOfLines={outline ? undefined : G.node.titleLines}>{block.title || 'Untitled'}</Txt>}
         {!!summary && <Txt kind="small" muted numberOfLines={outline || sized ? undefined : c.view ? nodeDensity(c.view.document, block).summaryLines : G.node.summaryLines}>{summary}</Txt>}
         {outline && !!details && <Txt selectable style={{ marginTop: 4 }}>{details}</Txt>}
         {outline && connections}{state}
@@ -157,8 +180,8 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ opacity, height: sized ? height : undefined }}>
     {(selected || focus) && <View pointerEvents="none" style={{ position: 'absolute', top: -3, bottom: -3, left: -3, right: -3, borderRadius: 13, backgroundColor: selected ? u.halo : withAlpha(u.c.foregroundMuted, .3) }} />}<View style={{ flex: sized ? 1 : undefined, backgroundColor: u.c.surface1, borderWidth: selected ? 2 : 1, borderColor: writeFailure ? u.c.statusDanger : selected || dragging ? u.c.accent : hovered ? withAlpha(u.c.foregroundMuted, .5) : u.c.border, borderRadius: 10, overflow: 'hidden', paddingVertical: selected ? 11 : 12, paddingRight: selected ? 13 : 14, paddingLeft: selected ? 16 : 17, gap: 8, minHeight: tokens.size.blockMinHeight }}><View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: tokens.border.spine, backgroundColor: v.tone === 'neutro' ? u.c.border : u.tone(v.tone as Tone) }} />
       {/* A titled block needs no label saying what it is: its content shows it. Only an untitled one keeps its type name. */}
-      <Pressable nativeID={`lienzo-grab-${block.id}-header`} {...headerHandlers} accessibilityRole="button" accessibilityLabel={`${type?.name ?? block.typeId}: ${block.title}`} onHoverIn={() => hover(true)} onHoverOut={() => hover(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onPress={e => onSelect(block.id, e)} onLongPress={e => onSelect(block.id, e, true)} style={{ minHeight: u.compact ? 24 : 20, flexDirection: 'row', gap: 6, alignItems: 'flex-start', ...grab }}>
-        {block.title ? <Txt kind="heading" numberOfLines={outline ? undefined : 3} style={{ flex: 1 }}>{block.title}</Txt> : <View style={{ flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', minHeight: 20 }}><Icon name={v.icon} size={14} color={u.tone(v.tone as Tone)} /><Txt kind="label" muted numberOfLines={1} style={{ flex: 1 }}>{type?.name ?? block.typeId}</Txt></View>}
+      <Pressable nativeID={`lienzo-grab-${block.id}-header`} {...headerHandlers} accessibilityRole="button" accessibilityLabel={`${type?.name ?? block.typeId}: ${block.title}`} onHoverIn={() => hover(true)} onHoverOut={() => hover(false)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onPress={press} onLongPress={e => onSelect(block.id, e, true)} style={{ minHeight: u.compact ? 24 : 20, flexDirection: 'row', gap: 6, alignItems: 'flex-start', ...grab }}>
+        {titleEditor ? <View style={{ flex: 1 }}>{titleEditor}</View> : block.title ? <Txt kind="heading" numberOfLines={outline ? undefined : 3} style={{ flex: 1 }}>{block.title}</Txt> : <View style={{ flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', minHeight: 20 }}><Icon name={v.icon} size={14} color={u.tone(v.tone as Tone)} /><Txt kind="label" muted numberOfLines={1} style={{ flex: 1 }}>{type?.name ?? block.typeId}</Txt></View>}
         {!!qualifier && <Txt kind="label" muted numberOfLines={1} style={{ lineHeight: 20 }}>{qualifier}</Txt>}
         {c.view?.document.example && renderer === 'preview-frame' && <Chip label="Example" tone="aviso" icon="FlaskConical" center />}</Pressable>
       {sized ? <ScrollView nativeID={`lienzo-scroll-${block.id}`} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ flexGrow: 1, gap: 8 }}>{body}{connections}{state}</ScrollView> : <>{body}{connections}{state}</>}

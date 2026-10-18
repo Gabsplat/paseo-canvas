@@ -54,6 +54,12 @@ chromium --headless=new --no-first-run --disable-gpu --remote-debugging-port=922
 LIENZO_SHOTS="$PWD/dist/shots" node dist/panel-qa/screens.cjs papel
 ```
 
+`ux.cjs` edits every overhauled block by hand through Properties and the canvas (checklist, node, file tree, Controls
+with new variables, animated flow, raw JSON, the Lienzo's Variables) and writes `ux-*-<theme>.png` to `$LIENZO_SHOTS`.
+It needs a window at least 1600 wide so the right panel does not cover the cards: start Chromium with
+`--window-size=1600,1000`, then `node dist/panel-qa/ux.cjs oscuro` and `node dist/panel-qa/ux.cjs papel`. When another harness already holds the
+ports, serve and debug elsewhere and pass `LIENZO_HTTP` and `LIENZO_CDP` (for example 8791 and 9341).
+
 `screens.cjs`, `guide.cjs`, `wiki.cjs`, `desktop-screens.cjs` and `desktop-wiki.cjs` write their captures to `$LIENZO_SHOTS`
 (default `/tmp`). `wiki.cjs` and `desktop-wiki.cjs` take other ports from `$LIENZO_QA_PORT` and `$LIENZO_DEBUG_PORT`, and
 answer requests to raw.githubusercontent.com with the files in `marketplace/`, so they need no network. Some

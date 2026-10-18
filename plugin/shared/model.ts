@@ -76,6 +76,10 @@ export const documentSchema = documentContentSchema.extend({
 export const propertySchema = z.object({
   key: idSchema, label: z.string().min(1).max(200),
   kind: z.enum(["text", "number", "boolean", "json"]), required: z.boolean().default(false),
+  // Hints for the Properties panel; the stored value is the same. options: suggested values for a text property
+  // (the person picks one or types another). advanced: shown under "More options" until it holds a value.
+  // help: one short line under the field.
+  options: z.array(z.string().min(1).max(80)).max(24).optional(), advanced: z.boolean().optional(), help: z.string().max(200).optional(),
 }).strict();
 export const blockTypeSchema = z.object({
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),

@@ -785,9 +785,11 @@ style. Prefer four or fewer series per figure.
 
 Slider row has a visible name, value with unit, bounded track and default tick. Values use
 value typography with tabular numerals. While dragging the current value updates every frame.
-Keyboard arrows use declared step; Home/End reach bounds. Touch targets are 44. Missing variables
-show "Falta declarar la variable {name}" and disable only the affected control. A collapsed group
-may show a short variables strip, but no empty strip appears without declarations.
+Keyboard arrows use declared step; Home/End reach bounds. Touch targets are 44. An on/off variable is a check row
+(the label, checked when 1); a choice is a row of pill buttons, the chosen one in the accent; both save at once. A
+missing variable shows "{name} is not declared on this Frame or the Lienzo. Declare it in Properties → Variables." and
+disables only that control. A collapsed group may show a short variables strip, but no empty strip appears without
+declarations.
 
 ### 18.4 Transport and readouts
 
@@ -1166,8 +1168,9 @@ use. There is no view switcher, no alternative readings and no extension views.
 under the top islands, its height to above the zoom. It shows when something is selected, when the tool in hand has
 options, or when an extension tool is open, with a tab per source: Properties (the selection), "<Tool> options", and
 one tab per extension tool; picking a drawing tool brings its tab forward. The pin keeps it open with nothing
-selected, showing the Lienzo (description, instructions for the agent, layout); ⌘\ and the `PanelRight` button hide
-it or bring it back. Sections fold under 12 px headers. A block shows Content (title and every field of its type),
+selected, showing the Lienzo (description, instructions for the agent, layout, Variables); ⌘\ and the `PanelRight` button hide
+it or bring it back. Sections fold under 12 px headers. A block shows Content (title, the fields that matter, More
+options and Raw data (JSON), §36),
 Style for drawings, Instructions for the agent (with those it inherits), Connect (search a target) and Actions (edit
 on the canvas, interact, reset, duplicate, export, release position, take out of the Frame, move
 earlier/later, automatic size, delete). A Frame adds its title and purpose, Layout and Variables. A link shows label,
@@ -1350,3 +1353,69 @@ Source, and Install… or an "Installed" chip or Update…), an offline strip in
 list, an empty "out of reach" card with Try again, and a "Share yours here" card. Publish… on one's own card shows a
 three-step card in the accent border (Checked, Saved extension.json, Propose it on GitHub with Open GitHub).
 Verified with `design/whiteboard-harness/wiki.cjs` (dark, `papel`, compact); captures in `design/qa-wiki-2026-10/`.
+
+## 36. Properties for people
+
+Owner's direction: everything an agent can set, a person can set by hand, without JSON and without the docs. The
+same data goes to the server; editors only change how it is entered. Logic in `client/property-model.ts`, components in
+`client/PropertyEditors.tsx`, tokens in `face.properties`, audit in `docs/ux-audit-2026-10.md`.
+
+**Content, in order.** Title (optional, placeholder "Untitled"); the fields that matter; "More options" with a count,
+holding the fields a type marks `advanced` until they hold a value other than the default; "Raw data (JSON)" last.
+Required fields carry `*` only while empty. A field's `help` is one muted line under its label. Fields a structured
+editor writes together with another (a tree's closed folders) do not show on their own.
+
+**Disclosures.** A 28 px row (44 on compact): a 12 px chevron, a small muted semibold label, the count on the right.
+Closed by default. They fold in place inside the section; nothing floats over the panel.
+
+**List editors** (checklist, file tree, flow events, link settings, choices of a variable). Rows of 30 px (44 on
+compact) with 2 px between them and a 6 px radius. Inputs in a row are borderless until the row is active; the
+active row is washed in the foreground at 8 % and shows its tools on the right or on a second line: move up, move
+down, remove (danger tone), and for trees outdent, indent, highlight, mute, starts closed and the card it opens. Small
+tools are 24 px icon buttons with tooltips. Adding is a ghost button or an "Add an item and press Enter" field at the
+end, so the list grows where the person is looking. A list never asks for an index or an ID.
+
+**Pickers.** A 30 px field with the current choice and a chevron that opens a list in place under it (at most 280 px,
+then it scrolls), never a floating menu that could clip in the panel. Rows show a name and a muted detail ("Number ·
+Frame “Physics”", "Frame"). Links read "From → To · label".
+
+**Words with a vocabulary.** Status is a wrap of pill chips: None, the type's statuses, Other…; each known word has
+its tone's dot and, when chosen, its tone's border and wash, the same colour as the chip on the card. Other… opens a
+one-line field. Kind, language and other text with `options` keep a free field; suggestions show as chips under it
+while it is in use (always, when there are six or fewer), filtered by what is typed, and include words this Lienzo
+already uses for that field.
+
+**Numbers in human units.** Durations are typed in seconds next to a slider; they are stored in milliseconds. Small
+number boxes carry a 11 px muted label above them ("Lowest", "Highest", "Step", "At (s)") and keep what is typed until
+it is a number.
+
+**Variables** (on the Lienzo, on every Frame, and inside Controls). A row per variable: its mark (the `viz.series`
+colour and shape of its declaration order, §18.3), its label, a muted line with the type or range and how many
+Controls show it, its current value in code type, a chevron. Opening a row edits it in place: Label; Type as segments
+(Number · On / off · Choice); for numbers Lowest, Highest, Step, Unit and "Starts at" with a slider; for on/off
+"Starts on"; for choices a radio and a field per choice, "Add a choice"; "Name in code" (filled from the label until
+edited); "Now at …, moved by a control" with "Back to start" when the runtime value differs; "Delete variable".
+"Number", "On / off" and "Choice" buttons add one. Renaming or deleting carries the Controls that show it.
+
+**Controls.** "Variables shown, n of 4": a row per variable (mark, label, type and where it lives, move up/down,
+stop showing), opening into the same variable form. "Show a variable…" lists what the block can reach; "New variable"
+opens a small card: label, type, and "Shared by" (This Frame · The Lienzo) when the block sits in a Frame.
+
+**Shader parameters.** Rows like variables; adding, renaming or removing one rewrites its declaration in the code;
+"Use a shared variable" binds it by name. Resolution and time are two check rows.
+
+**Raw data (JSON).** One line saying it is exactly what the agent reads and writes; a monospaced box (140–360 px);
+while edited, a muted "Looks right." or the first problem in the danger tone; Apply (primary, only when valid) and
+Revert. Applying replaces the whole object in one transaction.
+
+**Saving.** Edits save 600 ms after the last keystroke, at once for structural actions (add, remove, move, tick,
+choose), each as one labelled transaction with undo. Editing stays open while an earlier change is saving: edits
+queue. A refusal says why in words under the editor ("Not saved · Two parameters have the same name.") with Retry;
+the draft stays.
+
+**On the canvas.** A selected checklist ends with a "+ Add an item" row: type and press Enter. A second press on a
+selected card within 400 ms (a double click) turns its title into a field: Enter or leaving saves, Escape keeps the old
+one. An empty Controls card says where to pick variables.
+
+Verified with `design/whiteboard-harness/ux.cjs` (headless Chromium, example data, dark and light); captures in
+`design/qa-ux-2026-10/`.
