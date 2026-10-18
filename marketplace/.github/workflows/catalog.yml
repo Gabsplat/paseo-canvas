@@ -1,0 +1,52 @@
+# Checks every pull request against the catalog's rules, and rebuilds index.json (what Lienzo's Discover reads)
+# whenever main changes. No dependencies beyond Node.
+name: Catalog
+on:
+  pull_request:
+    paths: ["extensions/**", "scripts/**", "schema/**"]
+  push:
+    branches: [main]
+    paths: ["extensions/**", "scripts/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: catalog-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate the extension files
+        run: node scripts/build-index.mjs --check
+      - name: Build the index (not committed on pull requests)
+        run: node scripts/build-index.mjs --out "$RUNNER_TEMP/index.json"
+  index:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build index.json
+        run: node scripts/build-index.mjs
+      - name: Commit index.json when it changed
+        run: |
+          if git diff --quiet -- index.json; then echo "index.json is up to date"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          git commit -m "Rebuild index.json"
+          git push

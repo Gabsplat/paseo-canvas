@@ -1099,6 +1099,7 @@ const baseTokens = {
     "sheet": { "width": 560, "row": 36, "keyChip": 22 },
     "hojas": { "$doc": "Sheet menu and following the agent (stage 2).", "button": 32, "menuWidth": 280, "row": 34, "glow": 6 },
     "eggs": { "$doc": "Small, discreet, never over content; off under reduced motion.", "mate": 84, "steamMs": 2400, "kettle": 44, "kettleMs": 4200, "loader": 20, "loaderMs": 1800, "loaderChance": 0.25 },
+    "wiki": { "$doc": "Help, the in-app wiki (§35.7): a wider rail with search, and pages up to 720 wide with a picture beside the title.", "rail": 248, "railRow": 32, "pageMax": 720, "sideBySide": 560, "art": 200 },
     "screens": { "$doc": "Screens around the canvas (docs/redesign-2026-10.md, UI pass): one large sheet over the dimmed canvas.", "maxWidth": 960, "maxHeight": 680, "margin": 24, "radius": 16, "dim": 0.4, "rail": 220, "railRow": 36, "railWash": 0.12, "padding": 32, "gap": 16, "title": { "size": 30, "lineHeight": 36, "letterSpacing": -0.4 }, "card": { "radius": 12, "padding": 18, "hoverBorder": 0.2, "lift": 1, "hoverMs": 160 }, "label": { "size": 11, "tracking": 0.06 }, "enterMs": 220, "enterScale": 0.98, "staggerMs": 30, "staggerMax": 12, "thumb": { "height": 136, "minColumn": 228, "padding": 14 }, "shadow": { "light": [[0,2,6,0,0.06],[0,28,72,0,0.2]], "dark": [[0,2,6,0,0.4],[0,28,72,0,0.6]] }, "onboarding": { "sceneMs": 6000, "stage": 0.6, "minStage": 300 } }
   },
   "toolbar": {

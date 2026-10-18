@@ -1243,7 +1243,7 @@ way. Logic in `plugin/client/Hojas.tsx` and `hojas-model.ts`; verified with `des
 
 ## 35. The screens around the canvas
 
-Lienzos, the guide, Settings, Extensions and History are screens, not small modals (`client/Screen.tsx`, tokens
+Lienzos, the guide, Help, Settings, Extensions and History are screens, not small modals (`client/Screen.tsx`, tokens
 `face.screens`). They share one language; the logic behind them lives in `client/screens.ts` and is tested on its own
 (`tests/screens.test.ts`). Verified with `design/whiteboard-harness/screens.cjs` (dark, `papel`, compact) and
 `desktop-screens.cjs` (the desktop preview); captures in `design/qa-screens-2026-10/`.
@@ -1323,6 +1323,36 @@ Each entry: a round glyph on a thin rail, the actor ("You", or the agent's name 
 happened (the transaction label) and the time; undo and redo entries show their own glyph. Chips name the changed
 things that still exist; pressing one closes the sheet, selects it and flies the camera there. Undo and Redo sit on
 the title row. Empty: "Nothing yet."
+
+### 35.7 Help
+
+Help is the in-app wiki: menu → Help, ⌘K ("Help", and matching pages under a Help group while searching), the
+`CircleHelp` button in the header of the Properties panel (the page of what is selected: its block type, a Frame or a
+Sheet, a link, several things) and of an extension tool's tab, and Help on each extension card. It uses the sheet of
+§35.1 with its own wider rail (`face.wiki`: 248, rows of 32) on `surface0`: the small-caps title, a search field, and
+every page grouped under its section label (Start here, Drawing, Shapes, Text, Frames, Sheets, Windows & media,
+Interactive blocks, Mini apps, Lenses, Shortcuts, Agents, Extensions, Make your own), scrolling on its own. While
+there is a query the rail lists the matching pages instead ("3 pages"; "Nothing matches …"). The page is at most 720
+wide: the section in accent small caps with its icon, the serif display title, the summary in 15/22 muted, the
+shortcut as key chips (the keys in use, with the person's changes), and a 200-wide picture in a card beside the title
+(above it below 560). Then the purpose in 14/22, **By hand** as numbered steps in accent-washed circles, **Ask your
+agent** as prompt rows (a chat glyph, the prompt in quotes, a copy button; one line says the canvas never sends to
+the agent), **Tips** with a lightbulb in the warning tone, longer Markdown, and **Related** as pill links. The
+Keyboard shortcuts page lists the live registry. Compact: full screen; the index ("Help", search, topics) and the
+page alternate, with "All topics" to go back.
+
+Pictures are data (`shared/wiki/art.ts`, a 160 × 100 box of cards, boxes, ellipses, lines, strokes, windows, sliders,
+keys) drawn with views in the theme's tones (`client/WikiArt.tsx`); they are hidden from screen readers. Markdown
+(Help bodies and extension `docs`) is drawn by `client/Markdown.tsx`: headings in `title`/`heading`, paragraphs at
+21 line height, notes on an accent wash with a 3 px rule, code in a bordered `surface0` box with its language and a
+copy button, links in the accent. Installed extensions add pages under Extensions; one without `docs` says so.
+
+The Extensions screen (§35.5) gains a segmented control, Installed · Discover. Discover: a search field and Refresh,
+cards in the same grid (turquoise icon tile, name, "By …" or "From the catalog", description, permission chips,
+Source, and Install… or an "Installed" chip or Update…), an offline strip in the warning tone with the age of the kept
+list, an empty "out of reach" card with Try again, and a "Share yours here" card. Publish… on one's own card shows a
+three-step card in the accent border (Checked, Saved extension.json, Propose it on GitHub with Open GitHub).
+Verified with `design/whiteboard-harness/wiki.cjs` (dark, `papel`, compact); captures in `design/qa-wiki-2026-10/`.
 
 ## 36. Properties for people
 

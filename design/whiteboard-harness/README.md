@@ -42,6 +42,7 @@ omabox run -- node "$PWD/dist/panel-qa/copilot.cjs"
 omabox run -- node "$PWD/dist/panel-qa/screens.cjs" oscuro          # Lienzos, guide, Settings, Extensions, History
 omabox run -- node "$PWD/dist/panel-qa/screens.cjs" papel compact   # any of oscuro|papel, with or without compact
 omabox run -- node "$PWD/dist/panel-qa/guide.cjs"
+omabox run -- node "$PWD/dist/panel-qa/wiki.cjs" papel compact   # Help, Discover (catalog served locally), Publish…
 ```
 
 The scenarios also run against a plain headless Chromium (no omabox), which is how the screens were verified:
@@ -59,7 +60,9 @@ It needs a window at least 1600 wide so the right panel does not cover the cards
 `--window-size=1600,1000`, then `node dist/panel-qa/ux.cjs oscuro` and `node dist/panel-qa/ux.cjs papel`. When another harness already holds the
 ports, serve and debug elsewhere and pass `LIENZO_HTTP` and `LIENZO_CDP` (for example 8791 and 9341).
 
-`screens.cjs`, `guide.cjs` and `desktop-screens.cjs` write their captures to `$LIENZO_SHOTS` (default `/tmp`). Some
+`screens.cjs`, `guide.cjs`, `wiki.cjs`, `desktop-screens.cjs` and `desktop-wiki.cjs` write their captures to `$LIENZO_SHOTS`
+(default `/tmp`). `wiki.cjs` and `desktop-wiki.cjs` take other ports from `$LIENZO_QA_PORT` and `$LIENZO_DEBUG_PORT`, and
+answer requests to raw.githubusercontent.com with the files in `marketplace/`, so they need no network. Some
 older scenarios assume the window size of the omabox they were written in: `chrome.cjs` needs a 1440-wide viewport,
 and `features.cjs`, `frames.cjs` and `library.cjs` fail in a plain headless window both before and after the screens
 work. `desktop-screens.cjs` checks the desktop preview with the real core and store:
