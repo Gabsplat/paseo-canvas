@@ -49,19 +49,19 @@ optional `AgentSheet`. `shared/contract.ts` defines `defineRpc` and `defineSetti
 so neither the shared contracts nor the server need the SDK.
 
 `plugin/server/core.ts` builds the store, service, tool router, copilot and every panel RPC on any `ServerHost`. A
-host that runs agents (`runsAgents: true`, Paseo) also gets agent verification, feedback delivery that wakes the
-agent, copilot reminders and lifecycle hooks. Tool injection at agent creation, session binding, the stdio MCP bridge
-and setup snippets stay in `server/paseo.ts`.
+host that runs agents (`runsAgents: true`, Paseo) also gets agent verification, the optional copilot reminder and
+lifecycle hooks. No RPC on any host sends anything to an agent. Tool injection at agent creation, session binding, the
+stdio MCP bridge and setup snippets stay in `server/paseo.ts`.
 
 ## What differs from the plugin
 
 - **One workspace.** Every desktop document lives in the workspace `desktop`.
 - **Agents connect over MCP; the app runs none.** The Paseo agent dialog becomes a **Connect an agent** sheet with the
-  command for Claude Code, Codex and Cursor, the agents that have called in, and a plain statement that the app cannot
-  wake an agent. The agent chip shows the MCP client's name, with no working status.
-- **Actions are pulled, never pushed.** What the person sends from the canvas is stored as a pending event. The agent
-  reads it with `canvas_events` and acknowledges it, and the panel then shows "Received by the agent". Nothing starts a
-  turn. The queued toast says so.
+  command for Claude Code, Codex and Cursor, the agents that have called in, and a line saying to talk to the agent in
+  its own app. The agent chip shows the MCP client's name, with no working status.
+- **One-way, like the plugin.** The canvas never messages the agent. The person selects something and says "look at
+  what I selected" in the terminal; the agent reads it with `canvas_selection`, including the state that blocks and
+  mini apps left.
 - **No copilot chip.** The composer pill, copilot reminders and `canvas.agent.setup` are Paseo-only. The copilot
   setting exists in the state, but the desktop UI cannot turn it on. Agents see `copilot.enabled: false` and use the
   tools when the person asks.
@@ -110,17 +110,17 @@ Cursor, in `~/.cursor/mcp.json`:
 ```
 
 The tools are the plugin's (`canvas_list`, `canvas_create`, `canvas_read`, `canvas_apply`, `canvas_group`,
-`canvas_sheet`, `canvas_catalog`, `canvas_events`, `canvas_selection`, `canvas_history`, `canvas_undo`,
+`canvas_sheet`, `canvas_catalog`, `canvas_selection`, `canvas_history`, `canvas_undo`,
 `canvas_redo`, `canvas_example`, `canvas_runtime`), with the same schemas and results (see `docs/mcp.md`). Every
 session is identified by the client's declared name: `mcp:claude-code`, for example. That identity owns its undo
-history, and it becomes a canvas's recipient when it uses that canvas.
+history, and it becomes the canvas's connected agent when it uses that canvas.
 
 **An agent can** list, create, read and edit documents transactionally with revisions, use groups, Hojas, templates,
-packs and extensions, undo and redo its own edits, read the selection and its instructions, and read and acknowledge
-the person's actions.
+packs and extensions, undo and redo its own edits, and read the selection with its instructions and the state the
+person's interaction left on each block.
 
-**An agent cannot** be woken, receive a message from the canvas, or be reminded to draw. It sees the person's actions
-only when it calls `canvas_events`. The server only answers requests.
+**An agent cannot** be woken, receive a message from the canvas, or be reminded to draw. The server only answers
+requests.
 
 ## Known limits
 

@@ -29,11 +29,11 @@ design that v1 deliberately did not build.
 | IDs | server-generated + `clientId` mapping | concrete IDs supplied by the caller (or generated); `template.insert` / `entity.duplicate` remap with `idPrefix` |
 | Operations | see §6 | `document.update`, `communication.set`, `selection.set`, `block.create/update/delete`, `group.create/update/delete`, `entity.move`, `entity.duplicate`, `template.insert` |
 | Write result | `TransactionResult` | a full `DocumentView { document, connection, canUndo, canRedo, selectionVersion, runtimeVersion }` |
-| RPC names | `canvas.doc.*` | `canvas.list/read/create/mutate/watch/undo/redo/history`, `canvas.selection.set`, `canvas.connect`, `canvas.agent.action`, `canvas.agent.events(.flush)`, `canvas.catalog.read/mutate`, `canvas.pack.validate/import/export/instantiate`, `canvas.group.export`, `canvas.agent.setup`, `canvas.injection(.read)` |
+| RPC names | `canvas.doc.*` | `canvas.list/read/create/mutate/watch/undo/redo/history`, `canvas.selection.set`, `canvas.connect`, `canvas.runtime.read/set`, `canvas.copilot.*`, `canvas.sheet.*`, `canvas.catalog.read/mutate`, `canvas.pack.validate/import/export/instantiate`, `canvas.group.export`, `canvas.agent.setup`, `canvas.injection(.read)` |
 | Watch | `canvas.doc.watch` | `canvas.watch { knownRevision, knownRuntimeVersion }` → versions, plus `view` only when something changed |
 | MCP write | `canvas_apply` + `canvas_group` etc. | `canvas_apply` ≡ `canvas.mutate`; exact tool list in `docs/mcp.md` |
-| Feedback | `FeedbackEvent`, `delivers` per action spec | `canvas.agent.action { eventId, expectedRevision, action: { kind, label, payload, targetIds?, delivery: immediate \| batched } }` → `AgentEvent` with `status: pending \| sent \| failed \| acked` and a `context` copy of the document; batched events leave with `canvas.agent.events.flush` |
-| Agent connection | `connectedAgentId`, automatic injection | explicit `canvas.connect` from the UI (`DocumentView.connection`) chooses the feedback recipient; MCP callers are bound to a real agent and workspace, with injection **opt-in per workspace** (`canvas.injection`); connection is not a per-document access control |
+| Feedback | `FeedbackEvent`, `delivers` per action spec | **None: the canvas is one-way.** Nothing on the canvas sends to the agent. The person talks to the agent in their own chat; the agent reads `canvas_selection` (selection, effective instructions, block state) and `canvas_read`. What an interaction leaves is block data or runtime state (`lastInteraction`, a mini app's `state`). State files with the old event queue load with it dropped |
+| Agent connection | `connectedAgentId`, automatic injection | automatic on tool use, or pinned with `canvas.connect` from the UI (`DocumentView.connection`): it marks the agent working on a canvas and routes nothing; MCP callers are bound to a real agent and workspace, and every new agent gets the tools; connection is not a per-document access control |
 | Catalog | JSON-Schema props, slots, three layers | own `revision`; block types declare typed `properties` (`text/number/boolean/json`) + `defaults` + optional `renderer`; templates are plain `blocks` + `groups`; mutations `type.put`, `template.put`, `pack.import`, `pack.remove` |
 | Pack | `schema: "paseo-canvas.pack/1"` | `{ format: "paseo-canvas-pack", version: 1, id, name, description, blockTypes, templates, documents }`; `canvas.pack.import` supports `dryRun` and returns `{ diff, committed }` |
 | History | inverse ops per actor class | `canvas.history` entries `{ id, revision, actor: user \| agent \| system, label, at, changed, removed, kind: edit \| undo \| redo }`; `UNDO_BLOCKED` when undo is unsafe |
@@ -44,7 +44,8 @@ design that v1 deliberately did not build.
 between blocks, frame resizing, a server-side automatic layout engine, provenance labels,
 `clientId` resolution and template slots, the in-conversation timeline card (D11), and everything
 in §10 "future". The integration decisions in §2 otherwise stand; D10's attachment source and D11
-are optional extras, not part of the verified v1. Section 0 overrides integration names and storage
+are optional extras, not part of the verified v1. D9 (canvas actions sent to the agent as messages), the
+`canvas_events` tool of §7 and the feedback channel of §8 are retired: the canvas is one-way. Section 0 overrides integration names and storage
 proposals in sections 2–3 as well. See `plugin/server/tools.ts` for the current MCP names.
 
 The interactive explainer (`architecture/index.html`) uses the as-built names throughout.
@@ -54,8 +55,8 @@ The interactive explainer (`architecture/index.html`) uses the as-built names th
 ## 1. What the product is
 
 A persistent canvas that sits next to an agent conversation. The agent builds and edits the canvas
-through MCP tools; the user reads it, selects things, and acts on it; those selections and actions
-flow back to the agent as structured context. The canvas is a *shared working surface*, not a
+through MCP tools; the user reads it, selects things, and acts on it; the agent reads those selections
+and what the actions left as structured context when the user mentions them in the conversation. The canvas is a *shared working surface*, not a
 drawing tool: everything on it is a typed block the agent can read back and reason about.
 
 Five ideas carry the design:
@@ -66,8 +67,9 @@ Five ideas carry the design:
 4. **Instructions** — text that tells the agent how to communicate through this canvas.
 5. **Catalog** — the local library of block types, group templates and JSON packs.
 
-Two flows connect them: **transactions** (agent or user → document) and **feedback**
-(user → agent).
+Two flows connect them: **transactions** (agent or user → document) and **reads** (agent ← document: selection
+and block state). As built there is no feedback flow from the canvas to the agent (§0): the person talks to the
+agent in their own chat.
 
 ---
 
@@ -112,7 +114,7 @@ lose events when the app is backgrounded).
  │ RPC handlers ────────┼→ CanvasService → Store (fs, single queue)  │
  │ Hooks (agent.create, │        │                                   │
  │  session_open,       │        ├→ Catalog (types, templates, packs)│
- │  agent.archived)     │        └→ FeedbackDispatcher → paseo SDK   │
+ │  agent.archived)     │        └→ Copilot (optional reminder)      │
  └──────────────────────┴────────────────────────────────────────────┘
    ▲ plugin RPC (zod-validated, both directions)
  Paseo app — plugin client (index.client.tsx)
@@ -127,7 +129,7 @@ Suggested module split (backend engineer decides final names):
 ```text
 plugin/shared/   model.ts  ops.ts  rpc.ts  pack.ts  events.ts  errors.ts
 plugin/server/   store.ts  service.ts  reducer.ts  history.ts  catalog.ts  packs.ts
-                 bridge.ts  bridge-source.ts  tools.ts  agent-integration.ts  feedback.ts
+                 bridge.ts  bridge-source.ts  tools.ts  agent-integration.ts  copilot.ts
 plugin/client/   panel.tsx  canvas/…  inspector/…  catalog/…  web.ts
 ```
 
@@ -396,6 +398,9 @@ Requirements:
 ---
 
 ## 8. Selection and user feedback
+
+**Superseded (§0).** The canvas is one-way: none of the feedback channel below exists. Selection is read by the
+agent with `canvas_selection`; interactions are stored as block state. This section keeps the original rationale.
 
 Two channels with different costs.
 

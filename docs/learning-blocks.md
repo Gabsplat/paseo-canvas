@@ -99,8 +99,7 @@ type RendererProps<Data = unknown> = {
   ui: ReturnType<typeof useUI>;
   runtime: RendererRuntime;
   scope: RendererScope;
-  send(kind: string, payload: CanvasBlock['data'], label: string,
-       delivery?: 'immediate' | 'batched'): Promise<void>;
+  selection?: readonly string[]; select?(ids: string[]): void;
 };
 type ClientRenderer<Data = unknown> = {
   id: string;
@@ -120,9 +119,10 @@ Renderers can read `document.blocks`, `document.groups` and `document.links`.
 Store node/link references as IDs in parsed declarative data; handle missing IDs
 with useful Spanish text. A flow can resolve endpoints from this readonly document.
 There is no prop for arbitrary block mutation or changing the outer link layer. Persist
-an explicit step in own runtime; report a settled result with `runtime.settle`. Use
-`send` to ask the connected agent for a revisioned document change. Referencing a block
-is not proof that it has been generated or that an agent finished work.
+an explicit step in own runtime; record what the person just did with `runtime.record`.
+A renderer cannot message the agent: the agent reads the block's state when the person
+mentions it in their chat. Referencing a block is not proof that it has been generated
+or that an agent finished work.
 
 ## Runtime and scope
 
@@ -131,7 +131,7 @@ type RendererRuntime = {
   state: Record<string, JSONValue>;
   set(state: Record<string, JSONValue> | null, settled?: boolean): void;
   flush(): Promise<void>;
-  settle(kind: string, payload: CanvasBlock['data'], label?: string, eventId?: string): Promise<void>;
+  record(kind: string, payload: CanvasBlock['data'] | null, label?: string): Promise<void>;
 };
 type RendererScope = {
   variables: Record<string, ScopeVariable & { scopeId: string; current: number }>;
@@ -141,23 +141,15 @@ type RendererScope = {
 };
 ```
 
-`runtime.set` replaces the block's JSON object; null resets it. Changes publish locally
-immediately, debounce network writes for 80 ms, and send immediately with `settled:true`.
-`flush()` waits for network acknowledgement, not disk durability. `runtime.settle` first
-flushes runtime writes, then sends one batched settled event for this block. Include final
-value or visited range in the payload, up to 4 KiB. Use a stable kind
-per interaction, such as `controls.amplitude`, so a newer pending event replaces the older
-one for the same block/kind. Events already prepared for delivery remain immutable.
-Settled context retains the target and ancestor groups, rather than the entire document.
-Normal feedback still retains its full snapshot. Batched-only feedback waits for the
-existing explicit flush mechanism.
-
-The optional `eventId` lets an attempt retry the same event after an ambiguous network
-response. Keep kind, payload, label and target identical on every retry: the server
-deduplicates a retained event by ID and rejects reuse with a different action. This
-is bounded by event retention (pending events and the most recent 100 sent/acknowledged
-events); it is not a permanent delivery ledger. Use a distinct kind per attempt to
-prevent pending coalescing from replacing an earlier attempt.
+`runtime.set` replaces the block's JSON object (keeping its `lastInteraction`); null resets it.
+Changes publish locally immediately, debounce network writes for 80 ms, and write immediately
+with `settled:true`. `flush()` waits for network acknowledgement, not disk durability.
+`runtime.record` first flushes runtime writes, then stores `lastInteraction: { kind, label, at,
+payload? }` in the block's state and flushes again. Include the final value or visited range in
+the payload; a payload over 1500 bytes, or one that would take the block past 4 KiB, is dropped
+and the kind kept. Use a stable kind per interaction, such as `controls.amplitude`. Only the last
+interaction is kept; a retry after an ambiguous response writes the same record again. The agent
+reads it with `canvas_selection` or `canvas_read` ids.
 
 Declare `variables` on the document or a group through revisioned `document.update` or
 `group.update`. Each declaration is `{name, value, min, max, label?, step?, unit?}`. Names
@@ -168,7 +160,7 @@ values come from runtime or fall back to declared value; reads clamp old overrid
 current range. `scope.set(name,null)` removes the override. Every sibling resolves against
 one optimistic store, so sliders and the cards that read them update together before the server responds.
 `controls.data.variables` lists at most four names per block, while each scope permits 24.
-Reset each listed variable with null, then settle a reset event with the declared defaults.
+Reset each listed variable with null, then record a reset interaction with the declared defaults.
 
 Runtime has no document revision, history or undo. Updates copy only runtime in memory,
 use last-write-wins and persist the aggregate with a 250 ms coalescing window. A normal
@@ -180,7 +172,7 @@ to 32 and reserved keys are rejected. Deleted entities/declarations lose their r
 entries; undo restores content, not those entries. Document copy/export and selection packs retain document/group declarations, not overrides.
 Group templates retain the exported groups' declarations; declarations on excluded ancestors
 or the source document are outside that template and must be supplied by its destination.
-`runtimeVersion` also covers existing selection/connection/feedback changes; watch/poll
+`runtimeVersion` also covers selection and connection changes; watch/poll
 therefore observes both kinds of runtime changes. Runtime updates never lock the card.
 
 ## Drawing
@@ -234,7 +226,7 @@ and value/circle have distinct symbols and Spanish labels; declared sign/delay a
 beside the payload. Hidden gate targets, adjacent paths and hidden flow blocks emit no
 visible tokens. Missing or collapsed internal paths are omitted; no replacement graph
 is invented. Paused scrubs draw once, playback draws via RAF, and hidden/offscreen canvas
-or unmount cancels that loop. Sampling never writes runtime or sends assistant events.
+or unmount cancels that loop. Sampling never writes runtime.
 At most 256 tokens are drawn across the canvas per frame; excess tokens are omitted in
 stable document/event order. Native retains static links and the honest block summary.
 
@@ -252,8 +244,9 @@ Custom types use their registered renderer to determine these semantics; an unre
 custom card's `data.anchor` remains ordinary authored data.
 
 `Borrar mis trazos` removes only learner layers in one undoable transaction. The eraser
-removes whole strokes. Leaving the pencil or eraser emits one bounded `whiteboard.strokes`
-summary with counts and anchor titles, never points or per-frame events. The document cap
+removes whole strokes. Strokes are only `wb-draw` blocks: nothing is sent when the pencil is
+put down, and `canvas_selection` summarises a selected layer (author, anchor, extent, stroke
+count) without its points. The document cap
 remains 1 MiB; a rejected append retains the earlier drawing and shows the size error.
 An append replaces its old layer in the client size estimate rather than counting it twice.
 
@@ -291,7 +284,7 @@ function Example({data,ui,runtime,readOnly}: RendererProps<ExampleData>) {
     {/* Add declarative controls/drawing here; honor readOnly. */}
     <Button label="Reiniciar" disabled={readOnly} onPress={() => {
       runtime.set(null);
-      void runtime.settle('example.reset', {}, 'Reiniciar ejemplo').catch(() => {
+      void runtime.record('example.reset', null, 'Reiniciar ejemplo').catch(() => {
         // Show a useful Spanish retry message in component state.
       });
     }} />
