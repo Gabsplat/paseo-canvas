@@ -42,10 +42,10 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
   const mine=(await draws())[0].id;assert.equal(await ev('!!document.querySelector("#lienzo-entity-'+mine+' path[stroke-dasharray]")'),false);
   assert.equal(await ev('document.querySelector("#lienzo-entity-'+mine+'").innerText.includes("Agent")'),false);await shot('cierre-strokes-authors');
  });
- await soft('leaving the pencil settles exactly one bounded summary without points',async()=>{
-  await key('Escape','Escape');await wait('__panelQA.actions.length===1');await pause(300);
-  const actions=await ev('__panelQA.actions');assert.equal(actions.length,1);assert.equal(actions[0].kind,'whiteboard.strokes');assert.equal(actions[0].delivery,'batched');assert.equal(actions[0].settled,true);
-  assert.deepEqual(actions[0].payload.learner,{drawings:2,strokes:2});assert.deepEqual(actions[0].payload.assistant,{strokes:1});assert.equal(JSON.stringify(actions).includes('points'),false);
+ await soft('leaving the pencil sends nothing: the strokes are blocks the agent reads when asked',async()=>{
+  await key('Escape','Escape');await pause(600);
+  assert.equal(await ev('__panelQA.actions.length'),0,'nothing sent');
+  assert.deepEqual((await draws()).map(d=>d.author).sort(),['assistant','learner','learner']);
  });
  await soft('dragging the card carries its annotation live and commits a single card move',async()=>{
   const mine=(await draws())[0].id,card=await rectOf('note'),ink=await rectOf(mine),count=await ev('__panelQA.log.length');

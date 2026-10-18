@@ -41,11 +41,15 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const entry=await ev('JSON.stringify(__panelQA.log.at(-1))');assert.ok(entry.includes('Example · Find and replace: ')&&entry.includes('block.update'),entry.slice(0,300));await pause(500);await shot('tool-done');
  await click('#lienzo-document-island [aria-label="Menu"]');await click('#lienzo-interactive-menu [aria-label="Undo"]');await pause(500);await click('[aria-label="Close the menu"]');assert.ok((await ev('__panelQA.doc().blocks.map(b=>b.title).join("|")')).includes('Ejemplo a0'),'what a tool did can be undone');
  await click('[aria-label="Close Example · Find and replace"]');
- // 3. One the assistant has just saved is there the next time the menu opens, and its request is a real canvas action.
+ // 3. One the assistant has just saved is there the next time the menu opens. It has no way to the agent: lienzo.ask is
+ // gone, so the page falls back to selecting, and nothing is sent.
  const big=inner=>'<button style="position:fixed;inset:0;width:100%;height:100%;font:16px system-ui" onclick="'+inner+'">Probar</button>';
- await ev('__panelQA.addExtension('+JSON.stringify({id:'qa-pedir',kind:'tool',api:1,name:'QA · Pedir',permissions:['agent'],html:big("lienzo.ask('hecho',{n:1},'Pedido de prueba')")})+')');
+ const target=await ev('__panelQA.doc().blocks[0].id');
+ await ev('__panelQA.addExtension('+JSON.stringify({id:'qa-pedir',kind:'tool',api:1,name:'QA · Pedir',permissions:[],html:big("if(typeof lienzo.ask==='function')lienzo.ask('hecho',{n:1});else lienzo.select(['"+target+"'])")})+')');
  await tool('qa-pedir');await wait(`!!document.querySelector('[id="lienzo-extension-qa-pedir"] iframe')`);await pause(600);const a=await frame('qa-pedir'),actions=await ev('__panelQA.actions.length');
- await tap(a.x+a.w/2,a.y+a.h/2);await wait('__panelQA.actions.length>'+actions);const act=await ev('JSON.stringify(__panelQA.actions.at(-1))');assert.ok(act.includes('extension.event')&&act.includes('"extension":"qa-pedir"')&&act.includes('"event":"hecho"'),act);
+ await tap(a.x+a.w/2,a.y+a.h/2);await wait('JSON.stringify(__panelQA.doc().selectedIds)==='+JSON.stringify(JSON.stringify([target])),'no lienzo.ask: the page selected instead');
+ assert.equal(await ev('__panelQA.actions.length'),actions,'nothing was sent to an agent');
+ assert.ok(!(await has('ask the agent for things')),'no agent permission is described');
  await click('[aria-label="Close QA · Pedir"]');
  // 4. One that came in someone else's pack can read and select, but edits nothing until the person allows it.
  await ev('__panelQA.addExtension('+JSON.stringify({id:'ajeno.editar',kind:'tool',api:1,name:'QA · Ajena',permissions:['edit'],html:big("lienzo.edit([{type:'document.update',title:'Cambiado por la extensión'}],'Renombrar')")})+',"ajeno")');
@@ -54,6 +58,6 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await click('[id="lienzo-extension-grant-ajeno.editar"] [aria-label="Allow"]');await wait(`!document.querySelector('[id="lienzo-extension-grant-ajeno.editar"]')`);await pause(500);
  g=await frame('ajeno.editar');await tap(g.x+g.w/2,g.y+g.h/2);await wait('__panelQA.doc().title==="Cambiado por la extensión"');
  assert.deepEqual(uncaught.map(u=>u.exception?.description||u.text),[],'something threw');assert.ok(!/Plugin failed|Minified React/.test(await ev('document.body.innerText')));
- console.log('PASS extension tools come from the catalog, open in the right panel, run sandboxed, edit with permission and ask before an imported one does');
+ console.log('PASS extension tools come from the catalog, open in the right panel, run sandboxed, edit with permission, cannot reach the agent, and ask before an imported one does');
  }finally{ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

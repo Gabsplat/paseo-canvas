@@ -22,8 +22,8 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
  for(const theme of ['papel','tinta']){
   await call('Page.navigate',{url:'http://127.0.0.1:8765/?compact&theme='+theme});await wait('!!document.querySelector("#lienzo-toolbar")&&!!document.querySelector("#lienzo-outline")');
-  await check('compact '+theme+' shows Lista, a scrolling toolbar above the composer, and creates free text',async()=>{
-   const bar=await box('#lienzo-toolbar'),composer=await box('#lienzo-composer');assert.ok(bar.y+bar.h<=composer.y+1,'toolbar above the composer');assert.ok(bar.x>=0&&bar.x+bar.w<=390,'within the panel');
+  await check('compact '+theme+' shows Lista, a scrolling toolbar docked at the bottom with no composer, and creates free text',async()=>{
+   const bar=await box('#lienzo-toolbar'),gap=await ev('innerHeight')-(bar.y+bar.h);assert.ok(gap>=4&&gap<=16,'toolbar docked at the bottom: '+gap);assert.equal(await ev('!!document.querySelector("#lienzo-composer")'),false,'no composer');assert.ok(bar.x>=0&&bar.x+bar.w<=390,'within the panel');
    assert.equal(await ev(`Math.round(document.querySelector('#lienzo-tool-text').getBoundingClientRect().height)`),44,'touch-sized tools');
    assert.equal(await ev(`!!document.querySelector('[aria-label="Change view"],[aria-label="Cambiar vista"]')`),false,'no view switcher');
    await shot('compact-list-'+theme);
@@ -33,8 +33,8 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
   });
  }
  await call('Emulation.setDeviceMetricsOverride',{width:760,height:920,deviceScaleFactor:1,mobile:false});await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-toolbar")');await click('#lienzo-tool-shape');
- await check('medium width keeps the toolbar and composer inside, the shape options in Properties, and a reduced zoom',async()=>{
-  const tool=await box('#lienzo-toolbar'),composer=await box('#lienzo-composer');assert.ok(tool.x>=0&&tool.x+tool.w<=760);assert.ok(composer.x>=0&&composer.x+composer.w<=760);
+ await check('medium width keeps the toolbar inside and on the bottom edge, the shape options in Properties, and a reduced zoom',async()=>{
+  const tool=await box('#lienzo-toolbar');assert.ok(tool.x>=0&&tool.x+tool.w<=760);assert.ok(Math.abs(920-(tool.y+tool.h)-12)<=2,'12 px from the bottom edge');
   await wait('!!document.querySelector("#lienzo-tool-options")','shape options in the right panel');assert.ok(await ev(`!!document.querySelector('#lienzo-right-panel [aria-label="No fill"]')`));
   const zoom=await box('#lienzo-tools-zoom');assert.ok(zoom.w<64);await click(label('Zoom options'));await wait(`!!document.querySelector(${JSON.stringify(label('Zoom in'))})`);await click(label('Zoom in'));await wait('!document.querySelector("#lienzo-interactive-zoom-menu")');await shot('medium');
  });

@@ -47,6 +47,9 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  assert.ok(await ev('!!document.querySelector(\'[aria-label="Follow the agent"]\')'),'moving the camera lets go of the agent');
  const still=await cam();await ev(`__panelQA.seedAgent([{type:'block.update',id:'h2b1',patch:{title:'Example step 2.2, revised'}}])`);await wait('!!document.querySelector("#lienzo-agent-latest")');
  assert.equal(await cam(),still,'not following: the camera stays');await shot('pill');
+ {const pill=await ev(`(()=>{const r=document.querySelector('#lienzo-agent-latest').getBoundingClientRect(),t=document.querySelector('#lienzo-toolbar').getBoundingClientRect();return{pill:r.bottom,toolbar:t.top,edge:innerHeight-t.bottom}})()`);
+  assert.ok(pill.pill<=pill.toolbar-8,'the pill clears the toolbar: '+JSON.stringify(pill));assert.ok(Math.abs(pill.edge-12)<=2,'the toolbar is on the bottom edge: '+JSON.stringify(pill));
+  assert.ok(!(await has('#lienzo-composer')),'no composer');}
  await click('#lienzo-agent-latest');await wait('!!document.querySelector("#lienzo-glow-h2b1")');await pause(600);await shot('latest');
  assert.ok(!(await has('#lienzo-agent-latest'))&&await ev('!!document.querySelector(\'[aria-label="Following the agent"]\')'),'the pill takes you there and follows again');
  // G goes to the latest too.

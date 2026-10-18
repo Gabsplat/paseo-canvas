@@ -21,9 +21,9 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  try{
  await call('Runtime.enable');await call('Page.enable');await call('Network.enable');await call('Network.setCacheDisabled',{cacheDisabled:true});
  await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme=papel'});await wait('!!document.querySelector("#lienzo-entity-note")');
- await check('floating tools and composer use small islands over the complete canvas',async()=>{
-  const toolBox=await box('#lienzo-toolbar'),composer=await box('#lienzo-composer');assert.ok(toolBox.w<480);assert.ok(composer.w<720);assert.ok(composer.y>700);
-  assert.equal(await ev('document.elementFromPoint(1600,350).closest("#lienzo-toolbar,#lienzo-composer")'),null);
+ await check('floating tools use small islands over the complete canvas, with no composer',async()=>{
+  const toolBox=await box('#lienzo-toolbar');assert.ok(toolBox.w<480);assert.ok(toolBox.y>700);assert.equal(await ev('!!document.querySelector("#lienzo-composer")'),false);
+  assert.equal(await ev('document.elementFromPoint(innerWidth-40,350)?.closest("#lienzo-toolbar")??null'),null);
  });
  await check('free text is a local draft until confirmation and saves as an ordinary chrome-free block',async()=>{
   await click('#lienzo-tool-text');await mouse('mousePressed',1120,550,'left',1);await mouse('mouseReleased',1120,550);await wait('!!document.querySelector("#lienzo-editor textarea")');
