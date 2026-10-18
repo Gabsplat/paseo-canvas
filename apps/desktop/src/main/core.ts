@@ -61,7 +61,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   await mkdir(options.dataDirectory, { recursive: true, mode: 0o700 });
   const host = new DesktopHost(join(options.dataDirectory, 'settings.json'));
   // MCP callers are identified by their client name; that is both their owner token and their agent ID here.
-  const core = createCanvasCore(host, { directory: join(options.dataDirectory, 'canvas'), resolveScope: async agentId => ({ agentId, workspaceId: DESKTOP_WORKSPACE }) });
+  const core = createCanvasCore(host, { directory: join(options.dataDirectory, 'canvas'), version: options.version, resolveScope: async agentId => ({ agentId, workspaceId: DESKTOP_WORKSPACE }) });
   try {
     await core.store.initialize();
     await adoptDocuments(core.store);

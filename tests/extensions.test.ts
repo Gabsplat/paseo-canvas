@@ -3,7 +3,8 @@ import test from "node:test";
 import vm from "node:vm";
 import { catalogStorageSchema, catalogView } from "../plugin/server/catalog";
 import { ToolRouter } from "../plugin/server/tools";
-import { EXTENSION_GUIDE, EXTENSION_RUNTIME, builtinExtensions, extensionDocument } from "../plugin/shared/extensions";
+import { EXTENSION_GUIDE, EXTENSION_RUNTIME, extensionDocument } from "../plugin/shared/extensions";
+import { findAndReplace } from "./fixtures/find-replace";
 import { extensionSchema, packSchema } from "../plugin/shared/model";
 import { setup, workspaceId } from "./helpers";
 import { readFile, writeFile } from "node:fs/promises";
@@ -25,12 +26,13 @@ test("a local extension is saved, listed as trusted, replaced by its own ID and 
   catalog = await service.catalogMutate({ expectedRevision: catalog.revision, action: { type: "extension.remove", id: "mia" } });
   assert.equal(catalog.extensions.some(e => e.id === "mia"), false);
 });
-test("a local extension cannot take a shipped ID, a pack namespace or a repeated permission", async t => {
+test("a local extension cannot take an imported one's ID, a file's namespace or a repeated permission", async t => {
   const { service } = await setup(t);
-  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(view("ejemplos.reemplazar")) } }), /cannot replace|namespace/);
-  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(view("ejemplos.nueva")) } }), /namespace/);
-  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(view("doble", "<p/>", ["edit", "edit"])) } }), /repeats/);
-  await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.remove", id: "ejemplos.reemplazar" } }), /not found/i);
+  const { catalog: imported } = await service.importPack({ expectedRevision: 0, pack: pack([view("ajeno.a")]), replace: false, dryRun: false });
+  await assert.rejects(service.catalogMutate({ expectedRevision: imported.revision, action: { type: "extension.put", extension: extensionSchema.parse(view("ajeno.a")) } }), /cannot replace|namespace/);
+  await assert.rejects(service.catalogMutate({ expectedRevision: imported.revision, action: { type: "extension.put", extension: extensionSchema.parse(view("ajeno.nueva")) } }), /namespace/);
+  await assert.rejects(service.catalogMutate({ expectedRevision: imported.revision, action: { type: "extension.put", extension: extensionSchema.parse(view("doble", "<p/>", ["edit", "edit"])) } }), /repeats/);
+  await assert.rejects(service.catalogMutate({ expectedRevision: imported.revision, action: { type: "extension.remove", id: "ajeno.a" } }), /not found/i);
   assert.throws(() => extensionSchema.parse({ ...view("v2"), api: 2 })); assert.throws(() => extensionSchema.parse({ ...view("x"), permissions: ["filesystem"] }));
 });
 test("an imported extension holds no permission until granted, and a changed one must be granted again", async t => {
@@ -41,7 +43,8 @@ test("an imported extension holds no permission until granted, and a changed one
   assert.deepEqual(result.catalog.extensions.filter(e => e.source === "ajeno").map(e => e.granted), [false, false]);
   let catalog = await service.catalogMutate({ expectedRevision: result.catalog.revision, action: { type: "extension.grant", id: "ajeno.a", granted: true } });
   assert.equal(catalog.extensions.find(e => e.id === "ajeno.a")!.granted, true);
-  await assert.rejects(service.catalogMutate({ expectedRevision: catalog.revision, action: { type: "extension.grant", id: "ejemplos.reemplazar", granted: false } }), /imported pack/);
+  catalog = await service.catalogMutate({ expectedRevision: catalog.revision, action: { type: "extension.put", extension: extensionSchema.parse(view("mia")) } });
+  await assert.rejects(service.catalogMutate({ expectedRevision: catalog.revision, action: { type: "extension.grant", id: "mia", granted: false } }), /imported file/);
   // Same code: the grant stays. Different code: it is gone.
   result = await service.importPack({ expectedRevision: catalog.revision, pack: pack([view("ajeno.a", "<p>1</p>", ["edit"])]), replace: true, dryRun: false });
   assert.equal(result.catalog.extensions.find(e => e.id === "ajeno.a")!.granted, true);
@@ -52,12 +55,12 @@ test("an imported extension holds no permission until granted, and a changed one
   assert.equal(catalog.extensions.some(e => e.source === "ajeno"), false);
   result = await service.importPack({ expectedRevision: catalog.revision, pack: pack([view("ajeno.a", "<p>2</p>", ["edit", "network"])]), replace: false, dryRun: false });
   assert.equal(result.catalog.extensions.find(e => e.id === "ajeno.a")!.granted, false, "a grant does not outlive its pack");
-  assert.deepEqual((await service.exportPack({ id: "ajeno" })).extensions.map(e => e.id), ["ajeno.a"]);
+  assert.deepEqual(result.catalog.packs.find(p => p.id === "ajeno")!.extensions.map(e => e.id), ["ajeno.a"]);
 });
 test("state and packs written before extensions existed still load", () => {
   const storage = catalogStorageSchema.parse({ revision: 3, localTypes: [], localTemplates: [], packs: [{ format: "paseo-canvas-pack", version: 1, id: "viejo", name: "Viejo", description: "", blockTypes: [], templates: [], documents: [] }] });
   assert.deepEqual([storage.localExtensions, storage.grants, storage.packs[0].extensions], [[], [], []]);
-  assert.deepEqual(catalogView(storage).extensions.map(e => [e.id, e.source, e.granted]), builtinExtensions.map(e => [e.id, "builtin", true]));
+  assert.deepEqual(catalogView(storage).extensions, [], "nothing ships: the extension examples left the app");
   assert.deepEqual(packSchema.parse(pack([])).extensions, []);
 });
 test("catalogs and packs stored with the retired view kind still load, without the views", async t => {
@@ -80,7 +83,8 @@ test("catalogs and packs stored with the retired view kind still load, without t
 test("the assistant saves and removes an extension through MCP and is told the whole API", async t => {
   const { service } = await setup(t), router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }));
   const listed = await router.call("canvas_catalog", { action: "list" }, "owner") as { revision: number; extensions: { id: string; kind: string; source: string }[]; extensionGuide: string };
-  assert.ok(listed.extensions.some(e => e.id === "ejemplos.reemplazar" && e.kind === "tool"));
+  assert.equal(listed.extensions.length, 0); assert.ok(!/ejemplos|shipped example/.test(listed.extensionGuide), "the guide carries its own short example");
+  assert.ok(listed.extensionGuide.includes("lienzo.onContext(function(c)"));
   assert.ok(listed.extensions.every(e => e.kind === "tool") && !/kind "view"|Cambiar vista|mosaico/.test(listed.extensionGuide), "views are gone from the catalog and the guide");
   for (const word of ["lienzo.onContext", "lienzo.select", "lienzo.edit", "lienzo.kit.stage", "save_extension", "api: 1"]) assert.ok(listed.extensionGuide.includes(word), word);
   assert.equal(listed.extensionGuide, EXTENSION_GUIDE);
@@ -95,7 +99,7 @@ test("a frame gets the runtime first and no network unless it was asked for and 
   assert.ok(offline.startsWith("<!doctype html>") && offline.includes("Content-Security-Policy") && offline.includes("default-src 'none'") && offline.endsWith("</script><body><p>hola</p>") && !/<!DOCTYPE html><p>/.test(offline));
   assert.ok(!asked.includes("Content-Security-Policy") && pending.includes("Content-Security-Policy"));
   for (const page of [offline, asked, pending]) assert.ok(page.indexOf("window.lienzo=") > 0 && page.indexOf("window.lienzo=") < page.indexOf("<p>hola</p>"));
-  for (const e of builtinExtensions) assert.ok(!/https?:\/\//.test(e.html), `${e.id} loads nothing from outside`);
+  assert.ok(!/https?:\/\//.test(findAndReplace.html), "the contract example loads nothing from outside");
 });
 test("API 1 inside the frame: context, calls that resolve or reject, and nothing from another window", async () => {
   const sent: { type: string; id?: number; method?: string; args?: Record<string, unknown> }[] = [], listeners: ((e: { source: unknown; data: unknown }) => void)[] = [];

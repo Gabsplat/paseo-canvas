@@ -8,7 +8,7 @@ import { canvasPresentation } from '../plugin/client/presentation';
 import { layoutCanvas } from '../plugin/client/logic';
 import { blockTypeSchema, packSchema } from '../plugin/shared/model';
 import { retiredRendererNames, rendererNames, isRetiredRenderer, getRendererSpec } from '../plugin/shared/renderers';
-import { builtinTypes, builtinPacks, builtinTemplates } from '../plugin/shared/builtins';
+import { builtinTypes } from '../plugin/shared/builtins';
 
 const reference = { documentId: 'd', workspaceId };
 // Data as the removed built-in types stored it. The block type ID was the renderer name in every case.
@@ -44,10 +44,6 @@ test('the retired list names every removed renderer, none of them live, and the 
   }
   assert.equal(isRetiredRenderer('note'), false); assert.equal(isRetiredRenderer(undefined), false);
   assert.equal(blockTypeSchema.safeParse(customType('old', 'never-existed')).success, false);
-  // Nothing shipped still depends on a removed type.
-  const shipped = [...builtinTemplates.flatMap(template => template.blocks), ...builtinPacks.flatMap(pack => pack.documents.flatMap(document => document.blocks))];
-  for (const block of shipped) assert.ok(builtinTypes.some(type => type.id === block.typeId), block.typeId);
-  for (const pack of builtinPacks) for (const document of pack.documents) assert.equal(document.example, true);
 });
 
 test('a stored document with a block of every removed type loads, reads, is editable around them and lets them be deleted', async t => {
@@ -106,8 +102,8 @@ test('a stored catalog whose custom and pack types name retired renderers loads,
   assert.equal(catalog.blockTypes.some(type => isRetiredRenderer(type.renderer)), false);
   for (const id of ['my-plot', 'my-gate', ...retiredRendererNames.map(name => `old.${name}`)]) assert.equal(catalog.blockTypes.some(type => type.id === id), false, id);
   for (const id of ['my-plain', 'old.plain', 'note', 'node', 'controls']) assert.ok(catalog.blockTypes.some(type => type.id === id), id);
-  // The pack itself is still listed and exports exactly what was imported.
-  assert.deepEqual(catalog.packs.find(item => item.id === 'old'), pack); assert.deepEqual(await service.exportPack({ id: 'old' }), pack);
+  // The stored pack itself is still listed, whole.
+  assert.deepEqual(catalog.packs.find(item => item.id === 'old'), pack);
   // Their blocks are preserved as unknown-type blocks and the document stays editable.
   assert.deepEqual(view.document.blocks.find(block => block.id === 'mine')!.data, { question: '¿Qué cambia?' });
   assert.ok(layoutCanvas(view.document, {}, catalog).rects.has('packed'));
@@ -123,11 +119,8 @@ test('a stored catalog whose custom and pack types name retired renderers loads,
   await assert.rejects(service.catalogMutate({ expectedRevision: 3, action: { type: 'type.put', blockType: { ...customType('diagram', 'note'), properties: [], defaults: {} } } }), /no longer available/);
   catalog = await service.catalogMutate({ expectedRevision: 3, action: { type: 'type.put', blockType: { ...customType('my-plot', 'note'), properties: [{ key: 'question', label: 'Pregunta', kind: 'text' as const, required: false }] } } });
   assert.equal(catalog.blockTypes.find(type => type.id === 'my-plot')?.renderer, 'note');
-  // A pack imported now is data too: it is accepted, stored whole, and its retired types stay out of the usable catalog.
+  // Importing block types is over: a file that carries them is refused, and nothing is written.
   const incoming = { ...pack, id: 'later', name: 'Pack nuevo', blockTypes: [customType('later.seq', 'step-sequencer'), customType('later.gate', 'prediction-gate')] };
-  assert.deepEqual(await service.validatePack({ pack: incoming }), { valid: true, issues: [] });
-  const imported = await service.importPack({ expectedRevision: 4, pack: incoming, replace: false, dryRun: false });
-  assert.equal(imported.committed, true); assert.deepEqual(imported.diff.added, ['later.seq', 'later.gate']);
-  assert.equal(imported.catalog.blockTypes.some(type => type.id.startsWith('later.')), false);
-  assert.deepEqual(await service.exportPack({ id: 'later' }), incoming);
+  assert.equal((await service.validatePack({ pack: incoming })).valid, false);
+  await assert.rejects(service.importPack({ expectedRevision: 4, pack: incoming, replace: false, dryRun: false }), /extensions only/);
 });

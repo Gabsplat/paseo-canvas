@@ -118,8 +118,9 @@ export const packSchema = z.object({
 // until the person grants them; local and shipped ones are trusted.
 export const catalogExtensionSchema = extensionSchema.extend({ source: z.string().min(1).max(200), granted: z.boolean() });
 export const catalogSchema = z.object({
+  // packs are the extension files the person imported. Templates left the app: stored ones load but are not listed.
   revision: revisionSchema, blockTypes: z.array(blockTypeSchema),
-  templates: z.array(templateSchema), packs: z.array(packSchema), extensions: z.array(catalogExtensionSchema).default([]),
+  packs: z.array(packSchema), extensions: z.array(catalogExtensionSchema).default([]),
 }).strict();
 export const connectionSchema = z.object({
   agentId: z.string().min(1).max(200), workspaceId: z.string().min(1).max(200),
@@ -151,6 +152,10 @@ export const documentViewSchema = z.object({
 }).strict();
 export const documentSummarySchema = documentSchema.pick({
   id: true, workspaceId: true, title: true, description: true, example: true, revision: true, updatedAt: true,
+}).extend({
+  // For the Lienzos screen. Optional: a summary written by an older server has none.
+  blockCount: z.number().int().nonnegative().optional(), groupCount: z.number().int().nonnegative().optional(),
+  hojaCount: z.number().int().nonnegative().optional(), agentId: z.string().nullable().optional(),
 });
 
 export const operationSchema = z.discriminatedUnion("type", [
@@ -168,7 +173,6 @@ export const operationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("entity.duplicate"), id: idSchema, idPrefix: idSchema }).strict(),
   z.object({ type: z.literal("selection.set"), ids: z.array(idSchema).max(1200) }).strict(),
   z.object({ type: z.literal("communication.set"), communication: communicationSchema }).strict(),
-  z.object({ type: z.literal("template.insert"), templateId: idSchema, idPrefix: idSchema }).strict(),
 ]);
 export const mutateInputSchema = z.object({
   documentId: idSchema, expectedRevision: revisionSchema,
@@ -181,8 +185,6 @@ export const createInputSchema = z.object({
 }).strict();
 export const catalogMutationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("type.put"), blockType: blockTypeSchema }).strict(),
-  z.object({ type: z.literal("template.put"), template: templateSchema }).strict(),
-  z.object({ type: z.literal("pack.import"), pack: packSchema, replace: z.boolean().default(false) }).strict(),
   z.object({ type: z.literal("pack.remove"), id: idSchema }).strict(),
   z.object({ type: z.literal("extension.put"), extension: extensionSchema }).strict(),
   z.object({ type: z.literal("extension.remove"), id: idSchema }).strict(),

@@ -2,16 +2,16 @@ import test from 'node:test';
 import { registerHooks } from 'node:module';
 import { Platform } from './fixtures/native-headless';
 import assert from 'node:assert/strict';
-import { builtinPacks, builtinTemplates, builtinTypes } from '../plugin/shared/builtins';
+import { builtinTypes } from '../plugin/shared/builtins';
 import { documentSchema, mutateInputSchema, type CanvasCatalog, type CanvasOperation } from '../plugin/shared/model';
 import { communicationOperation, dataProperties, layoutOperations, leaveGroupOperations, panelShortcut, reorderOperation, toolbarPosition, typeSlot } from '../plugin/client/panel-actions';
-import { connectOperations, groupOperations, instructionLevels, layoutDocument, selectionPack } from '../plugin/client/logic';
+import { connectOperations, groupOperations, instructionLevels, layoutDocument } from '../plugin/client/logic';
 import { reduce } from '../plugin/server/reducer';
 import { CanvasStore } from '../plugin/server/store';
 import { CanvasService } from '../plugin/server/service';
 import { LearningRuntimeStore } from '../plugin/client/learning-state';
 import { mutation, setup, workspaceId } from './helpers';
-const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks, extensions: [] };
+const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, packs: [], extensions: [] };
 const fixture = () => documentSchema.parse({ id: 'd', workspaceId, title: 'Panel example', description: '', example: true, revision: 0, createdAt: '2026-10-06T00:00:00.000Z', updatedAt: '2026-10-06T00:00:00.000Z', selectedIds: [], communication: { instructions: 'Document', intent: '', audience: '' }, groups: [{ id: 'g', title: 'Group', description: '', blockIds: ['a', 'b'], groupIds: [], position: { x: 50, y: 60 }, layout: { mode: 'stack' }, communication: { instructions: 'Group', intent: 'Intent', audience: 'Audience' }, variables: [{ name: 'x', label: 'X', value: 2, min: 0, max: 10 }] }], blocks: [{ id: 'a', typeId: 'note', title: 'A', parentGroupId: 'g', data: { text: 'Authored text' } }, { id: 'b', typeId: 'node', title: 'B', parentGroupId: 'g', data: { status: 'Nuevo' } }, { id: 'c', typeId: 'note', title: 'C', data: { text: 'Other' } }], links: [] });
 function apply(operations: CanvasOperation[], doc = fixture()) { const parsed = mutateInputSchema.parse({ workspaceId, documentId: doc.id, expectedRevision: doc.revision, operations }); return reduce(doc, parsed.operations, catalog); }
 test('instruction edits preserve read-only intent/audience and inheritance, clearing removes all three local fields', () => {
@@ -98,7 +98,6 @@ test('group/create-link/ungroup actions persist, undo as whole edits and reject 
   view = await service.undo({ workspaceId, documentId: 'd', expectedRevision: view.document.revision }); assert.equal(view.document.groups.length, 1);
   await firstStore.close();
   const store = new CanvasStore(directory); t.after(() => store.close()); const reopened = await new CanvasService(store).read({ workspaceId, documentId: 'd' }); assert.equal(reopened.document.links[0].label, 'Real label');
-  const pack = selectionPack(view.document, catalog, ['g']); assert.equal(pack.documents[0].links[0].label, 'Real label');
 });
 test('toolbar reset clears only the block runtime, preserving scopes, authored data and content revision', async t => {
   const { service } = await setup(t); let view = await service.mutate(mutation(0, [{ type: 'document.update', variables: [{ name: 'x', value: 1, min: 0, max: 10 }] }]));

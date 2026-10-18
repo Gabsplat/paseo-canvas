@@ -18,7 +18,7 @@ const reference = { workspaceId, documentId: "d" };
 const rejectCode = (code: string) => (error: unknown) => error instanceof CanvasError && error.code === code;
 const group = (id: string, blockIds: string[] = [], groupIds: string[] = []) => groupSchema.parse({ id, title: id, description: "Keep description", blockIds, groupIds });
 
-test("pre-v1.1 strict documents/templates parse and existing state/1 history reopens; its old event queue is dropped", async t => {
+test("pre-v1.1 strict documents/templates parse and existing state/1 history reopens; old templates load unlisted and the old event queue is dropped", async t => {
   const { service, store, directory } = await setup(t);
   const { links: _links, ...legacyContent } = content();
   const legacy = { ...legacyContent, id: "legacy", workspaceId, revision: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
@@ -26,7 +26,6 @@ test("pre-v1.1 strict documents/templates parse and existing state/1 history reo
   assert.equal(documentSchema.parse(legacy).layout, undefined);
   assert.deepEqual(templateSchema.parse({ id: "old", name: "Old", description: "", blocks: [], groups: [] }).links, []);
   await service.mutate(mutation(0, [{ type: "document.update", title: "Before upgrade" }]));
-  await service.catalogMutate(rpc.mutateCatalog.input.parse({ expectedRevision: 0, action: { type: "template.put", template: { id: "old", name: "Old", description: "", blocks: [], groups: [] } } }));
   const disk = JSON.parse(await readFile(store.file, "utf8"));
   const removeNewFields = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
@@ -36,6 +35,8 @@ test("pre-v1.1 strict documents/templates parse and existing state/1 history reo
     Object.values(object).forEach(removeNewFields);
   };
   removeNewFields(disk);
+  // A template saved before the UI pass removed them.
+  disk.catalog.localTemplates = [{ id: "old", name: "Old", description: "", blocks: [], groups: [] }];
   disk.documents.d.events = [{ id: "old-event", documentId: "d", agentId: null, workspaceId, createdAt: "2026-01-01T00:00:00.000Z", revision: 1, action: { kind: "ask", label: "Explain", payload: {}, delivery: "immediate" }, context: legacyContent, status: "pending" }];
   await store.close();
   await writeFile(store.file, JSON.stringify(disk));
@@ -47,6 +48,7 @@ test("pre-v1.1 strict documents/templates parse and existing state/1 history reo
   assert.deepEqual(state.documents.d.history[0].after.links, []);
   assert.equal("events" in state.documents.d, false);
   assert.deepEqual(state.catalog.localTemplates[0].links, []);
+  assert.equal("templates" in await new CanvasService(reopened).catalog(), false);
   const undo = await new CanvasService(reopened).undo({ ...reference, expectedRevision: 1 });
   assert.equal(undo.document.title, "Test document");
 });
@@ -163,29 +165,19 @@ test("undo handles link edits per agent and blocks removal of entities with late
   assert.equal(await readFile(service.store.file, "utf8"), disk);
 });
 
-test("duplicate and template insertion remap internal subtree links, exports exclude boundary links", async t => {
-  const { service, store } = await setup(t);
+test("duplicate remaps internal subtree links and leaves boundary links out", async t => {
+  const { service } = await setup(t);
   await createLinkedTree(service);
-  const { template } = await service.exportGroup({ ...reference, groupId: "g", templateId: "local-graph", name: "Graph" });
-  assert.deepEqual(template.links.map(link => link.id), ["internal", "to-group"]);
-  assert.equal(template.groups.find(group => group.id === "g")!.parentGroupId, null);
-  assert.equal(template.groups.find(group => group.id === "h")!.layout?.direction, "right");
-  await service.catalogMutate({ expectedRevision: 0, action: { type: "template.put", template } });
   const current = await service.mutate(mutation(1, [
     { type: "entity.duplicate", id: "g", idPrefix: "copy" },
     { type: "entity.duplicate", id: "b", idPrefix: "single" },
-    { type: "template.insert", templateId: template.id, idPrefix: "insert" },
   ]));
-  for (const prefix of ["copy", "insert"]) {
-    assert.deepEqual(current.document.links.filter(link => link.id.startsWith(`${prefix}.`)), template.links.map(link => ({ ...link, id: `${prefix}.${link.id}`, from: `${prefix}.${link.from}`, to: `${prefix}.${link.to}` })));
-  }
+  assert.deepEqual(current.document.links.filter(link => link.id.startsWith("copy.")).map(link => [link.id, link.from, link.to]), [["copy.internal", "copy.b", "copy.c"], ["copy.to-group", "copy.b", "copy.h"]]);
+  assert.equal(current.document.groups.find(group => group.id === "copy.h")!.layout?.direction, "right");
   assert.ok(!current.document.links.some(link => link.from === "single.b" || link.to === "single.b"));
-  const disk = await readFile(store.file, "utf8");
-  await assert.rejects(service.mutate(mutation(2, [{ type: "template.insert", templateId: template.id, idPrefix: "copy" }])), rejectCode("INVARIANT"));
-  assert.equal(await readFile(store.file, "utf8"), disk);
+  assert.throws(() => operationSchema.parse({ type: "template.insert", templateId: "any", idPrefix: "copy" }));
 });
-
-test("node type has four optional text properties; built-in graph example explains Lienzo with cross-group links", async t => {
+test("node type has four optional text properties", async t => {
   const { service } = await setup(t);
   const type = (await service.catalog()).blockTypes.find(type => type.id === "node")!;
   assert.equal(type.renderer, "node");
@@ -194,50 +186,6 @@ test("node type has four optional text properties; built-in graph example explai
   await service.mutate(mutation(0, [{ type: "block.create", block: { id: "n", typeId: "node", title: "Compact", data: {} } }]));
   for (const key of ["kind", "status", "summary", "details"]) await assert.rejects(service.mutate(mutation(1, [{ type: "block.update", id: "n", patch: { data: { [key]: 42 } } }])), rejectCode("VALIDATION"));
   await service.mutate(mutation(1, [{ type: "block.update", id: "n", patch: { data: { kind: "MODULE", status: "ready", summary: "Short", details: "Long" } } }]));
-  const example = (await service.instantiatePack({ workspaceId, packId: "graph", documentIndex: 0 })).document;
-  assert.equal(example.example, true);
-  assert.match(example.title, /Example.*Lienzo/);
-  assert.ok(example.blocks.every(block => block.typeId === "node"));
-  assert.ok(example.groups.length >= 2 && example.groups.length <= 3);
-  assert.ok(example.groups.every(group => group.layout?.mode === "graph"));
-  assert.equal(example.layout?.mode, "graph");
-  assert.deepEqual(new Set(example.links.map(link => link.kind)), new Set(["flow", "depends", "reference"]));
-  assert.ok(example.links.some(link => example.blocks.find(block => block.id === link.from)?.parentGroupId !== example.blocks.find(block => block.id === link.to)?.parentGroupId));
-  const exported = await service.exportPack({ id: "graph" });
-  assert.deepEqual(exported.documents[0].links, example.links);
-  assert.equal((await service.validatePack({ pack: exported })).valid, false);
-});
-
-test("packs roundtrip graph document and template links/layouts; malformed links reject without writes", async t => {
-  const { service, store, directory } = await setup(t);
-  await createLinkedTree(service);
-  const { template } = await service.exportGroup({ ...reference, groupId: "g", templateId: "custom.graph", name: "Graph" });
-  const { id: _id, workspaceId: _workspaceId, revision: _revision, createdAt: _createdAt, updatedAt: _updatedAt, ...doc } = (await service.read(reference)).document;
-  doc.layout = { mode: "graph", direction: "right" };
-  const pack = { ...userPack(), templates: [template], documents: [doc] };
-  assert.equal((await service.validatePack({ pack })).valid, true);
-  const disk = await readFile(store.file, "utf8");
-  for (const invalid of [
-    { ...pack, documents: [{ ...doc, links: [linkSchema.parse({ id: "bad", from: "b", to: "missing" })] }] },
-    { ...pack, templates: [{ ...template, links: [linkSchema.parse({ id: "bad", from: "b", to: "x" })] }] },
-    { ...pack, templates: [{ ...template, links: [template.links[0], { ...template.links[0], id: "duplicate" }] }] },
-  ]) {
-    assert.equal((await service.validatePack({ pack: invalid })).valid, false);
-    await assert.rejects(service.importPack({ expectedRevision: 0, pack: invalid, dryRun: false, replace: false }), rejectCode("INVARIANT"));
-    assert.equal(await readFile(store.file, "utf8"), disk);
-  }
-  await service.importPack({ expectedRevision: 0, pack, dryRun: false, replace: false });
-  assert.deepEqual(await service.exportPack({ id: "custom" }), pack);
-  const instantiated = await service.instantiatePack({ workspaceId, packId: "custom", documentIndex: 0, id: "packed" });
-  assert.deepEqual(instantiated.document.links, doc.links);
-  assert.deepEqual(instantiated.document.layout, doc.layout);
-  await store.close();
-  const reopened = new CanvasStore(directory); t.after(() => reopened.close());
-  const fresh = new CanvasService(reopened);
-  assert.deepEqual(await fresh.exportPack({ id: "custom" }), pack);
-  assert.deepEqual((await fresh.read({ ...reference, documentId: "packed" })).document.links, doc.links);
-  const inserted = await fresh.mutate(mutation(1, [{ type: "template.insert", templateId: "custom.graph", idPrefix: "packed" }]));
-  assert.deepEqual(inserted.document.links.filter(link => link.id.startsWith("packed.")), template.links.map(link => ({ ...link, id: `packed.${link.id}`, from: `packed.${link.from}`, to: `packed.${link.to}` })));
 });
 
 test("installed SDK loads every shared contract and backend entry", () => {
@@ -420,63 +368,47 @@ test("checklist objects/media protocols validate; conceptual and real previews w
   assert.deepEqual(checklistDataSchema.parse({ items: [{ label: "Ready", done: true }] }).items, [{ label: "Ready", done: true }]);
   await service.mutate(mutation(0, [{ type: "block.create", block: { id: "p", title: "Real preview", typeId: "preview", data: { description: "Running frontend", url: "https://example.test/preview" } } }]));
   for (const url of ["javascript:alert(1)", "data:text/html,hello", "file:///tmp/private", "https://user:password@example.test/"]) await assert.rejects(service.mutate(mutation(1, [{ type: "block.update", id: "p", patch: { data: { url } } }])), rejectCode("VALIDATION"));
-  const learned = await service.instantiatePack({ workspaceId, packId: "learn", documentIndex: 0 });
-  assert.equal(learned.document.example, true);
-  assert.deepEqual(learned.document.blocks.map(block => block.typeId), ["node", "note", "code", "note", "note"]);
 });
 
-const userPack = () => packSchema.parse({ format: "paseo-canvas-pack", version: 1, id: "custom", name: "Custom", description: "", blockTypes: [{ id: "custom.note", name: "Custom note", description: "", properties: [{ key: "text", label: "Text", kind: "text", required: true }], defaults: { text: "" } }], templates: [], documents: [] });
+const customNote = { id: "custom.note", name: "Custom note", description: "", properties: [{ key: "text", label: "Text", kind: "text" as const, required: true }], defaults: { text: "" } };
+/** A pack written before the UI pass, carrying a block type. Stored ones still load; new ones are not imported. */
+const userPack = () => packSchema.parse({ format: "paseo-canvas-pack", version: 1, id: "custom", name: "Custom", description: "", blockTypes: [customNote], templates: [], documents: [] });
+const extensionFile = (id = "custom") => packSchema.parse({ format: "paseo-canvas-pack", version: 1, id, name: "Custom", description: "", blockTypes: [], templates: [], documents: [], extensions: [{ id: `${id}.tool`, kind: "tool", api: 1, name: "Tool", html: "<p>tool</p>" }] });
 
-test("user pack validate/dry-run/import/export roundtrip persists and removal preserves orphaned block data", async t => {
+test("a stored pack with block types loads and works; removing it preserves orphaned block data", async t => {
   const { service, store } = await setup(t);
   const pack = userPack();
-  assert.equal((await service.validatePack({ pack })).valid, true);
-  const originalDisk = await readFile(store.file, "utf8");
-  const dry = await service.importPack({ expectedRevision: 0, pack, dryRun: true, replace: false });
-  assert.equal(dry.committed, false); assert.equal((await service.catalog()).revision, 0);
-  assert.equal(await readFile(store.file, "utf8"), originalDisk);
-  await service.importPack({ expectedRevision: 0, pack, dryRun: false, replace: false });
-  const exported = await service.exportPack({ id: pack.id });
-  assert.deepEqual(exported, pack); assert.equal((await service.validatePack({ pack: exported })).valid, true);
+  await store.transaction(state => { state.catalog.packs = [pack]; state.catalog.revision = 1; });
+  assert.ok((await service.catalog()).blockTypes.some(type => type.id === "custom.note"));
   await service.mutate(mutation(0, [{ type: "block.create", block: { id: "custom", typeId: "custom.note", title: "Saved", data: { text: "Keep" } } }]));
   await service.catalogMutate({ expectedRevision: 1, action: { type: "pack.remove", id: pack.id } });
   await service.mutate(mutation(1, [{ type: "document.update", title: "Unrelated" }]));
   assert.equal((await service.read(reference)).document.blocks.find(block => block.id === "custom")!.data.text, "Keep");
 });
-
-test("pack docs with unknown types, size excess, duplicates and local/pack namespace collisions fail atomically", async t => {
+test("extension files validate, dry-run and import; files with types, templates or documents and oversize files fail atomically", async t => {
   const { service, store } = await setup(t);
-  const unknown = userPack(); unknown.documents = [{ ...content(), blocks: [{ id: "unknown", typeId: "missing", title: "", data: {} }] }];
-  assert.equal((await service.validatePack({ pack: unknown })).valid, false);
+  const file = extensionFile();
+  assert.equal((await service.validatePack({ pack: file })).valid, true);
   const disk = await readFile(store.file, "utf8");
-  await assert.rejects(service.importPack({ expectedRevision: 0, pack: unknown, dryRun: false, replace: false }), rejectCode("UNKNOWN_TYPE"));
+  const dry = await service.importPack({ expectedRevision: 0, pack: file, dryRun: true, replace: false });
+  assert.equal(dry.committed, false); assert.deepEqual(dry.diff.added, ["custom.tool"]); assert.equal(await readFile(store.file, "utf8"), disk);
+  for (const legacy of [userPack(), { ...file, templates: [{ id: "custom.t", name: "T", description: "", blocks: [], groups: [] }] }, { ...file, documents: [content()] }, { ...file, extensions: [] }]) {
+    assert.equal((await service.validatePack({ pack: legacy })).valid, false);
+    await assert.rejects(service.importPack({ expectedRevision: 0, pack: legacy, dryRun: false, replace: false }), rejectCode("VALIDATION"));
+  }
   assert.equal(await readFile(store.file, "utf8"), disk);
-  await service.catalogMutate({ expectedRevision: 0, action: { type: "type.put", blockType: userPack().blockTypes[0] } });
-  await assert.rejects(service.importPack({ expectedRevision: 1, pack: userPack(), dryRun: false, replace: false }), rejectCode("VALIDATION"));
-  const huge = { ...userPack(), description: "x".repeat(1024 * 1024) };
-  assert.equal((await service.validatePack({ pack: huge })).valid, false);
+  assert.equal((await service.validatePack({ pack: { ...file, description: "x".repeat(1024 * 1024) } })).valid, false);
+  const imported = await service.importPack({ expectedRevision: 0, pack: file, dryRun: false, replace: false });
+  assert.equal(imported.committed, true); assert.deepEqual(imported.catalog.extensions.map(e => [e.id, e.source]), [["custom.tool", "custom"]]);
 });
-
-test("pack namespace nesting and local template collisions are refused", async t => {
+test("extension file namespaces cannot nest, and a file cannot take a local extension's ID", async t => {
   const { service } = await setup(t);
-  const pack = userPack();
-  await service.importPack({ expectedRevision: 0, pack, dryRun: false, replace: false });
-  const nested = { ...userPack(), id: "custom.nested", blockTypes: [] };
-  await assert.rejects(service.importPack({ expectedRevision: 1, pack: nested, dryRun: false, replace: false }), rejectCode("VALIDATION"));
-  await service.catalogMutate({ expectedRevision: 1, action: { type: "template.put", template: { id: "newpack.group", name: "Local", description: "", blocks: [], groups: [], links: [] } } });
-  const collision = { ...userPack(), id: "newpack", blockTypes: [], templates: [{ id: "newpack.group", name: "Pack", description: "", blocks: [], groups: [] }] };
-  await assert.rejects(service.importPack({ expectedRevision: 2, pack: collision, dryRun: false, replace: false }), rejectCode("VALIDATION"));
+  await service.importPack({ expectedRevision: 0, pack: extensionFile(), dryRun: false, replace: false });
+  await assert.rejects(service.importPack({ expectedRevision: 1, pack: extensionFile("custom.nested"), dryRun: false, replace: false }), rejectCode("VALIDATION"));
+  await assert.rejects(service.importPack({ expectedRevision: 1, pack: extensionFile(), dryRun: false, replace: false }), rejectCode("VALIDATION"));
+  await service.catalogMutate({ expectedRevision: 1, action: { type: "extension.put", extension: { id: "mine.tool", kind: "tool", api: 1, name: "Mine", description: "", html: "<p/>", permissions: [] } } });
+  await assert.rejects(service.importPack({ expectedRevision: 2, pack: extensionFile("mine"), dryRun: false, replace: false }), rejectCode("VALIDATION"));
 });
-
-test("group export/catalog save/template insert remaps nested IDs", async t => {
-  const { service } = await setup(t);
-  await service.mutate(mutation(0, [{ type: "group.create", group: group("g", ["b"]) }]));
-  const { template } = await service.exportGroup({ ...reference, groupId: "g", templateId: "local-template", name: "Local" });
-  await service.catalogMutate({ expectedRevision: 0, action: { type: "template.put", template } });
-  const current = await service.mutate(mutation(1, [{ type: "template.insert", templateId: template.id, idPrefix: "inserted" }]));
-  assert.deepEqual(current.document.groups.find(group => group.id === "inserted.g")!.blockIds, ["inserted.b"]);
-});
-
 test("MCP large create and library write succeed with compact truthful acknowledgements", async t => {
   const { service } = await setup(t);
   const router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }));
@@ -484,7 +416,7 @@ test("MCP large create and library write succeed with compact truthful acknowled
   const response = await router.call("canvas_create", { id: "large", content: large }, "owner") as { documentId: string; revision: number };
   assert.equal(response.documentId, "large");
   assert.equal((await service.read({ workspaceId, documentId: "large" })).document.blocks[0].data.text, large.blocks[0].data.text);
-  const blockType = { ...userPack().blockTypes[0], id: "huge-local", defaults: { text: "x".repeat(30000) } };
+  const blockType = { ...customNote, id: "huge-local", defaults: { text: "x".repeat(30000) } };
   assert.deepEqual(await router.call("canvas_catalog", { action: "save_type", expectedRevision: 0, blockType }, "owner"), { revision: 1, committed: true, copilot: { enabled: false, cadence: "step", rule: "", documentId: null } });
   const full = await router.call("canvas_read", { documentId: "large", view: "full" }, "owner") as { truncated: boolean };
   assert.equal(full.truncated, true);

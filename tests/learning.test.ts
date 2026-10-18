@@ -1,5 +1,5 @@
 import { registerRendererVisual } from "../plugin/client/renderer-visuals";
-import { documentContent, forkPack, selectionPack, layoutCanvas } from "../plugin/client/logic";
+import { documentContent, layoutCanvas } from "../plugin/client/logic";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -153,10 +153,10 @@ test('optimistic channel preserves newer edits during requests, reports failures
   const failing = new LearningRuntimeStore(async () => { throw new Error('offline'); }, () => {}); failing.sync(document, 0, emptyRuntime()); failing.setBlock('b', { x: 1 }); await assert.rejects(failing.flush(), /offline/); assert.equal(failing.getSnapshot().blocks.b.x, 1); failing.reset();
 });
 
-test('document copy/export, selection packs and group templates roundtrip declarations while excluding runtime', async t => {
+test('document copies roundtrip declarations while excluding runtime', async t => {
   const { service } = await setup(t); await withScopes(service);
   await runtimeSet(service, { blocks: [{ id: 'b', state: { privateValue: 8 } }], scopes: [{ id: '$document', values: { shared: 9 } }, { id: 'inner', values: { x: 7 } }] });
-  const source = await service.read(reference), catalog = await service.catalog();
+  const source = await service.read(reference);
   for (const own of [false, true]) {
     const exported = documentContent(source.document, own);
     assert.deepEqual(exported.variables, source.document.variables); assert.deepEqual(exported.groups.map(g => g.variables), source.document.groups.map(g => g.variables));
@@ -164,20 +164,6 @@ test('document copy/export, selection packs and group templates roundtrip declar
     const copied = await service.create({ id: `copy-${own}`, workspaceId, content: exported });
     assert.deepEqual(copied.runtime, emptyRuntime()); assert.equal(resolveScope(copied.document, 'b', copied.runtime).x.current, 4); assert.equal(resolveScope(copied.document, 'b', copied.runtime).shared.current, 2);
   }
-  const selected = selectionPack(source.document, catalog, ['inner']);
-  assert.deepEqual(selected.documents[0].variables, source.document.variables); assert.deepEqual(selected.documents[0].groups[0].variables, source.document.groups.find(g => g.id === 'inner')!.variables);
-  assert.equal(JSON.stringify(selected).includes('privateValue'), false);
-  const forked = forkPack(selected, 'portable-scopes');
-  await service.importPack({ expectedRevision: 0, pack: forked, replace: false, dryRun: false });
-  const exportedPack = await service.exportPack({ id: 'portable-scopes' }); assert.deepEqual(exportedPack, forked);
-  const instantiated = await service.instantiatePack({ workspaceId, packId: 'portable-scopes', documentIndex: 0, id: 'pack-copy' });
-  assert.deepEqual(instantiated.runtime, emptyRuntime()); assert.deepEqual(instantiated.document.variables, source.document.variables); assert.equal(resolveScope(instantiated.document, 'b', instantiated.runtime).x.current, 4);
-  const { template } = await service.exportGroup({ ...reference, groupId: 'outer', templateId: 'scoped-template', name: 'Scoped template' });
-  assert.deepEqual(template.groups.map(g => g.variables), source.document.groups.map(g => g.variables)); assert.equal('runtime' in template, false);
-  await service.catalogMutate({ expectedRevision: 1, action: { type: 'template.put', template } });
-  const inserted = await service.mutate(mutation(1, [{ type: 'template.insert', templateId: 'scoped-template', idPrefix: 'inserted' }]));
-  assert.equal(resolveScope(inserted.document, 'inserted.b', inserted.runtime).x.current, 4); assert.equal(resolveScope(inserted.document, 'inserted.b', inserted.runtime).shared.current, 9);
-  assert.equal(inserted.runtime.blocks['inserted.b'], undefined); assert.equal(inserted.runtime.scopes['inserted.inner'], undefined);
 });
 
 test('renderer-owned visual width is used by automatic canvas layout without token edits', async t => {

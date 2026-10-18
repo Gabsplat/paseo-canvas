@@ -3,17 +3,16 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { builtinPacks, builtinTypes, builtinTemplates } from '../plugin/shared/builtins';
+import { builtinTypes } from '../plugin/shared/builtins';
 import { mutateInputSchema, type CanvasCatalog, type CanvasDocument } from '../plugin/shared/model';
 import { CanvasService } from '../plugin/server/service';
 import { CanvasStore } from '../plugin/server/store';
-import { parsePack } from '../plugin/server/catalog';
 import { reduce } from '../plugin/server/reducer';
-import { alignmentGuides, connectionsOf, connectOperations, containerMode, descriptionKey, documentContent, dropTarget, edgePan, fitCamera, forkPack, freezeOperations, groupOperations, hasCommunication, initialCamera, instructionLevels, layeredLayout, layoutCanvas, layoutDocument, linkFocus, linkRoutes, moveOperations, pinnedChildren, propertyValue, releaseOperations, resolveOverlaps, reuseDocumentEntities, safeUrl, selectionPack, topSelection, travellers, visibleEnd, zoomAround } from '../plugin/client/logic';
+import { alignmentGuides, connectionsOf, connectOperations, containerMode, descriptionKey, documentContent, dropTarget, edgePan, fitCamera, freezeOperations, groupOperations, hasCommunication, initialCamera, instructionLevels, layeredLayout, layoutCanvas, layoutDocument, linkFocus, linkRoutes, moveOperations, pinnedChildren, propertyValue, releaseOperations, resolveOverlaps, reuseDocumentEntities, safeUrl, topSelection, travellers, visibleEnd, zoomAround } from '../plugin/client/logic';
 import { initialDocumentId, rememberOpenDocument } from '../plugin/client/session';
 import { linkMagnet, minimumBlockSize, resizeBlockSize } from '../plugin/client/logic';
 import { frameSandbox, mediaSource } from '../plugin/client/media';
-const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks, extensions: [] };
+const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, packs: [], extensions: [] };
 test('media URLs resolve to safe players, preserve timestamps and Vimeo privacy hashes, and do not enable autoplay', () => {
   for (const url of ['https://youtube.com/watch?v=M7lc1UVf-VE&t=1m12s&autoplay=1', 'https://youtu.be/M7lc1UVf-VE?t=72', 'https://www.youtube.com/shorts/M7lc1UVf-VE?start=72', 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE?start=72']) {
     const media = mediaSource(url)!; assert.equal(media.provider, 'YouTube');
@@ -82,7 +81,6 @@ test('resize survives storage, undo/redo, duplication, unpinning and pack roundt
     view = await service.undo({ workspaceId: doc.workspaceId, documentId: sized.id, expectedRevision: view.document.revision }, 'user', true); assert.deepEqual(view.document.blocks[0].size, { width: 480, height: 240 });
     const duplicated = reduce(view.document, [{ type: 'entity.duplicate', id: 'a', idPrefix: 'copy' }], catalog); assert.deepEqual(duplicated.blocks.find(b => b.id !== 'a')!.size, sized.blocks[0].size);
     const unpinned = reduce(view.document, releaseOperations(view.document, ['a'], catalog), catalog); assert.deepEqual(unpinned.blocks[0].size, sized.blocks[0].size);
-    const pack = parsePack(JSON.parse(JSON.stringify(selectionPack(view.document, catalog, ['a']))), catalog); assert.deepEqual(pack.documents[0].blocks[0].size, sized.blocks[0].size);
     await store.close(); store = new CanvasStore(dir); service = new CanvasService(store);
     const persisted = (await service.read({ workspaceId: doc.workspaceId, documentId: sized.id })).document; assert.deepEqual(persisted.blocks[0].size, sized.blocks[0].size);
     await assert.rejects(service.mutate(input), /revision|conflict/i); assert.deepEqual((await service.read({ workspaceId: doc.workspaceId, documentId: sized.id })).document, persisted);
@@ -441,11 +439,9 @@ test('pin and release transactions persist, undo and redo as complete edits, and
     assert.deepEqual((await service.read({ workspaceId: doc.workspaceId, documentId: pinned.id })).document, released, 'stale release changes neither persisted content nor revision');
   } finally { await store.close(); await rm(dir, { recursive: true, force: true }); }
 });
-test('ancestor selection produces one delete operation and selection exports retain complete subtrees', () => {
+test('ancestor selection produces one delete operation', () => {
   const doc = document(); doc.blocks = [{ id: 'a', typeId: 'note', title: 'Note', data: { text: 'Text' }, parentGroupId: 'g' }]; doc.groups = [{ id: 'g', title: 'Group', description: '', blockIds: ['a'], groupIds: [] }];
   assert.deepEqual(topSelection(doc, ['g', 'a']).map(e => e.id), ['g']);
-  const pack = selectionPack(doc, catalog, ['g']); const valid = parsePack(pack, catalog);
-  assert.equal(valid.documents[0].blocks[0].parentGroupId, 'g'); assert.ok(valid.blockTypes.every(t => t.id.startsWith(`${valid.id}.`)));
 });
 test('clearing communication removes its effective level without changing group membership or ancestors', () => {
   const doc = document(), communication = { intent: 'Review', audience: 'Team', instructions: 'Keep concise' };
@@ -458,9 +454,6 @@ test('clearing communication removes its effective level without changing group 
   assert.equal(next.groups[0].description, 'Purpose'); assert.deepEqual(next.groups[0].blockIds, ['a']); assert.equal(next.blocks[0].parentGroupId, 'g');
   assert.equal(hasCommunication({ intent: '  ', audience: '\n', instructions: '\t' }), false);
   assert.equal(hasCommunication({ ...empty, audience: 'Team' }), true);
-});
-test('shipped example export forks into an importable portable namespace', () => {
-  for (const pack of builtinPacks) { const fork = forkPack(pack, `copy-${pack.id}`); const parsed = parsePack(JSON.parse(JSON.stringify(fork)), catalog); assert.equal(parsed.id, `copy-${pack.id}`); assert.ok(parsed.templates.every(t => t.id.startsWith(`${parsed.id}.`))); assert.ok(parsed.extensions.every(e => e.id.startsWith(`${parsed.id}.`))); assert.equal(parsed.extensions.length, pack.extensions.length); if (parsed.documents.length) assert.equal(parsed.documents[0].example, true); }
 });
 test('form properties are typed and URL previews reject executable schemes and credentials', () => {
   assert.equal(propertyValue('boolean', false), false); assert.equal(propertyValue('boolean', 'true'), true); assert.throws(() => propertyValue('boolean', 'yes'));
@@ -589,17 +582,7 @@ test('link edits are real transactions and links travel with copies, exports and
   assert.equal(reduce(next, [{ type: 'link.delete', id: created.id! }], catalog).links.length, doc.links.length);
   assert.deepEqual(connectionsOf(doc, 'custody').map(c => [c.outgoing, c.otherId, c.link.kind]), [[false, 'session', 'flow'], [false, 'session', 'depends'], [false, 'session', 'reference'], [false, 'binding', 'flow']]);
   assert.equal(documentContent(doc, true).links.length, doc.links.length);
-  const pack = selectionPack(doc, catalog, ['session', 'custody', 'host']); assert.deepEqual(pack.documents[0].links.map(l => l.id).sort(), ['host-session', 'session-custody', 'session-custody-depends', 'session-custody-reference']);
-  assert.equal(parsePack(pack, catalog).documents[0].links.length, 4);
 });
-test('shipped example documents lay out tidily with their links', () => {
-  for (const pack of builtinPacks) for (const content of pack.documents) {
-    const doc = { ...document(), ...JSON.parse(JSON.stringify(content)) } as CanvasDocument, layout = layoutCanvas(doc, {}, catalog, 1280); assertTidy(doc, layout.rects);
-    const routes = linkRoutes(doc, layout); assert.ok(routes.reduce((sum, r) => sum + r.count, 0) <= doc.links.length);
-    for (const r of routes) assert.ok(Number.isFinite(r.labelPoint.x + r.labelPoint.y + r.badgePoint.x + r.end.x));
-  }
-});
-
 test('node cards take the room their container can spare, counted per container', async () => {
   const { nodeDensity } = await import('../plugin/client/logic');
   const node = (id: string, parentGroupId: string | null = null) => ({ id, typeId: 'node', title: id, data: {}, parentGroupId });

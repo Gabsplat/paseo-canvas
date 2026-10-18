@@ -5,7 +5,7 @@ import { setup, mutation, workspaceId } from './helpers';
 import { CanvasStore } from '../plugin/server/store';
 import { CanvasService } from '../plugin/server/service';
 import { canvasPresentation } from '../plugin/client/presentation';
-import { selectionPack, forkPack, layoutCanvas } from '../plugin/client/logic';
+import { layoutCanvas } from '../plugin/client/logic';
 import { glslShaderDataSchema } from '../plugin/shared/renderers/glsl-shader';
 
 const reference = { documentId: 'd', workspaceId };

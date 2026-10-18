@@ -8,6 +8,8 @@ import { ToolRouter, toolNames, type CallerScope } from "./tools";
 import { CopilotService } from "./copilot";
 import { AgentGateway, type HandlerContext, type ServerHost } from "./host";
 
+/** The plugin's version (plugin/package.json). */
+export const LIENZO_VERSION = "0.1.0";
 export interface CanvasCoreOptions {
   /** Private directory holding state.json and the writer lock. */
   directory: string;
@@ -16,6 +18,8 @@ export interface CanvasCoreOptions {
   /** Makes the agent tools reachable before a connection is saved (the Paseo MCP bridge). */
   ensureTools?: () => Promise<void>;
   /** Host-specific setup snippet for an agent that existed before the tools. Absent: the RPC says it is unavailable. */
+  /** Shown in Settings → About. Defaults to the plugin's version. */
+  version?: string;
   agentSetup?: (input: RpcInput<typeof rpc.agentSetup>, context: HandlerContext) => Promise<{ configuration: string; instructions: string; requiresReload: boolean }>;
 }
 export interface CanvasCore {
@@ -51,6 +55,7 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.watchDocument, input => service.watch(input));
   host.handle(rpc.createDocument, input => service.create(input));
   host.handle(rpc.mutateDocument, input => service.mutate(input));
+  host.handle(rpc.deleteDocument, input => service.remove(input));
   host.handle(rpc.undoDocument, input => service.undo(input));
   host.handle(rpc.redoDocument, input => service.undo(input, "user", true));
   host.handle(rpc.readHistory, input => service.history(input));
@@ -59,9 +64,7 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.mutateCatalog, input => service.catalogMutate(input));
   host.handle(rpc.validatePack, input => service.validatePack(input));
   host.handle(rpc.importPack, input => service.importPack(input));
-  host.handle(rpc.exportPack, input => service.exportPack(input));
-  host.handle(rpc.instantiatePack, input => service.instantiatePack(input));
-  host.handle(rpc.exportGroup, input => service.exportGroup(input));
+  host.handle(rpc.readAbout, () => ({ version: options.version ?? LIENZO_VERSION, dataFile: store.file, host: host.kind }));
   host.handle(rpc.readSharing, input => service.sharing(input));
   host.handle(rpc.configureSharing, input => service.configureSharing(input));
   host.handle(rpc.createSheet, input => service.createSheet(input));
