@@ -39,7 +39,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const pat
   const hours=h=>new Date(Date.now()-h*3600e3).toISOString();
   __panelQA.addDocument({id:'qa-auth',title:'How sign-in works',updatedAt:hours(3),blocks:[node('b','Browser','client'),node('f','Form','client'),node('a','Auth API','server'),node('s','Session store','server'),node('t','Token','server')],groups:[area('client','Client',['b','f']),area('server','Server',['a','s','t'])],links:[{id:'l1',from:'b',to:'f',kind:'flow'},{id:'l2',from:'f',to:'a',kind:'flow'},{id:'l3',from:'a',to:'s',kind:'depends'},{id:'l4',from:'a',to:'t',kind:'flow'}],layout:{mode:'graph',direction:'right'}});
   const sheet=(n,title,ids,x)=>({id:'hoja'+n,title,description:'',blockIds:ids,groupIds:[],layout:{mode:'grid',columns:2},position:{x,y:0},sheet:{number:n,createdAt:hours(30),source:'agent'}});
-  __panelQA.addDocument({id:'qa-cache',title:'Caching, explained in three Hojas',updatedAt:hours(26),layout:{mode:'free'},blocks:[node('c1','Request','hoja1'),node('c2','Cache hit','hoja1'),node('c3','Miss','hoja2'),{id:'n1',typeId:'note',title:'Why',data:{text:'Example.'},parentGroupId:'hoja2'},{id:'k1',typeId:'code',title:'Headers',data:{code:'Cache-Control: max-age=60',language:'http'},parentGroupId:'hoja3'},{id:'x1',typeId:'checklist',title:'Checks',data:{items:['Stale','Fresh']},parentGroupId:'hoja3'}],groups:[sheet(1,'The request',['c1','c2'],0),sheet(2,'A miss',['c3','n1'],760),sheet(3,'Headers',['k1','x1'],1520)],links:[{id:'cl',from:'c1',to:'c2',kind:'flow'}]},'agent-claude');
+  __panelQA.addDocument({id:'qa-cache',title:'Caching, explained in three Sheets',updatedAt:hours(26),layout:{mode:'free'},blocks:[node('c1','Request','hoja1'),node('c2','Cache hit','hoja1'),node('c3','Miss','hoja2'),{id:'n1',typeId:'note',title:'Why',data:{text:'Example.'},parentGroupId:'hoja2'},{id:'k1',typeId:'code',title:'Headers',data:{code:'Cache-Control: max-age=60',language:'http'},parentGroupId:'hoja3'},{id:'x1',typeId:'checklist',title:'Checks',data:{items:['Stale','Fresh']},parentGroupId:'hoja3'}],groups:[sheet(1,'The request',['c1','c2'],0),sheet(2,'A miss',['c3','n1'],760),sheet(3,'Headers',['k1','x1'],1520)],links:[{id:'cl',from:'c1',to:'c2',kind:'flow'}]},'agent-claude');
   __panelQA.addDocument({id:'qa-plan',title:'Q4 roadmap sketch',updatedAt:hours(24*5),layout:{mode:'free'},blocks:[{id:'p1',typeId:'note',title:'Goals',data:{text:'Example.'},position:{x:0,y:0}},{id:'p2',typeId:'checklist',title:'Ship',data:{items:['Lienzos','Guide']},position:{x:420,y:40}},{id:'p3',typeId:'code',title:'Config',data:{code:'x = 1',language:'text'},position:{x:120,y:320}}],groups:[],links:[{id:'pl',from:'p1',to:'p2',kind:'flow'},{id:'pl2',from:'p1',to:'p3',kind:'reference'}]});
   __panelQA.addDocument({id:'qa-empty',title:'Untitled Lienzo',updatedAt:hours(24*40),blocks:[],groups:[],links:[]});
  })()`);
@@ -47,7 +47,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const pat
  await menu('Lienzos');await wait('!!document.querySelector("#lienzo-lienzos")');await wait('document.querySelectorAll("[id^=lienzo-card-]").length===5','five Lienzo cards');await pause(900);
  const sheet=await inside('#lienzo-screen-lienzos');if(!compact){assert.ok(sheet.w<=961&&sheet.h<=681,'up to 960 × 680');assert.ok(sheet.x>=23&&sheet.y>=23,'24 px from the edges');}
  const cards=await ev(`[...document.querySelectorAll('[id^=lienzo-card-]')].map(e=>e.id.slice(12))`);assert.deepEqual(cards,['qa-auth','qa-cache','qa-plan','qa-board','qa-empty'],'recent first');
- assert.match(await text('#lienzo-card-qa-cache'),/Edited 1 d ago · 6 blocks · 3 Hojas/);assert.match(await text('#lienzo-card-qa-cache'),/agent-claude|Agent/i);
+ assert.match(await text('#lienzo-card-qa-cache'),/Edited 1 d ago · 6 blocks · 3 Sheets/);assert.match(await text('#lienzo-card-qa-cache'),/agent-claude|Agent/i);
  assert.ok(!(await ev('document.body.innerText.includes("Examples")')),'no examples section');
  await shot('lienzos');
  await click('#lienzo-lienzos-search');await type('caching');await wait('document.querySelectorAll("[id^=lienzo-card-]").length===1','search filters as you type');
@@ -62,7 +62,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const pat
  assert.match(await text('#lienzo-guide'),/Paseo[\s\S]*desktop app/);await click('#lienzo-guide [aria-label="Skip"]');await wait('!document.querySelector("#lienzo-guide")');
  // Pin three tools from the + catalog, for Settings → Toolbar.
  await click('#lienzo-tool-add');await wait('!!document.querySelector("#lienzo-add-menu")');
- for(const name of ['Rectangle','Ventana','Image']){await click('#lienzo-add-menu '+L('Pin '+name));}
+ for(const name of ['Rectangle','Window','Image']){await click('#lienzo-add-menu '+L('Pin '+name));}
  await click('[aria-label="Close the catalog"]');await pause(300);
  // 3. Settings, two columns. Shortcuts record in place; a conflict shows on the row that lost its keys.
  await menu('Settings');await wait('!!document.querySelector("#lienzo-settings-shortcuts")');await inside('#lienzo-screen-settings');await shot('settings-shortcuts');

@@ -27,7 +27,7 @@ function useTyped(t: T, text: string, a: number, b: number) {
   useEffect(() => { if (reducedMotion.current) { setN(text.length); return; } const id = t.addListener(({ value }) => { const k = Math.round(Math.max(0, Math.min(1, (value - a) / (b - a))) * text.length); setN(p => p === k ? p : k); }); return () => t.removeListener(id); }, [t, text]);
   return text.slice(0, n);
 }
-/** A value that steps with the scene's time (the "Hoja 2 of 3" pill). */
+/** A value that steps with the scene's time (the "Sheet 2 of 3" pill). */
 function useStep<V>(t: T, pick: (value: number) => V) {
   const [v, setV] = useState(() => pick(reducedMotion.current ? 1 : 0));
   useEffect(() => { const id = t.addListener(({ value }) => { const next = pick(value); setV(p => p === next ? p : next); }); return () => t.removeListener(id); }, [t]);
@@ -99,9 +99,9 @@ function SceneDraws({ t }: { t: T }) {
   </>;
 }
 
-/** 2. Three Hojas slide in along a strip; the pill counts them and the magnet glows while the camera follows. */
+/** 2. Three Sheets slide in along a strip; the pill counts them and the magnet glows while the camera follows. */
 function SceneHojas({ t }: { t: T }) {
-  const u = useUI(), pill = useStep(t, v => `Hoja ${v < .32 ? 1 : v < .66 ? 2 : 3} of ${v < .24 ? 1 : v < .58 ? 2 : 3}`);
+  const u = useUI(), pill = useStep(t, v => `Sheet ${v < .32 ? 1 : v < .66 ? 2 : 3} of ${v < .24 ? 1 : v < .58 ? 2 : 3}`);
   const following = Animated.add(seg(t, .26, .3, [0, 1]), Animated.multiply(seg(t, .4, .46, [0, 1]), -1)).interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
   const following2 = Animated.add(seg(t, .6, .64), Animated.multiply(seg(t, .74, .8), -1)).interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
   const glow = Animated.add(following, following2);
@@ -112,7 +112,7 @@ function SceneHojas({ t }: { t: T }) {
     <Animated.View style={{ position: 'absolute', left: 0, top: 0, width: 1200, height: 388, transform: [{ translateX: Animated.add(seg(t, .3, .44, [124, 124 - 330]), seg(t, .64, .78, [0, -330])) }] }}>
       {hojas.map((h, i) => <Animated.View key={i} style={[{ position: 'absolute', left: i * 330, top: 84, width: 280, height: 250, borderRadius: 14, borderWidth: 1.5, borderColor: withAlpha(tones[i], .6), backgroundColor: withAlpha(tones[i], .05) }, i ? { opacity: seg(t, at[i], at[i] + .08), transform: [{ translateX: seg(t, at[i], at[i] + .1, [60, 0]) }] } : null]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingTop: 12 }}>
-          <View style={{ paddingHorizontal: 7, height: 20, borderRadius: 6, justifyContent: 'center', backgroundColor: withAlpha(tones[i], .16) }}><Txt kind="label" style={{ color: tones[i], fontWeight: '700' }}>Hoja {i + 1}</Txt></View>
+          <View style={{ paddingHorizontal: 7, height: 20, borderRadius: 6, justifyContent: 'center', backgroundColor: withAlpha(tones[i], .16) }}><Txt kind="label" style={{ color: tones[i], fontWeight: '700' }}>Sheet {i + 1}</Txt></View>
           <Txt kind="groupTitle" numberOfLines={1}>{h.title}</Txt>
         </View>
         <MiniCard x={20} y={56} w={240} h={66} title={h.cards[0]} tone={tones[i]} style={i ? appear(t, at[i] + .08) : appear(t, .04)} />
@@ -196,7 +196,7 @@ function SceneTools({ t }: { t: T }) {
       <View style={{ padding: 14, gap: 10, alignItems: 'center' }}>
         <Txt style={{ fontSize: 34, lineHeight: 40, fontWeight: '600', fontVariant: ['tabular-nums'] }}>5:00</Txt>
         <View style={{ alignSelf: 'stretch', height: 4, borderRadius: 2, backgroundColor: withAlpha(u.c.foreground, .1), overflow: 'hidden' }}><Animated.View style={{ height: 4, backgroundColor: u.c.accent, width: seg(t, .84, 1, [0, 60]) }} /></View>
-        <Txt kind="label" muted>For the selected Marco</Txt>
+        <Txt kind="label" muted>For the selected Frame</Txt>
       </View>
     </Animated.View>
     <Animated.View style={{ position: 'absolute', left: 60, top: 196, opacity: seg(t, .42, .62, [0, 1, 1, 1, 0]), transform: [{ translateY: fold.interpolate({ inputRange: [0, 1], outputRange: [0, 6] }) }] }}>
@@ -245,7 +245,7 @@ export function Onboarding({ open, close, panel }: { open: boolean; close: () =>
         <Button label="Skip" variant="ghost" onPress={close} />
         <View style={{ flex: 1 }} />
         <Button label="Back" disabled={!step} onPress={() => go(step - 1)} />
-        <Button label={last ? 'Dale, let’s start' : 'Next'} variant="primary" onPress={() => last ? close() : go(step + 1)} />
+        <Button label={last ? 'Let’s start' : 'Next'} variant="primary" onPress={() => last ? close() : go(step + 1)} />
       </View>
     </View>
   </View>;

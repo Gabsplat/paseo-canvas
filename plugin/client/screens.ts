@@ -32,13 +32,13 @@ export function editedAgo(iso: string, now = Date.now()): string {
   return `${date.getDate()} ${month}${date.getFullYear() !== new Date(now).getFullYear() ? ' ' + date.getFullYear() : ''}`;
 }
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`;
-/** "Edited 3 h ago · 24 blocks · 3 Hojas". Counts are left out when the server did not send them. */
+/** "Edited 3 h ago · 24 blocks · 3 Sheets". Counts are left out when the server did not send them. */
 export function lienzoMeta(d: LienzoSummary, now = Date.now()): string {
-  return [`Edited ${editedAgo(d.updatedAt, now)}`, ...(d.blockCount !== undefined ? [plural(d.blockCount, 'block')] : []), ...(d.hojaCount ? [plural(d.hojaCount, 'Hoja')] : [])].join(' · ');
+  return [`Edited ${editedAgo(d.updatedAt, now)}`, ...(d.blockCount !== undefined ? [plural(d.blockCount, 'block')] : []), ...(d.hojaCount ? [plural(d.hojaCount, 'Sheet')] : [])].join(' · ');
 }
 
 /**
- * A live thumbnail: the Lienzo's real layout fitted into a box, like the minimap. Marcos are outlines (Hojas a little
+ * A live thumbnail: the Lienzo's real layout fitted into a box, like the minimap. Frames are outlines (Sheets a little
  * stronger), cards filled marks in their tone, drawings faint marks, links thin lines between centres. Coordinates are
  * in the thumbnail's pixels.
  */
@@ -59,7 +59,7 @@ export function thumbnailModel(doc: CanvasDocument, catalog: CanvasCatalog | nul
   const place = (r: Rect) => ({ x: r.x * k + ox, y: r.y * k + oy, width: Math.max(2, r.width * k), height: Math.max(2, r.height * k) });
   const rendererOf = (typeId: string) => catalog?.blockTypes.find(t => t.id === typeId)?.renderer ?? '';
   const items: ThumbItem[] = [];
-  // Deepest Marcos last so nested outlines sit on top of their parents; cards after every Marco.
+  // Deepest Frames last so nested outlines sit on top of their parents; cards after every Frame.
   for (const g of [...doc.groups].sort((a, b) => (rects.get(a.id)?.depth ?? 0) - (rects.get(b.id)?.depth ?? 0))) { const r = visible(g.id); if (r) items.push({ id: g.id, kind: g.sheet ? 'hoja' : 'marco', ...place(r), tone: 'neutro' }); }
   for (const b of doc.blocks) { const r = visible(b.id); if (!r) continue; const drawing = rendererOf(b.typeId).startsWith('wb-'); items.push({ id: b.id, kind: drawing ? 'drawing' : 'card', ...place(r), tone: drawing ? 'neutro' : options.toneOf?.(b.typeId) ?? 'neutro' }); }
   const at = new Map(items.map(i => [i.id, i]));

@@ -65,7 +65,7 @@ test('the popover shows switch, cadence, remind, latest preview, recent Lienzos 
   assert.ok(!words(panel({ view: view({ copilot: { enabled: true, cadence: 'thinking', rule: '', remind: false, documentId: 'doc1' } }) })).includes('Remind the agent when it forgets'));
   // Off: an explanation with the glossary word, no cadence.
   const off = words(panel({ view: view({ copilot: { enabled: false, cadence: 'step', rule: '', remind: false, documentId: null }, latest: null, document: null }) })).join(' ');
-  assert.match(off, /Hoja \(a chapter of the canvas\)/); assert.match(off, /Open Lienzo/); assert.ok(!off.includes('Go to latest'));
+  assert.match(off, /Sheet \(a chapter of the canvas\)/); assert.match(off, /Open Lienzo/); assert.ok(!off.includes('Go to latest'));
 });
 
 test('an agent without Lienzo tools is told so and offered a new agent', () => {

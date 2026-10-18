@@ -1,8 +1,8 @@
 import type { CanvasDocument, CanvasGroup, CanvasSheet } from "../shared/model";
 
 /**
- * Hojas are chapters on one horizontal strip. The server does not measure what the client draws, so placement uses
- * a conservative estimate of each Hoja's width: explicit child positions when there are any, otherwise a grid guess
+ * Sheets are chapters on one horizontal strip. The server does not measure what the client draws, so placement uses
+ * a conservative estimate of each Sheet's width: explicit child positions when there are any, otherwise a grid guess
  * from how many things it holds. The client may tidy positions later; numbers and order never depend on them.
  */
 export const SHEET_GAP = 320;
@@ -30,7 +30,7 @@ function width(document: Pick<CanvasDocument, "blocks" | "groups">, id: string, 
   return Math.max(BLOCK_WIDTH, explicit, guessed) + 48;
 }
 
-/** Where the next Hoja goes: right of the last Hoja on its strip, or right of whatever is already on the canvas. */
+/** Where the next Sheet goes: right of the last Sheet on its strip, or right of whatever is already on the canvas. */
 export function nextSheetPlacement(document: Pick<CanvasDocument, "blocks" | "groups">): { number: number; position: { x: number; y: number } } {
   const sheets = sheetsOf(document);
   const number = sheets.length ? Math.max(...sheets.map(sheet => sheet.sheet.number)) + 1 : 1;

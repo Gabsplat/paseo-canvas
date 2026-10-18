@@ -40,7 +40,7 @@ test("a state file written with an event queue and outbound batches loads clean 
 test("the agent reads the selection through MCP: entities, effective instructions and the state the person left", async t => {
   const { service } = await setup(t);
   await service.mutate(mutation(0, [
-    { type: "group.create", group: { id: "g", title: "Marco", description: "", blockIds: ["b"], groupIds: [], communication: { instructions: "Teach it as a story.", intent: "", audience: "" } } },
+    { type: "group.create", group: { id: "g", title: "Frame", description: "", blockIds: ["b"], groupIds: [], communication: { instructions: "Teach it as a story.", intent: "", audience: "" } } },
     { type: "block.update", id: "b", patch: { communication: { instructions: "Use one example.", intent: "", audience: "" } } },
   ]));
   await service.runtimeSet({ workspaceId, documentId: "d", blocks: [{ id: "b", state: { value: 7, lastInteraction: { kind: "controls.x", label: "Ajustar x", at: "2026-10-18T00:00:00.000Z", payload: { visited: [2, 7] } } } }], scopes: [] });

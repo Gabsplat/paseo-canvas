@@ -681,7 +681,7 @@ export function groupOperations(doc: CanvasDocument, rects: Map<string, Rect>, i
   const nested = !!parent, pad = nested ? tokens.size.groupPaddingNested : tokens.size.groupPadding, head = nested ? tokens.size.groupHeaderNested : tokens.size.groupHeader;
   const left = Math.min(...items.map(e => rects.get(e.id)!.x)), top = Math.min(...items.map(e => rects.get(e.id)!.y)), origin = parent ? rects.get(parent) : null;
   const position = manual(index.mode(parent)) ? { x: Math.round(left - pad - (origin?.x ?? 0)), y: Math.round(top - head - pad - (origin?.y ?? 0)) } : undefined;
-  return [{ type: 'group.create', group: { id, title: 'New Marco', description: '', blockIds: [], groupIds: [], parentGroupId: parent, ...(position ? { position } : {}) } },
+  return [{ type: 'group.create', group: { id, title: 'New Frame', description: '', blockIds: [], groupIds: [], parentGroupId: parent, ...(position ? { position } : {}) } },
     ...items.map((e): CanvasOperation => { const r = rects.get(e.id)!; return { type: 'entity.move', id: e.id, parentGroupId: id, position: { x: Math.round(r.x - left) + pad, y: Math.round(r.y - top) + head + pad } }; })];
 }
 /** How world coordinates land inside a minimap of the given size: the content box fitted and centred. */

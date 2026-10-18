@@ -1,7 +1,9 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
+import { fakeUpdateState, type UpdateState } from '../shared/rpc';
 import { startDesktop } from './core';
+import { registerUpdateRpcs } from './updater/rpc';
 
 /**
  * The desktop renderer in a plain browser, for checking the UI headless without Electron: the same core, MCP server
@@ -13,6 +15,10 @@ async function main() {
   const dataDirectory = resolve(process.env.LIENZO_DATA_DIR || join(process.cwd(), '.local-state', 'desktop-preview'));
   const port = Number(process.env.LIENZO_PREVIEW_PORT || 7422);
   const desktop = await startDesktop({ dataDirectory, version: 'preview' });
+  // The preview never updates. Its state can be set by hand (desktop.updates.fake) to check the pill and About.
+  let updateState: UpdateState = { kind: 'off', reason: 'Updates are off in the preview.' };
+  registerUpdateRpcs(desktop.host, { status: () => ({ version: 'preview', state: updateState }), check: async () => updateState, restart: async () => false });
+  desktop.host.handle(fakeUpdateState, ({ state }) => { updateState = state; return { ok: true }; });
   const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.map': 'application/json' };
   const server = createServer((request, response) => {
     void (async () => {

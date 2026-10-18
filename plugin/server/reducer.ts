@@ -120,13 +120,13 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
   }
 }
 
-/** A Hoja is a top-level group, and its number is unique in the document. */
+/** A Sheet is a top-level group, and its number is unique in the document. */
 export function validateSheets(groups: CanvasGroup[]): void {
   const numbers = new Set<number>();
   for (const group of groups) {
     if (!group.sheet) continue;
-    if (group.parentGroupId) throw new CanvasError("INVARIANT", `Hoja ${group.id} must stay at the top level; it cannot go inside another group.`);
-    if (numbers.has(group.sheet.number)) throw new CanvasError("INVARIANT", `Two Hojas share number ${group.sheet.number}.`);
+    if (group.parentGroupId) throw new CanvasError("INVARIANT", `Sheet ${group.id} must stay at the top level; it cannot go inside another group.`);
+    if (numbers.has(group.sheet.number)) throw new CanvasError("INVARIANT", `Two Sheets share number ${group.sheet.number}.`);
     numbers.add(group.sheet.number);
   }
 }
@@ -224,7 +224,7 @@ function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefi
     document.blocks.push({ ...cloned, data: spec?.remapReferences?.(cloned.data, ids) ?? cloned.data,
       id: remap(block.id), parentGroupId: block.parentGroupId ? remap(block.parentGroupId) : null });
   }
-  // A copy of a Hoja is an ordinary group: the chapter mark and its number stay with the original.
+  // A copy of a Sheet is an ordinary group: the chapter mark and its number stay with the original.
   for (const { sheet: _sheet, ...group } of template.groups) document.groups.push({ ...clone(group), id: remap(group.id), parentGroupId: group.parentGroupId ? remap(group.parentGroupId) : null, blockIds: group.blockIds.map(remap), groupIds: group.groupIds.map(remap), templateId: template.id });
   for (const link of template.links) if (copied.has(link.from) && copied.has(link.to)) document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) });
 }

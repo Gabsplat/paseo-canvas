@@ -195,18 +195,18 @@ test('the toolbar orders its tools as the brief, and a fast press on an inactive
   const tools = (tree: any[]) => tree.filter(n => n.type === 'Pressable' && String(n.props.nativeID).startsWith('lienzo-tool-'));
   let tree = h.render(props('select'));
   assert.deepEqual(tools(tree).map(n => n.props.nativeID.slice(12)), ['select', 'hand', 'pencil', 'shape', 'text', 'arrow', 'eraser', 'marco', 'ventana', 'add']);
-  assert.deepEqual(tools(tree).map(n => n.props.accessibilityLabel), ['Select', 'Hand', 'Pencil', 'Shape', 'Text', 'Arrow', 'Eraser', 'Marco', 'Ventana', 'More tools']);
-  assert.match(tools(tree)[7].props.accessibilityHint, /Spanish for frame/); assert.match(tools(tree)[8].props.accessibilityHint, /Spanish for window/);
+  assert.deepEqual(tools(tree).map(n => n.props.accessibilityLabel), ['Select', 'Hand', 'Pencil', 'Shape', 'Text', 'Arrow', 'Eraser', 'Frame', 'Window', 'More tools']);
+  assert.match(tools(tree)[7].props.accessibilityHint, /A frame that holds things together/); assert.match(tools(tree)[8].props.accessibilityHint, /A window onto a web page/);
   const press = (active: string, id: string) => { const t = tools(h.render(props(active))).find(n => n.props.nativeID === 'lienzo-tool-' + id); t.props.onPress({ stopPropagation() {} }); h.tick(); };
   press('select', 'text'); press('select', 'text'); assert.deepEqual(picked, ['text', 'text']); assert.deepEqual(locks, []);
   press('text', 'text'); assert.deepEqual(locks, [true], 'a double press on the tool in hand keeps it');
-  press('select', 'marco'); press('select', 'marco'); assert.deepEqual(picked.slice(-2), ['marco', 'marco']); assert.deepEqual(locks, [true], 'Marco acts once and never locks');
+  press('select', 'marco'); press('select', 'marco'); assert.deepEqual(picked.slice(-2), ['marco', 'marco']); assert.deepEqual(locks, [true], 'Frame acts once and never locks');
   const blocked = tools(h.render(props('select', { disabled: true }))).map(n => [n.props.nativeID.slice(12), n.props.disabled]);
   assert.deepEqual(blocked, [['select', false], ['hand', false], ['pencil', true], ['shape', true], ['text', true], ['arrow', true], ['eraser', true], ['marco', true], ['ventana', true], ['add', false]]);
 });
 test('pressing Shape again opens its flyout, and pinned tools follow with their 1–9 badges', () => {
   const h = toolbarHarness(), shapes: string[] = [], ran: string[] = [];
-  const props = { active: 'shape', shape: 'ellipse', locked: false, disabled: false, onTool() {}, onShape: (s: string) => shapes.push(s), onLock() {}, onAdd() {}, addOpen: false, keyLabel: () => undefined, pinned: [{ id: 'type.note', label: 'Note', icon: 'StickyNote', onPress: () => ran.push('note') }, { id: 'ventana', label: 'Ventana', icon: 'AppWindow', onPress: () => ran.push('ventana') }] };
+  const props = { active: 'shape', shape: 'ellipse', locked: false, disabled: false, onTool() {}, onShape: (s: string) => shapes.push(s), onLock() {}, onAdd() {}, addOpen: false, keyLabel: () => undefined, pinned: [{ id: 'type.note', label: 'Note', icon: 'StickyNote', onPress: () => ran.push('note') }, { id: 'ventana', label: 'Window', icon: 'AppWindow', onPress: () => ran.push('ventana') }] };
   let tree = h.render(props); h.tick(500);
   tree.find(n => n.props?.nativeID === 'lienzo-tool-shape').props.onPress({ stopPropagation() {} });
   tree = h.render(props);
@@ -214,7 +214,7 @@ test('pressing Shape again opens its flyout, and pinned tools follow with their 
   assert.deepEqual(flyout.map(n => n.props.accessibilityLabel), ['Rectangle', 'Ellipse', 'Diamond', 'Triangle', 'Line']);
   flyout[2].props.onPress({ stopPropagation() {} }); assert.deepEqual(shapes, ['diamond']);
   const pinned = tree.filter(n => String(n.props?.nativeID).startsWith('lienzo-pinned-'));
-  assert.deepEqual(pinned.map(n => n.props.accessibilityLabel), ['Note', 'Ventana']);
+  assert.deepEqual(pinned.map(n => n.props.accessibilityLabel), ['Note', 'Window']);
   assert.deepEqual(tree.filter(n => n.type === 'Txt' && /^[1-9]$/.test(String(n.props.children))).map(n => String(n.props.children)), ['1', '2']);
   pinned[1].props.onPress({ stopPropagation() {} }); assert.deepEqual(ran, ['ventana']);
 });

@@ -27,7 +27,7 @@ test("Lienzos: search ignores accents, case and word order; sort by recent or by
   assert.equal(editedAgo("2026-10-12T12:59:40.000Z", now), "just now");
   assert.equal(editedAgo("2026-10-12T12:48:00.000Z", now), "12 min ago");
   assert.equal(editedAgo("2026-10-12T10:00:00.000Z", now), "3 h ago");
-  assert.equal(lienzoMeta(summary("x", "X", "2026-10-12T10:00:00.000Z", { blockCount: 24, hojaCount: 3 }), now), "Edited 3 h ago · 24 blocks · 3 Hojas");
+  assert.equal(lienzoMeta(summary("x", "X", "2026-10-12T10:00:00.000Z", { blockCount: 24, hojaCount: 3 }), now), "Edited 3 h ago · 24 blocks · 3 Sheets");
   assert.equal(lienzoMeta(summary("x", "X", "2026-10-12T10:00:00.000Z", { blockCount: 1, hojaCount: 0 }), now), "Edited 3 h ago · 1 block");
   assert.equal(lienzoMeta(summary("x", "X", "2026-10-12T10:00:00.000Z"), now), "Edited 3 h ago", "an older server sends no counts");
 });
@@ -40,16 +40,16 @@ test("the server lists counts and the agent for each Lienzo", async t => {
 
 const doc = (): CanvasDocument => ({ id: "t", workspaceId, title: "Thumb", description: "", example: false, revision: 1, createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z", selectedIds: [], communication: { instructions: "", intent: "", audience: "" }, layout: { mode: "free" },
   blocks: [{ id: "a", typeId: "node", title: "A", data: {}, position: { x: 0, y: 0 } }, { id: "b", typeId: "code", title: "B", data: { code: "", language: "text" }, position: { x: 900, y: 600 } }, { id: "inner", typeId: "note", title: "Inner", data: { text: "" }, parentGroupId: "m" }, { id: "ink", typeId: "wb-draw", title: "", data: { strokes: [] }, position: { x: 300, y: 300 }, size: { width: 80, height: 40 } }],
-  groups: [{ id: "m", title: "Marco", description: "", blockIds: ["inner"], groupIds: [], position: { x: 0, y: 300 } }, { id: "h", title: "Hoja", description: "", blockIds: [], groupIds: [], position: { x: 1200, y: 0 }, sheet: { number: 1, createdAt: "2026-10-01T00:00:00.000Z", source: "agent" } }],
+  groups: [{ id: "m", title: "Frame", description: "", blockIds: ["inner"], groupIds: [], position: { x: 0, y: 300 } }, { id: "h", title: "Sheet", description: "", blockIds: [], groupIds: [], position: { x: 1200, y: 0 }, sheet: { number: 1, createdAt: "2026-10-01T00:00:00.000Z", source: "agent" } }],
   links: [{ id: "ab", from: "a", to: "b", kind: "flow" }, { id: "gone", from: "a", to: "missing", kind: "flow" }] });
 
-test("thumbnail model: the real layout fitted into the card, Marcos as outlines, cards in their tones, links between centres", () => {
+test("thumbnail model: the real layout fitted into the card, Frames as outlines, cards in their tones, links between centres", () => {
   const size = { width: 300, height: 136 }, model = thumbnailModel(doc(), catalog, size, { padding: 12, toneOf: typeId => typeId === "code" ? "violeta" : "acento" });
   assert.equal(model.empty, false);
   const kind = (id: string) => model.items.find(i => i.id === id)!;
   assert.deepEqual([kind("m").kind, kind("h").kind, kind("a").kind, kind("b").kind, kind("ink").kind], ["marco", "hoja", "card", "card", "drawing"]);
   assert.deepEqual([kind("a").tone, kind("b").tone, kind("ink").tone], ["acento", "violeta", "neutro"]);
-  assert.ok(model.items.findIndex(i => i.id === "m") < model.items.findIndex(i => i.id === "a"), "Marcos are drawn under the cards");
+  assert.ok(model.items.findIndex(i => i.id === "m") < model.items.findIndex(i => i.id === "a"), "Frames are drawn under the cards");
   for (const item of model.items) assert.ok(item.x >= 11.9 && item.y >= 11.9 && item.x + item.width <= size.width - 11.9 && item.y + item.height <= size.height - 11.9, item.id);
   assert.ok(kind("b").x > kind("a").x && kind("b").y > kind("a").y, "relative placement is kept");
   assert.deepEqual(model.links.map(l => l.id), ["ab"], "a link to something missing is left out");
@@ -70,7 +70,7 @@ test("history groups by day, newest first: Today, Yesterday, then dates; chips p
   assert.deepEqual(days.map(d => d.entries.map(e => e.id)), [["4", "2"], ["3"], ["1"], ["5"]]);
   assert.deepEqual(historyByDay([], now), []);
   const targets = entryTargets({ changed: ["$document", "a", "ab", "deleted", "m", "a"] }, doc());
-  assert.deepEqual(targets, [{ id: "a", title: "A" }, { id: "m", title: "Marco" }], "the document, deleted things and repeats are left out; a link points at its end");
+  assert.deepEqual(targets, [{ id: "a", title: "A" }, { id: "m", title: "Frame" }], "the document, deleted things and repeats are left out; a link points at its end");
 });
 
 test("recording a shortcut in place: new keys win, the loser shows the conflict, Escape and modifiers do nothing, reset restores", () => {

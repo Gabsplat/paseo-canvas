@@ -35,8 +35,8 @@ export const blockSchema = z.object({
   data: jsonObjectSchema, position: positionSchema.optional(), size: blockSizeSchema.nullable().optional(),
   parentGroupId: idSchema.nullable().optional(), communication: communicationSchema.optional(),
 }).strict();
-// A Hoja is a chapter the agent adds while explaining: a top-level group that carries this mark. Numbers are unique
-// within a document and never reused; new Hojas sit to the right of the last one on one horizontal strip.
+// A Sheet is a chapter the agent adds while explaining: a top-level group that carries this mark. Numbers are unique
+// within a document and never reused; new Sheets sit to the right of the last one on one horizontal strip.
 export const sheetSchema = z.object({
   number: z.number().int().min(1).max(10_000), createdAt: z.iso.datetime(), source: z.enum(["agent", "user"]),
 }).strict();
