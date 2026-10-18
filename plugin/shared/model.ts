@@ -1,6 +1,7 @@
 import { storedRendererNames } from "./renderers";
 import { variablesSchema, runtimeStateSchema } from "./learning";
 import { z } from "zod";
+import { DOCS_LIMITS, extensionDocsIssue } from "./markdown";
 
 export const idSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/).refine(id => !["__proto__", "constructor", "prototype"].includes(id));
 export const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -94,10 +95,17 @@ export const templateSchema = z.object({
 export const extensionPermissionSchema = z.enum(["edit", "network"]);
 // Only tools remain: the canvas is the one way to look at a document. Stored entries of the retired kind "view" are
 // dropped on read (extensionListSchema), so catalogs and packs written before keep loading.
+// `docs` (optional, added to API 1): the extension's own Help page, short Markdown or a few titled sections. It is
+// shown in Help → Extensions, drawn as native text, never as HTML (shared/markdown.ts).
+export const extensionDocsSchema = z.union([
+  z.string().min(1).max(DOCS_LIMITS.chars),
+  z.array(z.object({ title: z.string().min(1).max(DOCS_LIMITS.title), body: z.string().max(DOCS_LIMITS.chars) }).strict()).min(1).max(DOCS_LIMITS.sections),
+]).superRefine((docs, ctx) => { const issue = extensionDocsIssue(docs); if (issue) ctx.addIssue({ code: "custom", message: issue }); });
 export const extensionSchema = z.object({
   id: idSchema, kind: z.literal("tool"), api: z.literal(1),
   name: z.string().min(1).max(80), description: z.string().max(600).default(""), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(),
   html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(2).default([]),
+  docs: extensionDocsSchema.optional(),
 }).strict();
 const isRetiredExtension = (entry: unknown) => !!entry && typeof entry === "object" && (entry as { kind?: unknown }).kind === "view";
 /** Drops the retired "agent" permission from a stored or imported extension; everything else is left to validation. */
