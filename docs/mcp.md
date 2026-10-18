@@ -1,7 +1,7 @@
 # Canvas backend v1.1
 
 The frontend contracts are in `plugin/shared/model.ts` and `plugin/shared/rpc.ts`.
-Import a named RPC and call `useRpc(contract)` from `@getpaseo/plugin/client`.
+Import a named RPC and call `useRpc(contract)` from `plugin/client/host` (the plugin SDK's in Paseo, the desktop app's in `apps/desktop`; see `docs/desktop.md`).
 For example, `useRpc(readDocument)({workspaceId, documentId})` returns a `DocumentView`.
 `useRpc(mutateDocument)({workspaceId, documentId, expectedRevision, operations})`
 returns the committed view. Invalidate or poll the document query after a mutation.

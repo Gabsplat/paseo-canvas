@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Lienzo outside Paseo: the canvas as a desktop app, with its tools for agents over MCP.",
+  "desktopName": "lienzo.desktop",
   "author": "gabsplat",
   "main": "dist/main.cjs",
   "scripts": {

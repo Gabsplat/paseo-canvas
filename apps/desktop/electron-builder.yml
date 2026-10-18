@@ -15,6 +15,7 @@ publish: null
 linux:
   target: [AppImage]
   category: Graphics
+  syncDesktopName: true
   synopsis: A canvas you and your agent draw explanations on.
   artifactName: Lienzo-${version}-${arch}.${ext}
 mac:

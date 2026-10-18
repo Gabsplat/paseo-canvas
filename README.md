@@ -50,6 +50,20 @@ Abrir `architecture/index.html` permite explorar componentes y reproducir los fl
 La vista Multijugador distingue el comportamiento actual de las funciones futuras.
 No requiere CDN ni una licencia de tldraw.
 
+## App de escritorio
+
+`apps/desktop` ejecuta Lienzo fuera de Paseo como app de Electron, con el mismo núcleo, panel, herramientas MCP y
+formato de estado que el plugin. Los agentes se conectan por MCP sobre HTTP en `http://127.0.0.1:7421/mcp`; la app
+no puede despertarlos: las acciones del lienzo esperan a que el agente las lea con `canvas_events`.
+
+```sh
+pnpm --dir apps/desktop dev      # abrir la app
+pnpm --dir apps/desktop build    # AppImage de Linux sin firmar en apps/desktop/release/
+claude mcp add lienzo --transport http http://127.0.0.1:7421/mcp
+```
+
+Diferencias con el plugin, cómo copiar un estado de Paseo y límites conocidos: [`docs/desktop.md`](docs/desktop.md).
+
 ## Desarrollo
 
 Requiere pnpm y Paseo 0.10.3 o 0.11.x. El rango del plugin es `>=0.10.3 <0.12.0`.
