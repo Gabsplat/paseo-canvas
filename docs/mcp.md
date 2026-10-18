@@ -62,7 +62,7 @@ history and conflict details use one ID namespace. Self links and duplicate dire
 `(from,to,kind)` triples fail with `INVARIANT`. Reverse links and parallel links of different
 kinds are valid.
 
-Documents and templates have a `links` array, defaulting to `[]`, with at most 2,000 entries.
+Documents (and stored templates) have a `links` array, defaulting to `[]`, with at most 2,000 entries.
 The document also accepts optional `layout`. The existing `layoutSchema` now accepts mode
 `graph` and optional `direction: "down" | "right"`. Direction controls graph rendering only;
 omitting it means down in the client, with no coordinate calculation or direction materialization
@@ -78,27 +78,24 @@ same transaction. Ungroup removes only links touching the deleted group, preserv
 and their connections. Undo/redo restores links and layout; later edits to the same IDs block
 undo, and a later link depending on an entity prevents undo from removing that endpoint.
 
-Duplication and template insertion remap links as `idPrefix.oldId`, including their endpoints,
-and keep only links whose endpoints are both in the copied set. Duplicating a lone block copies
-no incident links. Group export includes all internal subtree links, including links to groups,
-and excludes boundary links. Portable packs preserve document/template links and document/group
-layouts through validation, import, export, instantiation and reopening storage.
+Duplication remaps links as `idPrefix.oldId`, including their endpoints, and keeps only links
+whose endpoints are both in the copied set. Duplicating a lone block copies no incident links.
 
 The built-in `node` type uses renderer `node` and four optional text properties: `kind`, `status`,
 `summary`, `details`. Use the block title and a short summary for the compact card; longer
 explanations belong in details. Build systems, flows and lessons with node blocks joined by links,
 inside area groups with `layout.mode: "graph"`. Avoid stacking more than a few prose notes.
 Teach by adding actual nodes
-and links through confirmed transactions. `canvas_example {packId:"graph"}` creates the Spanish
-"Ejemplo: cómo funciona Lienzo" document with three graph groups and flow/depends/reference
-links, including cross-group connections. It has `example:true` and describes architecture,
-not live agent activity.
+and links through confirmed transactions. Lienzo ships no example documents, templates or example packs.
 
 `canvas_read` outline and full views include links and root/group layouts. An `ids` read can
 retrieve links too; links have document communication instructions because they have no own
 instruction field. Full UI RPC reads retain graph data. Persisted
 `paseo-canvas-state/1` and `paseo-canvas-pack` version 1 are unchanged. Strict pre-v1.1 documents,
-templates and history snapshots load with empty links and absent root layout.
+templates and history snapshots load with empty links and absent root layout. State written before the UI pass may
+carry local templates, packs with block types, templates and documents, documents marked `example` and groups with a
+`templateId`: all of it loads and is written back unchanged. Stored pack block types stay in the catalog so their
+blocks render; templates and pack documents are kept but no longer listed or offered.
 
 ## Intentional differences from architecture v1
 
@@ -109,23 +106,21 @@ no combined child reading order, frame resizing, server layout engine, or proven
 The group layout field persists rendering intent; the frontend renders it. Instructions are the
 same `communication` object at document, group, and block levels and concatenate from the most
 specific entity through its ancestors. IDs can be supplied or generated; operations use concrete
-IDs rather than `clientId` resolution. Template insertion/duplication remaps IDs using a caller
-prefix. Packs have `format: "paseo-canvas-pack"` and `version: 1`, and describe fields through
-typed property lists rather than arbitrary JSON Schema. Pack export returns portable JSON data.
+IDs rather than `clientId` resolution. Duplication remaps IDs using a caller prefix. Block types describe fields
+through typed property lists rather than arbitrary JSON Schema. The pack format (`format: "paseo-canvas-pack"`,
+`version: 1`) survives only as the extension file container: its `blockTypes`, `templates` and `documents` must be
+empty.
 Unknown type IDs already present in documents are preserved; creating an unknown type fails.
 
 `blockTypeSchema.renderer` accepts the live renderer names plus `retiredRendererNames`
 (`shared/renderers/index.ts`): renderers that no longer exist but may still be named by a
-stored catalog, an imported pack or a custom type. State files and packs that carry them load,
-import and export unchanged. The catalog view (`canvas.catalog.read`, `canvas_catalog`) leaves
+stored catalog, a stored pack or a custom type. State files that carry them load and are written back unchanged. The catalog view (`canvas.catalog.read`, `canvas_catalog`) leaves
 out every type whose renderer is retired, so it cannot be inserted, and `type.put` rejects a
 retired renderer or a retired built-in type ID. Blocks that carry such a type ID follow the
 unknown-type rule above: they are preserved, can be moved, retitled and deleted, and cannot be
-created again. A pack template or document that needs one fails with `UNKNOWN_TYPE` when
-inserted or instantiated.
+created again.
 
-The `learn` pack teaches request states with a node, notes and a code example. References to
-media remain links in this native first version; there is no embedded media playback contract.
+References to media remain links in this native first version; there is no embedded media playback contract.
 
 The built-in `preview` type accepts `data.description` and optional `data.url`.
 The `media` type accepts `data.url`, optional `data.caption` and `data.mediaKind`.
@@ -139,7 +134,7 @@ verification are coordinator-owned and were not performed by this engineering ta
 ## Tools, storage and scope
 
 MCP server name is `paseo-canvas`; plugin ID is `canvas`. The final MCP names are
-`canvas_list`, `canvas_sheet`, `canvas_create`, `canvas_example`, `canvas_read`, `canvas_apply`, `canvas_group`,
+`canvas_list`, `canvas_sheet`, `canvas_create`, `canvas_read`, `canvas_apply`, `canvas_group`,
 `canvas_catalog`, `canvas_selection`, `canvas_history`, `canvas_undo`, `canvas_redo`, `canvas_runtime`.
 Every response also carries the caller's `copilot` (see Copilot below).
 
@@ -182,15 +177,14 @@ Checklist items accept strings or `{label: string, done: boolean}`. The exact pu
 `checklistDataSchema`. No checklist completion is synthesized from agent activity.
 
 RPC method names use the installed SDK's lowercase-only syntax.
-Shipped `frontend`, `learn` and `graph` pack exports are protected reference exports and cannot be imported
-as replacements. User pack exports round-trip unchanged. To fork a shipped export, use a new pack
-ID and namespace every exported type/template ID as `newPackId.entry`, updating references.
 
 ## Frontend RPC exports
 
 | TypeScript export | RPC method | Input and result |
 | --- | --- | --- |
-| `listDocuments` | `canvas.list` | `{workspaceId}` returns document summaries |
+| `listDocuments` | `canvas.list` | `{workspaceId}` returns document summaries with `blockCount`, `groupCount`, `hojaCount` and the connected `agentId` |
+| `deleteDocument` | `canvas.delete` | `{workspaceId,documentId}` deletes a Lienzo and its history; a copilot that pointed at it forgets it |
+| `readAbout` | `canvas.about` | `{}` returns `{version, dataFile, host}` for Settings → About |
 | `createDocument` | `canvas.create` | `{workspaceId,id?,content}` returns a view |
 | `readDocument` | `canvas.read` | `{workspaceId,documentId}` returns a view |
 | `mutateDocument` | `canvas.mutate` | `{workspaceId,documentId,expectedRevision,operations,label?}` returns a view |
@@ -200,9 +194,7 @@ ID and namespace every exported type/template ID as `newPackId.entry`, updating 
 | `setSelection` | `canvas.selection.set` | Scoped document, expected selection version and IDs return a view |
 | `readHistory` | `canvas.history` | Scoped document returns retained real transactions, including agent ID |
 | `readCatalog`, `mutateCatalog` | `canvas.catalog.read`, `canvas.catalog.mutate` | Read is `{}`; mutation requires catalog revision and a typed action |
-| `validatePack`, `importPack`, `exportPack` | `canvas.pack.validate`, `canvas.pack.import`, `canvas.pack.export` | Validate unknown JSON; import with revision/replace/dryRun; export by ID |
-| `instantiatePack` | `canvas.pack.instantiate` | Workspace, pack ID and document index create a labelled example |
-| `exportGroup` | `canvas.group.export` | Scoped document and group ID produce a portable template |
+| `validatePack`, `importPack` | `canvas.pack.validate`, `canvas.pack.import` | An extension file: validate unknown JSON; import with revision/replace/dryRun (the Extensions screen's review is a dry run) |
 | `connectAgent` | `canvas.connect` | Scoped document and revision, connection or null return view and reload requirement |
 | `agentSetup` | `canvas.agent.setup` | Workspace, agent ID and provider return a private manual MCP snippet |
 | `readInjection`, `configureInjection` | `canvas.injection.read`, `canvas.injection` | Legacy: still stored and readable, but every new agent gets the tools regardless |
@@ -230,19 +222,18 @@ communication instructions. A `block.update` data merge patch follows RFC 7396 s
 objects merge recursively, null deletes a property, and arrays replace. Every batch has one
 required optimistic revision and either commits all operations or none.
 
-`canvas_group` actions are `create`, `update`, `insert_template`, `ungroup`, `export_template`.
+`canvas_group` actions are `create`, `update`, `ungroup`.
 Deletion through `group.delete` deletes the subtree by default; `ungroup:true` retains children
 and converts their local positions into positions relative to the former group's parent.
-Template insertion and duplication use `idPrefix.oldId` for every copied entity and link. Exporting a
-template does not save it automatically; save with `canvas_catalog` action `save_template`.
+Duplication (`entity.duplicate`) uses `idPrefix.oldId` for every copied entity and link.
 
-`canvas_catalog` actions are `list`, `read`, `import_pack`, `export_pack`, `save_type`,
-`save_template`, `remove_pack`. Library mutation revisions are independent of document revisions.
-User pack entries require `packId.` namespaces. Pack namespaces cannot overlap, and imports
-cannot shadow local types/templates. An existing user pack needs explicit `replace:true`.
-Import does not alter existing document content. Removing a pack preserves its blocks and their
-raw data; the frontend displays unknown types until the catalog definition returns. New blocks,
-changed type IDs and new pack documents must reference known types.
+`canvas_catalog` actions are `list`, `read`, `save_type`, `save_extension`, `remove_extension`. Library mutation
+revisions are independent of document revisions. `list` returns block types and extensions (no templates or packs).
+Extension files are imported by the person in the Extensions screen, not by the agent: every extension in a file
+uses the file's `id.` namespace, namespaces cannot overlap, a file cannot take an ID held locally or by another
+file, and an installed file needs explicit `replace:true`. Removing a stored pack (`pack.remove`, from the panel)
+preserves the blocks of any type it carried, with their raw data; they show as unknown types. New blocks and changed
+type IDs must reference known types.
 
 ## Selection and block state
 
@@ -301,7 +292,7 @@ the daemon. A deleted/archived agent cannot authenticate through the SDK scope c
 
 ## Limits and errors
 
-Documents and packs are limited to 1 MiB; a pack has at most 200 entries. Each document has up to
+Documents and extension files are limited to 1 MiB; a file has at most 50 extensions. Each document has up to
 1,000 blocks, 200 groups, 2,000 links and four group levels. Batches contain 1..200 operations. JSON nesting
 is limited to 32 levels, and prototype-mutating keys are rejected. History retains up to 50
 transactions and 8 MiB per document. Total atomic storage is capped at 64 MiB.
@@ -319,7 +310,7 @@ traces are not returned by bridge failures.
 
 ## Whiteboard blocks
 
-Four built-in types use the existing CRUD, group, selection, template, pack, history and
+Four built-in types use the existing CRUD, group, selection, history and
 MCP operations. Their renderer names equal their IDs: `wb-text`, `wb-shape`, `wb-svg`,
 and `wb-draw`. Each shared renderer spec has `interactive:false`; there are no new host
 APIs, tools, dependencies, or document overlays. Catalog reads include renderer guidance.
@@ -356,11 +347,9 @@ returns a new structure with the united box and rebased prior points, including 
 old drawing was resized. Its world coordinates use the same space as position, so callers
 inside a group pass group-local coordinates. Limits throw before altering inputs.
 
-Normalization runs at document creation, block creation/update, local type defaults,
-template writes, and pack validation/import. Validation follows renderer identity, including
+Normalization runs at document creation, block creation/update and local type defaults. Validation follows renderer identity, including
 custom types that reuse a whiteboard renderer. Rejected data rolls back the transaction,
 revision, history and disk write. Unrelated blocks are not normalized during validation.
-Packs keep the SVG bytes and attribution locally and carry drawing geometry as block data.
 Undo/redo and revision conflicts use the existing block IDs and snapshots.
 `canvas_selection` summarises drawings (stroke count, extent, author, anchor) and never returns their points;
 `canvas_read` ids returns everything. Selecting creates nothing for the agent; it reads the selection when asked.
@@ -404,8 +393,8 @@ tests and the frontend's own no-DOM config when it exists. Tests import the enti
 server entry through the actual installed SDK. They cover atomic rollback, persistence and abrupt
 process exit, stale writer recovery, optimistic concurrent conflicts, selection versions,
 group cycles/depth/parent consistency, omitted-patch defaults, subtree movement/duplication/export,
-per-agent undo and related-edit blocking, checklists/media URL validation, retired renderer names in stored state, pack import
-dry-run/collision/roundtrip, missing types, truthful large-write acknowledgements, state files with the retired event
+per-agent undo and related-edit blocking, checklists/media URL validation, retired renderer names in stored state, extension
+file dry-run/collision/refusal of types, templates and documents, old state with templates and packs, missing types, truthful large-write acknowledgements, state files with the retired event
 queue loading clean, the selection and block state read through MCP, mini app state persisted across a restart, the
 retired extension permission, and that no RPC sends to an agent (`tests/one-way.test.ts`, `tests/host.test.ts`).
 The official MCP SDK stdio client verifies real initialize/list/call,
@@ -415,9 +404,8 @@ touch the daemon's installed plugin state.
 
 Graph regressions cover old state/1 compatibility, link schema defaults and patch omission,
 link invariants and rollback, directed parallel kinds, block/subtree/ungroup cascades,
-remapped subtree links, boundary-free group exports, packs and persistent graph context,
-layout/link undo and redo, later endpoint dependencies, optional node text properties,
-the labelled graph example, and graph guidance with Codex's existing preapproval workaround.
+remapped subtree links on duplication, persistent graph context,
+layout/link undo and redo, later endpoint dependencies, optional node text properties, and graph guidance with Codex's existing preapproval workaround.
 Real MCP stdio tests exercise graph schema discovery, outline/full/ID reads, link create/update/delete,
 undo/redo, errors without writes, and bridge/store reopening with the original client.
 
@@ -443,7 +431,7 @@ the reader and never written to the document.
 An entry may carry `ref`, the ID of the block or group that explains it: pressing the entry selects that
 card, and selecting the card lights the entry. Without `ref`, an entry pairs with the card or group whose
 title is its path (`lib/`, `db/migrations/`, or `spine/ · bases/` for two). `ref` is remapped when a
-subtree or template is copied.
+subtree is duplicated.
 
 ## Mini app block
 
@@ -508,7 +496,7 @@ agent, and nothing on the canvas triggers it.
 
 A Hoja is a chapter the agent adds while explaining: a top-level group with
 `sheet: {number, createdAt, source: "agent"|"user"}`. Validation keeps Hojas top-level and numbers
-unique; a duplicate or a template copy of a Hoja is an ordinary group. New Hojas take the next number
+unique; a duplicate of a Hoja is an ordinary group. New Hojas take the next number
 (never reused while higher ones exist) and sit to the right of the last Hoja at the same `y`, one
 horizontal strip. The server estimates widths (explicit child positions, else a grid guess, at least
 1200) plus a 320 gap; the first Hoja goes to the right of existing loose content, or at the origin.
@@ -524,6 +512,7 @@ with ordinary `canvas_apply` operations using `parentGroupId`. Outline reads inc
 `canvas_catalog` also lists, reads, saves and removes extensions: `list` returns `extensions` (ID, kind, name,
 description, permissions, source) and `extensionGuide`, the whole frame API as text; `read { id }` returns one with
 its page; `save_extension { expectedRevision, extension }` adds or replaces a local one; `remove_extension` deletes a
-local one. Like every catalog write it needs the person's approval. The contract is in `docs/extensions.md`.
+local one. Like every catalog write it needs the person's approval. The guide ends with a short inline example; there
+is no shipped example extension to read. The contract is in `docs/extensions.md`.
 Only kind `tool` exists; catalogs and packs stored with the retired kind `view` still load and drop those
 entries.

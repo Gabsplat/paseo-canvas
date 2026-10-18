@@ -58,7 +58,8 @@ stdio MCP bridge and setup snippets stay in `server/paseo.ts`.
 - **One workspace.** Every desktop document lives in the workspace `desktop`.
 - **Agents connect over MCP; the app runs none.** The Paseo agent dialog becomes a **Connect an agent** sheet with the
   command for Claude Code, Codex and Cursor, the agents that have called in, and a line saying to talk to the agent in
-  its own app. The agent chip shows the MCP client's name, with no working status.
+  its own app. The same content is Settings → **Agents** (the host's `AgentSettings` slot, `ConnectAgentBody`); the
+  desktop shows Agents where Paseo shows Copilot. The agent chip shows the MCP client's name, with no working status.
 - **One-way, like the plugin.** The canvas never messages the agent. The person selects something and says "look at
   what I selected" in the terminal; the agent reads it with `canvas_selection`, including the state that blocks and
   mini apps left.
@@ -66,7 +67,8 @@ stdio MCP bridge and setup snippets stay in `server/paseo.ts`.
   setting exists in the state, but the desktop UI cannot turn it on. Agents see `copilot.enabled: false` and use the
   tools when the person asks.
 - **Settings** (guide seen, pinned tools, shortcuts) are kept in `settings.json` in the app's data folder, with
-  Paseo's revision and conflict rules.
+  Paseo's revision and conflict rules. Settings → About shows the app's version and the path of `canvas/state.json`.
+- **Extensions** work the same as in Paseo: the same files, the same review before install, the same sandbox.
 - **Theme** is Lienzo's Papel (light) or Tinta (dark), following the operating system and switching with it.
 - **Menu**: File (copy the Claude Code MCP command, close or quit), Edit, View (reload, developer tools, zoom, full
   screen) and Window. Undo and redo show their keys but leave them to the page, which undoes text or the canvas.
@@ -111,12 +113,12 @@ Cursor, in `~/.cursor/mcp.json`:
 
 The tools are the plugin's (`canvas_list`, `canvas_create`, `canvas_read`, `canvas_apply`, `canvas_group`,
 `canvas_sheet`, `canvas_catalog`, `canvas_selection`, `canvas_history`, `canvas_undo`,
-`canvas_redo`, `canvas_example`, `canvas_runtime`), with the same schemas and results (see `docs/mcp.md`). Every
+`canvas_redo`, `canvas_runtime`), with the same schemas and results (see `docs/mcp.md`). Every
 session is identified by the client's declared name: `mcp:claude-code`, for example. That identity owns its undo
 history, and it becomes the canvas's connected agent when it uses that canvas.
 
-**An agent can** list, create, read and edit documents transactionally with revisions, use groups, Hojas, templates,
-packs and extensions, undo and redo its own edits, and read the selection with its instructions and the state the
+**An agent can** list, create, read and edit documents transactionally with revisions, use groups, Hojas, block types
+and extensions, undo and redo its own edits, and read the selection with its instructions and the state the
 person's interaction left on each block.
 
 **An agent cannot** be woken, receive a message from the canvas, or be reminded to draw. The server only answers

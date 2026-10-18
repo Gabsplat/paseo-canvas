@@ -34,14 +34,14 @@ Los contratos publicados están en
 
 - Bloques tipados y grupos anidados con instrucciones de comunicación.
 - Nodos, enlaces y grupos en grafo que el agente puede ampliar durante una explicación.
-- Catálogo local de tipos, plantillas y packs JSON portables.
-- Documentos de ejemplo para revisión de frontend y enseñanza progresiva.
+- Catálogo local de tipos de bloque y extensiones (herramientas que escribís vos o tu agente), que se comparten como archivos.
+- Pantallas de Lienzos (con miniaturas), guía animada, Ajustes, Extensiones e Historial.
 - Revisiones, transacciones y una selección que el agente lee cuando se la mencionas.
 - Referencias a medios y previews web, con enlaces en clientes nativos.
 - Pizarra con herramientas flotantes, texto libre, formas y SVG importado o de biblioteca.
 - Trazos a mano alzada que acompañan a su tarjeta.
 
-Los ejemplos están identificados como ejemplos. El documento persistido es la fuente del contenido;
+Un documento guardado como ejemplo antes conserva su etiqueta. El documento persistido es la fuente del contenido;
 la interfaz no simula actividad ni respuestas del agente.
 
 ## Arquitectura interactiva
@@ -90,9 +90,9 @@ Una vez instalado el plugin:
 
 1. Abre un workspace de Paseo y busca **Abrir Lienzo** en el Command Center. El comando
    `/lienzo` también abre el panel.
-2. Crea un documento vacío o usa un ejemplo de frontend o aprendizaje. Los ejemplos
-   llevan una etiqueta visible.
-3. Inserta bloques o plantillas desde el catálogo. La barra de selección permite editar
+2. Crea un Lienzo vacío (menú → New Lienzo) o elegí uno en la pantalla Lienzos, que los
+   muestra con su miniatura.
+3. Inserta bloques desde el `+` de la barra de herramientas. La barra de selección permite editar
    propiedades e instrucciones de bloques y grupos. Más acciones abre los ajustes del documento.
 4. No hace falta conectar nada: los agentes que crees después de instalar el plugin reciben
    las herramientas de Lienzo, y el agente que usa un lienzo queda conectado a él.
@@ -102,8 +102,8 @@ Una vez instalado el plugin:
 5. Lienzo es de una sola vía: el lienzo nunca le envía nada al agente. Selecciona algo y dile
    «mirá lo que seleccioné» en la conversación de Paseo; el agente lee la selección, sus
    instrucciones y lo que hiciste en cada bloque (respuestas, controles, el estado de una mini app).
-6. Importa y exporta packs desde el catálogo. Los ejemplos integrados se pueden copiar a
-   un pack portable propio; la referencia original está protegida.
+6. Agregá o exportá extensiones desde la pantalla Extensions (menú → Extensions). Un archivo
+   se revisa antes de instalarse. Lienzo ya no trae ejemplos, plantillas ni colecciones.
 
 El acceso a documentos por MCP se autoriza por workspace. Con «Uno por agente», cada agente
 alcanza solo los lienzos que creó, los que tiene conectados y los que nadie reclamó todavía.

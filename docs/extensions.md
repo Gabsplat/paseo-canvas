@@ -13,7 +13,7 @@ nothing from the plugin, so a plugin update cannot break it.
 
 - `kind`: `tool`, the only kind. A tool is listed in the Extensions section of the + catalog (and in ⌘K) and opens
   as a tab of the right panel; it usually acts on the selection. The canvas is the one way to look at a document, so
-  the former kind `view` is retired: catalogs and packs stored with views still load without them, a pack that
+  the former kind `view` is retired: catalogs and files stored with views still load without them, a file that
   carries one imports without it, and a view can no longer be saved.
 - `api`: always `1` today.
 - `permissions`: any of `edit`, `network`. Reading the document and changing the selection need none. There is no
@@ -67,23 +67,36 @@ A tool that shows things should use the kit: it is what keeps interactions the s
 
 - An extension saved locally (by the person, or by their assistant through `canvas_catalog save_extension`, which
   needs the person's approval) holds the permissions it declares.
-- An extension that arrives in an imported pack holds none. It can read and select. The first time it is opened it
-  says what it asks for and the person allows it or not. Replacing the pack with different code drops the grant.
+- An extension that arrives in an imported file holds none. It can read and select. The first time it is opened (or on
+  its card in the Extensions screen) it says what it asks for and the person allows it or not. Replacing the file with
+  different code drops the grant.
 - Every extension runs in a frame with an opaque origin: no access to Paseo, the plugin page, storage or files.
 
 ## Sharing
 
-Extensions travel in packs (`extensions` array; IDs namespaced with the pack ID like every pack entry). "Mis
-extensiones" in the collections tab exports the local ones as a pack. Importing shows what code a pack brings and
-what each extension asks for before anything is saved.
+An extension travels as an **extension file**: JSON in the pack container, holding extensions and nothing else.
+
+```json
+{ "format": "paseo-canvas-pack", "version": 1, "id": "workshop", "name": "Workshop tools", "description": "…",
+  "blockTypes": [], "templates": [], "documents": [],
+  "extensions": [{ "id": "workshop.timer", "kind": "tool", "api": 1, "name": "Timer", "html": "…" }] }
+```
+
+Every extension ID starts with the file's `id` and a dot. A file that carries block types, templates or documents is
+refused (those left Lienzo); one stored before still loads. The Extensions screen (menu → Extensions, Settings →
+Extensions, or "Manage extensions…" in the + catalog) does the rest: **Add from file…** reads a file and shows a
+review before anything is saved — what each extension does, what it asks for, whether it is new or replaces one — then
+installs it; **Export** saves one extension as its own file; **Export all mine** saves every extension made here (by
+the person or their agent) in one file. The same file works in Paseo and in the desktop app.
 
 ## Compatibility promise
 
 API 1 grows: members and context fields are added, not renamed. One member was removed: `lienzo.ask` (with the
 `agent` permission), because the canvas is one-way; no shipped or known extension used it. Calling it now fails in
 the page like any missing function. A future API 2 would live beside
-it. The shipped example (`ejemplos.reemplazar`, a find-and-replace tool) is written against API 1 only;
-`tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract broke. (The kind `view` was retired
+it. Nothing ships with Lienzo. The find-and-replace tool in `tests/fixtures/find-replace.ts` is written against API 1
+only and is the contract example; `tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract
+broke. The guide the agent gets ends with a short inline example. (The kind `view` was retired
 with the one-canvas redesign; the frame API itself did not change.)
 
 ## Not in API 1
