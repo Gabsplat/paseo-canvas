@@ -154,8 +154,8 @@ verification are coordinator-owned and were not performed by this engineering ta
 
 MCP server name is `paseo-canvas`; plugin ID is `canvas`. The final MCP names are
 `canvas_list`, `canvas_sheet`, `canvas_create`, `canvas_read`, `canvas_apply`, `canvas_group`,
-`canvas_catalog`, `canvas_selection`, `canvas_history`, `canvas_undo`, `canvas_redo`, `canvas_runtime`.
-Every response also carries the caller's `copilot` (see Copilot below).
+`canvas_catalog`, `canvas_extension_run`, `canvas_selection`, `canvas_history`, `canvas_undo`, `canvas_redo`,
+`canvas_runtime`. Every response also carries the caller's `copilot` (see Copilot below).
 
 Storage is `$PASEO_HOME/canvas/`, falling back to `~/.paseo/canvas/`. `state.json` is the single
 atomic aggregate containing documents, up to 50 retained history entries per document, selection,
@@ -324,7 +324,7 @@ config, Tailscale mapping, public endpoint or file-serving route is added. Tool 
 
 MCP errors have stable `code`, `message`, `details`. Revision conflicts use HTTP 409, other-workspace
 requests 403, missing objects 404, invalid input 400, group invariants/unknown types 422, and size
-limits 413. RPC errors include the code in `Error.message` because the installed SDK transports
+limits 413; a failing extension action is 422 (`EXTENSION_FAILED`). RPC errors include the code in `Error.message` because the installed SDK transports
 the message rather than arbitrary Error properties. Credentials, private configuration and stack
 traces are not returned by bridge failures.
 
@@ -530,11 +530,39 @@ with ordinary `canvas_apply` operations using `parentGroupId`. Outline reads inc
 ## Extensions
 
 `canvas_catalog` also lists, reads, saves and removes extensions: `list` returns `extensions` (ID, kind, name,
-description, permissions, source) and `extensionGuide`, the whole frame API as text; `read { id }` returns one with
+description, permissions, source, `allowed`, and for one from a file that waits for the person `missingPermissions` and
+a note; with `actions`, each action's name, description, input schema and optional returns) and `extensionGuide`, the
+whole frame API as text; `read { id }` returns one with
 its page; `save_extension { expectedRevision, extension }` adds or replaces a local one; `remove_extension` deletes a
 local one. Like every catalog write it needs the person's approval. The guide ends with the complete example of Help →
 Make your own (`shared/wiki/tutorial.ts`). An extension may carry `docs`, its own Help page in safe Markdown (no HTML;
 refused otherwise). The contract is in `docs/extensions.md`.
+
+### Running an extension's action
+
+`canvas_extension_run { extension, action, input?, documentId? }` runs one of the actions an extension declares
+(`docs/extensions.md`, "Actions"). Without `documentId` it runs on the reachable Lienzo the person selected in most
+recently (else the most recently changed). The input is checked against the action's schema first; then the
+extension's `<script data-lienzo="actions">` runs in a fresh QuickJS instance inside the server process
+(`server/sandbox.ts`, `server/actions.ts`) with the headless `lienzo`. Its `lienzo.edit` calls are validated one by one
+against a working copy and committed together, after it finishes, as one agent transaction labelled
+`"<extension name> (agent): <first label>"`, undoable with `canvas_undo` and shown in History; its last `lienzo.select`
+sets the shared selection. If the document changed while it ran, nothing is applied (`REVISION_CONFLICT`).
+
+Result: `{ documentId, extension, action, result, revision, committed, transactionId?, label?, changed?, removed?,
+selection?, logs? }` (`logs`: up to 10 console lines). Errors, all leaving the document untouched:
+
+| Code | When |
+|---|---|
+| `NOT_FOUND` | unknown extension or action (the message lists the actions), or a declared action the script does not register |
+| `VALIDATION` / `TOO_LARGE` | the input does not match the schema (each problem named) or is over 16 KiB |
+| `FORBIDDEN` | it tried to edit without holding `edit`: from a file and not allowed yet ("ask the person to allow it in Extensions"), or not declared |
+| `EXTENSION_FAILED` | it threw, or hit a limit; `details.reason` is `error`, `timeout`, `memory`, `recursion`, `jobs`, `unfinished`, `output` or `crashed`, `details.logs` its console lines |
+| `REVISION_CONFLICT` | the Lienzo changed while it ran |
+
+Limits per run: 2 s, 64 MiB, a 64 KiB interpreter stack, 100 000 promise jobs, 200 operations over at most 20
+`lienzo.edit` calls, 20 `lienzo.select` calls, a 16 KiB result. The tool is preapproved like `canvas_apply`: what it can
+change is bounded by the permissions the person gave the extension.
 
 ## Help pages
 

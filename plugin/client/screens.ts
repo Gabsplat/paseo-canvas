@@ -222,9 +222,13 @@ export function publishPlan(extension: CatalogExtension, config: MarketplaceConf
   return { file, text, fileName: 'extension.json', issues, warnings, ...submission(file, text, config) };
 }
 /** Discover: whether an entry is installed, and whether what the index says about it differs from the installed file. */
-export function entryStatus(entry: MarketplaceEntry, catalog: Pick<CanvasCatalog, 'packs'> | null): 'new' | 'installed' | 'update' {
+export function entryStatus(entry: MarketplaceEntry, catalog: Pick<CanvasCatalog, 'packs' | 'packHashes'> | null): 'new' | 'installed' | 'update' {
   const pack = catalog?.packs.find(p => p.id === entry.id); if (!pack) return 'new';
-  const installed = new Map(pack.extensions.map(e => [e.id, e])), same = entry.extensions.length === pack.extensions.length && entry.extensions.every(e => { const held = installed.get(e.id); return !!held && held.name === e.name && held.description === e.description && held.permissions.join() === e.permissions.join() && !!held.docs === e.docs; });
+  // The content hash sees every change, code included. An index or a server without hashes falls back to what the
+  // index describes: names, descriptions, permissions, Help pages and actions.
+  const hash = catalog?.packHashes?.[entry.id];
+  if (entry.contentHash && hash) return entry.contentHash === hash ? 'installed' : 'update';
+  const installed = new Map(pack.extensions.map(e => [e.id, e])), same = entry.extensions.length === pack.extensions.length && entry.extensions.every(e => { const held = installed.get(e.id); return !!held && held.name === e.name && held.description === e.description && held.permissions.join() === e.permissions.join() && !!held.docs === e.docs && (held.actions ?? []).map(a => a.name).join() === (e.actions ?? []).join(); });
   return same ? 'installed' : 'update';
 }
 /** Discover's entries matching every word of the query, in the order the catalog lists them. */

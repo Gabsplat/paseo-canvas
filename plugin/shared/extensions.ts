@@ -1,5 +1,5 @@
 import type { CanvasExtension } from "./model";
-import { EXAMPLE_HTML } from "./wiki/tutorial";
+import { EXAMPLE_ACTIONS, EXAMPLE_HTML } from "./wiki/tutorial";
 
 /**
  * The contract between Lienzo and code it did not write. An extension is one self-contained page; it runs sandboxed in
@@ -17,7 +17,7 @@ export const EXTENSION_FORBIDDEN_OPERATIONS = ["selection.set", "communication.s
  * shipped as text into a document this plugin does not otherwise control.
  */
 export const EXTENSION_RUNTIME = String.raw`(function(){
-var listeners=[],ctx=null,calls={},seq=0;
+var listeners=[],ctx=null,calls={},seq=0,actions=Object.create(null);
 function post(m){m.lienzo=1;parent.postMessage(m,'*')}
 function call(method,args){return new Promise(function(ok,no){var id=++seq;calls[id]={ok:ok,no:no};post({type:'call',id:id,method:method,args:args||{}})})}
 window.addEventListener('message',function(e){var d=e.data;if(e.source!==parent||!d||d.lienzo!==1)return;
@@ -30,6 +30,9 @@ var lienzo=window.lienzo={api:1,
  open:function(id){return call('open',{id:String(id)})},
  edit:function(operations,label){return call('edit',{operations:operations,label:label})},
  close:function(){return call('close',{})},
+ headless:false,
+ action:function(n,f){if(typeof f!=='function')throw new TypeError('lienzo.action(name, fn) needs a function.');actions[String(n)]=f;return f},
+ run:function(n,input){return new Promise(function(ok){var f=actions[String(n)];if(!f)throw new Error('This extension has no action '+n+'.');ok(f(input===undefined?{}:input,ctx))})},
  kit:{}};
 function rounded(g,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));g.beginPath();g.moveTo(x+r,y);g.lineTo(x+w-r,y);g.quadraticCurveTo(x+w,y,x+w,y+r);g.lineTo(x+w,y+h-r);g.quadraticCurveTo(x+w,y+h,x+w-r,y+h);g.lineTo(x+r,y+h);g.quadraticCurveTo(x,y+h,x,y+h-r);g.lineTo(x,y+r);g.quadraticCurveTo(x,y,x+r,y);g.closePath()}
 function cut(g,text,max){text=String(text==null?'':text);if(g.measureText(text).width<=max)return text;var lo=0,hi=text.length;while(lo<hi){var mid=(lo+hi+1)>>1;if(g.measureText(text.slice(0,mid)+'…').width<=max)lo=mid;else hi=mid-1}return lo?text.slice(0,lo)+'…':''}
@@ -97,5 +100,6 @@ export const EXTENSION_GUIDE = `An extension adds a tool to Lienzo without chang
 - lienzo.edit(operations, label) -> Promise<{ revision }>. Needs permission "edit". operations are the same transactional operations as canvas_apply (block.create/update/delete, group.*, link.*, entity.move, entity.duplicate, document.update), so undo and revision conflicts work; selection.set and communication.set are refused.
 - Permission "network" lets the page load things from the internet; without it only inline code and data: URLs work.
 - lienzo.kit.stage({ layout(context) -> [{ id, x, y, w, h }], draw(g, view), onMove?(ids, dx, dy), onOpen?(id), onHover?(id) }) gives a tool that draws things the canvas' own behaviour on a 2D canvas it creates: wheel pans, command-wheel zooms, press selects, shift adds, drag on nothing box-selects, drag on a thing moves the selection (only if onMove is given), double press opens, Escape clears. draw runs in world units with view = { scale, selected: { [id]: true }, hover, drag, theme, context, items }. lienzo.kit.card(g, item, view, { title, subtitle, color }) draws a thing with the standard selection and hover look. Prefer the kit whenever a tool shows things: it is what keeps interactions consistent.
-Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. Optional docs: the extension's own Help page, shown to the person in Help → Extensions: short Markdown (headings, paragraphs, lists, code, links, bold, italic; no HTML, http(s) or mailto links only, up to 20000 characters) or up to 12 sections [{ title, body }]. Write one that says what it is for and how to use it. The person's Help has a "Make your own" walkthrough (canvas_catalog help { page: "make.overview" }). The complete example from it, a tool that rewrites the selected titles in one undoable edit, saved with permissions ["edit"] and its docs:
+- Actions (optional): what the extension offers an agent, run with canvas_extension_run { extension, action, input, documentId? }. Declare each in the manifest, actions: [{ name, description, input (JSON Schema subset: type object|array|string|number|integer|boolean, properties, required, items, enum, minimum, maximum, minLength, maxLength, minItems, maxItems, additionalProperties; objects are closed by default), returns? }], and register its handler in a script of the page marked <script data-lienzo="actions">: lienzo.action(name, function (input, context) { ... return result; }). That script is plain JavaScript that must not touch the page (no DOM): it runs in the frame, where the page's buttons call lienzo.run(name, input) so the work is written once, and headless on the server in a QuickJS sandbox for the agent. Headless, lienzo has context (document and selection; no theme or layout; lienzo.headless is true), edit (all edits of one run become one undoable transaction labelled "<name> (agent): <label>"; needs "edit", which an imported extension holds only once the person allows it), select, action and run; no timers, network or page; 2 s, 64 MB, 200 operations, a 16 KB JSON result. A failing run changes nothing.
+Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. Optional docs: the extension's own Help page, shown to the person in Help → Extensions: short Markdown (headings, paragraphs, lists, code, links, bold, italic; no HTML, http(s) or mailto links only, up to 20000 characters) or up to 12 sections [{ title, body }]. Write one that says what it is for and how to use it. The person's Help has a "Make your own" walkthrough (canvas_catalog help { page: "make.overview" }). The complete example from it, a tool that rewrites the selected titles in one undoable edit, saved with permissions ["edit"], its docs and actions ${JSON.stringify(EXAMPLE_ACTIONS)}:
 ${EXAMPLE_HTML}`

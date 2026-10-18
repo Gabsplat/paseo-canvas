@@ -31,7 +31,10 @@
   catalog.
 - `docs` is Markdown (headings, paragraphs, lists, code, links, bold, italic), up to 20 000 characters, with no HTML;
   links go to http, https or mailto addresses. It becomes the extension's page in Lienzo's Help.
+- Optional `actions` (up to 20): what the tool offers an agent. Each has a `name`, a plain-text `description`, an
+  optional `input` object schema and `returns`, and is registered with `lienzo.action(name, fn)` in a
+  `<script data-lienzo="actions">` of the page (see Lienzo's Help → Make your own → 6).
 - Ask only for the permissions you use, and say in `docs` why a tool needs `network`.
 
 An update is a pull request that changes the same folder. People who installed the old file see **Update…** in
-Discover; a changed file asks for its permissions again.
+Discover, for any change to the extensions, code included (the index carries a `contentHash` of them); a changed file asks for its permissions again.

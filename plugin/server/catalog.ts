@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
+import { actionScripts } from "../shared/actions";
 import { packSchema, blockTypeSchema, templateSchema, extensionListSchema, idSchema, type CanvasExtension, type CatalogExtension, type CanvasPack, type CanvasCatalog, type BlockType } from "../shared/model";
 import { builtinTypes } from "../shared/builtins";
 import { isRetiredRenderer } from "../shared/renderers";
@@ -10,6 +12,8 @@ export const catalogStorageSchema = z.object({
   localTypes: z.array(blockTypeSchema), localTemplates: z.array(templateSchema), packs: z.array(packSchema),
   // Absent in state written before extensions existed.
   localExtensions: extensionListSchema(1000).default([]), grants: z.array(idSchema).default([]),
+  // Absent in state written before Discover compared code: those files get theirs computed when listed.
+  packHashes: z.record(idSchema, z.string()).default({}),
 }).strict();
 export type CatalogStorage = z.infer<typeof catalogStorageSchema>;
 /**
@@ -27,12 +31,33 @@ export function catalogView(storage: CatalogStorage): CanvasCatalog {
   const extensions = new Map<string, CatalogExtension>(), grants = new Set(storage.grants);
   for (const pack of storage.packs) for (const e of pack.extensions) extensions.set(e.id, { ...structuredClone(e), source: pack.id, granted: grants.has(e.id) });
   for (const e of storage.localExtensions) extensions.set(e.id, { ...structuredClone(e), source: "local", granted: true });
-  return { revision: storage.revision, blockTypes: [...types.values()], packs: structuredClone(storage.packs), extensions: [...extensions.values()] };
+  const packHashes = Object.fromEntries(storage.packs.map(pack => [pack.id, Object.hasOwn(storage.packHashes, pack.id) ? storage.packHashes[pack.id] : extensionsHash(pack.extensions)]));
+  return { revision: storage.revision, blockTypes: [...types.values()], packs: structuredClone(storage.packs), extensions: [...extensions.values()], packHashes };
+}
+/** JSON with every object's keys in order, so the same content always gives the same text. */
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  return JSON.stringify(value) ?? "null";
+}
+/**
+ * The content hash of a file's extensions: SHA-256 of their canonical JSON, after validation filled the defaults.
+ * marketplace/scripts/build-index.mjs computes the same for each catalog entry (contentHash), so Discover sees any
+ * change, code included, whatever the file's formatting.
+ */
+export function extensionsHash(extensions: readonly CanvasExtension[]): string {
+  return createHash("sha256").update(canonicalJson(extensions)).digest("hex");
+}
+/** Declared actions need the script that registers them. */
+function checkActions(extension: CanvasExtension): void {
+  if (extension.actions?.length && !actionScripts(extension.html).length)
+    throw new CanvasError("VALIDATION", `Extension ${extension.id} declares actions, but its page has no <script data-lienzo="actions"> that registers them with lienzo.action.`);
 }
 /** A local extension may replace only a local one; shipped and pack extensions are replaced through their pack. */
 export function validateExtension(extension: CanvasExtension, catalog: CanvasCatalog): void {
   safeJson(extension);
   if (new Set(extension.permissions).size !== extension.permissions.length) throw new CanvasError("VALIDATION", `Extension ${extension.id} repeats a permission.`);
+  checkActions(extension);
   const existing = catalog.extensions.find(item => item.id === extension.id);
   if (existing && existing.source !== "local") throw new CanvasError("VALIDATION", "Local extensions cannot replace a shipped or pack extension.");
   if (catalog.packs.some(pack => extension.id.startsWith(`${pack.id}.`))) throw new CanvasError("VALIDATION", `Extension ID ${extension.id} is inside a pack namespace.`);
@@ -64,6 +89,7 @@ export function parsePack(input: unknown, catalog: CanvasCatalog): CanvasPack {
   for (const extension of pack.extensions) {
     if (!extension.id.startsWith(`${pack.id}.`)) throw new CanvasError("VALIDATION", `Extensions in a file must use the ${pack.id}. namespace.`);
     if (new Set(extension.permissions).size !== extension.permissions.length) throw new CanvasError("VALIDATION", `Extension ${extension.id} repeats a permission.`);
+    checkActions(extension);
     const held = catalog.extensions.find(item => item.id === extension.id);
     if (held && held.source !== pack.id) throw new CanvasError("VALIDATION", `Extension ${extension.id} already belongs to the local catalog or another file.`);
   }
