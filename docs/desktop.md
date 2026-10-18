@@ -134,3 +134,31 @@ only when it calls `canvas_events`. The server only answers requests.
   macOS menu key handling for undo and redo is unverified.
 - The AppImage needs FUSE, or `APPIMAGE_EXTRACT_AND_RUN=1`.
 - Web pages that forbid framing do not load in a Ventana, as in Paseo's web client.
+
+## Releases
+
+`.github/workflows/desktop-release.yml` builds the installers on three GitHub machines and attaches them to a
+pre-release. Push a tag to release, or run the workflow by hand with a version to get the files as artifacts only:
+
+```
+git tag desktop-v0.2.0 && git push origin desktop-v0.2.0
+```
+
+| Machine | Files |
+|---|---|
+| macOS | `Lienzo-<version>-mac-arm64.dmg`, `…-mac-x64.dmg` and `.zip` for each |
+| Windows | `Lienzo-<version>-win-x64.exe`, `…-win-arm64.exe` (NSIS, per-user, installation folder can be changed) |
+| Linux | `Lienzo-<version>-x86_64.AppImage`, `Lienzo-<version>-amd64.deb` |
+
+The same steps run locally with `pnpm --dir apps/desktop release` (installers for the machine it runs on).
+
+Signing is optional and switches on by itself when these repository secrets exist:
+
+| Secret | For |
+|---|---|
+| `MAC_CERTIFICATE_P12_BASE64`, `MAC_CERTIFICATE_PASSWORD` | Signing with a Developer ID Application certificate (Apple Developer Program) |
+| `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization, so macOS opens it without a warning |
+| `WIN_CERTIFICATE_PFX_BASE64`, `WIN_CERTIFICATE_PASSWORD` | Signing the Windows installer, so SmartScreen does not warn |
+
+Without them the builds are unsigned: on macOS open the app the first time with right-click → Open; on Windows,
+SmartScreen asks for "More info → Run anyway". Linux needs no signing.
