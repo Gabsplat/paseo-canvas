@@ -8,8 +8,10 @@ import { Txt, useUI } from '../ui';
 import { getClientRenderer } from './index';
 import { usePresentation } from '../usePresentation';
 import { HiddenResult } from '../HiddenResult';
-export function RegisteredRenderer({ block, id, controller, readOnly }: {
+export function RegisteredRenderer({ block, id, controller, readOnly, fill = false }: {
   block: CanvasBlock; id: string; controller: CanvasController; readOnly: boolean;
+  /** Grow to the card's height (a sized card drawn edge to edge). */
+  fill?: boolean;
 }) {
   const ui = useUI(), { runtime, scope } = useLearning(block, controller), [width, setWidth] = useState(0), presentation = usePresentation(controller);
   const gates = presentation?.hiddenBy.get(block.id);
@@ -47,7 +49,7 @@ export function RegisteredRenderer({ block, id, controller, readOnly }: {
     },
   };
   const scopedScope = { ...scope, set: (...args: Parameters<typeof scope.set>) => { if (active()) scope.set(...args); } };
-  return <View nativeID={spec?.interactive ? `lienzo-interactive-renderer-${block.id}` : undefined} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+  return <View nativeID={spec?.interactive ? `lienzo-interactive-renderer-${block.id}` : undefined} onLayout={event => setWidth(event.nativeEvent.layout.width)} style={fill ? { flex: 1, minHeight: 0 } : undefined}>
     <Component key={rendererKey} document={presentation?.document ?? controller.view.document} data={parsed.data} block={block} availableWidth={width} compact={ui.compact} readOnly={readOnly} ui={ui} runtime={scopedRuntime} scope={scopedScope} selection={controller.selection} select={ids => { void controller.select(ids); }} />
   </View>;
 }

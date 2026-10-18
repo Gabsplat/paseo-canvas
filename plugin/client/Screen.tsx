@@ -3,7 +3,7 @@
  * one large floating sheet over the dimmed canvas, an optional rail of sections, cards that lift on hover, small-caps
  * section labels and a short staggered entrance. Lienzos, Settings, Extensions, History and the guide use it.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { Animated, Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon, ScrollView, TextInput } from './host';
 import { isDark, withAlpha } from './color';
@@ -28,9 +28,17 @@ export function sheetFrame(panel: { width: number; height: number }, compact: bo
 }
 
 export type RailItem = { id: string; label: string; icon: string; detail?: string };
-export function Screen({ open, onClose, panel, nativeID, label, rail, active, onRail, children, footer }: {
+/**
+ * A sheet that fits its content (docs/design.md §37.4): as tall as what it shows, up to the usual frame. `center`
+ * keeps it in the middle of the panel; `top` holds its top edge still, for screens with a rail whose sections change.
+ */
+export type ScreenFit = 'center' | 'top';
+const FitContext = createContext(false);
+/** The root style of a screen's content: fill the sheet, or hug the content when the sheet fits it. */
+export function useScreenRoot(): ViewStyle { return useContext(FitContext) ? { flexShrink: 1, minHeight: 0 } : { flex: 1, minHeight: 0 }; }
+export function Screen({ open, onClose, panel, nativeID, label, rail, active, onRail, children, footer, fit }: {
   open: boolean; onClose(): void; panel: { width: number; height: number }; nativeID: string; label: string;
-  rail?: readonly RailItem[]; active?: string; onRail?(id: string): void; children: React.ReactNode; footer?: React.ReactNode;
+  rail?: readonly RailItem[]; active?: string; onRail?(id: string): void; children: React.ReactNode; footer?: React.ReactNode; fit?: ScreenFit;
 }) {
   const u = useUI(), motion = useReducedMotion(), shown = useRef(new Animated.Value(0)).current, close = useRef(onClose); close.current = onClose;
   useEffect(() => {
@@ -39,20 +47,22 @@ export function Screen({ open, onClose, panel, nativeID, label, rail, active, on
     return onEscapeKey(() => { close.current(); return true; });
   }, [open]);
   if (!open) return null;
-  const frame = sheetFrame(panel, u.compact), dark = isDark(u.c.surface0), railShown = !!rail?.length && !u.compact;
+  const frame = sheetFrame(panel, u.compact), dark = isDark(u.c.surface0), railShown = !!rail?.length && !u.compact, fits = !!fit && !u.compact;
   return <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0, zIndex: 200 }}>
     <Animated.View pointerEvents="none" style={{ position: 'absolute', inset: 0, opacity: shown, backgroundColor: withAlpha(dark ? '#000000' : u.c.foreground, S.dim) }} />
     <Pressable accessibilityLabel={`Close ${label}`} onPress={onClose} style={{ position: 'absolute', inset: 0, ...({ cursor: 'default' } as object) }} />
-    <Animated.View nativeID={nativeID} accessibilityRole={'dialog' as never} accessibilityLabel={label} style={{ position: 'absolute', ...frame, borderRadius: u.compact ? 0 : S.radius, borderWidth: u.compact ? 0 : 1, borderColor: u.c.border, backgroundColor: u.c.surface1, overflow: 'hidden',
+    <View pointerEvents="box-none" style={{ position: 'absolute', ...frame, justifyContent: fit === 'top' ? 'flex-start' : 'center' }}>
+    <Animated.View nativeID={nativeID} accessibilityRole={'dialog' as never} accessibilityLabel={label} style={{ ...(fits ? { maxHeight: frame.height, flexShrink: 1 } : { flex: 1 }), borderRadius: u.compact ? 0 : S.radius, borderWidth: u.compact ? 0 : 1, borderColor: u.c.border, backgroundColor: u.c.surface1, overflow: 'hidden',
       boxShadow: u.compact ? undefined : sheetShadow(u), elevation: 12, opacity: shown, transform: [{ scale: shown.interpolate({ inputRange: [0, 1], outputRange: [S.enterScale, 1] }) }] } as ViewStyle}>
-      <View style={{ flex: 1, flexDirection: railShown ? 'row' : 'column', minHeight: 0 }}>
+      <FitContext.Provider value={fits}><View style={{ ...(fits ? { flexShrink: 1 } : { flex: 1 }), flexDirection: railShown ? 'row' : 'column', minHeight: 0 }}>
         {railShown && <Rail items={rail!} active={active} onPick={id => onRail?.(id)} title={label} />}
         {u.compact && !!rail?.length && <CompactRail items={rail} active={active} onPick={id => onRail?.(id)} />}
-        <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>{children}</View>
-      </View>
+        <View style={fits ? { flexGrow: railShown ? 1 : 0, flexShrink: 1, flexBasis: 'auto', minWidth: 0, minHeight: 0 } : { flex: 1, minWidth: 0, minHeight: 0 }}>{children}</View>
+      </View></FitContext.Provider>
       {footer}
       <View style={{ position: 'absolute', top: u.compact ? 8 : 14, right: u.compact ? 8 : 14 }}><IconButton icon="X" label={`Close ${label}`} shortcut="Esc" onPress={onClose} /></View>
     </Animated.View>
+    </View>
   </View>;
 }
 function Rail({ items, active, onPick, title }: { items: readonly RailItem[]; active?: string; onPick(id: string): void; title: string }) {
@@ -95,8 +105,8 @@ export function ScreenHeader({ title, subtitle, actions, children }: { title: st
 }
 /** The scrolling body of a screen, with the screen's padding. */
 export function ScreenBody({ children, gap = S.gap }: { children: React.ReactNode; gap?: number }) {
-  const u = useUI(), pad = u.compact ? 16 : S.padding;
-  return <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: pad, gap }}>{children}</ScrollView>;
+  const u = useUI(), pad = u.compact ? 16 : S.padding, fits = useContext(FitContext);
+  return <ScrollView style={fits ? { flexGrow: 0, flexShrink: 1 } : { flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: pad, gap }}>{children}</ScrollView>;
 }
 /** A 12 px card on surface0. Pressable when `onPress` is given: the border lifts to foreground@20 % and it rises 1 px. */
 export function Card({ children, onPress, label, selected, style, nativeID, padding = S.card.padding, onHoverChange }: { children: React.ReactNode; onPress?(): void; label?: string; selected?: boolean; style?: StyleProp<ViewStyle>; nativeID?: string; padding?: number; onHoverChange?(hovered: boolean): void }) {

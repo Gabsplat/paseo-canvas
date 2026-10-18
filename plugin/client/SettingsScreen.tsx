@@ -11,7 +11,7 @@ import { withAlpha } from './color';
 import { NATIVE, reducedMotion } from './motion';
 import { Button, IconButton, Txt, useUI } from './ui';
 import { captureKeys } from './web';
-import { Card, ScreenBody, ScreenHeader, SearchField, SectionLabel, Stagger, type RailItem } from './Screen';
+import { Card, ScreenBody, ScreenHeader, SearchField, SectionLabel, Stagger, useScreenRoot, type RailItem } from './Screen';
 import { eventCombo, SHORTCUT_GROUPS, type ResolvedShortcut, type ShortcutDef } from './shortcuts';
 import { moveItem, recordShortcut, resetShortcut } from './screens';
 import { ExtensionsContent } from './ExtensionsScreen';
@@ -158,10 +158,10 @@ export function SettingsContent({ section, c, width, list, defs, overrides, chip
   section: SettingsSection; c: CanvasController; width: number; list: readonly ResolvedShortcut[]; defs: readonly ShortcutDef[]; overrides: Record<string, string>; chips(combo: string): string[];
   saveShortcuts(next: Record<string, string>): void; pinned: readonly PinnedRow[]; savePinned(ids: string[]): void; onGuide(): void;
 }) {
-  const u = useUI(), inner = width - (u.compact ? 32 : 64);
+  const u = useUI(), root = useScreenRoot(), inner = width - (u.compact ? 32 : 64);
   const head = { shortcuts: ['Shortcuts', 'Every key Lienzo answers to, yours and your extensions’.'], toolbar: ['Toolbar', 'What sits at the end of the bottom toolbar.'], copilot: ['Copilot', 'How your agent draws while it works.'],
     agents: ['Agents', 'Connect the agents you work with over MCP.'], extensions: ['Extensions', 'Small tools for the + catalog and the Properties panel.'], about: ['About', AboutUpdates ? 'Version, updates, and where your Lienzos are kept.' : 'Version, and where your Lienzos are kept.'] }[section];
-  return <View nativeID={`lienzo-settings-${section}-screen`} style={{ flex: 1, minHeight: 0 }}>
+  return <View nativeID={`lienzo-settings-${section}-screen`} style={root}>
     <ScreenHeader title={head[0]} subtitle={head[1]} />
     <ScreenBody>
       {section === 'shortcuts' && <ShortcutsSection list={list} defs={defs} overrides={overrides} chips={chips} save={saveShortcuts} width={inner} />}

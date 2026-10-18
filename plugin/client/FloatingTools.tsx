@@ -5,8 +5,6 @@ import { WB_COLORS, WB_SCALE, type WbShape, type WbRenderer } from '../shared/wh
 import { tokens } from './tokens';
 import { withAlpha } from './color';
 import { Button, IconButton, Input, Modal, Tooltip, Txt, useUI } from './ui';
-import { WebSvg, fetchSvgUrl, pickSvgFile, attachLibraryDrag } from './web';
-import { SVG_LIBRARY } from './SvgLibrary';
 import { islandStyle, wbColor, wbFont } from './whiteboard-visuals';
 import type { CanvasTool, SvgInsertOptions, ToolStyle } from './whiteboard-tools';
 export type SelectionKind = WbRenderer | 'line';
@@ -40,15 +38,4 @@ export function StyleIsland({ tool, selectionKinds, value, onChange, orientation
   if (bare) return <View nativeID="lienzo-style" style={{ gap: 8 }}>{body}</View>;
   return <View style={[islandStyle(u), { padding: 8, width: horizontal ? undefined : 168, maxWidth: horizontal ? '100%' : undefined }]}>{horizontal ? <ScrollView horizontal contentContainerStyle={{ gap: 8 }}>{body}</ScrollView> : body}{horizontal && (text || shape) && <Modal open={more} onOpenChange={setMore} title="Style"><Modal.Content><View style={{gap:8}}>{extras}</View></Modal.Content></Modal>}</View>;
 }
-export type LibraryPopoverProps = { onInsert(svg: string, meta: SvgInsertOptions): unknown; onImport(): void; error?: string; busy?: boolean; onClose(): void };
-export function LibraryPopover({ onInsert, onImport, error, busy = false, onClose }: LibraryPopoverProps) {
-  const u = useUI(), host = useRef<View>(null), latest = useRef({ onInsert, busy, color: u.c.foreground }); latest.current = { onInsert, busy, color: u.c.foreground };
-  useEffect(() => attachLibraryDrag(host.current, { enabled: () => !latest.current.busy, preview: id => { const entry = SVG_LIBRARY.find(entry => entry.id === id); return entry ? { svg: entry.svg, color: latest.current.color } : undefined; }, drop: (id, atPage) => { const entry = SVG_LIBRARY.find(entry => entry.id === id); if (entry) void latest.current.onInsert(entry.svg, { caption: entry.caption, source: entry.source, license: entry.license, atPage }); } }), []);
-  return <View ref={host} style={[islandStyle(u,true),{width:304,padding:8,gap:8}]}><View style={{flexDirection:'row',alignItems:'center'}}><Txt kind="label" style={{flex:1}}>Architecture icons</Txt><IconButton icon="X" label="Close icons" onPress={onClose} /></View><View style={{flexDirection:'row',flexWrap:'wrap',gap:2}}>{SVG_LIBRARY.map(entry => <Pressable key={entry.id} nativeID={`lienzo-library-icon-${entry.id}`} disabled={busy} accessibilityRole="button" accessibilityLabel={`Insert ${entry.caption}`} onPress={() => { void onInsert(entry.svg,{caption:entry.caption,source:entry.source,license:entry.license}); }} style={{width:68,height:64,alignItems:'center',justifyContent:'center',gap:4,opacity:busy?.45:1}}><View style={{width:28,height:28}}>{u.layout.platform==='web'?<WebSvg svg={entry.svg} color={u.c.foreground} label={entry.caption} />:<Icon name={tokens.whiteboard.types['wb-svg'].icon} size={28} color={u.c.foreground} />}</View><Txt kind="small" muted numberOfLines={1}>{entry.caption}</Txt></Pressable>)}</View>{!!error&&<Txt kind="small" style={{color:u.c.statusDanger}}>{error}</Txt>}<Button label="Import SVG…" icon="Upload" variant="ghost" small disabled={busy} onPress={onImport} /><Txt kind="small" muted>Tabler icons · MIT licence</Txt></View>;
-}
-export type SvgImportDialogProps = { open: boolean; onClose(): void; onInsert(svg: string, meta?: SvgInsertOptions): Promise<boolean> };
-export function SvgImportDialog({ open, onClose, onInsert }: SvgImportDialogProps) {
-  const u = useUI(), [text,setText]=useState(''),[url,setUrl]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  const submit = async (load:()=>Promise<string|null>) => { setBusy(true);setError('');try {const svg=await load(); if(svg && await onInsert(svg)) onClose(); else if(svg) setError('The SVG was not saved. See the notice on the canvas.');}catch{setError('This SVG has active content or external links, is too large, or could not be loaded.');}finally{setBusy(false);} };
-  return <Modal open={open} onOpenChange={next=>{if(!next)onClose();}} title="Import SVG"><Modal.Content><View style={{gap:12}}><Txt kind="small" muted>Paste static SVG, choose a file or load a URL. External links inside the SVG are not allowed.</Txt><Input label="Paste SVG code" multiline mono value={text} onChange={setText} readOnly={busy}/><Button label="Insert SVG code" disabled={busy||!text.trim()} onPress={()=>{void submit(async()=>text);}}/>{u.layout.platform==='web'&&<><Button label="Choose SVG file" icon="Upload" disabled={busy} onPress={()=>{void submit(pickSvgFile);}}/><Input label="SVG URL" value={url} onChange={setUrl} readOnly={busy}/><Button label="Load URL" disabled={busy||!url.trim()} onPress={()=>{void submit(()=>fetchSvgUrl(url));}}/></>}{!!error&&<Txt kind="small" style={{color:u.c.statusDanger}}>{error}</Txt>}{busy&&<Txt kind="small" muted>Loading SVG…</Txt>}</View></Modal.Content></Modal>;
-}
+export { LibraryPopover, type LibraryPopoverProps } from './IconLibrary';

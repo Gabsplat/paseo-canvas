@@ -436,7 +436,7 @@ function UniformsEditor({ data, document, block, save, disabled }: { data: GlslS
   const [open, setOpen] = useState<number>(-1), rows = d.draft, scopes = scopesOf(document, block.id);
   const set = (i: number, patch: Partial<GlslUniform>, now = false) => d.set(rows.map((r, j) => j === i ? { ...r, uniform: { ...r.uniform, ...patch } } : r), now);
   return <View nativeID="lienzo-properties-glsl-uniforms" style={{ gap: 6 }}>
-    <Label text="Parameters" help="Each one is a slider under the picture. Adding or renaming one changes the code too." trailing={<Txt kind="label" muted>{rows.length} of 4</Txt>} />
+    <Label text="Parameters" help="Each one is a slider on the card (see Controls). Adding or renaming one changes the code too." trailing={<Txt kind="label" muted>{rows.length} of 4</Txt>} />
     {rows.map(({ uniform: p }, i) => {
       const shared = scopes.find(s => s.variables.some(v => v.name === p.name));
       return <View key={i} style={{ borderRadius: P.rowRadius, borderWidth: 1, borderColor: open === i ? u.c.border : 'transparent' }}>

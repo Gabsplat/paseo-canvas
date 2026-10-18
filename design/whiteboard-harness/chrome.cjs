@@ -40,8 +40,8 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const tiles=await ev(`['type.note','type.node','marco','image','svg','ventana'].map(id=>!!document.querySelector('[id="lienzo-add-'+id+'"]'))`);assert.deepEqual(tiles,[true,true,true,true,true,true]);
  assert.ok(await ev('document.body.innerText.includes("A card with a title")'),'each row says what it is for');assert.equal(await ev('document.querySelectorAll("[role=dialog]").length'),0);await shot('picker');
  const before=await ev('__panelQA.doc().blocks.length');await ev(`document.querySelector('[id="lienzo-add-type.note"]').scrollIntoView({block:'center'})`);await click('[id="lienzo-add-type.note"]');await wait('__panelQA.doc().blocks.length==='+(before+1));
- await key('Escape');await openIcons();await wait('document.body.innerText.includes("Architecture icons")');await mouse('mousePressed',1300,300,'left',1);await mouse('mouseReleased',1300,300);
- await wait('!document.body.innerText.includes("Architecture icons")');
+ await key('Escape');await openIcons();await wait('!!document.querySelector("#lienzo-icon-library")');await mouse('mousePressed',1300,300,'left',1);await mouse('mouseReleased',1300,300);
+ await wait('!!!document.querySelector("#lienzo-icon-library")');
  console.log('PASS clean chrome, detail above neighbours, aligned menu, sectioned picker');assert.deepEqual(uncaught,[]);
  }finally{ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});
