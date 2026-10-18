@@ -39,6 +39,28 @@ omabox run -- node "$PWD/dist/panel-qa/face.cjs"          # the stage 1 face; ad
 omabox run -- node "$PWD/dist/panel-qa/extensions.cjs"
 omabox run -- node "$PWD/dist/panel-qa/windows.cjs"       # mini app setState stored on its block
 omabox run -- node "$PWD/dist/panel-qa/copilot.cjs"
+omabox run -- node "$PWD/dist/panel-qa/screens.cjs" oscuro          # Lienzos, guide, Settings, Extensions, History
+omabox run -- node "$PWD/dist/panel-qa/screens.cjs" papel compact   # any of oscuro|papel, with or without compact
+omabox run -- node "$PWD/dist/panel-qa/guide.cjs"
+```
+
+The scenarios also run against a plain headless Chromium (no omabox), which is how the screens were verified:
+
+```sh
+python3 -m http.server 8765 --bind 127.0.0.1 --directory "$PWD/dist/panel-qa" &
+chromium --headless=new --no-first-run --disable-gpu --remote-debugging-port=9222 \
+  --user-data-dir="$PWD/dist/chromium-profile" --window-size=1280,887 'http://127.0.0.1:8765/' &
+LIENZO_SHOTS="$PWD/dist/shots" node dist/panel-qa/screens.cjs papel
+```
+
+`screens.cjs`, `guide.cjs` and `desktop-screens.cjs` write their captures to `$LIENZO_SHOTS` (default `/tmp`). Some
+older scenarios assume the window size of the omabox they were written in: `chrome.cjs` needs a 1440-wide viewport,
+and `features.cjs`, `frames.cjs` and `library.cjs` fail in a plain headless window both before and after the screens
+work. `desktop-screens.cjs` checks the desktop preview with the real core and store:
+
+```sh
+LIENZO_DATA_DIR="$PWD/dist/desktop-data" LIENZO_MCP_PORT=7431 LIENZO_PREVIEW_PORT=7432 pnpm --dir apps/desktop preview &
+node design/whiteboard-harness/desktop-screens.cjs http://127.0.0.1:7432/ dark   # or light
 ```
 
 The scripts drive the browser through its private debugging port, assert document
@@ -49,5 +71,6 @@ isolated box; no external site is required. The web fixture has a real form and
 scroll area inside the production iframe sandbox.
 
 Copy wanted results before `omabox down`. Evidence for the October 6 verification
-is in `design/qa-whiteboard-2026-10-06/`; the stage 1 face is in `design/qa-face-2026-10/`. Scenarios that set a
+is in `design/qa-whiteboard-2026-10-06/`; the stage 1 face is in `design/qa-face-2026-10/`; the screens around the
+canvas are in `design/qa-screens-2026-10/`. Scenarios that set a
 viewport (`face.cjs`, `guide.cjs`, `compact.cjs`) clear it when they end, so the others run at the window's size.
