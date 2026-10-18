@@ -11,7 +11,7 @@ import { SelectionBar, SelectionProperties } from './SelectionActions';
 import { VariablesEditor } from './PropertyEditors';
 import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
-import { visual } from './Blocks';
+import { requestTitleEdit, visual } from './Blocks';
 import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
 import { isMacPlatform, keyboard, type PanelKey } from './web';
 import { Onboarding } from './Onboarding';
@@ -209,7 +209,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   function editSelectedText() {
     const block = doc?.blocks.find(b => b.id === c.selection[0]);
     if (!u.compact && block && isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer)) canvas.current?.editSelection();
-    else showPanel();
+    else if (!(block && mode === 'canvas' && requestTitleEdit(block.id))) showPanel();
   }
   function reorder(id: string, delta: number) {
     if (!doc || disabled) return; const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id), group = doc.groups.find(g => g.id === entity?.parentGroupId); if (!entity || !group) return;
