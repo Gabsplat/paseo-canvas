@@ -20,6 +20,7 @@ import { withAlpha, type Tone } from './color';
 import { usePresentation } from './usePresentation';
 import { ExtensionTool, extensionIcon } from './Extensions';
 import { StyleIsland, LibraryPopover } from './FloatingTools';
+import type { RecentIcon } from './icon-library';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
 import { type linkBlock } from './media';
@@ -128,7 +129,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const [paletteOpen, setPaletteOpen] = useState(false), [kettle, setKettle] = useState(0);
   const scope = `${hostId}:${workspaceId}`, [recent, setRecent] = useState<string[]>(() => recentByScope.get(scope) ?? []);
   const [panel, setPanel] = useState<{ pinned: boolean; hidden: boolean; forced: boolean; tab: string; focus: string | null }>({ pinned: false, hidden: false, forced: false, tab: 'properties', focus: null });
-  const [pinnedLocal, setPinnedLocal] = useState<string[] | null>(null), [overridesLocal, setOverridesLocal] = useState<Record<string, string> | null>(null), [, setRegistryTick] = useState(0);
+  const [pinnedLocal, setPinnedLocal] = useState<string[] | null>(null), [overridesLocal, setOverridesLocal] = useState<Record<string, string> | null>(null), [, setRegistryTick] = useState(0), [recentLocal, setRecentLocal] = useState<RecentIcon[] | null>(null);
   const [undoLabel, setUndoLabel] = useState('');
   useEffect(() => { if (!undoLabel) return; const timer = setTimeout(() => setUndoLabel(''), 5000); return () => clearTimeout(timer); }, [undoLabel]);
   useEffect(() => shortcutRegistry.subscribe(() => setRegistryTick(t => t + 1)), []);
@@ -151,12 +152,13 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const disabled = c.busy || c.offline || c.loading;
   const mac = isMacPlatform();
   // ---- Shortcuts and pins: the person's choices live in the host's `interface` settings; the registry resolves them.
-  const savedPrefs = prefs.status === 'ready' ? prefs.values as { pinned?: string[]; shortcuts?: Record<string, string> } : undefined;
-  const pinnedIds = pinnedLocal ?? savedPrefs?.pinned ?? [], overrides = overridesLocal ?? savedPrefs?.shortcuts ?? {};
-  const savePrefs = (patch: { pinned?: string[]; shortcuts?: Record<string, string> }) => {
-    if (patch.pinned) setPinnedLocal(patch.pinned); if (patch.shortcuts) setOverridesLocal(patch.shortcuts);
+  const savedPrefs = prefs.status === 'ready' ? prefs.values as { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[] } : undefined;
+  const pinnedIds = pinnedLocal ?? savedPrefs?.pinned ?? [], overrides = overridesLocal ?? savedPrefs?.shortcuts ?? {}, recentIcons = recentLocal ?? savedPrefs?.recentIcons ?? [];
+  const savePrefs = (patch: { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[] }) => {
+    if (patch.pinned) setPinnedLocal(patch.pinned); if (patch.shortcuts) setOverridesLocal(patch.shortcuts); if (patch.recentIcons) setRecentLocal(patch.recentIcons);
     if (prefs.status !== 'ready') return;
-    void prefs.save({ pinned: patch.pinned ?? pinnedIds, shortcuts: patch.shortcuts ?? overrides }, prefs.revision).then(saved => { if (!saved) toast.error('Your choice was not saved for next time. It still applies now.'); });
+    // Recent icons are a convenience: losing one is not worth a notice.
+    void prefs.save({ pinned: patch.pinned ?? pinnedIds, shortcuts: patch.shortcuts ?? overrides, recentIcons: patch.recentIcons ?? recentIcons }, prefs.revision).then(saved => { if (!saved && !patch.recentIcons) toast.error('Your choice was not saved for next time. It still applies now.'); });
   };
   const resolved = shortcutRegistry.resolve(overrides);
   const copilot = useCopilotCanvas({ c, fly: ids => canvas.current?.flyToIds(ids), geometry, center: () => canvas.current?.viewportCenter(), active: !(u.compact && ['select', 'svg'].includes(tool)) && !!c.view });
@@ -376,7 +378,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       { id: 'text', section: 'Shapes & drawing', name: 'Text', description: 'A free label, without a card.', icon: 'Type', keywords: 'label write', shortcut: keyLabel('tool.text'), active: toolId === 'text', run: () => chooseToolId('text') },
       { id: 'eraser', section: 'Shapes & drawing', name: 'Eraser', description: 'Removes whole strokes; Undo brings them back.', icon: 'Eraser', keywords: 'delete rub', shortcut: keyLabel('tool.eraser'), active: toolId === 'eraser', run: () => chooseToolId('eraser') },
       { id: 'marco', section: 'Shapes & drawing', name: 'Frame', description: GLOSSARY.marco, icon: 'SquareDashed', keywords: 'frame group area container', shortcut: keyLabel('tool.marco'), run: createGroup },
-      { id: 'icons', section: 'Shapes & drawing', name: 'Architecture icons', description: 'Twelve Tabler icons for systems drawings.', icon: 'Library', keywords: 'svg library server database', run: () => chooseTool('svg') },
+      { id: 'icons', section: 'Shapes & drawing', name: 'Icons', description: 'Search icons to drop on the canvas: a set that works offline, and open sets online.', icon: 'Shapes', keywords: 'svg library icon lucide iconify logo server database architecture', run: () => chooseTool('svg') },
       { id: 'svg', section: 'Shapes & drawing', name: 'Import SVG…', description: 'A vector drawing from code, a file or a link.', icon: 'Upload', keywords: 'vector image', run: () => setSvgOpen(true) },
       { id: 'ventana', section: 'Embeds', name: 'Window', description: GLOSSARY.ventana, icon: 'AppWindow', keywords: 'web page iframe embed preview window site', shortcut: keyLabel('tool.ventana'), run: () => openVentana('page') },
       { id: 'image', section: 'Embeds', name: 'Image', description: 'A picture from a link.', icon: 'Image', keywords: 'photo picture media', run: () => openVentana('image') },
@@ -634,7 +636,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {doc && !immersive && <LatestPill copilot={copilot} bottom={u.compact ? compactDock + 12 : toolbarBottom + F.toolbar.height + 12} label={c.view?.latestAgent?.label} />}
       {doc && !u.compact && <HojaMenu copilot={copilot} left={tokens.island.inset} top={tokens.island.inset + F.top.height + 6} maxHeight={Math.max(200, panelHeight - 220)} />}
       {libraryOpen && !immersive && <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 8, alignItems: 'center' } : { position: 'absolute', bottom: toolbarBottom + F.toolbar.height + 8, left: 0, right: 0, alignItems: 'center' }}>
-        <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} />
+        <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} recent={recentIcons} onRecent={list => savePrefs({ recentIcons: list })} online={!c.offline} maxHeight={Math.max(280, panelHeight - toolbarBottom - F.toolbar.height - 40)} />
       </View>}
       {immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: 12, right: 12 }}><View style={islandStyle(u)}><IconButton icon="Minimize2" label="Show the interface" shortcut={keyLabel('ui.hide')} onPress={() => setImmersive(false)} /></View></View>}
       <Kettle serial={kettle} bottom={u.compact ? compactDock + 12 : 60} />

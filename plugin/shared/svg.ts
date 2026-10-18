@@ -52,14 +52,17 @@ function numbers(value: string): number[] {
 function validatePath(value: string): void {
   if (!value.length || value.length > SVG_LIMITS.pathCharacters) bad('invalid path');
   const token = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[MmLlHhVvCcSsQqTtAaZz]/y;
-  const tokens: (string | number)[] = []; let offset = 0, count = 0;
+  const tokens: (string | number)[] = []; let offset = 0, count = 0, arc = false, argument = 0;
   while (offset < value.length) {
     if (/[\s,]/.test(value[offset])) { offset++; continue; }
+    // An arc's two flags are single digits that may touch what follows ("a6 6 0 00-6-6"), as optimisers write them.
+    if (arc && (argument % 7 === 3 || argument % 7 === 4) && /[01]/.test(value[offset])) { tokens.push(Number(value[offset++])); argument++; if (++count > SVG_LIMITS.geometryNumbers) bad('path outside bounds'); continue; }
     token.lastIndex = offset; const match = token.exec(value);
     if (!match) bad('invalid path token');
     const raw = match![0]; offset = token.lastIndex;
-    if (/^[a-zA-Z]$/.test(raw)) tokens.push(raw);
+    if (/^[a-zA-Z]$/.test(raw)) { tokens.push(raw); arc = raw === 'A' || raw === 'a'; argument = 0; }
     else {
+      argument++;
       const numeric = Number(raw);
       if (++count > SVG_LIMITS.geometryNumbers || !Number.isFinite(numeric) || Math.abs(numeric) > 100000) bad('path outside bounds');
       tokens.push(numeric);

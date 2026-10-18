@@ -58,7 +58,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  });
  await check('architecture library inserts a safe SVG with caption and license; imported markup stays outside DOM',async()=>{
   await openIcons();await wait(`!!document.querySelector(${JSON.stringify(label('Insert Server'))})`);await click(label('Insert Server'));await wait('__panelQA.doc().blocks.some(b=>b.typeId==="wb-svg")');
-  const b=await ev('__panelQA.doc().blocks.find(b=>b.typeId==="wb-svg")');assert.equal(b.data.caption,'Server');assert.equal(b.data.license,'MIT · Tabler Icons');assert.equal(b.data.source,'tabler:server');await wait('!!document.querySelector("#lienzo-entity-'+b.id+' img")');
+  const b=await ev('__panelQA.doc().blocks.find(b=>b.typeId==="wb-svg")');assert.equal(b.data.caption,'Server');assert.equal(b.data.license,'ISC · Lucide');assert.equal(b.data.source,'lucide:server');await wait('!!document.querySelector("#lienzo-entity-'+b.id+' img")');
   assert.ok(await ev('document.querySelector("#lienzo-entity-'+b.id+' img").src.startsWith("data:image/svg+xml")'));assert.equal(await ev('document.querySelectorAll("#lienzo-entity-'+b.id+' svg").length'),0);await wait(`!document.querySelector(${JSON.stringify(label('Close icons'))})`);
  });
  await check('new text created inside a group stores a parent-relative position',async()=>{
