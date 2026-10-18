@@ -29,18 +29,18 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await ev(`(()=>{const ops=[],areas=[['a','Ejemplo · entradas',4],['b','Ejemplo · motor',5],['c','Ejemplo · datos',3]];for(const [g,title,n] of areas){const ids=[];for(let i=0;i<n;i++){ids.push(g+i);ops.push({type:'block.create',block:{id:g+i,typeId:'node',title:'Ejemplo '+g+i,data:{summary:'Dato de ejemplo.'}}});}ops.push({type:'group.create',group:{id:'area-'+g,title,description:'',blockIds:ids,groupIds:[],layout:{mode:'grid'}}});}
   [['a0','b0','flow'],['a1','b0','flow'],['b0','b1','flow'],['b1','c0','depends'],['b2','c1','depends'],['a2','b3','reference']].forEach(([from,to,kind],i)=>ops.push({type:'link.create',link:{id:'x'+i,from,to,kind}}));__panelQA.seed(ops);})()`);
  await wait('!!document.querySelector("#lienzo-entity-c2")');await pause(800);const rev0=await ev('__panelQA.doc().revision');
- // 1. No views: the shipped example view is not offered anywhere; the catalog lists extension tools only.
+ // 1. No views: no extension view is offered anywhere; the catalog lists extension tools only.
  await click('#lienzo-tool-add');await wait('!!document.querySelector("#lienzo-add-menu")');const listed=await ev(`document.querySelector('#lienzo-add-menu').innerText`);
- assert.ok(listed.includes('Extensions')&&listed.includes('Example · Find and replace'),'the example tool is in the Extensions section');assert.ok(!listed.includes('Example · Mosaic'),'no extension view is offered');
+ assert.ok(listed.includes('Extensions')&&listed.includes('Find and replace'),'a tool made here is in the Extensions section');assert.ok(!listed.includes('Example · Mosaic'),'no extension view is offered');
  await shot('catalog');await click('[aria-label="Close the catalog"]');
- // 2. A shipped example tool edits through the same transactions as everything else, as a tab of the right panel.
- await tool('ejemplos.reemplazar');await wait(`!!document.querySelector('[id="lienzo-extension-ejemplos.reemplazar"] iframe')`);await pause(700);
- const t=await frame('ejemplos.reemplazar');await tap(t.x+t.w/2,t.y+44);await call('Input.insertText',{text:'Ejemplo'});await tap(t.x+t.w/2,t.y+100);await call('Input.insertText',{text:'Caso'});await pause(300);await shot('tool');
+ // 2. A tool made here (the find-and-replace contract example) edits through the same transactions as everything else, as a tab of the right panel.
+ await tool('find-replace');await wait(`!!document.querySelector('[id="lienzo-extension-find-replace"] iframe')`);await pause(700);
+ const t=await frame('find-replace');await tap(t.x+t.w/2,t.y+44);await call('Input.insertText',{text:'Ejemplo'});await tap(t.x+t.w/2,t.y+100);await call('Input.insertText',{text:'Caso'});await pause(300);await shot('tool');
  const logged=await ev('__panelQA.log.length');let done=false;for(const dy of [164,150,178,136,192]){await tap(t.x+t.w/2,t.y+dy);await pause(500);if(await ev('__panelQA.log.length')>logged){done=true;break;}}
  assert.ok(done,'the tool wrote one transaction');const titles=await ev('__panelQA.doc().blocks.map(b=>b.title).join("|")');assert.ok(titles.includes('Caso a0')&&!titles.includes('Ejemplo a0'),titles);
- const entry=await ev('JSON.stringify(__panelQA.log.at(-1))');assert.ok(entry.includes('Example · Find and replace: ')&&entry.includes('block.update'),entry.slice(0,300));await pause(500);await shot('tool-done');
+ const entry=await ev('JSON.stringify(__panelQA.log.at(-1))');assert.ok(entry.includes('Find and replace: ')&&entry.includes('block.update'),entry.slice(0,300));await pause(500);await shot('tool-done');
  await click('#lienzo-document-island [aria-label="Menu"]');await click('#lienzo-interactive-menu [aria-label="Undo"]');await pause(500);await click('[aria-label="Close the menu"]');assert.ok((await ev('__panelQA.doc().blocks.map(b=>b.title).join("|")')).includes('Ejemplo a0'),'what a tool did can be undone');
- await click('[aria-label="Close Example · Find and replace"]');
+ await click('[aria-label="Close Find and replace"]');
  // 3. One the assistant has just saved is there the next time the menu opens. It has no way to the agent: lienzo.ask is
  // gone, so the page falls back to selecting, and nothing is sent.
  const big=inner=>'<button style="position:fixed;inset:0;width:100%;height:100%;font:16px system-ui" onclick="'+inner+'">Probar</button>';

@@ -1,0 +1,10 @@
+{
+  "format": "paseo-canvas-pack", "version": 1, "id": "workshop", "name": "Workshop tools (example)",
+  "description": "Example extension file for the QA harness.", "blockTypes": [], "templates": [], "documents": [],
+  "extensions": [
+    { "id": "workshop.timer", "kind": "tool", "api": 1, "name": "Timer", "description": "Counts down a few minutes for the selected Marco.", "icon": "Timer", "permissions": ["edit"],
+      "html": "<p id=t>5:00</p><script>lienzo.onContext(function(c){var k=c.theme.colors;document.body.style.cssText='margin:0;padding:12px;font:24px system-ui;background:'+k.surface+';color:'+k.foreground})</script>" },
+    { "id": "workshop.count", "kind": "tool", "api": 1, "name": "Selection count", "description": "Says how many things are selected.", "icon": "Hash", "permissions": [],
+      "html": "<p id=n></p><script>lienzo.onContext(function(c){document.getElementById('n').textContent=c.selection.length+' selected'})</script>" }
+  ]
+}

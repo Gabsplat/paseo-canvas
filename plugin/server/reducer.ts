@@ -369,14 +369,6 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
       }
       case "selection.set": next.selectedIds = [...operation.ids]; break;
       case "communication.set": next.communication = clone(operation.communication); break;
-      case "template.insert": {
-        const template = catalog.templates.find(template => template.id === operation.templateId);
-        if (!template) throw new CanvasError("NOT_FOUND", `Template ${operation.templateId} does not exist.`);
-        for (const block of template.blocks) if (!catalog.blockTypes.some(type => type.id === block.typeId))
-          throw new CanvasError("UNKNOWN_TYPE", `Template needs missing type ${block.typeId}.`);
-        insertTemplate(next, template, operation.idPrefix, catalog);
-        break;
-      }
     }
     settleStrokeLayers(next, before, operation, catalog, actor);
     const ids = new Set([...next.blocks, ...next.groups].map(entity => entity.id));
@@ -401,10 +393,3 @@ export function effectiveInstructions(document: CanvasDocument, id: string) {
   return levels.filter((level): level is NonNullable<typeof level> => !!level);
 }
 
-export function exportGroup(document: CanvasDocument, groupId: string, templateId: string, name: string): GroupTemplate {
-  const ids = new Set(groupSubtree(document, groupId));
-  const groups = clone(document.groups.filter(group => ids.has(group.id))).map(({ sheet: _sheet, ...group }) => group);
-  const root = groups.find(group => group.id === groupId)!;
-  root.parentGroupId = null;
-  return { id: templateId, name, description: root.description, blocks: clone(document.blocks.filter(block => ids.has(block.id))), groups, links: clone(document.links.filter(link => ids.has(link.from) && ids.has(link.to))) };
-}

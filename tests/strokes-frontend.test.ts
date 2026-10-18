@@ -10,11 +10,11 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 const { useWhiteboard } = require('../plugin/client/useWhiteboard');
 const { DEFAULT_TOOL_STYLE } = require('../plugin/client/whiteboard-tools');
 const { layoutCanvas, moveOperations, groupOperations, anchorCard } = require('../plugin/client/logic');
-const { builtinTypes, builtinTemplates, builtinPacks } = require('../plugin/shared/builtins');
+const { builtinTypes } = require('../plugin/shared/builtins');
 const { reduce } = require('../plugin/server/reducer');
 const { appendStroke, layerFits, WB_LAYER_LIMIT_MESSAGE } = require('../plugin/shared/whiteboard');
 const { reset, effects } = require('./fixtures/react-headless');
-const catalog = { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks };
+const catalog = { revision: 0, blockTypes: builtinTypes, packs: [] };
 const card = (id: string, x: number, y: number, extra = {}) => ({ id, typeId: 'node', title: `Tarjeta ${id}`, position: { x, y }, size: { width: 240, height: 160 }, data: {}, ...extra });
 function document(blocks: any[] = [card('a', 200, 100), card('b', 600, 100)], groups: any[] = []) { return { id: 'strokes', workspaceId: 'workspace', revision: 0, createdAt: '2026-10-06T00:00:00.000Z', updatedAt: '2026-10-06T00:00:00.000Z', title: 'Trazos de ejemplo', description: '', example: true, communication: { instructions: '', intent: '', audience: '' }, blocks, groups, links: [], selectedIds: [] } as any; }
 const pointer = (x: number, y: number) => ({ x, y, shift: false, command: false, pointerId: 1 });

@@ -22,13 +22,19 @@ function ago(iso: string, now: number) {
  * from its own app. This gives the command and shows which agents have actually called in.
  */
 export function ConnectAgentSheet({ open, close, connectedAgentId }: AgentSheetProps) {
+  return <Modal title="Connect an agent" open={open} onOpenChange={value => { if (!value) close(); }}><Modal.Content>
+    {open && <ConnectAgentBody connectedAgentId={connectedAgentId} />}
+  </Modal.Content></Modal>;
+}
+/** The sheet's content; Settings → Agents shows it inline. */
+export function ConnectAgentBody({ connectedAgentId }: { connectedAgentId: string | null }) {
   const u = useUI(), toast = useToast(), status = useDesktopStatus(), [client, setClient] = useState<Client>('claude'), [now, setNow] = useState(Date.now());
-  useEffect(() => { if (!open) return; void refreshStatus(); setNow(Date.now()); const timer = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(timer); }, [open]);
+  useEffect(() => { void refreshStatus(); setNow(Date.now()); const timer = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(timer); }, []);
   const mcp = status?.mcp, snippet = mcp ? setup(client, mcp.url) : null;
   const recent = (mcp?.clients ?? []).filter(entry => now - Date.parse(entry.lastSeenAt) < RECENT_MS), earlier = (mcp?.clients ?? []).filter(entry => !recent.includes(entry));
   const receiver = connectedAgentId ? mcp?.clients.find(entry => entry.agentId === connectedAgentId)?.name ?? connectedAgentId.replace(/^mcp:/, '') : null;
   const copy = (text: string) => { void copyText(text).then(() => toast.show('Copied', { variant: 'success' })).catch(() => toast.error('Could not copy. Select the text and copy it by hand.')); };
-  return <Modal title="Connect an agent" open={open} onOpenChange={value => { if (!value) close(); }}><Modal.Content>
+  return <View style={{ gap: 16 }}>
     <Txt>Agents use this Lienzo through MCP. Add it once to the agent you work with; it can then read, draw and edit here.</Txt>
     {!status && <Txt kind="small" muted>Checking the MCP server…</Txt>}
     {mcp && !mcp.listening && <View style={{ backgroundColor: u.wash('riesgo'), borderRadius: 8, padding: 12, gap: 4 }}><Txt kind="bodyStrong">Agents cannot connect right now</Txt><Txt kind="small">{mcp.error ?? 'The MCP server is not running.'}</Txt></View>}
@@ -53,5 +59,5 @@ export function ConnectAgentSheet({ open, close, connectedAgentId }: AgentSheetP
       <Txt kind="bodyStrong">Talk to the agent in its own app</Txt>
       <Txt kind="small" muted>The canvas never messages the agent. Select something here and say “look at what I selected” in your conversation: the agent reads the selection with its tools. Agents seen are the ones that called in; Lienzo cannot tell whether they are working.</Txt>
     </View>
-  </Modal.Content></Modal>;
+  </View>;
 }

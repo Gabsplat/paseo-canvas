@@ -13,7 +13,7 @@ import { tokens } from '../plugin/client/tokens';
 import { canvasPreferences, interfacePreferences } from '../plugin/shared/preferences';
 import * as shortcuts from '../plugin/client/shortcuts';
 import * as palette from '../plugin/client/palette';
-import { builtinTypes, builtinTemplates, builtinPacks } from '../plugin/shared/builtins';
+import { builtinTypes } from '../plugin/shared/builtins';
 import { createInputSchema, blockTypeSchema, type CanvasDocument } from '../plugin/shared/model';
 
 // Run the real component functions and callbacks headlessly. Only host/native controls
@@ -52,7 +52,9 @@ function runtime(controller: any) {
     './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined }, './Hojas': { HojaControls: control('HojaControls'), HojaMenu: control('HojaMenu'), LatestPill: control('LatestPill'), useCopilotCanvas: () => ({ hojas: [], current: -1, follow: true, glowIds: [], unseen: false, menuOpen: false, setMenuOpen() {}, toggleFollow() {}, goToLatest: () => false, goToHoja: () => false, step: () => false, userMoved() {} }) }, './Extensions': { ExtensionTool: control('ExtensionTool'), extensionIcon: () => 'Puzzle' },
     './Toolbar': { Toolbar: control('Toolbar'), GLOSSARY: { lienzo: 'Lienzo', marco: 'Marco (Spanish for frame)', hoja: 'Hoja', lente: 'Lente', ventana: 'Ventana (Spanish for window)' }, shapeIcon: () => 'Square' },
     './AddMenu': { AddMenu: control('AddMenu') }, './RightPanel': { RightPanel: control('RightPanel'), PanelSection: control('PanelSection') },
-    './CommandPalette': { CommandPalette: control('CommandPalette') }, './ShortcutSheet': { ShortcutSheet: control('ShortcutSheet'), ShortcutList: control('ShortcutList') },
+    './CommandPalette': { CommandPalette: control('CommandPalette') },
+    './Screen': { Screen: control('Screen'), sheetFrame: () => ({ left: 0, top: 0, width: 960, height: 680 }) }, './LienzosScreen': { LienzosScreen: control('LienzosScreen') }, './HistoryScreen': { HistoryScreen: control('HistoryScreen') },
+    './ExtensionsScreen': { ExtensionsContent: control('ExtensionsContent') }, './SettingsScreen': { SettingsContent: control('SettingsContent'), settingsRail: () => [] },
     './Eggs': { EmptyMate: control('EmptyMate'), Kettle: control('Kettle'), LoadingEgg: control('LoadingEgg') },
     './shortcuts': shortcuts, './palette': palette,
   };
@@ -66,7 +68,6 @@ function runtime(controller: any) {
   const realUI = load('ui');
   modules['./ui'] = Object.fromEntries(['Button', 'Chip', 'Field', 'Input', 'IconButton', 'Segments', 'Txt', 'UIProvider', 'Section', 'CheckRow', 'MenuRow', 'MenuDivider', 'TooltipProvider', 'TooltipLayer'].map(name => [name, control(name)]));
   Object.assign(modules['./ui'], { Modal: modal, friendlyError: realUI.friendlyError, useTooltip: () => ({ ref: { current: null }, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} }), useUI: () => ({ compact: false, host: { id: 'host' }, layout: { platform: 'web' }, font: () => ({}), c: {}, wash: () => '', tone: () => '' }) });
-  modules['./Catalog'] = { Catalog: control('Catalog'), PackImport: control('PackImport'), PackExport: control('PackExport') };
   modules['./SelectionActions'] = load('SelectionActions');
   const panel = load('Panel').LienzoPanel({ theme: {}, layout: {}, host: { id: 'host' }, workspaceId: 'workspace' }).props.children[0];
   // The panel's root view sits inside the tooltip provider.
@@ -86,7 +87,7 @@ function fixture() {
   const document: CanvasDocument = { id: 'canvas', workspaceId: 'workspace', title: 'Mi lienzo', description: '', example: false, revision: 7, createdAt: '', updatedAt: '', communication: { intent: 'Preservar', audience: 'Equipo', instructions: 'Anterior' }, selectedIds: [], blocks: [{ id: 'note', typeId: 'note', title: 'Mi nota', data: { text: 'Contenido' }, communication: { intent: 'Revisar', audience: 'Yo', instructions: 'Antes' } }], groups: [], links: [] };
   const edits: any[] = [], creates: any[] = [];
   const controller: any = { view: { document }, current: { current: { document } }, selection: [], documents: [], events: [], loading: false, busy: false, offline: false, failure: null,
-    catalog: { revision: 0, blockTypes: builtinTypes, templates: builtinTemplates, packs: builtinPacks },
+    catalog: { revision: 0, blockTypes: builtinTypes, packs: [] },
     api: {}, refreshList: async () => [], settle: async () => {}, select: async (ids: string[]) => { controller.selection = ids; },
     edit: async (...args: any[]) => { edits.push(args); return controller.view; },
     create: async (content: any) => { creates.push(content); return { document: { ...document, ...content } }; }, send: async () => undefined,
@@ -96,14 +97,16 @@ function fixture() {
 test('new canvas is one click with no fields; title saves in place; instructions open in the right panel', async () => {
   const f = fixture(), r = runtime(f.controller);
   let tree = r.render();
-  await find(tree, 'Button', 'New Lienzo').props.onPress();
+  await find(tree, 'MenuRow', 'New Lienzo').props.onPress();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.creates.length, 1);
   assert.equal(f.creates[0].title, 'Untitled Lienzo');
   assert.equal(f.creates[0].communication.instructions, '');
   assert.equal(createInputSchema.safeParse({ workspaceId: 'workspace', content: f.creates[0] }).success, true);
-  const documents = nodes(tree).find(node => node.type?.name === 'Modal' && node.props.title === 'Lienzos')!;
-  assert.equal(nodes(documents).some(node => ['Input', 'Field'].includes(node.type?.name)), false);
+  find(tree, 'MenuRow', 'Lienzos').props.onPress(); tree = r.render();
+  const documents = find(tree, 'Screen', 'Lienzos');
+  assert.equal(documents.props.open, true); assert.equal(nodes(documents).some(node => ['Input', 'Field'].includes(node.type?.name)), false);
+  documents.props.onClose(); tree = r.render(); assert.equal(find(tree, 'Screen', 'Lienzos').props.open, false);
   find(tree, 'MenuRow', 'Rename').props.onPress(); tree = r.render();
   await find(tree, 'Field', 'Lienzo title').props.onSave('A new title');
   assert.equal(f.edits[0][0][0].title, 'A new title');
@@ -176,13 +179,23 @@ test('friendly errors translate known server codes and hide unknown raw messages
   assert.equal(tokens.font.style.code.family, 'mono');
 });
 
-test('catalog rows display names without raw type or collection IDs', () => {
-  const f = fixture();
-  f.controller.catalog = { revision: 0, blockTypes: [{ ...builtinTypes[0], id: 'internal-type-id', name: 'Nota propia' }], templates: [], packs: [{ ...builtinPacks[0], id: 'internal-pack-id', name: 'Colección propia' }] };
-  for (const initialTab of ['types', 'packs']) {
-    const tree = runtime(f.controller).load('Catalog').Catalog({ controller: f.controller, initialTab, insert() {}, insertTemplate() {}, onImport() {}, onExport() {} });
-    const text = nodes(tree).flatMap(node => node.props.children).filter(value => typeof value === 'string');
-    assert.ok(text.includes(initialTab === 'types' ? 'Nota propia' : 'Colección propia'));
-    assert.ok(!text.includes('internal-type-id') && !text.includes('internal-pack-id'));
+test('examples, templates and collections are gone from the menu, ⌘K, the empty canvas and Properties', () => {
+  const f = fixture(), r = runtime(f.controller);
+  f.controller.selection = ['note'];
+  let tree = r.render(); tree.props.onLayout({ nativeEvent: { layout: { width: 1280, height: 800 } } }); tree = r.render();
+  const labels = JSON.stringify(nodes(tree).map(node => [node.props.label, node.props.title, node.props.accessibilityLabel]));
+  const items = find(tree, 'CommandPalette').props.items('');
+  const titles = JSON.stringify(items.map((i: any) => [i.title, i.subtitle]));
+  for (const gone of ['Use a template', 'Import a collection', 'Export this Lienzo', 'Export selection', 'Duplicate as my own', 'Save as template', 'Collections', 'Examples']) {
+    assert.ok(!labels.includes(gone), 'panel: ' + gone); assert.ok(!titles.includes(gone), '⌘K: ' + gone);
+  }
+  assert.ok(!items.some((i: any) => String(i.id).startsWith('template.')));
+  const props = { controller: f.controller, panelRoot: { current: null }, disabled: false, linkId: null, onLink() {}, rects: () => new Map(), release() {}, add() {}, duplicate() {}, remove() {}, groupSelection() {}, connectSelection() {}, editText() {}, interact() {}, undoNotice() {} };
+  const rows = JSON.stringify(nodes(r.modules['./SelectionActions'].SelectionProperties(props)).map(node => node.props.label ?? node.props.accessibilityLabel));
+  for (const gone of ['Save as template…', 'Export selection']) assert.ok(!rows.includes(gone), gone);
+  // Manage extensions, Settings and History open screens, not modals.
+  for (const [id, label] of [['ext.manage', 'Extensions'], ['settings.open', 'Settings'], ['settings.history', 'History'], ['lienzo.all', 'Lienzos']]) {
+    items.find((i: any) => i.id === id).run(); tree = r.render();
+    assert.equal(find(tree, 'Screen', label).props.open, true, label);
   }
 });

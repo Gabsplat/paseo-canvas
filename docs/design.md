@@ -21,11 +21,11 @@ those files change, **they win on names and shapes, this file wins on how things
 
 **Map of this file.** §1 identity · §2 platform · §3 regions and widths · §4 primitives and controls ·
 §5 contextual toolbar and popovers · §6 canvas, blocks, groups · §8 direct
-manipulation (in-place editing, `+` handles, quick-create) · §9 adding blocks, collections, Lista ·
+manipulation (in-place editing, `+` handles, quick-create) · §9 adding blocks and Lista ·
 §10 the agent (one-way, no composer) · §11 states and first run · §12 keyboard · §13 accessibility · §15 graph ·
 §16 dragging and motion · §17 media, sizes, link magnetism · §18 interactive learning blocks ·
 §19 copy · §20 whiteboard (free text, shapes, SVG, freehand, tool and style islands, drag and
-interaction rules).
+interaction rules) · §35 the screens around the canvas (Lienzos, guide, Settings, Extensions, History).
 
 Not in the contract, therefore **not designed and must not be rendered**: per-block author glyphs,
 per-block tone overrides, group resize handles. §18 describes block kinds whose data shapes are
@@ -59,7 +59,7 @@ still to be published by the backend; it fixes their look and behaviour, not the
   ("Doble clic para escribir una idea"). It never conjugates in the second person, so it reads the
   same for "tú" and "vos" readers. The complete string list is §19.
 - **Vocabulary** (the only nouns the interface uses): lienzo · bloque · grupo · conexión ·
-  asistente · instrucción · plantilla · colección · variable. Not used: documento, agente, nodo
+  asistente · instrucción · variable. Not used: documento, agente, nodo
   (except as the type name the catalog supplies), enlace, pack, inspector, catálogo, revisión.
 - **Three typographic voices:**
   - **Serif** ; names people author: lienzo title, group title, empty-canvas headline, metric value;
@@ -86,9 +86,12 @@ still to be published by the backend; it fixes their look and behaviour, not the
   `FlatList`, `TextInput`, `ExternalLink`, `useToast`, `copyText`.
 - Host `Icon` renders nothing for unknown names → every icon sits in a fixed-size box.
 - Colours come from `theme.colors` (`tokens.hostColorRoles`). Lienzo adds two hues (`violeta`,
-  `turquesa`), each with a light and dark value. Only literal allowed: scrim `#000` at 0.45.
+  `turquesa`), each with a light and dark value. Only literal allowed: `#000` for scrims and dark shadows (the
+  screens dim the canvas with it at 0.4 in dark, `foreground` at 0.4 in light).
 - Fonts: `tokens.font.family` via `Platform.select`. No custom fonts.
-- Popovers and menus use RN positioning on desktop. Collection imports, the guide and configuration use host `Modal`; compact popovers become host sheets.
+- Popovers and menus use RN positioning on desktop. Lienzos, the guide, Settings, Extensions and History are
+  screens drawn by the plugin over the canvas (§35), not host modals; small dialogs (Ventana address, SVG import, the
+  agent dialog) stay host `Modal`; compact popovers become host sheets.
 - **DOM is allowed only in `plugin/client/web.ts`**, guarded by `layout.platform === "web"` and
   `typeof document !== "undefined"`. Extend the existing drawing, input and viewport adapters in that module only. Every DOM entry checks Platform.OS and remains inert on native.
 
@@ -155,10 +158,10 @@ Every island floats over the one canvas with `pointerEvents: "box-none"` around 
 
 ### 3.2 Main menu (`Menu` on the top-left island)
 
-Anchored below the button, 288 wide; rows grouped by dividers: New Lienzo · Lienzos · Rename (F2) · Duplicate as
-my own ┃ Undo · Redo · History ┃ Hide all UI · Agent (with its presence) · Instructions for the agent ┃
-Manage extensions… · Import a collection · Export this Lienzo ┃ Settings · Keyboard shortcuts (?) · Lienzo guide.
-There is no view switcher.
+Anchored below the button, 288 wide; rows grouped by dividers: New Lienzo · Lienzos · Rename (F2) ┃ Undo · Redo ·
+History ┃ Hide all UI · Agent (with its presence) · Instructions for the agent ┃ Extensions · Settings · Keyboard
+shortcuts (?) · Lienzo guide. Lienzos, History, Extensions, Settings and the guide open screens (§35). There is no
+view switcher.
 
 ### 3.3 Narrower panels (not compact)
 
@@ -396,7 +399,6 @@ the canvas never messages the agent (§10); the person mentions the selection in
 | **Disposición** | group toolbar; Ajustes del lienzo | medium | A row of five 56×48 tiles (icon 20 over `small` label; selected = `accent`@0.14 fill, 1.5 px `accent` border): Grafo `Workflow` · Pila `Rows3` · Rejilla `Grid2x2` · Flujo `ArrowRightFromLine` · Libre `Move`. Under it, only the option of the chosen mode: Grafo → segmented "Hacia abajo \| Hacia la derecha"; Rejilla → "Columnas" with `Minus` *n* `Plus` (1-4). While no layout is stored, the tile of the mode in effect is outlined (1 px dashed `border`) and a `small` muted line reads "Automático: se ordena como {modo}." The toolbar button's icon is the icon of the mode in effect. |
 | **Datos** | type slot or "Más" | medium | Header = the type's name. One field (§4.8 field pattern) per `BlockType.properties` entry **that is not editable in place** (§8.1): number → input with numeric keyboard; boolean → check row; json → `code` text area, min height 120, validated on blur ("No es JSON válido", not sent). `required` adds " *". For a type missing from the collections: the unknown-type message of §6.3 and no fields. |
 | **Conectar con…** | "Más" | medium | Search input (autofocus, placeholder "Buscar por título"), up to 8 result rows (type icon + title + `small` muted group name). `Enter` or press creates a `flow` connection from the selection to that row, selects it and closes. No results: `small` muted "Nada coincide con «{q}»." |
-| **Guardar como plantilla** | group "Más" | small | One input "Nombre" (prefilled with the group title) + primary small "Guardar". Toast "Plantilla «{name}» guardada". |
 | **Ajustes del lienzo** | main menu | large, anchored to island A | Fields: "Descripción" (text area, 2 lines) · "Instrucciones para el asistente" (text area, min 3 lines, placeholder "Para qué es este lienzo y cómo debe ayudar el asistente", bound to the document's `communication.instructions`) · "Disposición" (the tiles above, for `document.layout`). For an example, first a `wash("aviso")` box: "Lienzo de ejemplo. Su contenido es ilustrativo y no viene de un asistente." |
 
 Sections of the former inspector that have **no** replacement, by decision: identifiers and type
@@ -405,18 +407,8 @@ them), the list of groups to move into (drag into a group, §6.2; "Sacar del gru
 
 ### 5.4 Popovers of the Lienzo island
 
-- **Lienzos** (title press; width large; anchored below A). First row: `Plus` "Nuevo lienzo"
-  (primary-coloured icon, `bodyStrong`). Then `label` "Tus lienzos" and one row per own document,
-  most recent first; then `label` "Ejemplos". Row (min 44): `Frame` 16 · serif `groupTitle` title +
-  chip "Ejemplo" · `small` muted relative time ("hace 2 h") · `Check` 14 on the open one. A search
-  input appears above the list when there are more than 8 own lienzos. Pressing a row opens it and
-  closes the popover. Empty own list: `small` muted "Aún no hay lienzos propios."
-- **Historial** (main menu; width medium). The last 8 `readHistory` rows: actor glyph 14 (`Bot`
-  assistant, `User` person, `Cog` system) · `body` transaction label, one line · `small` muted
-  relative time. Undo/redo entries in muted italics. No revision numbers. Empty: "Todavía no hay
-  cambios."
-- **Atajos de teclado** (main menu; width large). §12 as two-column rows: `body` action, `keys`
-  shortcut; grouped under `label` headings Crear, Editar, Seleccionar, Ver, Asistente.
+- **Lienzos** (title press) opens the Lienzos screen (§35.2). **History** and **Keyboard shortcuts** open the History
+  screen and Settings → Shortcuts (§35).
 
 
 ## 6. Canvas, cards and groups
@@ -462,8 +454,8 @@ under the pointer, excluding descendants and closed groups. Target uses a dashed
 
 Card fill is surface1, border 1, radius 10, padding 12/14 with a 3-unit concept-tone spine. Type
 label is sans sentence case; title is heading. No raw type identifier, author avatar, revision,
-coordinate or pixel-size field appears. Unknown types preserve their data and show "Este bloque
-necesita una colección que todavía no está instalada." plus "Abrir colecciones".
+coordinate or pixel-size field appears. Unknown types preserve their data and say "This block’s type is not in your
+catalog any more. Its content is kept; the agent can still read it."
 
 Hover changes the border. Selection adds an accent border and halo without shifting content.
 Keyboard focus adds a visible ring. Dragging lifts the card using existing motion tokens. No
@@ -573,47 +565,13 @@ point, title in edit mode, placeholder "Idea".
 - Double-click never creates anything on top of an entity: there it edits (§8.1).
 
 
-## 9. Adding blocks, collections and the Lista view
+## 9. Adding blocks and the Lista view
 
-### 9.1 Block picker (replaces the catalog rail)
+### 9.1 Adding
 
-The catalog is **not a place**; it is a `Popover` (width medium, max height 440) that opens where
-something is about to be added. Data: `readCatalog`.
-
-| Opened from | Anchor | Adds to |
-| --- | --- | --- |
-| `Plus` on island B (`K`, `⌘/Ctrl K`) | below the button | as island B's rule (§3.1) |
-| "Añadir dentro" on a group's toolbar | below the button | that group |
-| `/` in a quick-create draft (§8.3) | the draft | replaces the draft |
-| `Plus` in the compact top bar | sheet | selected group, else root |
-
-- **Search** input on top (autofocus, `Search` 14 leading, placeholder "Buscar bloques y
-  plantillas"); accents and case are ignored; it searches names and descriptions.
-- **Bloques.** A grid of tiles, 3 columns, gap 4. Tile: 92 × 64, radius 8, icon 20 in the type's
-  tone colour above the type's `name` in `small` 600 (one line, centred); hover `foreground`@0.06.
-  The type's `description` is the tile's tooltip. Order: Nota, Nodo, then the rest of the
-  built-ins, then collection types under a `label` with the collection's name.
-- **Plantillas.** `label` "Plantillas", then rows (min 44): the 40 × 28 miniature (1.5 px `border`
-  rounded frame holding up to three 3 px bars in the `washStrong` of its first blocks' tones) ·
-  `bodyStrong` name · `small` muted description, one line. Press = `template.insert`.
-- **Footer row** (after a separator): `Package` "Colecciones…" → §9.2.
-- `↑ ↓ ← →` move through tiles and rows, `Enter` adds. Adding closes the popover, selects the new
-  entity and starts editing its first text. On pointer devices a tile can also be dragged onto the
-  canvas (same ghost as island B).
-- No results: `small` muted "Nada coincide con «{q}»." Catalog failed: `small` "No se pudieron
-  cargar los bloques." + ghost small "Reintentar". Loading: six skeleton tiles.
-
-### 9.2 Colecciones (host `Modal`, icon `Package`)
-
-Importing and exporting JSON is rare, deliberate and file-shaped, so it is the one task that keeps
-a modal. Title "Colecciones". Body: secondary full-width "Importar colección" (`FileInput`), then
-one card per installed pack (radius 12, 1 px `border`, pad 12, gap 8): row 1 `Package` 16 +
-`bodyStrong` name + chip "Ejemplo" for `frontend`, `learn` and `graph`; `small` muted description;
-`small` muted "{a} tipos · {b} plantillas · {c} lienzos"; one row per document (`FileText` 12 +
-title + ghost small "Crear lienzo" → `instantiatePack`); last row ghost small "Exportar"
-(`FileOutput`) and ghost small "Quitar" (`pack.remove`; a refusal shows the friendly Spanish error mapping). The raw-JSON "define a type" editor sits at the very end behind a ghost small "Definir un
-tipo propio".
-
+Everything is added from the bottom toolbar and its `+` catalog (§24); ⌘K runs the same entries. There are no
+templates and no collections: a structure the person wants again is duplicated (⌘D) or drawn by the agent.
+"Manage extensions…" at the foot of the catalog opens the Extensions screen (§35.5).
 
 ### 9.3 Lista view
 
@@ -636,15 +594,6 @@ bottom. It is a **view of the same lienzo, not a second editor**, so it is a mai
 - Tap selects (the contextual toolbar appears above the row; on compact, the action bar). In-place
   editing works exactly as §8.1. `+` handles and quick-create do not exist here; "Más" offers
   "Mover antes" / "Mover después" for order.
-
-### 9.4 Import, export and replacement
-
-Keep the existing real validator, dry run, reviewed catalog revision and 1 MiB cap. Show names
-for additions and replacements, counts for unchanged entries. Replacing a collection requires
-the explicit replacement checkbox after review. Built-in examples export as portable copies in
-a distinct namespace. A conflict rereads the catalog; it never reports an uncommitted import as
-successful. JSON is editable code content, but scripts or HTML are never executed as learning specs.
-
 
 ## 10. The agent: one-way, no composer
 
@@ -717,7 +666,7 @@ Unknown errors use friendlyError; no credentials, paths, stack traces or raw ser
 
 ### 11.3 Guide once per host
 
-The already integrated guide remains a host Modal, accessible from the main menu. Save guideSeen
+The guide (§35.3) opens by itself once per host and from the menu ("Lienzo guide") and ⌘K. Save guideSeen
 with the SDK host settings revision before opening it. Only a successful claim opens the guide.
 Loading, invalid settings and errors keep it closed. Failed settings save offers retry; another
 client's successful claim does not reopen it. Workspace switches and native/web client changes
@@ -910,19 +859,22 @@ app: empty states, onboarding, a few confirmations ("Listo.", "Dale.").
 
 | Context | Copy |
 | --- | --- |
-| Lienzos | Lienzos; New Lienzo; Untitled Lienzo; Duplicate as my own |
+| Lienzos | Lienzos; New Lienzo; Untitled Lienzo; Search Lienzos; Recent; Name; Rename; Duplicate; Delete…; No Lienzos yet. |
 | Adding | More tools; Search tools, embeds, blocks…; Nothing matches “{q}”; Manage extensions… |
 | Selection | Wrap in a Marco; Unwrap Marco; Duplicate; Delete; Properties |
-| Marco | Add inside; Layout; Take out of the Marco; Save as template… |
+| Marco | Add inside; Layout; Take out of the Marco |
 | Link | Label; Kind (Flow, Needs, Mentions); Colour; Reverse |
 | Agent | Agent; Works on this Lienzo; Connect an agent; Talk to the agent in its own app |
-| Collections | Import a collection; Export; Remove; Portable copy |
+| Extensions | Add from file…; Export all mine; Export; Remove; Allow; Review “{file}”; Install; Read the guide |
+| Settings | Shortcuts; Toolbar; Copilot; Agents; Extensions; About; Press keys…; Keys taken by {name}; Reset all; Reset toolbar |
+| History | History; Today; Yesterday; Undo; Redo; Nothing yet. |
 | Learning | Answer; Show hint; Save |
 | Playback | Play; Pause; Reset |
 | Persistence | Saving; Not saved; Retry; Apply my change again; Discard |
 | Static fallback | Static; The interactive version is available on desktop and web. |
 
-Examples always keep the "Example" chip and say that the data is illustrative. A result, agent status, successful
+Lienzo ships no example documents. A stored document marked `example` keeps its "Example" chip (on its card and
+title) and says that the data is illustrative. A result, agent status, successful
 save is shown only after a confirmed tool/RPC response or live host signal. Nothing claims the agent saw anything. No renderer
 fabricates an agent hint, answer or completed job.
 
@@ -1112,8 +1064,8 @@ page, or a player for an image, video or sound link. On compact the toolbar is o
 
 **`+` catalog** (`face.catalog`, `client/AddMenu.tsx`). A popover anchored to `+` (right edges aligned), 360 wide, up
 to 480 tall. A search field on top, focused on open; then sections Pinned, Shapes & drawing, Embeds (Ventana, image,
-video, audio, mini app, file tree), Blocks (every catalog block type and template), Extensions (tools from
-extensions); "Manage extensions…" at the bottom opens the collections dialog. Rows are 44: a 28 tile in the type's
+video, audio, mini app, file tree), Blocks (every catalog block type), Extensions (tools from
+extensions); "Manage extensions…" at the bottom opens the Extensions screen (§35.5). Rows are 44: a 28 tile in the type's
 tone, the name, one line of description, the shortcut on the right; hovering shows the pin toggle. Pins persist in
 the host's `interface` settings and give keys 1–9. Search matches names fuzzily and keywords and descriptions by
 whole words; arrows move, Enter adds, Esc closes. Verified with `design/whiteboard-harness/face.cjs` and
@@ -1238,8 +1190,7 @@ by whole words. Keyboard alone works fully; so does the mouse.
 A person or their agent can add a tool without touching the plugin (contract in `docs/extensions.md`). Tools are
 listed in the + catalog's Extensions section and open as a tab of the right panel, working on the shared selection;
 several can be open at once. An imported tool that asks for a permission shows a warning-toned strip saying what it
-asks for in words and a single "Allow". "Manage extensions…" opens the collections dialog: what each pack brings, a
-"My extensions" card to remove or export local ones, and an import review that says plainly when a pack brings code.
+asks for in words and a single "Allow". "Manage extensions…" opens the Extensions screen (§35.5).
 Extensions take every colour from the theme they are given. Verified with `design/whiteboard-harness/extensions.cjs`.
 
 ## 33. Shortcuts, tooltips, words and small details
@@ -1250,8 +1201,8 @@ previous / next Hoja, ⌘J jump to Hoja, F follow the agent, G the agent's lates
 Hojas and the agent, see §34), Shift+1 fit all, Shift+2 fit selection, ⌘\ right panel, ⌘. hide all UI, ? the sheet. Editing: ⌘Z,
 ⌘⇧Z, ⌘D duplicate, ⌘G wrap in a Marco, ⌘⇧G unwrap, Delete / Backspace, Esc, ⌘A. The person's overrides win, then
 ours, then extensions' in the order they register; a combination already taken is not assigned and is listed as
-"unassigned" with whose keys they are. The `?` sheet and Settings → Shortcuts list everything and reassign by
-"Change" then the new keys; overrides persist in the host's `interface` settings and show "Reset".
+"unassigned" with whose keys they are. `?` opens Settings → Shortcuts, which lists everything and reassigns
+in place: press the key chip, then the new keys (§35.4); overrides persist in the host's `interface` settings.
 
 **Tooltips** (`tooltip`, `Tooltip` / `useTooltip` / `TooltipLayer` in `ui.tsx`). One layer per panel draws them above
 everything. Name, then the shortcut in muted monospace ("Pencil  P"); a second line for glossary words. They appear
@@ -1285,3 +1236,81 @@ middle button, Hand, two fingers) or jumping to a Hoja lets go. While not follow
 a pill above the toolbar, "● Agent's latest · ‹label› →"; it and `G` take you there and follow again; `F` toggles.
 The conversation chip's "Go to latest" and "Open Lienzo" open this panel on the right document and land the same
 way. Logic in `plugin/client/Hojas.tsx` and `hojas-model.ts`; verified with `design/whiteboard-harness/copilot.cjs`.
+
+## 35. The screens around the canvas
+
+Lienzos, the guide, Settings, Extensions and History are screens, not small modals (`client/Screen.tsx`, tokens
+`face.screens`). They share one language; the logic behind them lives in `client/screens.ts` and is tested on its own
+(`tests/screens.test.ts`). Verified with `design/whiteboard-harness/screens.cjs` (dark, `papel`, compact) and
+`desktop-screens.cjs` (the desktop preview); captures in `design/qa-screens-2026-10/`.
+
+### 35.1 Shared language
+
+- **The sheet.** One floating sheet over the canvas, up to 960 × 680, 24 from the panel edges, radius 16, `surface1`
+  (raised) with a 1 px `border` and a soft long shadow (`face.screens.shadow`); the canvas behind is dimmed 40 %
+  (`#000` in dark, `foreground` in light). It opens in 220 ms ease-out (scale 0.98 → 1 and fade). Escape, the close
+  button in the corner or a press on the dimmed canvas closes it. Compact: full screen, no radius.
+- **Two columns** where there is navigation (Settings): a 220 rail on `surface0` (small-caps title, 36 rows, icon and
+  label, the active row washed in the accent at 12 %) and the content with 32 padding. On compact the rail becomes a
+  row of chips under the close button.
+- **Header.** One serif display title per screen (30/36, −0.4 tracking; 24 on compact), one muted line saying what the
+  screen is for, the screen's actions on the title row, and its controls (search, sort) under it at full width.
+- **Cards.** Radius 12 on `surface0`, 18 padding. A pressable card lifts on hover: the border goes to `foreground` at
+  20 % and it rises 1 px (160 ms ease-out). Actions sit beside a pressable card, never inside it. Section labels are
+  11 px small caps, 0.06 em tracking, muted.
+- **Motion.** Lists come in 30 ms apart (fade and 6 px lift, at most 12 steps). Nothing loops unless it explains
+  something (the key chip waiting for keys, the guide's scenes). Everything is instant under reduced motion.
+
+### 35.2 Lienzos
+
+The home of the app, from the title, the menu and ⌘K ("All Lienzos"). A grid of cards, 3–4 columns by width (2 on
+compact), 16 apart. Each card is a live thumbnail drawn from the Lienzo's real layout, like the minimap: Marcos as
+outlines (Hojas in the accent), cards as filled marks in their tones, drawings as faint marks, links as thin lines
+between centres; a single small card is not blown up. Under it the serif title (two lines), "Edited 3 h ago · 24
+blocks · 3 Hojas", and the agent working on it (dot and name; the accent while it works). The open Lienzo has an
+accent ring. Search filters as you type (accents and case ignored, every word); sort is Recent · Name. Hovering a
+card shows ⋯: Rename (in place), Duplicate, Delete… (a confirmation inside the card). Choosing a card opens it and
+closes the sheet. Empty: the mate, "No Lienzos yet." and "Start one, or ask your agent to draw something." There are
+no examples; a stored document marked as an example keeps an "Example" chip by its meta line.
+
+### 35.3 The guide
+
+Four scenes on a large stage (60 % of the sheet; on top on compact) with the words on the right: the agent draws
+while it works (a sentence types in a chat; cards and arrows appear and the camera settles), Hojas (three chapters
+slide in along a strip, the "Hoja 2 of 3" pill counts, the magnet glows while the camera follows), point and ask in
+your own chat (a cursor selects a card, "mirá esto" arrives in the chat, a dashed line shows the agent reading the
+selection), and make your own tools (a code card types `lienzo.edit([...])`, folds into an icon and drops into the
+toolbar; "Works in Paseo and the desktop app"). Each scene plays by itself for 6 s with a thin progress bar; Back,
+Next, Skip and dots; the last button says "Dale, let’s start". The stage is a picture: nothing on it is pressable.
+Drawn with Animated views in the theme's colours, in a fixed 560 × 420 space scaled to fit. Under reduced motion each
+scene shows its last frame and waits for Next. Shown once per host (§11.3), and from the menu and ⌘K.
+
+### 35.4 Settings
+
+Only sections that exist: **Shortcuts** — search, "Reset all", groups (Tools, Navigation, Editing, Extensions) as two
+columns of 40 rows: label on the left, key chips on the right. Pressing a chip records in place (it pulses "Press
+keys…", Escape cancels); keys another shortcut held move here and that row shows a small warning chip "Keys taken by
+…"; an edited row shows a reset icon. **Toolbar** — the pinned tools in order with their keys 1–9, move earlier or
+later, unpin, "Reset toolbar". **Copilot** (Paseo) — there are no stored copilot defaults, so it explains the chip in
+the composer and the four cadences, with a link to the guide. **Agents** (desktop) — the MCP address, the commands
+for Claude Code, Codex and Cursor, and the agents seen (the host's `AgentSettings` slot). **Extensions** — §35.5,
+embedded. **About** — version, where it runs, the one file that holds every Lienzo (copyable), links to the docs.
+
+### 35.5 Extensions
+
+Installed extensions as cards (two columns when there is room): icon tile, name, "Made by you or your agent" or the
+file it came from, the description, permissions as chips ("Changes the canvas", "Loads from the internet", or "Reads
+and selects only"), a warning strip with "Allow" while an imported one waits for permission, Export and Remove (with a
+confirmation; an extension that came in a file is removed with its file). "Add from file…" reads an extension file
+and shows a review before anything is saved: what the file brings, what each extension asks for, whether it is new
+or replaces one, and a "Replace the installed file" box when it is already there; then "Install". "Export all mine"
+saves the ones made here in one file. "Write your own" says what an extension is and links to `docs/extensions.md`.
+Errors are said in words ("This file carries block types, templates or documents, which Lienzo no longer imports.").
+
+### 35.6 History
+
+The stored transactions of the open Lienzo as a timeline grouped by day ("Today", "Yesterday", "Friday 16 October").
+Each entry: a round glyph on a thin rail, the actor ("You", or the agent's name after a dot in its own tone), what
+happened (the transaction label) and the time; undo and redo entries show their own glyph. Chips name the changed
+things that still exist; pressing one closes the sheet, selects it and flies the camera there. Undo and Redo sit on
+the title row. Empty: "Nothing yet."

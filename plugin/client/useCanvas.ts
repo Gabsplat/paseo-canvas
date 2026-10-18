@@ -14,8 +14,8 @@ export function useCanvas(workspaceId: string) {
   const api = {
     list: useRpc(rpc.listDocuments), read: useRpc(rpc.readDocument), create: useRpc(rpc.createDocument), mutate: useRpc(rpc.mutateDocument),
     undo: useRpc(rpc.undoDocument), redo: useRpc(rpc.redoDocument), watch: useRpc(rpc.watchDocument), selection: useRpc(rpc.setSelection),
-    catalog: useRpc(rpc.readCatalog), catalogMutate: useRpc(rpc.mutateCatalog), validate: useRpc(rpc.validatePack), import: useRpc(rpc.importPack), export: useRpc(rpc.exportPack),
-    instantiate: useRpc(rpc.instantiatePack), exportGroup: useRpc(rpc.exportGroup), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
+    catalog: useRpc(rpc.readCatalog), catalogMutate: useRpc(rpc.mutateCatalog), validate: useRpc(rpc.validatePack), import: useRpc(rpc.importPack),
+    about: useRpc(rpc.readAbout), remove: useRpc(rpc.deleteDocument), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
     runtimeSet: useRpc(rpc.setRuntime), history: useRpc(rpc.readHistory),
   };
   const apiRef = useRef(api); apiRef.current = api;
@@ -163,14 +163,24 @@ export function useCanvas(workspaceId: string) {
     const g = generation.current;
     return task(async () => { const next = await apiRef.current.create({ workspaceId, content }); if (!active.current || g !== generation.current) return undefined; ++generation.current; desired.current = null; setFailure(null); accept(next); await refreshList().catch(error => fail(error, refreshList)); return next; });
   }
-  async function example(packId: string, index = 0) {
-    const g = generation.current;
-    return task(async () => { const next = await apiRef.current.instantiate({ workspaceId, packId, documentIndex: index }); if (!active.current || g !== generation.current) return undefined; ++generation.current; desired.current = null; setFailure(null); accept(next); await refreshList().catch(error => fail(error, refreshList)); return next; });
+  /** Deletes a Lienzo. When it is the open one, the most recently edited of the rest opens (or none). */
+  async function remove(id: string): Promise<boolean> {
+    const done = await task(async () => {
+      await apiRef.current.remove({ workspaceId, documentId: id });
+      knownIds.current?.delete(id);
+      const list = await refreshList();
+      if (current.current?.document.id === id) {
+        const next = [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+        if (next) void open(next.id); else { ++generation.current; current.current = null; desired.current = null; setView(null); setSelection([]); }
+      }
+      return true;
+    });
+    return !!done;
   }
   async function refresh() {
     const v = current.current; if (!v) return;
     try { accept(await apiRef.current.read({ workspaceId, documentId: v.document.id })); setOffline(false); } catch (e) { fail(e, refresh); }
   }
-  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, task, create, example, refreshList, settle, arrival };
+  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, task, create, remove, refreshList, settle, arrival };
 }
 export type CanvasController = ReturnType<typeof useCanvas>;

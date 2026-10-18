@@ -21,3 +21,4 @@ export const useAgent: ClientHost['useAgent'] = sdkUseAgent;
 export const usePaseo: ClientHost['usePaseo'] = sdkUsePaseo as unknown as ClientHost['usePaseo'];
 export const capabilities: ClientHost['capabilities'] = { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true };
 export const AgentSheet: ClientHost['AgentSheet'] = null;
+export const AgentSettings: ClientHost['AgentSettings'] = null;

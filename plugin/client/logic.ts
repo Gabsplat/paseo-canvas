@@ -36,25 +36,6 @@ export function propertyValue(kind: BlockType['properties'][number]['kind'], raw
   if (kind === 'json') { try { return typeof raw === 'string' ? JSON.parse(raw) : raw as CanvasBlock['data'][string]; } catch { throw new Error('Invalid JSON'); } }
   return String(raw ?? '');
 }
-export function forkPack(source: CanvasPack, id = newId('pack')): CanvasPack {
-  const types = new Map(source.blockTypes.map((t, i) => [t.id, `${id}.type${i}`])), templates = new Map(source.templates.map((t, i) => [t.id, `${id}.template${i}`]));
-  const block = (b: CanvasBlock) => ({ ...b, typeId: types.get(b.typeId) ?? b.typeId });
-  const group = (g: CanvasGroup) => ({ ...g, templateId: g.templateId ? templates.get(g.templateId) : undefined });
-  return { ...source, id, name: `${source.name} · copia portable`, blockTypes: source.blockTypes.map(t => ({ ...t, id: types.get(t.id)! })), templates: source.templates.map(t => ({ ...t, id: templates.get(t.id)!, blocks: t.blocks.map(block), groups: t.groups.map(group) })), documents: source.documents.map(d => ({ ...d, blocks: d.blocks.map(block), groups: d.groups.map(group) })),
-    // An extension keeps its own name inside the new namespace, so a copy of a copy stays recognisable.
-    extensions: (source.extensions ?? []).map((e, i) => ({ ...e, id: `${id}.${e.id.startsWith(`${source.id}.`) ? e.id.slice(source.id.length + 1) : `ext${i}`}`.slice(0, 100) })) };
-}
-export function selectionPack(doc: CanvasDocument, catalog: CanvasCatalog, ids: string[]): CanvasPack {
-  const included = new Set(ids);
-  const add = (id: string) => { included.add(id); const g = doc.groups.find(g => g.id === id); if (g) [...g.blockIds, ...g.groupIds].forEach(add); };
-  ids.forEach(add);
-  const content = documentContent(doc);
-  content.blocks = doc.blocks.filter(b => included.has(b.id)).map(b => ({ ...b, parentGroupId: b.parentGroupId && included.has(b.parentGroupId) ? b.parentGroupId : null }));
-  content.groups = doc.groups.filter(g => included.has(g.id)).map(g => ({ ...g, parentGroupId: g.parentGroupId && included.has(g.parentGroupId) ? g.parentGroupId : null, blockIds: g.blockIds.filter(id => included.has(id)), groupIds: g.groupIds.filter(id => included.has(id)) }));
-  content.links = (doc.links ?? []).filter(l => included.has(l.from) && included.has(l.to));
-  content.selectedIds = [];
-  return forkPack({ format: 'paseo-canvas-pack', version: 1, id: 'selection', name: `Selection from ${doc.title}`, description: doc.description, blockTypes: catalog.blockTypes.filter(t => content.blocks.some(b => b.typeId === t.id)), templates: [], documents: [content], extensions: [] });
-}
 export function safeUrl(input: unknown): string | null {
   if (typeof input !== 'string' || !/^https?:\/\//i.test(input)) return null;
   try { const u = new URL(input); return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password ? u.href : null; } catch { return null; }

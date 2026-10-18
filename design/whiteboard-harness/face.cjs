@@ -87,14 +87,13 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await key('Escape','Escape');await pause(200);
  assert.equal(await ev('__panelQA.actions.length'),before,'nothing was sent');assert.ok(!(await ev('__panelQA.errors.some(e=>/agent\\.(action|events)/.test(e.name))')),'no retired RPC was called');
  await key('k','KeyK',2);await wait('!!document.querySelector("#lienzo-palette")');assert.match(await text('#lienzo-palette'),/RECENT[\s\S]*Pencil/i,'Recent remembers');await key('Escape','Escape');
- // 7. The ? sheet.
- await background();await key('?','Slash',8,'?');await wait('!!document.querySelector("#lienzo-shortcuts")');{const sheet=await text('#lienzo-shortcuts');assert.ok(sheet.includes('Follow the agent')&&sheet.includes('Previous Hoja'),sheet.slice(0,200));}await shot('sheet');await key('Escape','Escape');await pause(300);
- // 8. Settings → Shortcuts: give Text the key Q; T stops, Q works; Reset.
- await click('#lienzo-document-island [aria-label="Menu"]');await click('[aria-label="Settings"]');await wait('!!document.querySelector("#lienzo-settings")');
- await click('#lienzo-settings [id="lienzo-shortcut-tool.text"] [aria-label="Change"]');await key('q','KeyQ');await wait(`!!document.querySelector('#lienzo-settings [id="lienzo-shortcut-tool.text"] [aria-label="Reset"]')`,'overridden');
- await shot('settings');await key('Escape','Escape');await pause(300);
+ // 7. ? opens Settings → Shortcuts: the cheat sheet and reassigning are one screen.
+ await background();await key('?','Slash',8,'?');await wait('!!document.querySelector("#lienzo-settings-shortcuts")');{const sheet=await text('#lienzo-settings-shortcuts');assert.ok(/Follow the agent/.test(sheet)&&/Previous Hoja/.test(sheet),sheet.slice(0,200));}await shot('sheet');
+ // 8. Give Text the key Q in place (press its key chip, then Q); T stops, Q works; Reset.
+ await click('[id="lienzo-shortcut-tool.text"] [aria-label="Change keys for Text"]');await key('q','KeyQ');await wait(`!!document.querySelector('[id="lienzo-shortcut-tool.text"] [aria-label="Reset Text"]')`,'overridden');
+ await shot('settings');await key('Escape','Escape');await wait('!document.querySelector("#lienzo-screen-settings")','Escape closes Settings');
  await background();await key('t','KeyT');assert.ok(!(await pressed('text')),'T is no longer Text');await key('q','KeyQ');await wait(`document.querySelector('#lienzo-tool-text')?.getAttribute('aria-pressed')==='true'`,'Q is Text');await key('v','KeyV');
- await click('#lienzo-document-island [aria-label="Menu"]');await click('[aria-label="Settings"]');await click('#lienzo-settings [id="lienzo-shortcut-tool.text"] [aria-label="Reset"]');await pause(200);await key('Escape','Escape');await pause(300);
+ await click('#lienzo-document-island [aria-label="Menu"]');await click('#lienzo-interactive-menu [aria-label="Settings"]');await click('[id="lienzo-shortcut-tool.text"] [aria-label="Reset Text"]');await pause(200);await key('Escape','Escape');await pause(300);
  await background();await key('t','KeyT');await wait(`document.querySelector('#lienzo-tool-text')?.getAttribute('aria-pressed')==='true'`,'T is Text again');await key('v','KeyV');
  // 9. The kettle when ⌘K hears "mate".
  await key('k','KeyK',2);await type('mate');await wait('!!document.querySelector("#lienzo-kettle")','the kettle boils');await key('Escape','Escape');await shot('kettle');
@@ -102,6 +101,6 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await ev(`(()=>{const d=__panelQA.doc();__panelQA.seed([...d.links.map(l=>({type:'link.delete',id:l.id})),...d.blocks.filter(b=>!b.parentGroupId).map(b=>({type:'block.delete',id:b.id})),...d.groups.filter(g=>!g.parentGroupId).map(g=>({type:'group.delete',id:g.id}))]);})()`);
  await wait('!!document.querySelector("#lienzo-empty-mate")','the empty canvas shows the mate');assert.match(await text('#lienzo-empty-mate'),/Empty\. Pour yourself a mate\./);await pause(1200);await shot('empty');
  assert.deepEqual(uncaught.map(u=>u.exception?.description||u.text),[],'something threw');assert.ok(!/Plugin failed|Minified React/.test(await ev('document.body.innerText')));
- console.log('PASS face ('+theme+'): toolbar on the bottom edge and keys, no composer, tooltips, + catalog with pins, Properties, selection bar without ask, ⌘K tool and no ask, ? sheet, reassigned key, kettle, mate');
+ console.log('PASS face ('+theme+'): toolbar on the bottom edge and keys, no composer, tooltips, + catalog with pins, Properties, selection bar without ask, ⌘K tool and no ask, ? opens Settings → Shortcuts, key reassigned in place, kettle, mate');
  }finally{await call('Emulation.clearDeviceMetricsOverride').catch(()=>{});ws.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

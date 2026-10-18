@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Icon } from './host';
 import type { CanvasGroup } from '../shared/model';
@@ -7,14 +7,11 @@ import { Button, Field, IconButton, Segments, Txt, useUI } from './ui';
 import { communicationOperation, layoutIcons, layoutOperations } from './panel-actions';
 import { containerMode, pinnedChildren, type Rect } from './logic';
 import { tokens } from './tokens';
-export function DocumentActions({ controller: c, section, rects, release }: { controller: CanvasController; section: 'document' | 'communication' | 'history'; rects(): Map<string, Rect>; release(ids: string[], label?: string): void }) {
+export function DocumentActions({ controller: c, section, rects, release }: { controller: CanvasController; section: 'document' | 'communication'; rects(): Map<string, Rect>; release(ids: string[], label?: string): void }) {
   const u = useUI(), doc = c.view!.document, disabled = c.busy || c.offline;
-  const [history, setHistory] = useState<Awaited<ReturnType<typeof c.api.history>>['transactions']>([]), [historyError, setHistoryError] = useState(''), [loading, setLoading] = useState(false), [attempt, setAttempt] = useState(0);
-  useEffect(() => { if (section !== 'history') return; let live = true; setLoading(true); setHistoryError(''); void c.api.history({ workspaceId: c.workspaceId, documentId: doc.id }).then(result => { if (live) setHistory(result.transactions); }).catch(() => { if (live) setHistoryError('The history could not be loaded.'); }).finally(() => { if (live) setLoading(false); }); return () => { live = false; }; }, [section, doc.id, doc.revision, attempt]);
   const saveCommunication = async (instructions: string) => { const id = doc.id; await c.settle(); const latest = c.current.current?.document; if (!latest || latest.id !== id || disabled) return; return c.edit([communicationOperation(latest, null, { instructions })], 'Edit instructions for the agent'); };
   const layout = doc.layout, mode = containerMode(doc, null, c.catalog), pinned = pinnedChildren(doc, null);
   const saveLayout = (next: NonNullable<CanvasGroup['layout']>) => { if (disabled) return; try { void c.edit(layoutOperations(doc, null, next, rects(), c.catalog), 'Change Lienzo layout'); } catch (error) { c.fail(error); } };
-  if (section === 'history') return <View style={{ gap: 12 }}>{loading && <Txt muted>Loading the history…</Txt>}{historyError && <><Txt muted>{historyError}</Txt><Button label="Retry" onPress={() => setAttempt(value => value + 1)} /></>}{!loading && !historyError && !history.length && <Txt muted>No changes yet.</Txt>}{history.slice(-8).reverse().map(tx => <View key={tx.id} style={{ gap: 4, flexDirection: 'row' }}><Icon name={tx.actor === 'agent' ? 'Bot' : tx.actor === 'user' ? 'User' : 'Cog'} size={14} color={u.c.foregroundMuted} /><View style={{ flex: 1 }}><Txt muted={tx.kind !== 'edit'}>{tx.label}</Txt><Txt kind="small" muted>{new Date(tx.at).toLocaleString()}</Txt></View></View>)}</View>;
   return <View style={{ gap: 12 }}>
     {section === 'document' && doc.example && <View style={{ backgroundColor: u.wash('aviso'), padding: 12, borderRadius: 6 }}><Txt kind="small">Example Lienzo. Its content is illustrative and does not come from an agent.</Txt></View>}
     {section === 'document' && <Field label="Description" value={doc.description} multiline disabled={disabled} onSave={description => c.edit([{ type: 'document.update', description }], 'Edit description')} />}

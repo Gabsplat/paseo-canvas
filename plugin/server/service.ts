@@ -9,8 +9,8 @@ import {
 import { CanvasError } from "../shared/errors";
 import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
-import { catalogView, packDiff, packIssues, parsePack, validateExtension, validateTemplate, validateType } from "./catalog";
-import { clone, newId, reduce, validateDocument, normalizeBlock, exportGroup as groupTemplate, effectiveInstructions } from "./reducer";
+import { catalogView, packDiff, packIssues, parsePack, validateExtension, validateType } from "./catalog";
+import { clone, newId, reduce, validateDocument, normalizeBlock, effectiveInstructions } from "./reducer";
 import { nextSheetPlacement, sheetSummaries } from "./sheets";
 
 const timestamp = () => new Date().toISOString();
@@ -72,12 +72,22 @@ export class CanvasService {
   constructor(readonly store: CanvasStore) {}
   async list(input: RpcInput<typeof rpc.listDocuments>, agentId?: string) {
     const state = await this.store.read();
-    return { documents: Object.values(state.documents).filter(record => record.document.workspaceId === input.workspaceId && (!agentId || reachable(state, record, agentId))).map(({ document }) => ({ id: document.id, workspaceId: document.workspaceId, title: document.title, description: document.description, example: document.example, revision: document.revision, updatedAt: document.updatedAt })) };
+    return { documents: Object.values(state.documents).filter(record => record.document.workspaceId === input.workspaceId && (!agentId || reachable(state, record, agentId))).map(({ document, connection }) => ({ id: document.id, workspaceId: document.workspaceId, title: document.title, description: document.description, example: document.example, revision: document.revision, updatedAt: document.updatedAt,
+      blockCount: document.blocks.length, groupCount: document.groups.filter(group => !group.sheet).length, hojaCount: document.groups.filter(group => group.sheet).length, agentId: connection?.agentId ?? null })) };
   }
   async read(input: RpcInput<typeof rpc.readDocument>, actor: Actor = "user", agentId?: string) { return view(documentRecord(await this.store.read(), input.documentId, input.workspaceId), actor, agentId); }
   async watch(input: RpcInput<typeof rpc.watchDocument>) {
     const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
     return { revision: record.document.revision, runtimeVersion: record.runtimeVersion, ...(input.knownRevision !== record.document.revision || input.knownRuntimeVersion !== record.runtimeVersion ? { view: view(record) } : {}) };
+  }
+  /** Deletes a Lienzo and its history. A conversation whose copilot drew there gets a new one the next time it is turned on. */
+  remove(input: RpcInput<typeof rpc.deleteDocument>) {
+    return this.store.transaction(state => {
+      documentRecord(state, input.documentId, input.workspaceId);
+      delete state.documents[input.documentId];
+      for (const record of Object.values(state.copilot)) if (record.documentId === input.documentId) record.documentId = null;
+      return { deleted: true };
+    });
   }
   create(input: RpcInput<typeof rpc.createDocument>, actor: Actor = "user", connection: DocumentRecord["connection"] = null) {
     return this.store.transaction(state => {
@@ -255,19 +265,9 @@ export class CanvasService {
           if (isRetiredRenderer(action.blockType.renderer) || isRetiredRenderer(action.blockType.id)) throw new CanvasError("VALIDATION", `Block type ${action.blockType.id} uses a renderer or ID that is no longer available.`);
           validateType(action.blockType);
           state.catalog.localTypes = [...state.catalog.localTypes.filter(type => type.id !== action.blockType.id), clone(action.blockType)]; break;
-        case "template.put":
-          if (current.templates.some(template => template.id === action.template.id) && !state.catalog.localTemplates.some(template => template.id === action.template.id)) throw new CanvasError("VALIDATION", "Local templates cannot replace a built-in or pack template.");
-          validateTemplate(action.template, current);
-          state.catalog.localTemplates = [...state.catalog.localTemplates.filter(template => template.id !== action.template.id), clone(action.template)]; break;
-        case "pack.import": {
-          const pack = parsePack(action.pack, current);
-          const old = state.catalog.packs.find(pack => pack.id === action.pack.id);
-          if (old && !action.replace) throw new CanvasError("VALIDATION", "Pack already exists; pass replace:true explicitly.");
-          state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.grants = keptGrants(state.catalog.grants, old, pack); break;
-        }
         case "pack.remove": {
           const gone = state.catalog.packs.find(pack => pack.id === action.id);
-          if (!gone) throw new CanvasError("NOT_FOUND", "User pack was not found.");
+          if (!gone) throw new CanvasError("NOT_FOUND", "That extension file is not installed.");
           state.catalog.packs = state.catalog.packs.filter(pack => pack.id !== action.id);
           state.catalog.grants = state.catalog.grants.filter(id => !gone.extensions.some(extension => extension.id === id)); break;
         }
@@ -275,11 +275,11 @@ export class CanvasService {
           validateExtension(action.extension, current);
           state.catalog.localExtensions = [...state.catalog.localExtensions.filter(extension => extension.id !== action.extension.id), clone(action.extension)]; break;
         case "extension.remove":
-          if (!state.catalog.localExtensions.some(extension => extension.id === action.id)) throw new CanvasError("NOT_FOUND", "Local extension was not found. Extensions that came in a pack are removed with their pack.");
+          if (!state.catalog.localExtensions.some(extension => extension.id === action.id)) throw new CanvasError("NOT_FOUND", "Local extension was not found. Extensions that came in a file are removed with their file.");
           state.catalog.localExtensions = state.catalog.localExtensions.filter(extension => extension.id !== action.id); break;
         case "extension.grant": {
           const held = current.extensions.find(extension => extension.id === action.id);
-          if (!held || held.source === "local" || held.source === "builtin") throw new CanvasError("NOT_FOUND", "Only an extension that came in an imported pack is granted or revoked.");
+          if (!held || held.source === "local" || held.source === "builtin") throw new CanvasError("NOT_FOUND", "Only an extension that came in an imported file is granted or revoked.");
           state.catalog.grants = [...state.catalog.grants.filter(id => id !== action.id), ...(action.granted ? [action.id] : [])]; break;
         }
       }
@@ -291,25 +291,11 @@ export class CanvasService {
     return this.store.transaction(state => {
       if (state.catalog.revision !== input.expectedRevision) throw new CanvasError("REVISION_CONFLICT", "Catalog changed. Read it and retry.", { currentRevision: state.catalog.revision });
       const catalog = catalogView(state.catalog), pack = parsePack(input.pack, catalog), old = state.catalog.packs.find(item => item.id === pack.id);
-      if (old && !input.replace) throw new CanvasError("VALIDATION", "Pack already exists; pass replace:true explicitly.");
+      if (old && !input.replace) throw new CanvasError("VALIDATION", "That extension file is already installed; pass replace:true explicitly.");
       const diff = packDiff(old, pack);
       if (!input.dryRun) { state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.grants = keptGrants(state.catalog.grants, old, pack); state.catalog.revision++; }
       return { catalog: catalogView(state.catalog), diff, committed: !input.dryRun };
     });
-  }
-  async exportPack(input: RpcInput<typeof rpc.exportPack>) {
-    const pack = (await this.catalog()).packs.find(pack => pack.id === input.id);
-    if (!pack) throw new CanvasError("NOT_FOUND", "Pack was not found.");
-    return pack;
-  }
-  async instantiatePack(input: RpcInput<typeof rpc.instantiatePack>, actor: Actor = "user", connection: DocumentRecord["connection"] = null) {
-    const pack = await this.exportPack({ id: input.packId });
-    const content = pack.documents[input.documentIndex];
-    if (!content) throw new CanvasError("NOT_FOUND", "Pack document was not found.");
-    return this.create({ workspaceId: input.workspaceId, id: input.id, content: { ...content, example: true } }, actor, connection);
-  }
-  async exportGroup(input: RpcInput<typeof rpc.exportGroup>) {
-    return { template: groupTemplate((await this.read(input)).document, input.groupId, input.templateId, input.name) };
   }
   connect(input: RpcInput<typeof rpc.connectAgent>) {
     return this.store.transaction(state => {

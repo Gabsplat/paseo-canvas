@@ -35,7 +35,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const z=await ev(`(()=>{const a=document.querySelector('#lienzo-entity-n1'),b=document.querySelector('#lienzo-entity-n2');return[getComputedStyle(a).zIndex,getComputedStyle(b).zIndex]})()`);assert.ok(+z[0]>+z[1],'selected card above its neighbours '+z);
  assert.ok((await text('n1')).includes('Detalle de ejemplo'));await shot('detail');
  await key('Escape');await click('[aria-label="Menu"]');await wait('!!document.querySelector("[role=menuitem]")');
- const xs=await ev(`[...document.querySelectorAll('#lienzo-interactive-menu [role=menuitem]')].map(e=>Math.round(e.getBoundingClientRect().x))`);assert.equal(new Set(xs).size,1,'menu rows share one left edge '+xs);assert.ok(xs.length>=14);await shot('menu');
+ const xs=await ev(`[...document.querySelectorAll('#lienzo-interactive-menu [role=menuitem]')].map(e=>Math.round(e.getBoundingClientRect().x))`);assert.equal(new Set(xs).size,1,'menu rows share one left edge '+xs);assert.ok(xs.length>=12,"the menu keeps its rows: "+xs.length);await shot('menu');
  await key('Escape');await click('#lienzo-tool-add');await wait('!!document.querySelector(\'[id="lienzo-add-type.note"]\')');
  const tiles=await ev(`['type.note','type.node','marco','image','svg','ventana'].map(id=>!!document.querySelector('[id="lienzo-add-'+id+'"]'))`);assert.deepEqual(tiles,[true,true,true,true,true,true]);
  assert.ok(await ev('document.body.innerText.includes("A card with a title")'),'each row says what it is for');assert.equal(await ev('document.querySelectorAll("[role=dialog]").length'),0);await shot('picker');

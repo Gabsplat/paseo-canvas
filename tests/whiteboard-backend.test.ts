@@ -213,32 +213,19 @@ test('per-renderer minima and active SVG failures roll back revision/history/dis
   await service.mutate(mutation(1, [{ type: 'block.update', id: 'b', patch: { size: { width: 160, height: 104 } } }]));
 });
 
-test('pack/template/default SVG normalization covers custom renderer types and roundtrips', async t => {
+test('default SVG normalization covers custom renderer types', async t => {
   const { service, store } = await setup(t);
-  const pack = packSchema.parse({ format: 'paseo-canvas-pack', version: 1, id: 'wb-test', name: 'Local whiteboard', description: '', blockTypes: [],
-    templates: [{ id: 'wb-test.scene', name: 'Scene', description: '', blocks: objects().map(b => ({ ...b, parentGroupId: 'g' })), groups: [{ id: 'g', title: 'Group', blockIds: objects().map(b => b.id) }] }], documents: [whiteboardContent()] });
-  const imported = await service.importPack({ expectedRevision: 0, pack, replace: false, dryRun: false });
-  assert.equal(imported.committed, true);
-  const exported = await service.exportPack({ id: pack.id });
-  assert.deepEqual(exported.documents[0].blocks[2].data.viewBox, [0, 0, 24, 24]);
-  assert.deepEqual(exported.templates[0].blocks[2].data.viewBox, [0, 0, 24, 24]);
-  await service.instantiatePack({ packId: pack.id, documentIndex: 0, workspaceId, id: 'instantiated' });
-  const inserted = await service.mutate(mutation(0, [{ type: 'template.insert', templateId: 'wb-test.scene', idPrefix: 'copy' }]));
-  assert.equal(inserted.document.blocks.find(b => b.id === 'copy.icon')!.parentGroupId, 'copy.g');
-  const template = (await service.exportGroup({ ...ref, groupId: 'copy.g', templateId: 'local.copy', name: 'Copied' })).template;
-  assert.equal(template.blocks.length, 4);
   const custom = { ...getRendererSpec('wb-svg')!.blockType, id: 'custom-icon', name: 'Custom icon', defaults: { svg: svg('<circle cx="12" cy="12" r="5"/>') } };
-  const catalog = await service.catalogMutate({ expectedRevision: 1, action: { type: 'type.put', blockType: custom } });
+  const catalog = await service.catalogMutate({ expectedRevision: 0, action: { type: 'type.put', blockType: custom } });
   assert.deepEqual(catalog.blockTypes.find(t => t.id === 'custom-icon')!.defaults.viewBox, [0, 0, 24, 24]);
-  const added = await service.mutate(mutation(1, [{ type: 'block.create', block: { id: 'custom', typeId: 'custom-icon', title: '', data: {}, position: { x: 0, y: 0 }, size: { width: 24, height: 24 } } }]));
+  const added = await service.mutate(mutation(0, [{ type: 'block.create', block: { id: 'custom', typeId: 'custom-icon', title: '', data: {}, position: { x: 0, y: 0 }, size: { width: 24, height: 24 } } }]));
   assert.deepEqual(added.document.blocks.find(b => b.id === 'custom')!.data.viewBox, [0, 0, 24, 24]);
   const disk = await readFile(store.file, 'utf8');
-  const malicious = structuredClone(pack); malicious.id = 'bad'; malicious.templates = []; malicious.documents[0].blocks[2].data.svg = svg('<path onload="alert(1)"/>');
-  assert.equal((await service.validatePack({ pack: malicious })).valid, false);
-  await assert.rejects(service.importPack({ expectedRevision: 2, pack: malicious, replace: false, dryRun: false }), reject('VALIDATION'));
-  await assert.rejects(service.catalogMutate({ expectedRevision: 2, action: { type: 'type.put', blockType: { ...custom, id: 'bad-default', defaults: { svg: svg('<image href="https://example.org/a"/>') } } } }), reject('VALIDATION'));
-  const badTemplate = structuredClone(template); badTemplate.id = 'bad-template'; badTemplate.blocks[2].data.svg = svg('<script/>');
-  await assert.rejects(service.catalogMutate({ expectedRevision: 2, action: { type: 'template.put', template: badTemplate } }), reject('VALIDATION'));
+  await assert.rejects(service.catalogMutate({ expectedRevision: 1, action: { type: 'type.put', blockType: { ...custom, id: 'bad-default', defaults: { svg: svg('<image href="https://example.org/a"/>') } } } }), reject('VALIDATION'));
+  // A file with documents or templates is not an extension file any more.
+  const legacy = { format: 'paseo-canvas-pack', version: 1, id: 'wb-test', name: 'Local whiteboard', description: '', blockTypes: [], templates: [], documents: [whiteboardContent()], extensions: [] };
+  assert.equal((await service.validatePack({ pack: legacy })).valid, false);
+  await assert.rejects(service.importPack({ expectedRevision: 1, pack: legacy, replace: false, dryRun: false }), reject('VALIDATION'));
   assert.equal(await readFile(store.file, 'utf8'), disk);
 });
 
@@ -249,7 +236,9 @@ test('removing a custom whiteboard pack preserves small orphan blocks and permit
       { ...getRendererSpec('wb-shape')!.blockType, id: 'external.shape' },
       { ...getRendererSpec('wb-svg')!.blockType, id: 'external.svg', defaults: { svg: svg('<circle cx="12" cy="12" r="5"/>') } },
     ], templates: [], documents: [] });
-  await service.importPack({ expectedRevision: 0, pack, replace: false, dryRun: false });
+  // Packs with block types are no longer imported; one stored before still loads and works.
+  const install = () => store.transaction(state => { state.catalog.packs = [...state.catalog.packs, pack]; state.catalog.revision++; });
+  await install();
   const created = await service.mutate(mutation(0, [
     { type: 'block.create', block: { id: 'external-shape', typeId: 'external.shape', title: '', data: { shape: 'rect' }, position: { x: 0, y: 0 }, size: { width: 24, height: 24 } } },
     { type: 'block.create', block: { id: 'external-icon', typeId: 'external.svg', title: '', data: {}, position: { x: 30, y: 0 }, size: { width: 24, height: 24 } } },
@@ -268,7 +257,7 @@ test('removing a custom whiteboard pack preserves small orphan blocks and permit
   await assert.rejects(service.mutate(mutation(2, [{ type: 'block.update', id: 'b', patch: { size: { width: 159, height: 104 } } }])), reject('VALIDATION'));
   assert.throws(() => mutation(2, [{ type: 'block.update', id: 'external-shape', patch: { size: { width: 7, height: 24 } } }]));
   assert.equal(await readFile(store.file, 'utf8'), disk);
-  await service.importPack({ expectedRevision: 2, pack, replace: false, dryRun: false });
+  await install();
   const canonical = await service.mutate(mutation(2, [
     { type: 'block.update', id: 'external-shape', patch: { title: 'Known again' } },
     { type: 'block.update', id: 'external-icon', patch: { data: { svg: '<svg width="40" height="20"><circle cx="10" cy="10" r="5"/></svg>', viewBox: [1, 1, 1, 1] } } },

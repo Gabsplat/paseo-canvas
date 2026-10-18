@@ -148,3 +148,84 @@ events in document coordinates, returning drawing and edits), **panels** (tabs i
 (on the selection), plus shortcuts. Our own tools are rewritten on the same API, rectangle and Ventana first.
 Stage 4: an Extensions screen (Installed / Add: link, file, later a marketplace) with a permissions step before
 activation; extensions made by the person's agent install directly.
+
+## UI pass, October 2026 — screens
+
+Owner's direction: the screens around the canvas must feel premium and be easy to understand. Examples, templates
+and collections leave the app entirely. Visual decisions below are final unless the reviewer changes them.
+
+### Shared language for screens
+
+- **Screens, not small modals.** Lienzos, Settings, Extensions and History open as one large floating sheet over the
+  canvas: up to 960 × 680, 24 px from the panel edges on smaller panels, radius 16, `raised` surface, 1 px border, a
+  soft long shadow, the canvas dimmed 40 % behind. Escape or the close button returns. Compact panels: full screen.
+- **Two columns** where there is navigation: a 220 px left rail (section list, 36 px rows, icon + label, active row
+  washed in the accent at 12 %) and the content on the right with 32 px padding. One serif display title per screen
+  (the `display` font), one muted line under it saying what the screen is for.
+- **Rows and cards:** 12 px radius cards on `surface0` inside the sheet, 16–20 px padding, hover lifts the border to
+  `foreground` at 20 % and raises 1 px (160 ms ease-out). Small-caps muted section labels (11 px, 0.06 em tracking).
+- **Motion:** 180–240 ms ease-out on open (scale 0.98 → 1, fade), staggered 30 ms list entrance, nothing that loops
+  unless it explains something. All off under reduced motion.
+
+### Lienzos
+
+The home of the app. A grid of cards (3–4 columns by width, 16 px gap): each card is a live thumbnail of the
+Lienzo drawn from its real layout (Marcos as outlines, blocks as filled marks in their tones, links as thin lines,
+like the minimap), then title (serif, 2 lines max), "Edited 3 h ago · 24 blocks · 3 Hojas", and the agent working
+on it if any (small dot + name). The open one has an accent ring. Top: title "Lienzos", search field (filters as
+you type), sort (Recent · Name), primary "New Lienzo". Card hover reveals a ⋯ menu: Rename, Duplicate, Delete
+(with confirmation). Empty state: the mate and "No Lienzos yet. Start one, or ask your agent to draw something."
+Selecting a card opens it and closes the sheet. No examples section anywhere.
+
+### Onboarding
+
+Replaces the current tour. A sheet with a large animated stage on the left (≈ 60 %) and short copy on the right,
+four scenes that play by themselves (≈ 6 s each, a thin progress bar per scene, Back / Next / Skip, dots):
+
+1. **The agent draws while it works.** A chat bubble types a sentence on the side; on the stage, cards and an
+   arrow appear one by one and the camera eases onto them.
+2. **Hojas.** Three chapters slide in along a strip; the "Hoja 2 of 3" pill updates; the magnet glows as the
+   camera follows.
+3. **Point and ask in your own chat.** A cursor selects a card (accent ring); a chat bubble outside the canvas
+   reads "mirá esto"; a line shows the agent reading the selection. Copy: the canvas never talks; your chat does.
+4. **Make your own tools.** A short code card (`lienzo.edit([...])`, typing out) turns into a new icon that drops
+   into the toolbar. Copy: extensions are small pages you or your agent write; they work in Paseo and in the
+   desktop app.
+
+Non-interactive (no fake canvas to click), dynamic. Drawn with RN Animated views (and SVG paths where needed), using
+theme colours, light and dark. Shown once, reopenable from the menu ("Lienzo guide") and ⌘K.
+
+### Settings
+
+Two columns. Rail sections, only what really exists:
+- **Shortcuts:** search field; groups (Tools, Navigation, Editing, Extensions) as two columns of compact rows —
+  label on the left, key chips on the right. Clicking a chip records the new keys in place (the chip pulses
+  "Press keys…", Escape cancels); conflicts show a small warning chip on the row that lost its keys. "Reset all"
+  top-right; a row edited from its default shows a reset icon. No "Change" buttons.
+- **Toolbar:** pinned tools (reorder, unpin) and "Reset toolbar".
+- **Copilot** (Paseo only): default cadence for new conversations and the reminder default — only if these are
+  stored settings; otherwise a short explanation of the chip with a link to the guide.
+- **Agents** (desktop only): MCP address, copy commands, agents seen.
+- **Extensions:** the Extensions screen below, embedded.
+- **About:** version, where the data lives (path), links to docs.
+
+### Extensions (replaces collections)
+
+Installed extensions as cards (icon, name, description, "Made by you / your agent" or the file it came from,
+permissions as chips, Remove, Export). "Add from file…" imports an extension file (the pack format stays the
+container underneath, without types, templates or documents), with the existing permission review. "Export all
+mine". Short explanation with a link to docs/extensions.md for writing one.
+
+### History (Activity)
+
+A timeline grouped by day ("Today", "Yesterday", dates). Each entry: actor (You, or the agent's name with a small
+coloured dot), what happened in words (the transaction label), time, and chips for the changed things — pressing a
+chip closes the sheet and flies the camera there. Undo / Redo at the top. Empty: "Nothing yet."
+
+### Removed
+
+Example documents and example packs, templates (save as template, insert template, the templates tab and their
+MCP actions and guidance), collections (packs tab, import/export of packs as a user feature, "Use a template",
+"Import a collection", "Export this Lienzo"), and "Duplicate as my own" if it only existed for examples. Stored
+data that carries templates or packs must still load. The extension examples move out of the UI; the agent guide
+keeps a short inline example instead.
