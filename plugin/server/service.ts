@@ -9,9 +9,10 @@ import {
 import { CanvasError } from "../shared/errors";
 import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
-import { catalogView, packDiff, packIssues, parsePack, validateExtension, validateType } from "./catalog";
+import { catalogView, extensionsHash, packDiff, packIssues, parsePack, validateExtension, validateType } from "./catalog";
 import { clone, newId, reduce, validateDocument, normalizeBlock, effectiveInstructions } from "./reducer";
 import { nextSheetPlacement, sheetSummaries } from "./sheets";
+import { runExtensionAction } from "./actions";
 
 const timestamp = () => new Date().toISOString();
 type State = Parameters<Parameters<CanvasStore["transaction"]>[0]>[0];
@@ -252,6 +253,46 @@ export class CanvasService {
       ...(!ids.length ? { note: "Nothing is selected in this Lienzo. Ask the person to select what they mean." } : {}),
     };
   }
+  /**
+   * Runs an extension's action for an agent (canvas_extension_run). The action runs on a snapshot; what it asked for is
+   * committed afterwards in one transaction, labelled "‹extension› (agent): ‹label›" and undoable like any agent edit,
+   * only if the document has not changed meanwhile. A failing action leaves the document untouched.
+   */
+  async runExtension(input: { workspaceId: string; documentId?: string; extension: string; action: string; input?: unknown }, agentId: string) {
+    const state = await this.store.read(), catalog = catalogView(state.catalog);
+    const extension = catalog.extensions.find(item => item.id === input.extension);
+    if (!extension) throw new CanvasError("NOT_FOUND", `No extension ${input.extension} is installed; canvas_catalog list shows the extensions and their actions.`);
+    let record: DocumentRecord | undefined;
+    if (input.documentId) record = documentRecord(state, input.documentId, input.workspaceId);
+    else {
+      const candidates = Object.values(state.documents).filter(item => item.document.workspaceId === input.workspaceId && reachable(state, item, agentId));
+      record = candidates.sort((a, b) => (b.selectedAt ?? "").localeCompare(a.selectedAt ?? "") || b.document.updatedAt.localeCompare(a.document.updatedAt))[0];
+      if (!record) throw new CanvasError("NOT_FOUND", "There is no Lienzo in this workspace to run the action on; pass documentId.");
+    }
+    if (!reachable(state, record, agentId)) throw new CanvasError("FORBIDDEN", "This canvas belongs to another agent. This workspace keeps one canvas per agent; use canvas_list for yours or create one.");
+    const base = record.document.revision, documentId = record.document.id;
+    const outcome = await runExtensionAction({ extension, action: input.action, input: input.input, document: clone(record.document), catalog });
+    const summary = { documentId, extension: extension.id, action: input.action, result: outcome.result, ...(outcome.logs.length ? { logs: outcome.logs } : {}) };
+    if (!outcome.operations.length && !outcome.selection) return { ...summary, revision: base, committed: false };
+    return this.store.transaction(state => {
+      const record = documentRecord(state, documentId, input.workspaceId);
+      if (record.document.revision !== base) throw new CanvasError("REVISION_CONFLICT", "The Lienzo changed while the action ran, so nothing was applied. Run the action again.", { currentRevision: record.document.revision });
+      let entry: HistoryEntry | undefined;
+      if (outcome.operations.length) {
+        const next = reduce(record.document, outcome.operations, catalogView(state.catalog), "agent");
+        if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
+        recordEdit(record, next, "agent", `${extension.name} (agent): ${outcome.label ?? input.action}`.slice(0, 300), "edit", undefined, agentId);
+        entry = record.history.at(-1);
+      }
+      let selection: string[] | undefined;
+      if (outcome.selection) {
+        const present = new Set([...record.document.blocks, ...record.document.groups].map(entity => entity.id));
+        selection = outcome.selection.filter(id => present.has(id));
+        if (JSON.stringify(selection) !== JSON.stringify(record.document.selectedIds)) { record.document.selectedIds = selection; record.selectionVersion++; touchRuntime(record); }
+      }
+      return { ...summary, revision: record.document.revision, committed: !!entry, ...(entry ? { transactionId: entry.id, label: entry.label, changed: entry.changed, removed: entry.removed } : {}), ...(selection ? { selection } : {}) };
+    });
+  }
   async catalog() { return catalogView((await this.store.read()).catalog); }
   async validatePack(input: RpcInput<typeof rpc.validatePack>) { return packIssues(input.pack, await this.catalog()); }
   catalogMutate(input: RpcInput<typeof rpc.mutateCatalog>) {
@@ -270,6 +311,7 @@ export class CanvasService {
           const gone = state.catalog.packs.find(pack => pack.id === action.id);
           if (!gone) throw new CanvasError("NOT_FOUND", "That extension file is not installed.");
           state.catalog.packs = state.catalog.packs.filter(pack => pack.id !== action.id);
+          delete state.catalog.packHashes[action.id];
           state.catalog.grants = state.catalog.grants.filter(id => !gone.extensions.some(extension => extension.id === id)); break;
         }
         case "extension.put":
@@ -294,7 +336,7 @@ export class CanvasService {
       const catalog = catalogView(state.catalog), pack = parsePack(input.pack, catalog), old = state.catalog.packs.find(item => item.id === pack.id);
       if (old && !input.replace) throw new CanvasError("VALIDATION", "That extension file is already installed; pass replace:true explicitly.");
       const diff = packDiff(old, pack);
-      if (!input.dryRun) { state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.grants = keptGrants(state.catalog.grants, old, pack); state.catalog.revision++; }
+      if (!input.dryRun) { state.catalog.packs = [...state.catalog.packs.filter(item => item.id !== pack.id), pack]; state.catalog.packHashes[pack.id] = extensionsHash(pack.extensions); state.catalog.grants = keptGrants(state.catalog.grants, old, pack); state.catalog.revision++; }
       return { catalog: catalogView(state.catalog), diff, committed: !input.dryRun };
     });
   }

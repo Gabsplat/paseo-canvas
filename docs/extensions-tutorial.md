@@ -17,6 +17,7 @@ An extension is a small tool that joins Lienzo: one HTML page that reads the Lie
 3. Open it from the + catalog and try it on a few cards (step 3).
 4. Check what it may do (step 4).
 5. Export it or publish it to the catalog (step 5).
+6. Let your agent use it too (step 6).
 
 ### Ask your agent
 
@@ -57,6 +58,7 @@ Your agent saves a manifest: an id, a name, a one-line description, an icon, the
 - `lienzo.select(ids)` changes the selection; `lienzo.open(id)` goes to a card on the canvas.
 - `lienzo.edit(operations, label)` changes the canvas in one transaction you can undo. It needs the **edit** permission.
 - `lienzo.kit.stage(...)` draws things with the canvas' own selection, hover and drag behaviour.
+- `lienzo.action(name, fn)`, in a script marked `data-lienzo="actions"`, offers a job your agent can run too (step 6).
 
 ### The manifest
 ```json
@@ -134,6 +136,81 @@ Every extension travels as an extension file (JSON). Export saves one tool as it
 - Lienzo never holds a GitHub token: everything on GitHub happens in your browser.
 - Every id in a file starts with the file's id and a dot, like title-case.title-case.
 
+## 6. Let your agent use it
+
+Give the tool actions, and your agent can run it for you.
+
+An extension can offer actions: named jobs your agent runs itself, like "Title Case these cards". The work is written once, in a script of the page marked data-lienzo="actions". The page's own buttons run it with lienzo.run, and your agent runs it with canvas_extension_run, without the page, in a sandbox on your computer. Each run the agent makes is one step in History, marked (agent), and undoes like any other.
+
+### By hand
+
+1. Ask your agent to add an action to the tool (it declares it in the manifest and registers it in the actions script).
+2. Open the tool's Help page: "For your agent" lists its actions.
+3. Ask your agent to use it: "Title Case the cards I selected".
+4. Check History: the step reads "Title Case (agent): Title Case". Undo brings the old titles back.
+
+### Ask your agent
+
+- “Add a titleCase action to my Title Case extension so you can run it yourself.”
+- “Use the Title Case extension on the cards in the Ideas Frame.”
+
+### Tips
+
+- An action that changes the canvas needs the edit permission. One from a file or the catalog cannot edit until you allow it.
+- The actions script must not use the page (no document, no buttons): it also runs without one.
+- An action runs for at most 2 seconds and 64 MB, without timers or the internet; a failing one changes nothing.
+
+### In the manifest
+```json
+{
+  "actions": [
+    {
+      "name": "titleCase",
+      "description": "Rewrites card titles in Title Case, in one undoable edit. Without ids it works on the cards the person selected.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "description": "The cards to change. Default: the person's selection."
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "description": "How many titles changed."
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+### In the page
+```html
+<script data-lienzo="actions">
+// The work, once: the button below runs it, and so can an agent (canvas_extension_run), headless, without this page.
+function titleCase(t) { return t.replace(/\b\w/g, function (c) { return c.toUpperCase(); }); }
+lienzo.action('titleCase', function (input, c) {
+  var ids = input.ids || c.selection;
+  var ops = c.document.blocks.filter(function (b) { return ids.indexOf(b.id) >= 0 && titleCase(b.title) !== b.title; })
+    .slice(0, 200).map(function (b) { return { type: 'block.update', id: b.id, patch: { title: titleCase(b.title) } }; });
+  if (!ops.length) return { changed: 0 };
+  return lienzo.edit(ops, 'Title Case').then(function () { return { changed: ops.length }; });
+});
+</script>
+```
+
+Headless, the action sees `lienzo.context` (the document and the selection; no theme or layout), `lienzo.edit`, `lienzo.select`, `lienzo.action` and `lienzo.run`. All its edits in one run become one transaction.
+
 ## A complete example
 
 Title Case: the whole extension, ready to save or import.
@@ -149,20 +226,28 @@ This is a complete, small extension. It reads the selection, shows how many card
 <style>body{margin:0;padding:12px;font:13px system-ui,sans-serif}button{font:inherit;padding:6px 12px;border-radius:6px;border:1px solid;cursor:pointer}button:disabled{opacity:.5;cursor:default}</style>
 <p id="info">Select some cards.</p>
 <button id="go" disabled>Title Case the titles</button>
-<script>
-var ctx = null, info = document.getElementById('info'), go = document.getElementById('go');
-function chosen() { return ctx ? ctx.document.blocks.filter(function (b) { return ctx.selection.indexOf(b.id) >= 0; }) : []; }
+<script data-lienzo="actions">
+// The work, once: the button below runs it, and so can an agent (canvas_extension_run), headless, without this page.
 function titleCase(t) { return t.replace(/\b\w/g, function (c) { return c.toUpperCase(); }); }
+lienzo.action('titleCase', function (input, c) {
+  var ids = input.ids || c.selection;
+  var ops = c.document.blocks.filter(function (b) { return ids.indexOf(b.id) >= 0 && titleCase(b.title) !== b.title; })
+    .slice(0, 200).map(function (b) { return { type: 'block.update', id: b.id, patch: { title: titleCase(b.title) } }; });
+  if (!ops.length) return { changed: 0 };
+  return lienzo.edit(ops, 'Title Case').then(function () { return { changed: ops.length }; });
+});
+</script>
+<script>
+var info = document.getElementById('info'), go = document.getElementById('go');
 lienzo.onContext(function (c) {
-  ctx = c; var k = c.theme.colors, n = chosen().length;
+  var k = c.theme.colors, n = c.document.blocks.filter(function (b) { return c.selection.indexOf(b.id) >= 0; }).length;
   document.body.style.background = k.surface; document.body.style.color = k.foreground;
   go.style.background = k.accent; go.style.color = k.background; go.style.borderColor = k.accent;
   info.textContent = n ? n + ' selected' : 'Select some cards.';
   go.disabled = !n;
 });
 go.onclick = function () {
-  var ops = chosen().slice(0, 200).map(function (b) { return { type: 'block.update', id: b.id, patch: { title: titleCase(b.title) } }; });
-  lienzo.edit(ops, 'Title Case').then(function () { info.textContent = 'Done. Undo brings the old titles back.'; }, function (e) { info.textContent = e.message; });
+  lienzo.run('titleCase', {}).then(function (r) { info.textContent = r.changed ? 'Done. Undo brings the old titles back.' : 'They are in Title Case already.'; }, function (e) { info.textContent = e.message; });
 };
 </script>
 ```
@@ -191,7 +276,35 @@ Export writes the extension inside the file container. Its id is the file's id a
         "edit"
       ],
       "html": "…the page above…",
-      "docs": "…its Help page…"
+      "docs": "…its Help page…",
+      "actions": [
+        {
+          "name": "titleCase",
+          "description": "Rewrites card titles in Title Case, in one undoable edit. Without ids it works on the cards the person selected.",
+          "input": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "description": "The cards to change. Default: the person's selection."
+              }
+            }
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "changed": {
+                "type": "integer",
+                "description": "How many titles changed."
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -28,7 +28,10 @@ Electron 44 downloads its binary the first time it is used, into `~/.cache/elect
 
 The renderer build resolves `react`, `react-dom` and `react-native` (as `react-native-web`) from `apps/desktop`, and
 replaces `plugin/client/host/index.ts` (the Paseo host) with `src/renderer/host.tsx`. Everything ships bundled, so the
-packaged app carries no `node_modules`; `electron-builder.yml` packs `dist/` only. Builds are unsigned unless the
+packaged app carries no `node_modules`; `electron-builder.yml` packs `dist/` only. That includes the QuickJS
+interpreter that runs extension actions for agents (`plugin/server/sandbox.ts`): its WebAssembly is embedded in the
+JavaScript of `@jitl/quickjs-singlefile-browser-release-sync`, so it is bundled into `main.cjs` and `preview.cjs` like
+any module, with no `.wasm` file to copy or unpack from the asar (about 0.9 MB of the bundle). Builds are unsigned unless the
 release workflow finds signing secrets (see Releases). The app updates itself (see Updates).
 
 The window has contextIsolation on, nodeIntegration off and the sandbox on. The main process answers IPC only from

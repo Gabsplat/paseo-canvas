@@ -16,6 +16,7 @@ const root = resolve(flag("--root") ?? join(import.meta.dirname, "..")), out = f
 const repository = flag("--repository") ?? process.env.GITHUB_REPOSITORY ?? "Gabsplat/lienzo-extensions";
 
 const LIMITS = { file: 1024 * 1024, html: 300_000, docs: 20_000, sections: 12, screenshot: 512 * 1024, readme: 64 * 1024 };
+const ACTION = /^[a-zA-Z][a-zA-Z0-9_]{0,39}$/, PROPERTY = /^[a-zA-Z_$][a-zA-Z0-9_$-]{0,59}$/, ACTIONS_SCRIPT = /<script\b([^>]*)>[\s\S]*?<\/script\s*>/gi;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/, FOLDER = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, ICON = /^[A-Za-z0-9]{1,40}$/;
 const ALLOWED = new Set(["extension.json", "README.md", "screenshot.png"]);
 const TAG = /<\/?[a-zA-Z!][^>]*>/, CODE = /(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g;
@@ -36,9 +37,45 @@ function docsIssue(docs) {
   for (const m of prose.matchAll(/\]\(([^)\s]+)\)/g)) if (!SAFE_LINK.test(m[1])) return `docs links to "${m[1]}"; only http, https and mailto links are allowed`;
   return null;
 }
+// The JSON Schema subset an action's input is written in (plugin/shared/actions.ts in Lienzo).
+const SCHEMA_KEYS = ["type", "description", "enum", "minimum", "maximum", "minLength", "maxLength", "items", "minItems", "maxItems", "properties", "required", "additionalProperties"];
+function schemaIssue(schema, depth = 1) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return "is not a schema object";
+  if (depth > 6) return "nests more than 6 levels";
+  const unknown = Object.keys(schema).find(key => !SCHEMA_KEYS.includes(key));
+  if (unknown) return `has an unknown keyword "${unknown}"`;
+  if (!["object", "array", "string", "number", "integer", "boolean"].includes(schema.type)) return "type is object, array, string, number, integer or boolean";
+  if (schema.properties !== undefined) {
+    if (schema.type !== "object" || typeof schema.properties !== "object" || Array.isArray(schema.properties)) return "properties belong to an object schema";
+    const keys = Object.keys(schema.properties);
+    if (keys.length > 40 || keys.some(key => !PROPERTY.test(key) || ["__proto__", "constructor", "prototype"].includes(key))) return "properties are up to 40 safe names";
+    for (const child of Object.values(schema.properties)) { const issue = schemaIssue(child, depth + 1); if (issue) return issue; }
+  }
+  if (schema.required !== undefined && (!Array.isArray(schema.required) || schema.required.some(key => !Object.hasOwn(schema.properties ?? {}, key)))) return "required names only its own properties";
+  if (schema.items !== undefined) { if (schema.type !== "array") return "items belong to an array schema"; const issue = schemaIssue(schema.items, depth + 1); if (issue) return issue; }
+  return null;
+}
+function validateActions(where, actions, html) {
+  if (!Array.isArray(actions) || !actions.length || actions.length > 20) return fail(where, "actions is a list of 1 to 20");
+  actions.forEach((a, i) => {
+    const at = `${where} actions[${i}]`;
+    if (!a || typeof a !== "object" || Array.isArray(a)) return fail(at, "is not an object");
+    only(at, a, ["name", "description", "input", "returns"]);
+    if (typeof a.name !== "string" || !ACTION.test(a.name)) fail(at, "name is a letter, then up to 39 letters, digits or _");
+    if (!isText(a.description, 1, 600) || TAG.test(a.description)) fail(at, "description is 1-600 characters of plain text");
+    if (a.input !== undefined) { if (a.input?.type !== "object") fail(at, 'input is an object schema (type "object")'); const issue = schemaIssue(a.input); if (issue) fail(at, `input ${issue}`); }
+    if (a.returns !== undefined) { const issue = schemaIssue(a.returns); if (issue) fail(at, `returns ${issue}`); }
+  });
+  if (new Set(actions.map(a => a?.name)).size !== actions.length) fail(where, "two actions share a name");
+  if (typeof html === "string" && ![...html.matchAll(ACTIONS_SCRIPT)].some(m => /\bdata-lienzo\s*=\s*(["']?)actions\1(?=[\s>]|$)/i.test(m[1]))) fail(where, 'declares actions, but its html has no <script data-lienzo="actions">');
+}
+// The same content hash Lienzo stores for an installed file (server/catalog.ts, extensionsHash): canonical JSON of
+// the extensions with the defaults validation fills in, so formatting never counts as a change.
+const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(",")}]` : value && typeof value === "object" ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}` : JSON.stringify(value) ?? "null";
+const contentHash = extensions => createHash("sha256").update(canonical(extensions.map(e => ({ ...e, description: e.description ?? "", permissions: e.permissions ?? [] })))).digest("hex");
 function validateExtension(where, e, fileId) {
   if (!e || typeof e !== "object" || Array.isArray(e)) return fail(where, "is not an object");
-  only(where, e, ["id", "kind", "api", "name", "description", "icon", "html", "permissions", "docs"]);
+  only(where, e, ["id", "kind", "api", "name", "description", "icon", "html", "permissions", "docs", "actions"]);
   if (!isText(e.id, 1, 100) || !ID.test(e.id)) fail(where, "id is 1-100 letters, digits, . _ : -");
   else if (!e.id.startsWith(`${fileId}.`)) fail(where, `id must start with "${fileId}."`);
   if (e.kind !== "tool") fail(where, 'kind must be "tool"');
@@ -51,6 +88,7 @@ function validateExtension(where, e, fileId) {
   const permissions = e.permissions ?? [];
   if (!Array.isArray(permissions) || permissions.length > 2 || new Set(permissions).size !== permissions.length || permissions.some(p => p !== "edit" && p !== "network")) fail(where, 'permissions is a list of "edit" and "network", without repeats');
   if (e.docs !== undefined) { const issue = docsIssue(e.docs); if (issue) fail(where, issue); }
+  if (e.actions !== undefined) validateActions(where, e.actions, e.html);
 }
 function git(argsList) { try { return execFileSync("git", argsList, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
 
@@ -82,8 +120,8 @@ for (const id of ids) {
   const author = git(["log", "--diff-filter=A", "--format=%an", "--", `extensions/${id}/extension.json`]).split("\n").pop() || undefined;
   const updated = git(["log", "-1", "--format=%cI", "--", `extensions/${id}`]) || undefined;
   entries.push({ id, name: file.name, description: file.description ?? "",
-    extensions: file.extensions.map(e => ({ id: e.id, name: e.name, description: e.description ?? "", ...(e.icon ? { icon: e.icon } : {}), permissions: e.permissions ?? [], docs: e.docs !== undefined })),
-    path: `extensions/${id}/extension.json`, sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length,
+    extensions: file.extensions.map(e => ({ id: e.id, name: e.name, description: e.description ?? "", ...(e.icon ? { icon: e.icon } : {}), permissions: e.permissions ?? [], docs: e.docs !== undefined, ...(e.actions?.length ? { actions: e.actions.map(a => a.name) } : {}) })),
+    path: `extensions/${id}/extension.json`, sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length, contentHash: contentHash(file.extensions),
     ...(author ? { author: author.slice(0, 100) } : {}), ...(updated ? { updated } : {}),
     ...(existsSync(join(dir, "README.md")) ? { readme: `extensions/${id}/README.md` } : {}), ...(existsSync(screenshot) ? { screenshot: `extensions/${id}/screenshot.png` } : {}) });
 }

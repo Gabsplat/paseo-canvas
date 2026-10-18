@@ -10,7 +10,7 @@ import type { ToolRouter } from "./tools";
 
 export function errorResponse(error: unknown) {
   if (error instanceof CanvasError) {
-    const statuses = { REVISION_CONFLICT: 409, NOT_FOUND: 404, VALIDATION: 400, INVARIANT: 422, UNKNOWN_TYPE: 422, UNDO_BLOCKED: 409, FORBIDDEN: 403, TOO_LARGE: 413, UNAVAILABLE: 503 };
+    const statuses = { REVISION_CONFLICT: 409, NOT_FOUND: 404, VALIDATION: 400, INVARIANT: 422, UNKNOWN_TYPE: 422, UNDO_BLOCKED: 409, FORBIDDEN: 403, TOO_LARGE: 413, UNAVAILABLE: 503, EXTENSION_FAILED: 422 };
     return { status: statuses[error.code], error: { code: error.code, message: error.message, details: error.details } };
   }
   if (error instanceof z.ZodError) return { status: 400, error: { code: "VALIDATION", message: "Input does not match the canvas contract.", details: { issues: error.issues.map(issue => ({ path: issue.path.join("."), message: issue.message })) } } };

@@ -2,6 +2,7 @@ import { storedRendererNames } from "./renderers";
 import { variablesSchema, runtimeStateSchema } from "./learning";
 import { z } from "zod";
 import { DOCS_LIMITS, extensionDocsIssue } from "./markdown";
+import { actionListSchema } from "./actions";
 
 export const idSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/).refine(id => !["__proto__", "constructor", "prototype"].includes(id));
 export const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -110,6 +111,9 @@ export const extensionSchema = z.object({
   name: z.string().min(1).max(80), description: z.string().max(600).default(""), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(),
   html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(2).default([]),
   docs: extensionDocsSchema.optional(),
+  // `actions` (optional, added to API 1): what the extension offers an agent through canvas_extension_run. Each is
+  // declared here and registered by the page's `<script data-lienzo="actions">` with lienzo.action (shared/actions.ts).
+  actions: actionListSchema.optional(),
 }).strict();
 const isRetiredExtension = (entry: unknown) => !!entry && typeof entry === "object" && (entry as { kind?: unknown }).kind === "view";
 /** Drops the retired "agent" permission from a stored or imported extension; everything else is left to validation. */
@@ -133,6 +137,9 @@ export const catalogSchema = z.object({
   // packs are the extension files the person imported. Templates left the app: stored ones load but are not listed.
   revision: revisionSchema, blockTypes: z.array(blockTypeSchema),
   packs: z.array(packSchema), extensions: z.array(catalogExtensionSchema).default([]),
+  // SHA-256 of each installed file's extensions (server/catalog.ts, extensionsHash), by file id: Discover compares it
+  // with the index to see a change in code, not only in name or description.
+  packHashes: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)).optional(),
 }).strict();
 export const connectionSchema = z.object({
   agentId: z.string().min(1).max(200), workspaceId: z.string().min(1).max(200),

@@ -9,20 +9,30 @@ import type { WikiPage, WikiSectionId } from "./types";
 export type { WikiPage, WikiSection, WikiSectionId } from "./types";
 export { WIKI_SECTIONS } from "./pages";
 export { ART, ART_BOX, type ArtItem, type ArtTone, type WikiArtId } from "./art";
-export { EXAMPLE_DOCS, EXAMPLE_EXTENSION, EXAMPLE_FILE, EXAMPLE_HTML } from "./tutorial";
+export { EXAMPLE_ACTIONS, EXAMPLE_DOCS, EXAMPLE_EXTENSION, EXAMPLE_FILE, EXAMPLE_HTML } from "./tutorial";
 
 export const wikiPages: readonly WikiPage[] = corePages;
 export const EXTENSION_PAGE_PREFIX = "ext:";
 export const HOME_PAGE = "start.lienzo";
 
 /** An installed extension as a Help page. One without a guide still gets a page that says what it is. */
-export type DocumentedExtension = { id: string; name: string; description?: string; icon?: string; permissions: readonly string[]; docs?: ExtensionDocs };
+export type DocumentedExtension = { id: string; name: string; description?: string; icon?: string; permissions: readonly string[]; docs?: ExtensionDocs; actions?: readonly DocumentedAction[] };
+type DocumentedAction = { name: string; description: string; input?: { properties?: Record<string, { type: string; description?: string }>; required?: readonly string[] } };
+/** "For your agent": what the extension offers an agent through canvas_extension_run, one entry per action. */
+export function actionsMarkdown(actions: readonly DocumentedAction[]): string {
+  const item = (action: DocumentedAction) => {
+    const args = Object.entries(action.input?.properties ?? {}).map(([key, schema]) => `\`${key}\`${action.input?.required?.includes(key) ? "" : " (optional)"}: ${schema.description ?? schema.type}`);
+    return `- **${action.name}**: ${action.description}${args.length ? ` Takes ${args.join("; ")}.` : ""}`;
+  };
+  return ["## For your agent", "Your agent can use this extension itself: ask it in your chat. Each run is one step in History, marked (agent), that undoes like any other.", actions.map(item).join("\n")].join("\n\n");
+}
 export function extensionPage(extension: DocumentedExtension): WikiPage {
   const asks = extension.permissions.length ? `It asks to ${extension.permissions.map(p => p === "edit" ? "change the canvas" : p === "network" ? "load things from the internet" : p).join(" and ")}.` : "It only reads the Lienzo and changes the selection.";
   return { id: EXTENSION_PAGE_PREFIX + extension.id, section: "extensions", title: extension.name, icon: extension.icon ?? "Puzzle", art: "extension",
     summary: extension.description || "An installed extension.",
     purpose: `${extension.description ? extension.description + " " : ""}Open it from the + catalog, under Extensions. ${asks}`,
-    body: extension.docs ? extensionDocsMarkdown(extension.docs) : undefined, related: ["ext.about", "ext.permissions"], keywords: "extension installed" };
+    body: [extension.docs ? extensionDocsMarkdown(extension.docs) : "", extension.actions?.length ? actionsMarkdown(extension.actions) : ""].filter(Boolean).join("\n\n") || undefined,
+    related: ["ext.about", "ext.permissions"], keywords: `extension installed${extension.actions?.length ? " agent actions" : ""}` };
 }
 /** Every page: the core ones, then one per installed extension, after the other Extensions pages. */
 export function allWikiPages(extensions: readonly DocumentedExtension[] = []): WikiPage[] {

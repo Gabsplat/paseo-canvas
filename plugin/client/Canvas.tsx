@@ -129,7 +129,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const [linkLabel, setLinkLabel] = useState<LinkLabelSession | null>(null);
   const selectionPointer = useRef<Point | null>(null);
   const busyHands = useRef(false), gesture = useRef<Gesture | null>(null), linkGesture = useRef<{ documentId: string; from: string; origin: Point; side: Side; grab: Point; viewport: Point; target: MagnetTarget | null } | null>(null), textGesture = useRef(false), panFrom = useRef<Point>({ x: 0, y: 0 });
-  const anims = useRef(new Map<string, Anim>()), placed = useRef(false), instantUntil = useRef(0), dropped = useRef(new Map<string, number>()), gestureEpoch = useRef(0);
+  const reveals = useRef(new Set<ReturnType<typeof setTimeout>>()), anims = useRef(new Map<string, Anim>()), placed = useRef(false), instantUntil = useRef(0), dropped = useRef(new Map<string, number>()), gestureEpoch = useRef(0);
   const guideV = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), length: new Animated.Value(0), thickness: new Animated.Value(1), opacity: new Animated.Value(0) }).current, guideH = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), length: new Animated.Value(0), thickness: new Animated.Value(1), opacity: new Animated.Value(0) }).current;
   const animOf = (id: string, native: boolean) => { let a = anims.current.get(id); if (!a) { a = createAnim(native); anims.current.set(id, a); } return a; };
   const center = (): Point => ({ x: (latest.current.size.width / 2 - cam.current.offset.x) / cam.current.scale, y: (latest.current.size.height / 2 - cam.current.offset.y) / cam.current.scale });
@@ -488,7 +488,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   // where they belong (the node they hang from, or their group's header).
   useLayoutEffect(() => {
     const animate = placed.current && !reducedMotion.current && Date.now() > instantUntil.current, before = new Set([...anims.current].filter(([, a]) => a.target).map(([id]) => id));
-    let moved = false, sprung = false;
+    let moved = false, sprung = false; const arrivals: { rect: Rect; frame: boolean; run(): void }[] = [];
     for (const [id, r] of rects) {
       const block = !index.groups.has(id), a = animOf(id, block && NATIVE), old = a.target;
       if (r.hidden) { a.target = null; continue; }
@@ -499,8 +499,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
         const link = doc.links.find(l => l.to === id && before.has(l.from) || l.from === id && before.has(l.to)), source = link ? rects.get(link.to === id ? link.from : link.to) : undefined, parent = index.parent.get(id);
         let from: Point | null = parent && before.has(parent) ? { x: 0, y: -M.enter.offset } : null;
         if (source) { const dx = source.x + source.width / 2 - r.x - r.width / 2, dy = source.y + source.height / 2 - r.y - r.height / 2, length = Math.hypot(dx, dy) || 1; from = { x: dx / length * M.enter.offset, y: dy / length * M.enter.offset }; }
-        if (from) { a.x.setValue(from.x); a.y.setValue(from.y); glide(a.x, 0, { ms: M.enter.ms, native: a.native }); glide(a.y, 0, { ms: M.enter.ms, native: a.native }); }
-        a.enter.setValue(0); glide(a.enter, 1, { ms: M.enter.ms, native: a.native }); moved = true; continue;
+        if (from) { a.x.setValue(from.x); a.y.setValue(from.y); }
+        a.enter.setValue(0); const start = from;
+        arrivals.push({ rect: r, frame: !block, run: () => { if (start) { glide(a.x, 0, { ms: M.enter.ms, native: a.native }); glide(a.y, 0, { ms: M.enter.ms, native: a.native }); } glide(a.enter, 1, { ms: M.enter.ms, native: a.native }); } }); moved = true; continue;
       }
       const dx = old.x - r.x, dy = old.y - r.y;
       if ((dx || dy) && !gesture.current?.origin.has(id)) {
@@ -518,10 +519,18 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       }
     }
     for (const [id, a] of anims.current) if (!rects.has(id)) { a.x.removeAllListeners(); a.y.removeAllListeners(); a.w.removeAllListeners(); a.h.removeAllListeners(); anims.current.delete(id); responders.current.delete(id); resizeResponders.current.delete(id); }
+    // A batch that arrives at once (an agent drawing a whole stage) assembles in reading order: Frames first, then
+    // each card by row, so the person sees it built rather than dropped. A few arrivals simply appear together.
+    if (arrivals.length > M.enter.stagger.from) {
+      arrivals.sort((p, q) => Number(q.frame) - Number(p.frame) || (Math.abs(p.rect.y - q.rect.y) > 24 ? p.rect.y - q.rect.y : p.rect.x - q.rect.x));
+      const step = Math.min(M.enter.stagger.stepMs, M.enter.stagger.totalMs / arrivals.length);
+      arrivals.forEach((arrival, i) => { const timer = setTimeout(() => { reveals.current.delete(timer); arrival.run(); }, Math.round(i * step)); reveals.current.add(timer); });
+    } else arrivals.forEach(arrival => arrival.run());
     if (gesture.current) applyDrag();
     if (moved) follow(sprung ? 700 : M.layout.ms + 80); else links.current?.follow();
     if (ready) placed.current = true;
   }, [layout, resizeId]);
+  useEffect(() => () => { reveals.current.forEach(clearTimeout); reveals.current.clear(); }, []);
   const title = (id: string) => index.entities.get(id)?.title || id;
   function connect(from: string, to: string) {
     const { existing, operations, id } = connectOperations(latest.current.doc, from, to);
