@@ -1294,7 +1294,12 @@ keys…", Escape cancels); keys another shortcut held move here and that row sho
 later, unpin, "Reset toolbar". **Copilot** (Paseo) — there are no stored copilot defaults, so it explains the chip in
 the composer and the four cadences, with a link to the guide. **Agents** (desktop) — the MCP address, the commands
 for Claude Code, Codex and Cursor, and the agents seen (the host's `AgentSettings` slot). **Extensions** — §35.5,
-embedded. **About** — version, where it runs, the one file that holds every Lienzo (copyable), links to the docs.
+embedded. **About** — version, where it runs, the one file that holds every Lienzo (copyable), links to the docs; in the
+desktop app also an Updates card (the host's `AboutUpdates` slot): a tone dot and the state in words, a 3 px accent
+progress line while downloading, "Check for updates" (or a primary "Restart" when ready) on the right, and an
+"Automatically check for updates" switch. When an update is ready the desktop shell shows a pill in the island
+style, radius 20, in the bottom-left corner (centred above the toolbar on compact): accent dot, "Update ready", a
+muted "·", "Restart" in the accent, and a quiet ✕ ("Later", until the next version).
 
 ### 35.5 Extensions
 

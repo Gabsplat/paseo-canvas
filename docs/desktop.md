@@ -28,8 +28,8 @@ Electron 44 downloads its binary the first time it is used, into `~/.cache/elect
 
 The renderer build resolves `react`, `react-dom` and `react-native` (as `react-native-web`) from `apps/desktop`, and
 replaces `plugin/client/host/index.ts` (the Paseo host) with `src/renderer/host.tsx`. Everything ships bundled, so the
-packaged app carries no `node_modules`; `electron-builder.yml` packs `dist/` only. There is no code signing,
-notarization or auto-update. The AppImage uses the default Electron icon.
+packaged app carries no `node_modules`; `electron-builder.yml` packs `dist/` only. Builds are unsigned unless the
+release workflow finds signing secrets (see Releases). The app updates itself (see Updates).
 
 The window has contextIsolation on, nodeIntegration off and the sandbox on. The main process answers IPC only from
 its own window. Links open in the system browser; the page never navigates away.
@@ -67,7 +67,8 @@ stdio MCP bridge and setup snippets stay in `server/paseo.ts`.
   setting exists in the state, but the desktop UI cannot turn it on. Agents see `copilot.enabled: false` and use the
   tools when the person asks.
 - **Settings** (guide seen, pinned tools, shortcuts) are kept in `settings.json` in the app's data folder, with
-  Paseo's revision and conflict rules. Settings → About shows the app's version and the path of `canvas/state.json`.
+  Paseo's revision and conflict rules. Settings → About shows the app's version, its update state and the path of
+  `canvas/state.json`.
 - **Extensions** work the same as in Paseo: the same files, the same review before install, the same sandbox.
 - **Theme** is Lienzo's Papel (light) or Tinta (dark), following the operating system and switching with it.
 - **Menu**: File (copy the Claude Code MCP command, close or quit), Edit, View (reload, developer tools, zoom, full
@@ -80,7 +81,8 @@ The app keeps its state in Electron's `userData` folder, which is `~/.config/Lie
 
 - `canvas/state.json` holds the canvas state, in the plugin's format `paseo-canvas-state/1`. `canvas/writer.lock`
   stops a second writer.
-- `settings.json` holds the host settings.
+- `settings.json` holds the host settings, including "Automatically check for updates" (`desktop-updates`).
+- `updates/` (macOS only) holds a downloaded update until it is installed.
 - `desktop.json` is optional: `{ "mcpPort": 7421 }`.
 
 To bring documents over from Paseo, quit the app and copy `~/.paseo/canvas/state.json` to
@@ -132,15 +134,18 @@ requests.
   and per the MCP spec it should start a new session. If one does not, reconnect it (`/mcp` in Claude Code).
 - All clients with the same declared name share one identity, so two Claude Code sessions undo each other's edits
   as one agent.
-- Only the Linux AppImage has been built and smoke-tested. The mac configuration is unbuilt and unsigned, and the
-  macOS menu key handling for undo and redo is unverified.
+- Only the Linux AppImage has been built and smoke-tested locally, its update included. The mac and Windows builds
+  come from the release workflow and are unsigned; the macOS menu key handling for undo and redo, the Mac updater's
+  swap on a real Mac and the Windows update are unverified.
 - The AppImage needs FUSE, or `APPIMAGE_EXTRACT_AND_RUN=1`.
 - Web pages that forbid framing do not load in a Ventana, as in Paseo's web client.
 
 ## Releases
 
-`.github/workflows/desktop-release.yml` builds the installers on three GitHub machines and attaches them to a
-pre-release. Push a tag to release, or run the workflow by hand with a version to get the files as artifacts only:
+`.github/workflows/desktop-release.yml` builds the installers on three GitHub machines and attaches them, with the
+update feed files, to a normal (not pre-release) GitHub Release: the app finds updates through GitHub's "latest
+release" link, which skips drafts and pre-releases. Push a tag to release, or run the workflow by hand with a version
+to get the files as artifacts only:
 
 ```
 git tag desktop-v0.2.0 && git push origin desktop-v0.2.0
@@ -151,8 +156,12 @@ git tag desktop-v0.2.0 && git push origin desktop-v0.2.0
 | macOS | `Lienzo-<version>-mac-arm64.dmg`, `…-mac-x64.dmg` and `.zip` for each |
 | Windows | `Lienzo-<version>-win-x64.exe`, `…-win-arm64.exe` (NSIS, per-user, installation folder can be changed) |
 | Linux | `Lienzo-<version>-x86_64.AppImage`, `Lienzo-<version>-amd64.deb` |
+| Update feed | `latest-mac.yml`, `latest.yml` (Windows), `latest-linux.yml`, and `.blockmap` files for the mac zips and dmgs and the Windows installers (an AppImage carries its block map inside) |
 
-The same steps run locally with `pnpm --dir apps/desktop release` (installers for the machine it runs on).
+The same steps run locally with `pnpm --dir apps/desktop release` (installers for the machine it runs on). It fails
+when the feed file is missing or names another version. On distributions without `libcrypt.so.1` (Arch), the .deb step
+fails inside electron-builder's bundled fpm; `LIENZO_LINUX_TARGETS=AppImage pnpm --dir apps/desktop release` builds
+the AppImage and `latest-linux.yml` only.
 
 Signing is optional and switches on by itself when these repository secrets exist:
 
@@ -164,3 +173,71 @@ Signing is optional and switches on by itself when these repository secrets exis
 
 Without them the builds are unsigned: on macOS open the app the first time with right-click → Open; on Windows,
 SmartScreen asks for "More info → Run anyway". Linux needs no signing.
+
+## Updates
+
+The packaged app checks for a new version 10 s after it starts and then every 6 hours, while Settings → About →
+"Automatically check for updates" is on (it is by default). "Check for updates" in the same place checks at once. An
+update downloads in the background; when it is ready, a small "Update ready · Restart" pill appears in the bottom-left
+corner (above the toolbar on narrow windows), and About says "Ready to restart" with a Restart button. Restart
+installs it and opens the new version; otherwise it is installed when Lienzo quits. About shows the state in words:
+Up to date, Checking…, Downloading 42 %, Ready to restart, or what went wrong. Errors never block the app.
+Development builds (`pnpm dev`) and the browser preview never check. The Paseo plugin has none of this: the panel's
+`AboutUpdates` host slot is empty there.
+
+**The feed.** electron-builder's generic provider, pointed at
+`https://github.com/Gabsplat/paseo-canvas/releases/latest/download`. GitHub redirects that to the newest normal
+release, so the `desktop-v` tag names are never parsed. `electron-builder.yml` has the same URL under `publish`, which
+makes it write `latest*.yml` and the block maps even with `--publish never`; the app sets the URL itself. Releases must
+be normal releases (the workflow publishes them that way); a pre-release is never offered.
+
+**Windows and Linux** use electron-updater as it is: the NSIS updater (installs silently, per user, then starts the new
+version), the AppImage updater (replaces the AppImage file, downloading only the changed blocks when the server allows
+ranges), and the deb updater for the .deb (it asks for the password through pkexec). A Linux copy that is neither an
+AppImage nor the .deb says "This copy cannot update itself". The two Windows installers come from two
+electron-builder runs; `scripts/release.mjs` merges their `latest.yml`, and electron-updater picks the .exe whose name
+has its architecture.
+
+**macOS** cannot use electron-updater while the app is unsigned: its MacUpdater hands the zip to Squirrel.Mac, which
+refuses an app without a Developer ID signature. `src/main/updater/mac.ts` (`MacZipUpdater`) implements the same
+interface (`src/main/updater/engine.ts`) and:
+
+1. Reads `latest-mac.yml` and compares versions (semver, a pre-release is older than its release).
+2. Picks the zip for this machine (`…-mac-arm64.zip` on Apple silicon, the other on Intel).
+3. Downloads it with Node's https into `<userData>/updates/<version>/`, so it gets no quarantine flag, hashing it as it
+   arrives. A file whose sha512 or size does not match `latest-mac.yml` is deleted.
+4. Only then unpacks it with `/usr/bin/ditto -x -k` and checks that it holds exactly one app whose
+   `CFBundleIdentifier` is `dev.gabsplat.lienzo` and whose `CFBundleShortVersionString` is the expected version.
+5. On Restart, while the app still runs: moves `Lienzo.app` aside to `Lienzo.app.old-<stamp>` in the same folder, moves
+   the new one in, removes the old one. If moving the new one in fails, the old one goes back and About shows the error;
+   the app keeps running. Then the app closes its documents and quits, and a small `/bin/sh` loop waits for its process
+   to end and runs `/usr/bin/open` on the app. On quit without Restart, the same swap runs as the app exits, without
+   reopening it. An old copy that could not be removed is removed at the next start.
+
+The Mac updater refuses to download when the app cannot replace itself: run from a translocated path (a quarantined
+app opened from Downloads runs from a random read-only `AppTranslocation` folder), from a mounted disk image
+(`/Volumes/…`), or from a folder it cannot write (the folder or the bundle). About then says "Move Lienzo to
+Applications to get updates." Homebrew (`Gabsplat/homebrew-tap`) installs the app without quarantine in
+`/Applications`, where this works.
+
+Limits of the Mac updater: it replaces the whole app (no block-map differential download); on a Mac where
+`/Applications` is not writable by the user (a standard, non-admin account), it says to move the app; and it has been
+tested on Linux with fake bundles (`tests/desktop-updater.test.ts`), not yet on a real Mac.
+
+**When the app is signed.** Once releases are signed with a Developer ID and notarized (the secrets in Releases), set
+`MAC_IS_SIGNED = true` in `apps/desktop/src/main/updater/index.ts`. The Mac then uses electron-updater's MacUpdater
+(Squirrel.Mac) like the other platforms, from the same zip and `latest-mac.yml`. `mac.ts` and `mac-bundle.ts` can be
+deleted afterwards.
+
+**Security.** Every request, including each redirect, must be https to `github.com`, `objects.githubusercontent.com`
+or `release-assets.githubusercontent.com` (GitHub now serves release assets from the last one). The Mac updater checks
+this itself; for electron-updater the app cancels any other request in electron-updater's network session. Every
+download is checked against the sha512 in `latest*.yml` before it is used (electron-updater does the same), nothing
+downloaded runs before that, and the Mac refuses a bundle whose ID or version does not match.
+
+**Testing an update locally.** `LIENZO_UPDATE_FEED` replaces the feed, for any build: https anywhere, or http on
+`127.0.0.1`. Build version A, build version B (`npm pkg set version=…` in `apps/desktop`, then the release script), put
+B's `latest-linux.yml` and AppImage in a folder, serve it with `python3 -m http.server 8765 --bind 127.0.0.1`, and run A
+with `LIENZO_UPDATE_FEED=http://127.0.0.1:8765` (and `APPIMAGE_EXTRACT_AND_RUN=1` without FUSE). The browser preview
+shows any state without a release: POST `desktop.updates.fake` with a state to `/rpc`;
+`design/whiteboard-harness/desktop-updates.cjs` does that for the pill and every About state.
