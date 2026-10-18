@@ -40,11 +40,7 @@ export const EXAMPLE_DOCS = `Title Case gives every selected card a title in Tit
 2. Open **Title Case** from the + catalog (Extensions).
 3. Press **Title Case the titles**.
 
-> It needs the "Changes the canvas" permission. Undo (⌘Z) brings the old titles back.
-
-## Ask your agent
-
-Your agent can run it too: "Title Case the cards I selected" or "Title Case the titles of the cards in this Frame". Its change shows in History as **Title Case (agent)** and undoes like any other.`;
+> It needs the "Changes the canvas" permission. Undo (⌘Z) brings the old titles back.`;
 /** What the example offers an agent: one action, the same code the button runs. */
 export const EXAMPLE_ACTIONS = [{ name: "titleCase", description: "Rewrites card titles in Title Case, in one undoable edit. Without ids it works on the cards the person selected.",
   input: { type: "object", properties: { ids: { type: "array", items: { type: "string" }, maxItems: 200, description: "The cards to change. Default: the person's selection." } } },
