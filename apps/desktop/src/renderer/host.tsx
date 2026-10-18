@@ -180,7 +180,10 @@ export const capabilities: ClientHost['capabilities'] = { kind: 'desktop', name:
 let agentSheet: React.ComponentType<AgentSheetProps> | null = null;
 export function provideAgentSheet(component: React.ComponentType<AgentSheetProps>) { agentSheet = component; }
 export const AgentSheet: ClientHost['AgentSheet'] = function AgentSheetSlot(props: AgentSheetProps) { const Sheet = agentSheet; return Sheet ? <Sheet {...props} /> : null; };
+let agentSettings: React.ComponentType<{ connectedAgentId: string | null }> | null = null;
+export function provideAgentSettings(component: React.ComponentType<{ connectedAgentId: string | null }>) { agentSettings = component; }
+export const AgentSettings: ClientHost['AgentSettings'] = function AgentSettingsSlot(props: { connectedAgentId: string | null }) { const Body = agentSettings; return Body ? <Body {...props} /> : null; };
 
 // Every export above, checked against the contract in one place.
-const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet };
+const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings };
 void host;

@@ -74,8 +74,8 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, duplicat
  * What the right panel shows for the selection: its content fields, style, instructions, connections and every
  * other action, in collapsible sections. Each edit is one transaction, labelled for history and undo.
  */
-export function SelectionProperties({ controller: c, panelRoot, disabled, add, duplicate, remove, groupSelection, connectSelection, release, template, exportSelection, rects, editText, undoNotice, linkId, onLink, interact, style, focus }: {
-  controller: CanvasController; panelRoot: React.RefObject<View | null>; disabled: boolean; add(): void; duplicate(): void; remove(): void; groupSelection(): void; connectSelection(): void; release(ids: string[], label?: string): void; template(group: CanvasGroup): void; exportSelection(): void; rects(): Map<string, Rect>; editText(): void; interact(): void; undoNotice(label: string): void;
+export function SelectionProperties({ controller: c, panelRoot, disabled, add, duplicate, remove, groupSelection, connectSelection, release, rects, editText, undoNotice, linkId, onLink, interact, style, focus }: {
+  controller: CanvasController; panelRoot: React.RefObject<View | null>; disabled: boolean; add(): void; duplicate(): void; remove(): void; groupSelection(): void; connectSelection(): void; release(ids: string[], label?: string): void; rects(): Map<string, Rect>; editText(): void; interact(): void; undoNotice(label: string): void;
   linkId?: string | null; onLink(id: string | null): void; style?: React.ReactNode;
   /** A section to open and scroll to: `instruction` from the menu. */
   focus?: string | null;
@@ -145,7 +145,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
       : <Field key={block.id + ':' + p.key} label={p.label} required={p.required} value={p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : String(block.data[p.key] ?? '')} multiline={p.kind === 'text' || p.kind === 'json'} mono={p.kind !== 'text'} inputStyle={p.kind === 'json' ? { minHeight: 120 } : undefined} disabled={disabled}
         placeholder={p.key === 'url' ? 'https://…' : undefined} onSave={value => { if (p.key === 'url' && value && !safeUrl(value)) throw new Error('VALIDATION'); return patchEntity({ data: { [p.key]: parse(p.kind, value) } }, 'Edit ' + p.label); }} />)}
     {slot?.kind === 'status' && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{['Done', 'In progress', 'Blocked', 'New'].map(status => <Button key={status} label={status} small active={block.data.status === status} disabled={disabled} onPress={() => { void patchEntity({ data: { status } }, 'Change status'); }} />)}</View>}
-  </> : <Txt kind="small" muted>Import the collection that defines this type to edit its properties.</Txt>);
+  </> : <Txt kind="small" muted>This block’s type is not in the catalog any more, so its properties cannot be edited here. The agent can still read them.</Txt>);
   const actions = <>
     {entity && row(group ? 'Edit title on the canvas' : 'Edit text on the canvas', 'Type', editText, true)}
     {block && needsContentInteraction(type?.renderer) && !u.compact && row('Interact', 'MousePointerClick', interact, false)}
@@ -156,8 +156,6 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
     {selected.length === 2 && row('Connect the two', 'Spline', connectSelection)}
     {row('Duplicate', 'CopyPlus', duplicate)}
     {group && row('Unwrap Marco', 'Ungroup', () => { void apply([{ type: 'group.delete', id: group.id, ungroup: true }], 'Unwrap Marco'); })}
-    {group && row('Save as template…', 'LibraryBig', () => template(group))}
-    {row('Export selection', 'FileOutput', exportSelection, false)}
     {(entity?.position || selected.some(e => e.position)) && row(selected.length > 1 ? 'Release positions' : 'Release position', 'PinOff', () => release(selected.filter(e => e.position).map(e => e.id)))}
     {group && pinnedChildren(doc, group.id).length > 0 && row('Arrange automatically', 'LayoutGrid', () => release(pinnedChildren(doc, group.id), 'Arrange automatically'))}
     {selected.length > 0 && selected[0].parentGroupId && selected.every(e => e.parentGroupId === selected[0].parentGroupId) && row('Take out of the Marco', 'LogOut', () => { try { void apply(leaveGroupOperations(doc, c.selection, rects(), c.catalog), 'Take out of the Marco'); } catch (error) { c.fail(error); } })}

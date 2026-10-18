@@ -12,7 +12,7 @@ const errorMessages = {
   NOT_FOUND: 'That is no longer available. Open the Lienzo again.',
   VALIDATION: 'Check the data and try again.',
   INVARIANT: 'That change cannot be applied. Check what is selected.',
-  UNKNOWN_TYPE: 'A block type is missing. Import the collection that has it.',
+  UNKNOWN_TYPE: 'A block type is missing from this Lienzo’s catalog.',
   UNDO_BLOCKED: 'Later changes depend on this one. Check the history.',
   FORBIDDEN: 'You have no access to that in this workspace.',
   TOO_LARGE: 'That is over the size limit. Make it smaller and try again.',

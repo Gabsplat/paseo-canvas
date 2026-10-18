@@ -302,6 +302,13 @@ export function captureKeys(handler: (event: PanelKey) => boolean): () => void {
   doc.addEventListener('keydown', listener, true);
   return () => doc.removeEventListener('keydown', listener, true);
 }
+/** Escape anywhere in the page while a screen is open (bubbling, so a key recorder or a field can take it first). */
+export function onEscapeKey(handler: () => boolean): () => void {
+  const doc = browser().document; if (!doc) return () => {};
+  const listener = (event: BrowserKeyEvent) => { if (event.key === 'Escape' && handler()) { event.preventDefault(); event.stopPropagation(); } };
+  doc.addEventListener('keydown', listener, false);
+  return () => doc.removeEventListener('keydown', listener, false);
+}
 /** ⌘ on Apple platforms, Ctrl elsewhere. Native clients ask React Native. */
 export function isMacPlatform(): boolean {
   if (Platform.OS === 'ios' || Platform.OS === 'macos') return true;

@@ -64,7 +64,7 @@ export function AddMenu({ entries, pinned, onPin, onClose, onManage, maxHeight, 
     </ScrollView>
     <Pressable nativeID="lienzo-add-manage" accessibilityRole="menuitem" accessibilityLabel="Manage extensions…" onPress={e => { e.stopPropagation(); onClose(); onManage(); }}
       style={({ pressed, ...state }) => ({ minHeight: 40, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderColor: u.c.border, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>
-      <Icon name="Package" size={16} color={u.c.foregroundMuted} /><Txt style={{ flex: 1 }}>Manage extensions…</Txt><Txt kind="small" muted>Collections and packs</Txt>
+      <Icon name="Puzzle" size={16} color={u.c.foregroundMuted} /><Txt style={{ flex: 1 }}>Manage extensions…</Txt><Txt kind="small" muted>Add, export, write your own</Txt>
     </Pressable>
   </View>;
 }

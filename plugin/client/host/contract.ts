@@ -79,4 +79,6 @@ export interface ClientHost {
   capabilities: HostCapabilities;
   /** Replaces the Paseo agent dialog on hosts that do not run agents. */
   AgentSheet: ComponentType<AgentSheetProps> | null;
+  /** Settings → Agents on hosts that connect agents over MCP (the desktop app): address, setup commands, agents seen. */
+  AgentSettings: ComponentType<{ connectedAgentId: string | null }> | null;
 }

@@ -5,10 +5,11 @@ import { LienzoPanel } from '../../../../plugin/client/Panel';
 import { tokens } from '../../../../plugin/client/tokens';
 import type { HostTheme } from '../../../../plugin/client/host/contract';
 import { DESKTOP_WORKSPACE } from '../shared/rpc';
-import { ConnectAgentSheet } from './ConnectAgent';
-import { ThemeContext, ToastProvider, provideAgentSheet } from './host';
+import { ConnectAgentBody, ConnectAgentSheet } from './ConnectAgent';
+import { ThemeContext, ToastProvider, provideAgentSettings, provideAgentSheet } from './host';
 
 provideAgentSheet(ConnectAgentSheet);
+provideAgentSettings(ConnectAgentBody);
 
 /** Light or dark, following the operating system and switching with it. */
 function useDarkMode() {

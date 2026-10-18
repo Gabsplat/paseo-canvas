@@ -56,7 +56,7 @@ function Grant({ extension, controller: c }: { extension: CatalogExtension; cont
   if (extension.granted || !extension.permissions.length) return null;
   const allow = () => { setError(''); void c.task(async () => { const catalog = await c.api.catalog({}); c.setCatalog(await c.api.catalogMutate({ expectedRevision: catalog.revision, action: { type: 'extension.grant', id: extension.id, granted: true } })); }).catch(() => setError('The permission could not be saved.')); };
   return <View nativeID={`lienzo-extension-grant-${extension.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.wash('aviso') }}>
-    <Txt kind="small" style={{ flex: 1 }}>It came in the “{extension.source}” collection and asks to {list(extension.permissions.map(p => PERMISSION[p]))}. Without your permission it can only read and select.{error ? ` ${error}` : ''}</Txt>
+    <Txt kind="small" style={{ flex: 1 }}>It came in the file “{c.catalog?.packs.find(p => p.id === extension.source)?.name ?? extension.source}” and asks to {list(extension.permissions.map(p => PERMISSION[p]))}. Without your permission it can only read and select.{error ? ` ${error}` : ''}</Txt>
     <Button label="Allow" small variant="primary" onPress={allow} />
   </View>;
 }

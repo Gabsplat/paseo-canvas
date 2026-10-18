@@ -93,7 +93,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   let body: React.ReactNode = generic(), qualifier = '';
   const renderer = type?.renderer;
   if (isWhiteboardRenderer(renderer)) return <WhiteboardContent block={block} kind={renderer} width={block.size?.width ?? 160} height={block.size?.height ?? 104} outline={outline} onSelect={event => onSelect(block.id,event)} onMeasure={onMeasure} />;
-  if (!type) body = <View style={{ gap: 8 }}><Txt>This type is not in your catalog. Import the collection that defines it.</Txt><Button label="Open collections" small variant="ghost" onPress={onPacks} /></View>;
+  if (!type) body = <View style={{ gap: 8 }}><Txt>This block’s type is not in your catalog any more. Its content is kept; the agent can still read it.</Txt><Button label="Extensions" small variant="ghost" onPress={onPacks} /></View>;
   else if (getClientRenderer(renderer)) body = <RegisteredRenderer block={block} id={renderer!} controller={c} readOnly={disabled} />;
   else if (['note', 'text', 'callout', 'step'].includes(renderer ?? '') && typeof block.data.text === 'string') body = <Txt selectable numberOfLines={outline || sized ? undefined : 8}>{block.data.text}</Txt>;
   else if (renderer === 'code' && typeof block.data.code === 'string') {

@@ -2,19 +2,18 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, View } from 'react-native';
 import { type PanelProps, AgentSheet, capabilities, useAgent, useSettings } from './host';
 import { Icon, ScrollView, useToast } from './host';
-import type { BlockType, CanvasGroup, CanvasOperation, CanvasPack } from '../shared/model';
+import type { BlockType, CanvasGroup, CanvasOperation } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
 import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Txt, UIProvider, useUI, MenuRow, MenuDivider, TooltipProvider, TooltipLayer } from './ui';
 import { Canvas, type CanvasApi } from './Canvas';
-import { Catalog, PackExport, PackImport } from './Catalog';
 import { DocumentActions } from './DocumentActions';
 import { SelectionBar, SelectionProperties } from './SelectionActions';
 import { AgentModal } from './AgentModal';
 import { visual } from './Blocks';
-import { connectOperations, documentContent, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, selectionPack, topSelection, safeUrl, type Point, type Rect } from './logic';
+import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, safeUrl, type Point, type Rect } from './logic';
 import { isMacPlatform, keyboard, type PanelKey } from './web';
 import { Onboarding } from './Onboarding';
-import { claimFirstGuide, type GuideAction } from './guide';
+import { claimFirstGuide } from './guide';
 import { canvasPreferences, interfacePreferences } from '../shared/preferences';
 import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
@@ -29,16 +28,21 @@ import { Toolbar, GLOSSARY, shapeIcon, type ToolId, type PinnedTool } from './To
 import { AddMenu, type ToolEntry } from './AddMenu';
 import { RightPanel, PanelSection, type PanelTab } from './RightPanel';
 import { CommandPalette } from './CommandPalette';
-import { ShortcutSheet, ShortcutList } from './ShortcutSheet';
 import { EmptyMate, Kettle, LoadingEgg } from './Eggs';
 import { applies, comboParts, eventCombo, formatCombo, shortcutRegistry } from './shortcuts';
 import { remember, type PaletteItem } from './palette';
 import { getClientRenderer } from './renderers';
 import { HojaControls, HojaMenu, LatestPill, useCopilotCanvas } from './Hojas';
+import { Screen, sheetFrame } from './Screen';
+import { LienzosScreen } from './LienzosScreen';
+import { HistoryScreen } from './HistoryScreen';
+import { ExtensionsContent } from './ExtensionsScreen';
+import { SettingsContent, settingsRail, type SettingsSection } from './SettingsScreen';
 
 type ViewMode = 'canvas' | 'outline';
-type CatalogTab = 'types' | 'templates' | 'packs';
 type InspectorSection = 'document' | 'communication' | 'history';
+/** The one screen open over the canvas, if any (docs/redesign-2026-10.md, "UI pass"). */
+type ScreenState = { kind: 'lienzos' } | { kind: 'history' } | { kind: 'extensions' } | { kind: 'settings'; section: SettingsSection };
 type VentanaKind = 'page' | 'image' | 'video' | 'audio';
 const F = tokens.face;
 /** What ⌘K ran last, per host and workspace, for as long as this client runs. */
@@ -98,26 +102,6 @@ function LoadingDocument() {
   </View>;
 }
 
-function DocumentRow({ summary, selected, disabled, open }: { summary: CanvasController['documents'][number]; selected: boolean; disabled: boolean; open: () => void }) {
-  const u = useUI();
-  return <Pressable accessibilityRole="button" accessibilityLabel={'Open ' + summary.title} accessibilityState={{ selected, disabled }} disabled={disabled} onPress={open} style={({ pressed }) => ({ minHeight: 52, padding: 10, gap: 10, flexDirection: 'row', alignItems: 'center', borderRadius: 6, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : selected ? u.c.surface2 : 'transparent', opacity: disabled ? .45 : 1 })}>
-    <View style={{ width: 16 }}><Icon name="Frame" size={16} color={u.c.foregroundMuted} /></View>
-    <View style={{ flex: 1, gap: 4 }}><Txt kind="groupTitle" numberOfLines={1}>{summary.title}</Txt>{summary.example && <Chip label="Example" tone="aviso" icon="FlaskConical" />}<Txt kind="small" muted>{relativeTime(summary.updatedAt)}</Txt></View>
-    {selected && <Icon name="Check" size={16} color={u.c.accent} />}
-  </Pressable>;
-}
-
-function ExampleRow({ title, disabled, create }: { title: string; disabled: boolean; create: () => void }) {
-  const u = useUI(), [focused, setFocused] = useState(false);
-  return <View style={{ alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-    <View><Chip label="Example" tone="aviso" icon="FlaskConical" /></View>
-    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled }} disabled={disabled} onPress={create} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-      style={({ pressed, ...state }) => ({ flex: 1, minHeight: u.compact ? tokens.size.controlCompact : tokens.size.control, paddingHorizontal: focused ? 7 : 8, borderRadius: tokens.radius.control, borderWidth: focused ? 2 : 1, borderColor: focused ? u.c.accent : 'transparent', justifyContent: 'center', backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent', opacity: disabled ? .45 : 1 })}>
-      <Txt kind="bodyStrong" numberOfLines={2} style={{ textAlign: 'left' }}>{title}</Txt>
-    </Pressable>
-  </View>;
-}
-
 function Presence({ id, open }: { id: string | null; open: () => void }) {
   const u = useUI(), agent = useAgent(id ?? '', a => ({ title: a.title, status: a.status }));
   // A host without agents (the desktop app) knows who connected over MCP, not whether it is working: no status.
@@ -134,16 +118,13 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   }), [raw]);
   const doc = c.view?.document;
   const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [toolbarBox, setToolbarBox] = useState({ x: 0, width: 0 });
-  const [extTools, setExtTools] = useState<string[]>([]), [overlay, setOverlay] = useState<'catalog' | null>(null);
-  const [catalogTab, setCatalogTab] = useState<CatalogTab>('types'), [catalogKey, setCatalogKey] = useState(0);
-  const [inspectorSection, setInspectorSection] = useState<InspectorSection>('document'), [inspectorKey, setInspectorKey] = useState(0);
-  const [docsError, setDocsError] = useState(''), [docsLoading, setDocsLoading] = useState(false);
-  const [showAllWarnings, setShowAllWarnings] = useState(false), [templateError, setTemplateError] = useState('');
-  const [documentSettingsOpen, setDocumentSettingsOpen] = useState(false), [docsOpen, setDocsOpen] = useState(false), [agentsOpen, setAgentsOpen] = useState(false), [overflow, setOverflow] = useState(false), [importOpen, setImportOpen] = useState(false), [exported, setExported] = useState<CanvasPack | null>(null), [template, setTemplate] = useState<CanvasGroup | null>(null), [templateName, setTemplateName] = useState(''), [reload, setReload] = useState(false);
+  const [extTools, setExtTools] = useState<string[]>([]), [screen, setScreen] = useState<ScreenState | null>(null);
+  const [showAllWarnings, setShowAllWarnings] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(false), [overflow, setOverflow] = useState(false), [reload, setReload] = useState(false);
   const [tool, setTool] = useState<CanvasTool>('select'), [toolStyle, setToolStyle] = useState<ToolStyle>(DEFAULT_TOOL_STYLE), [toolLocked, setToolLocked] = useState(false), [shapePick, setShapePick] = useState<WbShape>('rect');
   const [addOpen, setAddOpen] = useState(false), [libraryOpen, setLibraryOpen] = useState(false), [svgOpen, setSvgOpen] = useState(false), [libraryError, setLibraryError] = useState(''), [svgBusy, setSvgBusy] = useState(false);
   const [interactionId, setInteractionId] = useState<string | null>(null), [rename, setRename] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false), [kettle, setKettle] = useState(0), [sheetOpen, setSheetOpen] = useState(false), [settingsOpen, setSettingsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false), [kettle, setKettle] = useState(0);
   const scope = `${hostId}:${workspaceId}`, [recent, setRecent] = useState<string[]>(() => recentByScope.get(scope) ?? []);
   const [panel, setPanel] = useState<{ pinned: boolean; hidden: boolean; forced: boolean; tab: string; focus: string | null }>({ pinned: false, hidden: false, forced: false, tab: 'properties', focus: null });
   const [pinnedLocal, setPinnedLocal] = useState<string[] | null>(null), [overridesLocal, setOverridesLocal] = useState<Record<string, string> | null>(null), [, setRegistryTick] = useState(0);
@@ -162,13 +143,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     void claimFirstGuide(settings).then(show => { if (show && guideMounted.current) setGuideOpen(true); });
   }, [c.catalog, c.loading, settings]);
   const closeGuide = () => setGuideOpen(false);
-  const guideAction = (action: GuideAction) => {
-    if (!doc && ['agents', 'inspector', 'communication', 'history'].includes(action)) { openDocuments(); return; }
-    if (action === 'documents') openDocuments();
-    else if (action === 'catalog' || action === 'templates' || action === 'packs') openCatalog(action === 'catalog' ? 'types' : action);
-    else if (action === 'agents') setAgentsOpen(true);
-    else inspectorOpen(action === 'inspector' ? 'document' : action);
-  };
   // A selected link is view state, like the selection highlight; every change to the link itself goes through c.edit.
   const [linkId, setLinkId] = useState<string | null>(null);
   const addRef = useRef<View>(null);
@@ -188,8 +162,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const keyLabel = (id: string) => { const combo = resolved.list.find(s => s.id === id)?.assigned[0]; return combo ? formatCombo(combo, mac) : undefined; };
   const chips = (combo: string) => comboParts(combo, mac);
   useEffect(() => { if (c.arrival) toast.show(`New Lienzo: “${c.arrival.title}”`, { variant: 'info' }); }, [c.arrival?.id]);
-  useEffect(() => { setReload(false); setDocumentSettingsOpen(false); setTemplate(null); setTemplateError(''); setLinkId(null); setExtTools([]); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
-  useEffect(() => { setOverlay(null); setAddOpen(false); }, [u.compact]);
+  useEffect(() => { setReload(false); setLinkId(null); setExtTools([]); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
+  useEffect(() => { setAddOpen(false); }, [u.compact]);
   useEffect(() => { if (linkId && (c.selection.length || !doc?.links.some(l => l.id === linkId))) setLinkId(null); }, [linkId, c.selection, doc?.links]);
   // A new selection brings the panel back if the person had hidden it, and a section asked for earlier is forgotten.
   useEffect(() => { if (c.selection.length || linkId) setPanel(p => p.hidden || p.focus ? { ...p, hidden: false, focus: null } : p); }, [c.selection.join('|'), linkId]);
@@ -204,21 +178,18 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const showPanel = (focus: string | null = null) => setPanel(p => ({ ...p, hidden: false, forced: true, tab: 'properties', focus }));
   const inspectorOpen = (section: InspectorSection = 'document') => {
     setImmersive(false); // asking for details leaves Hide all UI so the request is visible
-    if (section === 'history') { setInspectorSection(section); setInspectorKey(key => key + 1); setDocumentSettingsOpen(true); return; }
+    if (section === 'history') { setScreen({ kind: 'history' }); return; }
     if (section === 'communication') { void c.select([]); setLinkId(null); }
     showPanel(section === 'communication' ? 'instruction' : null);
   };
-  const openCatalog = (tab: CatalogTab = 'types') => { setAddOpen(false); setDocumentSettingsOpen(false); setImmersive(false); setCatalogTab(tab); setCatalogKey(key => key + 1); setLibraryOpen(false); setOverlay('catalog'); };
-  async function refreshDocuments() {
-    setDocsLoading(true); setDocsError('');
-    try { await c.refreshList(); } catch (e) { setDocsError(friendlyError(e)); }
-    finally { setDocsLoading(false); }
-  }
-  function openDocuments() { setAddOpen(false); setLibraryOpen(false); setDocsOpen(true); void refreshDocuments(); }
+  const openScreen = (next: ScreenState) => { setAddOpen(false); setLibraryOpen(false); setOverflow(false); setPaletteOpen(false); setImmersive(false); setScreen(next); };
+  const openExtensions = () => openScreen({ kind: 'extensions' });
+  const openSettings = (section: SettingsSection = 'shortcuts') => openScreen({ kind: 'settings', section });
+  function openDocuments() { openScreen({ kind: 'lienzos' }); }
   async function newCanvas() {
     if (disabled) return;
     const next = await c.create({ title: 'Untitled Lienzo', description: '', example: false, blocks: [], groups: [], links: [], selectedIds: [], communication: { instructions: '', intent: '', audience: '' } });
-    if (next) { setDocsOpen(false); setDocumentSettingsOpen(false); setOverlay(null); setLinkId(null); }
+    if (next) { setScreen(null); setLinkId(null); }
   }
   async function changeRevision(kind: 'undo' | 'redo') {
     if (disabled || !(kind === 'undo' ? c.view?.canUndo : c.view?.canRedo)) return;
@@ -280,45 +251,20 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (copies.length > 200) { toast.error('Duplicate at most 200 things at a time.'); return; }
     void c.edit(copies.map(({ item, prefix }) => ({ type: 'entity.duplicate', id: item.id, idPrefix: prefix })), 'Duplicate selection').then(next => { if (next) void c.select(copies.map(({ item, prefix }) => prefix + '.' + item.id)); });
   }
-  function exportDocument() { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, [...doc.groups, ...doc.blocks].map(e => e.id))); }
-  async function saveTemplate() {
-    if (!doc || !template || disabled || !templateName.trim()) return;
-    const documentId = doc.id, groupId = template.id, name = templateName.trim();
-    const slug = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'template';
-    const templateId = slug + '.' + newId('template');
-    setTemplateError('');
-    const save = async () => {
-      if (c.current.current?.document.id !== documentId) return;
-      const exported = await c.api.exportGroup({ workspaceId, documentId, groupId, templateId, name });
-      const catalog = await c.api.catalog({});
-      const next = await c.api.catalogMutate({ expectedRevision: catalog.revision, action: { type: 'template.put', template: exported.template } });
-      c.setCatalog(next);
-      if (c.current.current?.document.id === documentId) { setTemplate(null); openCatalog('templates'); toast.show('Template “' + name + '” saved', { variant: 'success' }); }
-      return next;
-    };
-    const retry = (): Promise<Awaited<ReturnType<typeof save>>> => c.task(save, retry, undefined, 'template:' + templateId);
-    const next = await retry();
-    if (!next && c.current.current?.document.id === documentId) setTemplateError('Not saved. See the notice on the canvas, or try again.');
-  }
   function insert(type: BlockType, data = type.defaults) {
     if (!doc) { openDocuments(); return; } if (disabled) return;
-    if (isWhiteboardRenderer(type.renderer)) { setOverlay(null); if (type.renderer === 'wb-svg') setSvgOpen(true); else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return; }
+    if (isWhiteboardRenderer(type.renderer)) { if (type.renderer === 'wb-svg') setSvgOpen(true); else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return; }
     const parent = c.selection.length === 1 ? doc.groups.find(g => g.id === c.selection[0]) : undefined;
     const activeBlock = c.selection.length === 1 ? doc.blocks.find(block => block.id === c.selection[0]) : undefined, rect = activeBlock ? rectsNow().get(activeBlock.id) : undefined;
     const parentGroupId = parent?.id ?? activeBlock?.parentGroupId ?? null, parentRect = parentGroupId ? rectsNow().get(parentGroupId) : undefined;
     const position = rect ? { x: rect.x + rect.width + tokens.graph.gap.node - (parentRect?.x ?? 0), y: rect.y - (parentRect?.y ?? 0) } : parent ? undefined : geometry.current.center;
-    const id = newId('block'); setOverlay(null);
+    const id = newId('block');
     void (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title: type.name, typeId: type.id, data, parentGroupId, ...(position ? { position } : {}) } }], `Add ${type.name}`); if (next) await c.select([id]); })();
-  }
-  function insertTemplate(id: string) {
-    if (!doc) { openDocuments(); return; } if (disabled) return; const prefix = newId('t'), item = c.catalog?.templates.find(t => t.id === id); if (!item) return; const roots = [...item.groups, ...item.blocks].filter(e => !e.parentGroupId);
-    void (async () => { const operations: CanvasOperation[] = [{ type: 'template.insert', templateId: id, idPrefix: prefix }]; if (roots.length < 200) roots.forEach((g, i) => operations.push({ type: 'entity.move', id: `${prefix}.${g.id}`, parentGroupId: null, position: { x: geometry.current.center.x + i * 32, y: geometry.current.center.y + i * 32 } })); const next = await c.edit(operations, 'Add template'); if (next) await c.select(roots.map(g => `${prefix}.${g.id}`)); })();
   }
   /** M: a new, empty Marco in the middle of the view (inside the selected Marco, if one is selected). */
   function createGroup() {
     if (!doc) { openDocuments(); return; } if (disabled) return;
     const parent = c.selection.length === 1 ? doc.groups.find(group => group.id === c.selection[0]) : undefined, id = newId('group');
-    setOverlay(null);
     void c.edit([{ type: 'group.create', group: { id, title: 'Untitled Marco', description: '', blockIds: [], groupIds: [], parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], 'Add Marco').then(next => { if (next) void c.select([id]); });
   }
   const openVentana = (kind: VentanaKind) => { if (!doc) { openDocuments(); return; } setAddOpen(false); setMediaError(''); setVentana(kind); };
@@ -445,7 +391,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       if (isWhiteboardRenderer(type.renderer) || ['html', 'file-tree', 'preview-frame', 'image-ref'].includes(type.renderer ?? '')) continue;
       const v = visual(type); list.push({ id: 'type.' + type.id, section: 'Blocks', name: type.name, description: type.description, icon: v.icon, tone: v.tone as Tone, keywords: (getClientRenderer(type.renderer) ? 'interactive ' : '') + type.id, run: () => insert(type) });
     }
-    for (const template of c.catalog?.templates ?? []) list.push({ id: 'template.' + template.id, section: 'Blocks', name: template.name, description: `Template · ${template.blocks.length + template.groups.length} pieces`, icon: 'LayoutTemplate', keywords: 'template ' + template.id, run: () => insertTemplate(template.id) });
     for (const extension of extensionTools) list.push({ id: 'ext.' + extension.id, section: 'Extensions', name: extension.name, description: extension.description || 'A tool from an extension.', icon: extensionIcon(extension), keywords: 'extension tool', active: extTools.includes(extension.id), run: () => toggleExtension(extension.id) });
     return list.map(e => ({ ...e, disabled: !doc || (disabled && e.section !== 'Extensions') }));
   })();
@@ -457,11 +402,11 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const styleNode = (selectionKinds.size > 0 || toolOptions) ? <StyleIsland bare tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation="vertical" touch={u.compact} disabled={disabled} myStrokes={myLayers.reduce((sum, layer) => sum + layer.strokes, 0)} onClearMyStrokes={clearMyStrokes} /> : null;
   const selectionProperties = doc && hasSelection ? <SelectionProperties controller={c} panelRoot={root} disabled={disabled} linkId={linkId} onLink={selectLink} focus={panel.focus}
     add={() => setAddOpen(true)} duplicate={duplicateSelection} remove={removeLinkOrSelection} groupSelection={groupSelection} connectSelection={connectSelection} release={release}
-    template={g => { setTemplate(g); setTemplateName(g.title); setTemplateError(''); }} exportSelection={() => { if (doc && c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); }} rects={rectsNow} editText={editSelectedText} interact={() => canvas.current?.beginInteraction()} undoNotice={noticeUndo}
+    rects={rectsNow} editText={editSelectedText} interact={() => canvas.current?.beginInteraction()} undoNotice={noticeUndo}
     style={selectionKinds.size > 0 ? styleNode : undefined} /> : null;
   const documentProperties = doc ? <View nativeID="lienzo-properties-document">
     <View style={{ paddingHorizontal: F.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>Lienzo</Txt><Txt kind="bodyStrong" numberOfLines={2}>{doc.title}</Txt><Txt kind="small" muted>{GLOSSARY.lienzo}</Txt></View>
-    <PanelSection title="This Lienzo"><DocumentActions key={inspectorKey} controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
+    <PanelSection title="This Lienzo"><DocumentActions controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
   </View> : null;
   const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Marco', ventana: 'Ventana' }[toolId] : 'Tool';
   const tabs: PanelTab[] = [];
@@ -480,7 +425,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       { id: 'tool.select', group: 'Tools', title: 'Select', icon: 'MousePointer2', shortcut: resolved.list.find(s => s.id === 'tool.select')?.assigned[0], run: () => chooseToolId('select') },
       { id: 'tool.hand', group: 'Tools', title: 'Hand', icon: 'Hand', keywords: 'pan move', shortcut: resolved.list.find(s => s.id === 'tool.hand')?.assigned[0], run: () => chooseToolId('hand') },
       ...entries.map((e): PaletteItem => ({ id: e.id, group: e.section === 'Extensions' ? 'Extensions' : 'Tools', title: e.name, subtitle: e.description, icon: e.icon, keywords: e.keywords, disabled: e.disabled, verb: e.section === 'Extensions' ? 'Open' : 'Use', shortcut: e.shortcut ? resolved.list.find(s => s.id === ({ pencil: 'tool.pencil', 'shape.rect': 'tool.rectangle', 'shape.ellipse': 'tool.ellipse', arrow: 'tool.arrow', text: 'tool.text', eraser: 'tool.eraser', marco: 'tool.marco', ventana: 'tool.ventana' } as Record<string, string>)[e.id])?.assigned[0] : undefined, run: e.run })),
-      { id: 'ext.manage', group: 'Extensions', title: 'Manage extensions…', subtitle: 'Collections, packs and their tools', icon: 'Package', run: () => openCatalog('packs') },
+      { id: 'ext.manage', group: 'Extensions', title: 'Manage extensions…', subtitle: 'Add, export, or write your own', icon: 'Puzzle', keywords: 'extensions tools install file', run: openExtensions },
     ];
     const key = (id: string) => resolved.list.find(s => s.id === id)?.assigned[0];
     if (doc) {
@@ -489,7 +434,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         { id: 'action.wrap', group: 'Actions', title: 'Wrap in a Marco', subtitle: GLOSSARY.marco, icon: 'SquareDashed', shortcut: key('edit.wrap'), disabled: disabled || !c.selection.length, run: groupSelection },
         { id: 'action.delete', group: 'Actions', title: 'Delete', subtitle: 'The selection', icon: 'Trash2', shortcut: key('edit.delete'), disabled, run: removeLinkOrSelection },
         { id: 'action.fitSelection', group: 'Actions', title: 'Fit selection', icon: 'Scan', shortcut: key('view.fitSelection'), run: () => canvas.current?.zoomToSelection() },
-        { id: 'action.export', group: 'Actions', title: 'Export selection', subtitle: 'As a collection file', icon: 'FileOutput', disabled: !c.catalog || !c.selection.length, run: () => { if (c.catalog) setExported(selectionPack(doc, c.catalog, c.selection)); } },
       );
       if (c.selection.length === 2) items.push({ id: 'action.connect', group: 'Actions', title: 'Connect the two', icon: 'Spline', disabled, run: () => { connectSelection(); } });
       items.push(
@@ -500,22 +444,23 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         { id: 'action.hideUI', group: 'Actions', title: immersive ? 'Show the interface' : 'Hide all UI', icon: immersive ? 'Minimize2' : 'Maximize2', shortcut: key('ui.hide'), run: () => setImmersive(v => !v) },
         { id: 'action.panel', group: 'Actions', title: panelVisible ? 'Hide Properties' : 'Show Properties', icon: 'PanelRight', shortcut: key('panel.right'), run: togglePanel },
         { id: 'action.rename', group: 'Lienzos', title: 'Rename this Lienzo', icon: 'Pencil', disabled, run: () => setRename(true) },
-        { id: 'action.exportDocument', group: 'Lienzos', title: 'Export this Lienzo', subtitle: 'As a collection file', icon: 'FileOutput', disabled: !c.catalog, run: exportDocument },
       );
     }
     copilot.hojas.forEach((h, i) => items.push({ id: 'hoja.' + h.id, group: 'Hojas', title: `Hoja ${h.number}: ${h.title}`, subtitle: i === copilot.current ? 'You are here' : undefined, icon: 'BookOpen', verb: 'Go', run: () => { copilot.goToHoja(i); } }));
     if (c.view?.latestAgent?.ids.length) items.push({ id: 'agent.latest', group: 'Hojas', title: "Go to the agent's latest", subtitle: c.view.latestAgent.label, icon: 'Sparkles', verb: 'Go', run: () => { copilot.goToLatest(); } });
     items.push({ id: 'agent.follow', group: 'Hojas', title: copilot.follow ? 'Stop following the agent' : 'Follow the agent', subtitle: 'The camera goes wherever the agent draws', icon: 'Magnet', run: () => copilot.toggleFollow() });
     items.push({ id: 'lienzo.new', group: 'Lienzos', title: 'New Lienzo', subtitle: GLOSSARY.lienzo, icon: 'Plus', disabled, run: () => { void newCanvas(); } });
-    for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: (d.example ? 'Example · ' : '') + relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy, run: () => { void c.open(d.id); } });
+    items.push({ id: 'lienzo.all', group: 'Lienzos', title: 'All Lienzos', subtitle: 'Your Lienzos, with thumbnails', icon: 'LayoutGrid', keywords: 'home documents files open', run: openDocuments });
+    for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy, run: () => { void c.open(d.id); } });
     items.push(
-      { id: 'settings.shortcuts', group: 'Settings', title: 'Shortcuts', subtitle: 'Reassign keys', icon: 'Keyboard', keywords: 'keys keyboard bindings', run: () => setSettingsOpen(true) },
-      { id: 'settings.sheet', group: 'Settings', title: 'Keyboard shortcuts', subtitle: 'The cheat sheet', icon: 'Keyboard', shortcut: key('help.shortcuts'), run: () => setSheetOpen(true) },
+      { id: 'settings.open', group: 'Settings', title: 'Settings', subtitle: 'Shortcuts, toolbar, extensions, about', icon: 'Settings', keywords: 'preferences options', run: () => openSettings('shortcuts') },
+      { id: 'settings.shortcuts', group: 'Settings', title: 'Keyboard shortcuts', subtitle: 'See and reassign keys', icon: 'Keyboard', keywords: 'keys keyboard bindings cheat sheet', shortcut: key('help.shortcuts'), run: () => openSettings('shortcuts') },
+      { id: 'settings.toolbar', group: 'Settings', title: 'Toolbar', subtitle: 'Pinned tools', icon: 'PanelBottom', keywords: 'pin pinned tools', run: () => openSettings('toolbar') },
+      { id: 'settings.about', group: 'Settings', title: 'About Lienzo', subtitle: 'Version and where your Lienzos live', icon: 'Info', keywords: 'version data path', run: () => openSettings('about') },
       { id: 'settings.agent', group: 'Settings', title: 'Agent connection', icon: 'Plug', keywords: 'assistant connect', disabled: !doc, run: () => setAgentsOpen(true) },
       { id: 'settings.instructions', group: 'Settings', title: 'Instructions for the agent', subtitle: 'How it should explain on this Lienzo', icon: 'Compass', disabled: !doc, run: () => inspectorOpen('communication') },
-      { id: 'settings.history', group: 'Settings', title: 'History', icon: 'History', disabled: !doc, run: () => inspectorOpen('history') },
-      { id: 'settings.import', group: 'Settings', title: 'Import a collection', icon: 'FileInput', disabled: c.offline, run: () => setImportOpen(true) },
-      { id: 'settings.guide', group: 'Settings', title: 'Lienzo guide', icon: 'BookOpen', run: () => setGuideOpen(true) },
+      { id: 'settings.history', group: 'Settings', title: 'History', subtitle: 'Every change, by day', icon: 'History', keywords: 'activity timeline changes', disabled: !doc, run: () => inspectorOpen('history') },
+      { id: 'settings.guide', group: 'Settings', title: 'Lienzo guide', subtitle: 'Four short scenes', icon: 'BookOpen', keywords: 'tour onboarding help', run: () => { setScreen(null); setGuideOpen(true); } },
     );
     const q = query.trim();
     return items;
@@ -528,7 +473,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (tools[id]) { if (disabled && !['tool.select', 'tool.hand'].includes(id)) return false; tools[id](); return true; }
     switch (id) {
       case 'palette.open': setAddOpen(false); setPaletteOpen(true); return true;
-      case 'help.shortcuts': setSheetOpen(true); return true;
+      case 'help.shortcuts': openSettings('shortcuts'); return true;
       case 'lens.cycle': canvas.current?.cycleLens(); return true;
       case 'view.fitAll': canvas.current?.fit(); return true;
       case 'view.fitSelection': canvas.current?.zoomToSelection(); return true;
@@ -557,7 +502,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (tool !== 'select') { canvas.current?.cancelGesture(); chooseTool('select'); return true; }
     setOverflow(false); setLinkId(null); void c.select([]); return true;
   };
-  const modalOpen = guideOpen || paletteOpen || sheetOpen || settingsOpen || !!overlay || documentSettingsOpen || docsOpen || agentsOpen || (overflow && u.compact) || !!template || !!ventana || svgOpen || importOpen || !!exported;
+  const modalOpen = guideOpen || paletteOpen || !!screen || agentsOpen || (overflow && u.compact) || !!ventana || svgOpen;
   const keyState = { document: !!doc, canvas: mode === 'canvas', selection: !!c.selection.length || !!linkId };
   const reservedKey = (key: string) => { const combo = eventCombo({ key, shift: false, command: false }); return !!combo && resolved.byCombo.has(combo); };
   // The handlers are read through a ref so the listener is attached once and always sees this render's state.
@@ -602,7 +547,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <MenuRow icon="Plus" label="New Lienzo" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
       <MenuRow icon="Frame" label="Lienzos" onPress={() => { setOverflow(false); openDocuments(); }} />
       <MenuRow icon="Pencil" label="Rename" hint="F2" disabled={!doc || disabled} onPress={() => { setOverflow(false); setRename(true); }} />
-      {doc && <MenuRow icon="CopyPlus" label="Duplicate as my own" disabled={disabled} onPress={() => { setOverflow(false); const content = documentContent(doc, true); content.title = content.title.slice(0, 300); content.selectedIds = []; void c.create(content); }} />}
       <MenuDivider />
       <MenuRow icon="Undo2" label="Undo" hint={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />
       <MenuRow icon="Redo2" label="Redo" hint={keyLabel('edit.redo')} disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />
@@ -612,16 +556,11 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <MenuRow icon="Plug" label="Agent" disabled={!doc} trailing={<Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />} onPress={() => { setOverflow(false); setAgentsOpen(true); }} />
       <MenuRow icon="Compass" label="Instructions for the agent" disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
       <MenuDivider />
-      <MenuRow icon="Package" label="Manage extensions…" onPress={() => { setOverflow(false); openCatalog('packs'); }} />
-      <MenuRow icon="FileInput" label="Import a collection" disabled={c.offline} onPress={() => { setOverflow(false); setImportOpen(true); }} />
-      {doc && <MenuRow icon="FileOutput" label="Export this Lienzo" disabled={!c.catalog} onPress={() => { setOverflow(false); exportDocument(); }} />}
-      <MenuDivider />
-      <MenuRow icon="Settings" label="Settings" onPress={() => { setOverflow(false); setSettingsOpen(true); }} />
-      <MenuRow icon="Keyboard" label="Keyboard shortcuts" hint={keyLabel('help.shortcuts')} onPress={() => { setOverflow(false); setSheetOpen(true); }} />
+      <MenuRow icon="Puzzle" label="Extensions" onPress={openExtensions} />
+      <MenuRow icon="Settings" label="Settings" onPress={() => openSettings('shortcuts')} />
+      <MenuRow icon="Keyboard" label="Keyboard shortcuts" hint={keyLabel('help.shortcuts')} onPress={() => openSettings('shortcuts')} />
       <MenuRow icon="BookOpen" label="Lienzo guide" onPress={() => { setOverflow(false); setGuideOpen(true); }} />
   </>;
-  const catalog = <Catalog key={catalogKey} initialTab={catalogTab} controller={c} insert={insert} insertTemplate={insertTemplate} onImport={() => setImportOpen(true)} onExport={setExported} />;
-  const inspector = doc ? <DocumentActions controller={c} section={inspectorSection} rects={rectsNow} release={release} /> : null;
   const colour = selectedWhiteboard.length && !linkId ? { kind: 'whiteboard' as const, value: displayedStyle.color, set: (color: ToolStyle['color']) => changeStyle({ color }) } : undefined;
   const link = linkId ? doc?.links.find(l => l.id === linkId) : undefined;
   const linkColour = link ? { kind: 'link' as const, link, set: (tone: typeof link.tone) => { if (tone) void c.edit([{ type: 'link.update', id: link.id, patch: { tone } }], 'Change link colour'); else if (link.tone) { const { tone: _tone, ...rest } = link; void c.edit([{ type: 'link.delete', id: link.id }, { type: 'link.create', link: rest }], 'Clear link colour'); } } } : undefined;
@@ -638,6 +577,26 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const toolbar = <Toolbar active={toolId} shape={toolId === 'arrow' ? shapePick : toolStyle.shape === 'line' && toolStyle.heads !== 'none' ? shapePick : toolStyle.shape} locked={toolLocked} disabled={!doc || disabled} onTool={chooseToolId} onShape={pickShape} onLock={setToolLocked} pinned={pinnedTools} onAdd={() => { setLibraryOpen(false); setAddOpen(open => !open); }} addOpen={addOpen} keyLabel={keyLabel} scroll={u.compact} addRef={addRef} />;
   const panelTop = F.top.height + tokens.island.inset + F.top.islandGap, panelMax = Math.max(200, panelHeight - panelTop - F.rightPanel.bottomClearance);
   const addLeft = Math.max(tokens.island.inset, Math.min(width - F.catalog.width - tokens.island.inset, toolbarBox.x + toolbarBox.width - F.catalog.width + 24));
+  // ---- Screens: one large sheet over the canvas at a time.
+  const panelBox = { width, height: panelHeight }, frame = sheetFrame(panelBox, u.compact), railWidth = u.compact ? 0 : tokens.face.screens.rail;
+  const closeScreen = () => setScreen(null);
+  const pinnedRows = pinnedEntries.map(e => ({ id: e.id, name: e.name, icon: e.icon, description: e.description }));
+  const screens = <>
+    <Screen open={screen?.kind === 'lienzos'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-lienzos" label="Lienzos">
+      <LienzosScreen c={c} width={frame.width} open={screen?.kind === 'lienzos'} onNew={() => { void newCanvas(); }} onOpen={id => { setScreen(null); if (id !== doc?.id) void c.open(id); }} />
+    </Screen>
+    <Screen open={screen?.kind === 'history'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-history" label="History">
+      <HistoryScreen c={c} open={screen?.kind === 'history'} onUndo={() => { void changeRevision('undo'); }} onRedo={() => { void changeRevision('redo'); }}
+        onFly={ids => { setScreen(null); void c.select(ids); setTimeout(() => canvas.current?.flyToIds(ids), 0); }} />
+    </Screen>
+    <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions">
+      <ExtensionsContent c={c} width={frame.width} />
+    </Screen>
+    <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
+      {screen?.kind === 'settings' && <SettingsContent key={screen.section} section={screen.section} c={c} width={frame.width - railWidth} list={resolved.list} defs={shortcutRegistry.all()} overrides={overrides} chips={chips}
+        saveShortcuts={next => savePrefs({ shortcuts: next })} pinned={pinnedRows} savePinned={ids => savePrefs({ pinned: ids })} onGuide={() => { setScreen(null); setGuideOpen(true); }} />}
+    </Screen>
+  </>;
   const empty = !!doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select';
   return <TooltipProvider root={root}><View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
     {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
@@ -645,9 +604,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     </View>}
     <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState title="Lienzo" description="A canvas you and your agent draw explanations on.">
-        <Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} /><Txt kind="label" muted>Examples</Txt>
-        {c.catalog?.packs.flatMap(pack => pack.documents.map((d, i) => <ExampleRow key={pack.id + ':' + i} title={d.title} disabled={disabled} create={() => { void c.example(pack.id, i); }} />))}
-      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={() => openCatalog('packs')} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}</View>
+      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; }} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}
@@ -664,7 +622,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       </View></View>}
       {empty && <View pointerEvents="box-none" style={{ position: 'absolute', top: Math.max(F.top.height + 40, panelHeight * .24), left: 24, right: 24, alignItems: 'center', gap: 14 }}>
         <EmptyMate />
-        <View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}><Button label="Add something" icon="Plus" disabled={disabled} onPress={() => setAddOpen(true)} /><Button label="Use a template" disabled={disabled} onPress={() => openCatalog('templates')} /></View>
+        <View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}><Button label="Add something" icon="Plus" disabled={disabled} onPress={() => setAddOpen(true)} /></View>
       </View>}
       {doc && !immersive && !u.compact && <View pointerEvents="box-none" style={{ position: 'absolute', bottom: toolbarBottom, left: tokens.island.inset, right: tokens.island.inset, alignItems: 'center' }}><View pointerEvents="box-none" onLayout={e => { const { x, width: w } = e.nativeEvent.layout; setToolbarBox({ x: x + tokens.island.inset, width: w }); }}>{toolbar}</View></View>}
       {panelVisible && !u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={panelTop} maxHeight={panelMax} shortcut={keyLabel('panel.right')} focusSection={panel.focus === 'instruction' ? 'Instructions for the agent' : undefined} />}
@@ -689,16 +647,13 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     {panelVisible && u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={0} maxHeight={Math.max(320, panelHeight - 120)} open />}
     {addOpen && <><Pressable accessibilityLabel="Close the catalog" onPress={() => setAddOpen(false)} style={{ position: 'absolute', inset: 0, zIndex: 40 }} />
       <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 6, zIndex: 41, alignItems: 'center' } : { position: 'absolute', left: addLeft, bottom: toolbarBottom + F.toolbar.height + F.catalog.offset, zIndex: 41 }}>
-        <AddMenu entries={entries} pinned={pinnedIds} onPin={togglePin} onClose={() => setAddOpen(false)} onManage={() => openCatalog('packs')} maxHeight={Math.min(F.catalog.maxHeight, Math.max(240, panelHeight - toolbarBottom - F.toolbar.height - 80))} width={u.compact ? Math.min(F.catalog.width, width - 16) : F.catalog.width} />
+        <AddMenu entries={entries} pinned={pinnedIds} onPin={togglePin} onClose={() => setAddOpen(false)} onManage={openExtensions} maxHeight={Math.min(F.catalog.maxHeight, Math.max(240, panelHeight - toolbarBottom - F.toolbar.height - 80))} width={u.compact ? Math.min(F.catalog.width, width - 16) : F.catalog.width} />
       </View></>}
     {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
     {overflow && !u.compact && <><Pressable accessibilityLabel="Close the menu" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
       <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + F.top.height + 6, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
     <CommandPalette open={paletteOpen} items={paletteItems} recent={recent} chips={chips} width={width} height={panelHeight} onClose={() => setPaletteOpen(false)} onRun={(item, background) => { runPaletteItem(item); if (background) toast.show('Dale. ' + item.title, { variant: 'info' }); }} onQuery={query => { if (query.trim().toLowerCase() === 'mate') setKettle(k => k + 1); }} />
     <TooltipLayer />
-    <Modal title={catalogTab === 'packs' ? 'Extensions and collections' : 'Catalog'} open={!!overlay && !immersive} onOpenChange={v => { if (!v) setOverlay(null); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>
-      <View style={{ minHeight: 320, maxHeight: Math.max(320, panelHeight - 120), flex: 1 }}>{catalog}</View>
-    </Modal.Content></Modal>
     <Modal title={ventana === 'image' ? 'Image' : ventana === 'video' ? 'Video' : ventana === 'audio' ? 'Audio' : 'Ventana'} open={!!ventana} onOpenChange={open => { if (!open) setVentana(null); }}><Modal.Content>
       <Txt kind="small" muted>{ventana === 'page' ? GLOSSARY.ventana + ' Paste a link to a page, a video or a sound.' : 'Paste a link. Players never start on their own.'}</Txt>
       <Input label={ventana === 'page' ? 'Address of the page or media' : 'Address'} placeholder="https://…" value={mediaUrl} onChange={setMediaUrl} readOnly={disabled} />
@@ -708,33 +663,10 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     </Modal.Content></Modal>
     <SvgImportDialog open={svgOpen} onClose={() => setSvgOpen(false)} onInsert={insertSvg} />
     <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
-    <Modal title="Lienzos" open={docsOpen} onOpenChange={setDocsOpen}><Modal.Content>
-      {docsLoading && <Txt kind="small" muted>Loading Lienzos…</Txt>}
-      {docsError && <View style={{ gap: 8 }}><Txt kind="small" style={{ color: u.c.statusDanger }}>{docsError}</Txt><Button label="Retry" small onPress={() => { void refreshDocuments(); }} /></View>}
-      <Txt kind="label" muted>Yours</Txt>
-      {!docsLoading && !c.documents.some(d => !d.example) && <Txt kind="small" muted>No Lienzos of your own yet.</Txt>}
-      {c.documents.filter(d => !d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
-      <Button label={c.busy ? 'Creating…' : 'New Lienzo'} variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />
-      <Txt kind="label" muted>Examples</Txt>
-      {c.documents.filter(d => d.example).map(d => <DocumentRow key={d.id} summary={d} selected={doc?.id === d.id} disabled={c.busy} open={() => { setDocsOpen(false); void c.open(d.id); }} />)}
-      {c.catalog?.packs.filter(p => ['frontend', 'learn'].includes(p.id)).flatMap(p => p.documents.map((d, i) => <View key={p.id + ':' + i} style={{ gap: 4 }}><Chip label="Example" tone="aviso" icon="FlaskConical" /><Button label={'Create ' + d.title} variant="ghost" disabled={disabled} onPress={() => { void c.example(p.id, i).then(next => { if (next) setDocsOpen(false); }); }} /></View>))}
-    </Modal.Content></Modal>
     <Modal title="Menu" open={overflow && u.compact} onOpenChange={setOverflow}><Modal.Content><View>{menuRows}</View></Modal.Content></Modal>
-    <Modal title={inspectorSection === 'history' ? 'History' : inspectorSection === 'communication' ? 'Instructions for the agent' : 'Lienzo settings'} open={documentSettingsOpen && !!doc} onOpenChange={setDocumentSettingsOpen}><Modal.Content>{documentSettingsOpen && doc && inspector}</Modal.Content></Modal>
-    <ShortcutSheet open={sheetOpen} onClose={() => setSheetOpen(false)} list={resolved.list} chips={chips} onAssign={(id, combo) => savePrefs({ shortcuts: { ...overrides, [id]: combo } })} onReset={id => { const next = { ...overrides }; delete next[id]; savePrefs({ shortcuts: next }); }} />
-    <Modal title="Settings" open={settingsOpen} onOpenChange={setSettingsOpen}><Modal.Content><View nativeID="lienzo-settings" style={{ gap: 12 }}>
-      <Txt kind="title">Shortcuts</Txt>
-      <Txt kind="small" muted>Press Change and then the new keys. A combination another shortcut already uses moves here and leaves that one unassigned. Saved {capabilities.keptFor}.</Txt>
-      <ShortcutList list={resolved.list} chips={chips} onAssign={(id, combo) => savePrefs({ shortcuts: { ...overrides, [id]: combo } })} onReset={id => { const next = { ...overrides }; delete next[id]; savePrefs({ shortcuts: next }); }} />
-      {Object.keys(overrides).length > 0 && <Button label="Reset all shortcuts" variant="ghost" onPress={() => savePrefs({ shortcuts: {} })} />}
-    </View></Modal.Content></Modal>
     {settings.saveError && <View style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, right: 12, padding: 8, backgroundColor: u.c.surface1 }}><Txt kind="small" muted>Could not remember that you saw the guide.</Txt><Button label="Retry" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}
-    <Onboarding open={guideOpen} close={closeGuide} catalog={c.catalog} onAction={guideAction} />
-    <Modal title="Save as template" open={!!template} onOpenChange={v => { if (!v) setTemplate(null); }}><Modal.Content>
-      <Txt kind="small" style={{ fontWeight: '600' }}>Name</Txt><Input label="Template name" value={templateName} onChange={setTemplateName} readOnly={disabled} />
-      {(templateError || c.failure) && <Txt kind="small" style={{ color: u.c.statusDanger }}>{c.failure?.message ?? templateError}</Txt>}
-      <Button label={c.busy ? 'Saving…' : 'Save template'} variant="primary" disabled={disabled || !templateName.trim() || templateName.length > 200} onPress={() => { void saveTemplate(); }} />
-    </Modal.Content></Modal>
-    {AgentSheet ? <AgentSheet open={agentsOpen} close={() => setAgentsOpen(false)} connectedAgentId={c.view?.connection?.agentId ?? null} /> : <AgentModal controller={c} open={agentsOpen} close={() => setAgentsOpen(false)} onReload={() => setReload(true)} />}<PackImport controller={c} open={importOpen} close={() => setImportOpen(false)} /><PackExport pack={exported} close={() => setExported(null)} />
+    <Onboarding open={guideOpen} close={closeGuide} panel={panelBox} />
+    {AgentSheet ? <AgentSheet open={agentsOpen} close={() => setAgentsOpen(false)} connectedAgentId={c.view?.connection?.agentId ?? null} /> : <AgentModal controller={c} open={agentsOpen} close={() => setAgentsOpen(false)} onReload={() => setReload(true)} />}
+    {screens}
   </View></TooltipProvider>;
 }

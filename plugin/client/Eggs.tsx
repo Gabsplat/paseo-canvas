@@ -25,16 +25,20 @@ function Drawing({ paths, color, size, label }: { paths: readonly string[]; colo
   return <View style={{ width: size, height: size }}><WebVectors width={100} height={100} label={label} paths={paths.map(d => line(d, color))} /></View>;
 }
 
-/** The empty canvas: a hand-drawn mate with its steam, and one line of copy. Pointer events pass through. */
-export function EmptyMate() {
-  const u = useUI(), motion = useReducedMotion(), rise = useRef(new Animated.Value(0)).current, still = motion.current;
+/** The hand-drawn mate with its rising steam (still under reduced motion). */
+export function MateDrawing({ size = E.mate, color }: { size?: number; color?: string }) {
+  const u = useUI(), motion = useReducedMotion(), rise = useRef(new Animated.Value(0)).current, still = motion.current, ink = color ?? u.c.foregroundMuted;
   useEffect(() => { if (still) return; const loop = Animated.loop(Animated.timing(rise, { toValue: 1, duration: E.steamMs, easing: Easing.inOut(Easing.quad), useNativeDriver: NATIVE })); loop.start(); return () => loop.stop(); }, [still]);
-  const web = u.layout.platform === 'web';
+  if (u.layout.platform !== 'web') return <Icon name="Coffee" size={32} color={ink} />;
+  return <View pointerEvents="none" style={{ width: size, height: size }}>
+    <Drawing paths={MATE} color={ink} size={size} label="A mate, drawn by hand" />
+    {!still && <Animated.View style={{ position: 'absolute', inset: 0, opacity: rise.interpolate({ inputRange: [0, .3, 1], outputRange: [0, .9, 0] }), transform: [{ translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [6, -6] }) }] }}><Drawing paths={STEAM} color={ink} size={size} label="" /></Animated.View>}
+  </View>;
+}
+/** The empty canvas: the mate and one line of copy. Pointer events pass through. */
+export function EmptyMate() {
   return <View nativeID="lienzo-empty-mate" pointerEvents="none" style={{ alignItems: 'center', gap: 10 }}>
-    {web ? <View style={{ width: E.mate, height: E.mate }}>
-      <Drawing paths={MATE} color={u.c.foregroundMuted} size={E.mate} label="A mate, drawn by hand" />
-      {!still && <Animated.View style={{ position: 'absolute', inset: 0, opacity: rise.interpolate({ inputRange: [0, .3, 1], outputRange: [0, .9, 0] }), transform: [{ translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [6, -6] }) }] }}><Drawing paths={STEAM} color={u.c.foregroundMuted} size={E.mate} label="" /></Animated.View>}
-    </View> : <Icon name="Coffee" size={32} color={u.c.foregroundMuted} />}
+    <MateDrawing />
     <Txt kind="display" style={{ textAlign: 'center' }}>Empty. Pour yourself a mate.</Txt>
     <Txt muted style={{ textAlign: 'center' }}>Then draw, write, or press + to add something. ⌘K finds everything.</Txt>
   </View>;
