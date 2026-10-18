@@ -2,7 +2,7 @@
   "format": "lienzo-extension-index",
   "version": 1,
   "repository": "Gabsplat/lienzo-extensions",
-  "generatedAt": "2026-10-18T21:36:42.378Z",
+  "generatedAt": "2026-10-18T22:19:48.368Z",
   "entries": [
     {
       "id": "title-case",
@@ -17,12 +17,18 @@
           "permissions": [
             "edit"
           ],
-          "docs": true
+          "docs": true,
+          "actions": [
+            "titleCase"
+          ]
         }
       ],
       "path": "extensions/title-case/extension.json",
-      "sha256": "730757812f9f0cf07f3ac3e5112bbd81bce7d80ec3abd9be2b24c7d6ca464388",
-      "bytes": 2209,
+      "sha256": "a34cdc2883c7f160cfcfc48851443b6e5f7857cf16af8b5808f5484eac68352c",
+      "bytes": 3748,
+      "contentHash": "889250fad5dc81516fdf2ea1d807c867a8c6206a89e1c072cfd7f5043b5fafaf",
+      "author": "gabsplat",
+      "updated": "2026-10-18T18:39:46-03:00",
       "readme": "extensions/title-case/README.md"
     }
   ]

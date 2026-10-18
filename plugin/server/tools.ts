@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as rpc from "../shared/rpc";
 import { idSchema, groupSchema, groupPatchSchema, revisionSchema, extensionSchema, layoutSchema, type CanvasDocument } from "../shared/model";
 import { EXTENSION_GUIDE } from "../shared/extensions";
+import { actionNameSchema } from "../shared/actions";
 import { allWikiPages, getWikiPage, pageForBlockType, searchWiki, wikiContents, wikiPageMarkdown } from "../shared/wiki";
 import { CanvasError } from "../shared/errors";
 import { CanvasService } from "./service";
@@ -34,6 +35,7 @@ const sheetInput = z.discriminatedUnion("action", [
   z.object({ action: z.literal("update"), documentId: idSchema, expectedRevision: revisionSchema, id: idSchema, title: z.string().min(1).max(300).optional(), description: z.string().max(4000).optional() }).strict(),
 ]);
 const selectionInput = z.object({ documentId: idSchema.optional() }).strict();
+const extensionRunInput = z.object({ extension: idSchema, action: actionNameSchema, input: z.record(z.string(), z.json()).optional(), documentId: idSchema.optional() }).strict();
 const runtimeInput = z.discriminatedUnion('action', [
   rpc.runtimeReadInputSchema.omit({ workspaceId: true }).extend({ action: z.literal('read') }),
   rpc.runtimeSetInputSchema.omit({ workspaceId: true }).extend({ action: z.literal('set') }),
@@ -47,6 +49,7 @@ const tools = [
   { name: "canvas_apply", description: "Atomically apply 1..200 operations with expectedRevision; failures roll back. On REVISION_CONFLICT reread and retry. Build node blocks + graph groups, then link.create:{link:{id,from,to,kind?,label?,tone?}}; kind is flow (default), depends or reference. from is drawn before to, so link in reading order; from/to accept group IDs, and one area-to-area link beats many block-to-block links across areas. If the result carries legibility.warnings, restructure before adding more. link.update uses {id,patch}; link.delete uses {id}. Endpoints are existing block/group IDs, distinct; (from,to,kind) is unique. Deleting entities removes touching links. document.update accepts layout. Group positions are relative. block.update data is an RFC 7396 merge patch; arrays replace. Use summary/details for text, few prose notes, and an html mini app when something should be tried rather than read.", schema: rpc.mutateDocument.input.omit({ workspaceId: true }), readOnly: false },
   { name: "canvas_group", description: "Create/update area groups (Frames) with layout.mode graph, or ungroup children. Membership moves children to one parent; groups nest to depth 4.", schema: groupInput, readOnly: false },
   { name: "canvas_catalog", description: "List/read block types and extensions. Writes require catalog expectedRevision. save_type adds a local block type. save_extension adds or replaces a tool the person can use from then on, in Paseo and in the desktop app (list returns extensionGuide with the whole API; remove_extension deletes a local one). help {page?, query?} reads the person's Help pages (contents, a search, or one page as Markdown): use it to tell the person how to do something by hand; each listed block type names its page. Extension pages run only sandboxed in a frame. Library writes require normal user permission.", schema: catalogInput, readOnly: false },
+  { name: "canvas_extension_run", description: "Run an action an installed extension offers (canvas_catalog list shows each extension's actions with their input schema, and whether it holds the permissions it needs). {extension, action, input?, documentId?}; without documentId it runs on the Lienzo the person selected in most recently. The action runs sandboxed on the server, sees the document and the person's selection, and its edits are applied as one undoable transaction labelled \"<extension> (agent): <label>\" that the person sees in History; a failing action changes nothing. Returns its result and the new revision. An extension that came in a file and was not allowed yet cannot edit: ask the person to allow it in Extensions.", schema: extensionRunInput, readOnly: false },
   { name: "canvas_selection", description: "Read what the person has selected on the canvas. Call it whenever the person points at the canvas in conversation: \"this\", \"these\", \"what I selected\", \"look at this\", \"mirá esto\", \"esto de acá\". Returns each selected block or group with its effective instructions (most specific first) and, for a block, the state its interaction left: controls and simulations, a quiz answer, a mini app's stored state, and lastInteraction (what the person last did with it). Omit documentId to read the Lienzo whose selection the person changed most recently. The canvas never messages you; this read is how you see what the person means.", schema: selectionInput, readOnly: true },
   { name: "canvas_history", description: "Read recent real transactions, actor class and affected IDs before undo.", schema: scopedRead, readOnly: true },
   { name: "canvas_undo", description: "Undo your latest edit only if later edits have not touched those entities. Adds a new monotonic revision; fails with UNDO_BLOCKED instead of reverting another actor's edit.", schema: rpc.undoDocument.input.omit({ workspaceId: true }), readOnly: false },
@@ -85,13 +88,13 @@ export class ToolRouter {
     if (documentId) await this.service.assertReachable(documentId, scope.workspaceId, scope.agentId);
     const result = await this.dispatch(name, value, scope);
     // Using a canvas connects the agent to it; no manual step in the panel.
-    if (documentId) await this.service.autoConnect(documentId, scope.workspaceId, scope.agentId, ["canvas_apply", "canvas_undo", "canvas_redo"].includes(name) || name === "canvas_group" || name === "canvas_sheet" && sheetInput.parse(input).action !== "list");
+    if (documentId) await this.service.autoConnect(documentId, scope.workspaceId, scope.agentId, ["canvas_apply", "canvas_undo", "canvas_redo", "canvas_extension_run"].includes(name) || name === "canvas_group" || name === "canvas_sheet" && sheetInput.parse(input).action !== "list");
     if (Buffer.byteLength(JSON.stringify(result)) > 24 * 1024) {
       if (name === "canvas_read") {
         const current = await this.service.read({ documentId: readInput.parse(input).documentId, workspaceId: scope.workspaceId });
         return { revision: current.document.revision, truncated: true, hint: "Full result exceeds 24 KiB. Read a smaller ids array; use outline to discover IDs.", counts: { blocks: current.document.blocks.length, groups: current.document.groups.length, links: current.document.links.length }, ids: [...current.document.blocks, ...current.document.groups, ...current.document.links].slice(0, 100).map(entity => entity.id) };
       }
-      const committedWrite = ["canvas_create", "canvas_apply", "canvas_undo", "canvas_redo"].includes(name) || name === "canvas_group" || name === "canvas_sheet" && sheetInput.parse(input).action !== "list";
+      const committedWrite = ["canvas_create", "canvas_apply", "canvas_undo", "canvas_redo", "canvas_extension_run"].includes(name) || name === "canvas_group" || name === "canvas_sheet" && sheetInput.parse(input).action !== "list";
       if (committedWrite) return { committed: true, truncated: true, hint: "Operation succeeded. Read the document by IDs for content." };
       throw new CanvasError("TOO_LARGE", "Result exceeds 24 KiB. Request fewer entities, or read by ids.");
     }
@@ -161,7 +164,12 @@ export class ToolRouter {
         if (args.action === "list") {
           const catalog = await this.service.catalog();
           return { revision: catalog.revision, blockTypes: catalog.blockTypes.map(({ id, name, description, renderer }) => ({ id, name, description, renderer, guidance: getRendererSpec(renderer)?.guidance, help: pageForBlockType(id)?.id })),
-            extensions: catalog.extensions.map(({ id, kind, name, description, permissions, source }) => ({ id, kind, name, description, permissions, source })), extensionGuide: EXTENSION_GUIDE };
+            extensions: catalog.extensions.map(({ id, kind, name, description, permissions, source, granted, actions }) => {
+              // What it may do now: an extension from a file holds nothing until the person allows it.
+              const missing = granted ? [] : permissions;
+              return { id, kind, name, description, permissions, source, allowed: !missing.length, ...(missing.length ? { missingPermissions: missing, note: "Ask the person to allow it in Extensions; until then its actions cannot use these permissions." } : {}),
+                ...(actions?.length ? { actions: actions.map(({ name, description, input, returns }) => ({ name, description, input: input ?? { type: "object", properties: {} }, ...(returns ? { returns } : {}) })) } : {}) };
+            }), extensionGuide: EXTENSION_GUIDE };
         }
         if (args.action === "read") {
           const catalog = await this.service.catalog(), entry = [...catalog.blockTypes, ...catalog.extensions].find(entry => entry.id === args.id);
@@ -170,6 +178,12 @@ export class ToolRouter {
         }
         const action = args.action === "save_type" ? { type: "type.put" as const, blockType: args.blockType } : args.action === "save_extension" ? { type: "extension.put" as const, extension: args.extension } : { type: "extension.remove" as const, id: args.id };
         const updated = await this.service.catalogMutate({ expectedRevision: args.expectedRevision, action }); return { revision: updated.revision, committed: true };
+      }
+      case "canvas_extension_run": {
+        const args = extensionRunInput.parse(input), result = await this.service.runExtension({ ...args, workspaceId }, scope.agentId);
+        // Without a documentId, run() could not connect the agent; an action that edited takes the canvas like canvas_apply.
+        if (!args.documentId) await this.service.autoConnect(result.documentId, workspaceId, scope.agentId, result.committed);
+        return result;
       }
       case "canvas_selection": return this.service.selected({ ...selectionInput.parse(input), workspaceId }, scope.agentId);
       case "canvas_history": return this.service.history({ ...scopedRead.parse(input), workspaceId });

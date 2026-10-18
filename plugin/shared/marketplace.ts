@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import { idSchema, extensionPermissionSchema } from "./model";
+import { actionNameSchema } from "./actions";
 
 export const MARKETPLACE = { repository: "Gabsplat/lienzo-extensions", branch: "main" } as const;
 export type MarketplaceConfig = { repository: string; branch: string };
@@ -32,11 +33,19 @@ export const marketplaceEntrySchema = z.object({
   /** The file's id, which is also its folder: extensions/<id>/. */
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
   /** The extensions inside, as the review will show them. */
-  extensions: z.array(z.object({ id: idSchema, name: z.string().min(1).max(80), description: z.string().max(600), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(), permissions: z.array(extensionPermissionSchema).max(2), docs: z.boolean() }).strict()).min(1).max(50),
+  // Not strict: a field added to the index later is ignored by this version instead of making the whole list unreadable.
+  extensions: z.array(z.object({ id: idSchema, name: z.string().min(1).max(80), description: z.string().max(600), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(), permissions: z.array(extensionPermissionSchema).max(2), docs: z.boolean(),
+    /** The names of the actions it offers agents. */
+    actions: z.array(actionNameSchema).max(20).optional() })).min(1).max(50),
   path: repoPath, sha256: z.string().regex(/^[0-9a-f]{64}$/), bytes: z.number().int().positive().max(MARKETPLACE_LIMITS.file),
+  /**
+   * SHA-256 of the file's extensions as canonical JSON (server/catalog.ts, extensionsHash): unlike sha256, the same
+   * whatever the file's formatting, so Discover can compare it with what is installed and see a change in code.
+   */
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   author: z.string().max(100).optional(), updated: z.string().max(40).optional(),
   readme: repoPath.optional(), screenshot: repoPath.optional(),
-}).strict().refine(entry => entry.path === `extensions/${entry.id}/extension.json`, "An entry's file is extensions/<id>/extension.json.")
+}).refine(entry => entry.path === `extensions/${entry.id}/extension.json`, "An entry's file is extensions/<id>/extension.json.")
   .refine(entry => entry.extensions.every(e => e.id.startsWith(`${entry.id}.`)), "Every extension id starts with the file's id and a dot.");
 export const marketplaceIndexSchema = z.object({
   format: z.literal("lienzo-extension-index"), version: z.literal(1),

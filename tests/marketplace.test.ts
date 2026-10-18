@@ -85,7 +85,7 @@ test("catalog: CI's index builder writes an index the app accepts, and refuses b
   assert.equal(index.repository, "owner/catalog");
   const entry = index.entries[0], bytes = await readFile(join(dir, entry.path));
   assert.equal(entry.sha256, createHash("sha256").update(bytes).digest("hex")); assert.equal(entry.bytes, bytes.length);
-  assert.deepEqual(entry.extensions[0], { id: "title-case.title-case", name: "Title Case", description: EXAMPLE_FILE.description, icon: "CaseSensitive", permissions: ["edit"], docs: true });
+  assert.deepEqual(entry.extensions[0], { id: "title-case.title-case", name: "Title Case", description: EXAMPLE_FILE.description, icon: "CaseSensitive", permissions: ["edit"], docs: true, actions: ["titleCase"] });
   run(); assert.equal(await readFile(join(dir, "index.json"), "utf8"), text, "an unchanged catalog writes the same index");
   // The committed example index is valid too.
   marketplaceIndexSchema.parse(JSON.parse(await readFile(join(root, "marketplace/index.json"), "utf8")));
@@ -142,7 +142,7 @@ test("Discover: the index from the network, kept for offline use, with a clear o
 
 test("Discover: installing downloads the file, checks it against the index, then goes through the usual review", async t => {
   const { service } = await setup(t), fileText = JSON.stringify(EXAMPLE_FILE, null, 2), urls = marketplaceUrls(), path = "extensions/title-case/extension.json";
-  const entry = { id: "title-case", name: "Title Case", description: "d", extensions: [{ id: "title-case.title-case", name: "Title Case", description: EXAMPLE_FILE.description, permissions: ["edit" as const], docs: true }], path, sha256: createHash("sha256").update(fileText).digest("hex"), bytes: fileText.length };
+  const entry = { id: "title-case", name: "Title Case", description: "d", extensions: [{ id: "title-case.title-case", name: "Title Case", description: EXAMPLE_FILE.description, permissions: ["edit" as const], docs: true, actions: ["titleCase"] }], path, sha256: createHash("sha256").update(fileText).digest("hex"), bytes: fileText.length };
   const { deps } = fakeDeps({ [urls.raw(path)]: fileText });
   let shown: CanvasCatalog | null = null;
   const host = { api: { catalog: () => service.catalog(), validate: (input: { pack: unknown }) => service.validatePack(input), import: (input: { pack: unknown; expectedRevision: number; replace: boolean; dryRun: boolean }) => service.importPack(input), catalogMutate: (input: Parameters<CanvasService["catalogMutate"]>[0]) => service.catalogMutate(input) }, setCatalog: (c: CanvasCatalog) => { shown = c; } };
