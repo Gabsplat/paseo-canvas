@@ -227,8 +227,9 @@ Deletion through `group.delete` deletes the subtree by default; `ungroup:true` r
 and converts their local positions into positions relative to the former group's parent.
 Duplication (`entity.duplicate`) uses `idPrefix.oldId` for every copied entity and link.
 
-`canvas_catalog` actions are `list`, `read`, `save_type`, `save_extension`, `remove_extension`. Library mutation
-revisions are independent of document revisions. `list` returns block types and extensions (no templates or packs).
+`canvas_catalog` actions are `list`, `read`, `save_type`, `save_extension`, `remove_extension`, `help`. Library mutation
+revisions are independent of document revisions. `list` returns block types and extensions (no templates or packs);
+each block type names its Help page (`help`).
 Extension files are imported by the person in the Extensions screen, not by the agent: every extension in a file
 uses the file's `id.` namespace, namespaces cannot overlap, a file cannot take an ID held locally or by another
 file, and an installed file needs explicit `replace:true`. Removing a stored pack (`pack.remove`, from the panel)
@@ -512,7 +513,17 @@ with ordinary `canvas_apply` operations using `parentGroupId`. Outline reads inc
 `canvas_catalog` also lists, reads, saves and removes extensions: `list` returns `extensions` (ID, kind, name,
 description, permissions, source) and `extensionGuide`, the whole frame API as text; `read { id }` returns one with
 its page; `save_extension { expectedRevision, extension }` adds or replaces a local one; `remove_extension` deletes a
-local one. Like every catalog write it needs the person's approval. The guide ends with a short inline example; there
-is no shipped example extension to read. The contract is in `docs/extensions.md`.
+local one. Like every catalog write it needs the person's approval. The guide ends with the complete example of Help →
+Make your own (`shared/wiki/tutorial.ts`). An extension may carry `docs`, its own Help page in safe Markdown (no HTML;
+refused otherwise). The contract is in `docs/extensions.md`.
+
+## Help pages
+
+`canvas_catalog help` reads the person's Help, the same data the Help screen shows (`plugin/shared/wiki`), so the agent
+can say how something is done by hand instead of guessing: without arguments it returns the contents (sections, page
+ids, titles, summaries); `{ query }` returns up to eight matching pages; `{ page }` returns one page as Markdown (what
+it is for, steps by hand, example prompts, tips, longer text). Installed extensions add their pages (`ext:<id>`).
+Nothing is duplicated: the drawing and extension guides keep the technical rules, Help keeps the person's view.
+`docs/help.md` is generated from the same pages (`pnpm help:docs`).
 Only kind `tool` exists; catalogs and packs stored with the retired kind `view` still load and drop those
 entries.

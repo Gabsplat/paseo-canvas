@@ -101,10 +101,10 @@ export function ExtensionsContent({ c, width, embedded = false, onHelp }: { c: C
     </Card>
     </>}
   </>;
-  const tabs = <Segments value={tab} onChange={next => { setTab(next); setError(''); setNote(''); }} options={[{ value: 'installed', label: installed.length ? `Installed · ${installed.length}` : 'Installed' }, { value: 'discover', label: 'Discover' }]} />;
-  if (embedded) return <View style={{ gap: 16 }}><View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}><View nativeID="lienzo-extension-tabs">{tabs}</View><View style={{ flex: 1 }} />{toolbar}</View>{body}</View>;
+  const tabs = <Segments value={tab} onChange={next => { setTab(next); setError(''); setNote(''); }} options={[{ value: 'installed', label: 'Installed' }, { value: 'discover', label: 'Discover' }]} />;
+  if (embedded) return <View style={{ gap: 16 }}><View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}><View nativeID="lienzo-extension-tabs" style={{ width: 220 }}>{tabs}</View><View style={{ flex: 1 }} />{toolbar}</View>{body}</View>;
   return <View nativeID="lienzo-extensions" style={{ flex: 1, minHeight: 0 }}>
-    <ScreenHeader title="Extensions" subtitle="Small tools for the + catalog and the Properties panel. Add them, discover what others made, share yours, or write your own." actions={toolbar}><View nativeID="lienzo-extension-tabs" style={{ flexDirection: 'row' }}>{tabs}</View></ScreenHeader>
+    <ScreenHeader title="Extensions" subtitle="Small tools for the + catalog and the Properties panel. Add them, discover what others made, share yours, or write your own." actions={toolbar}><View nativeID="lienzo-extension-tabs" style={{ width: 220 }}>{tabs}</View></ScreenHeader>
     <ScreenBody>{body}</ScreenBody>
   </View>;
 }

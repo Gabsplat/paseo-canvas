@@ -39,7 +39,7 @@ export function Markdown({ source, onHelp, nativeID }: { source: string; onHelp?
           <Txt kind="small" muted style={{ flex: 1 }}>{block.language || 'text'}</Txt>
           <IconButton icon="Copy" label="Copy the code" onPress={() => { void copyText(block.text); }} />
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ padding: 12 }}><Txt kind="code" selectable>{block.text}</Txt></ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 12 }}><Txt kind="code" selectable>{block.text}</Txt></ScrollView>
       </View>;
     }
   })}</View>;

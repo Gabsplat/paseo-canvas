@@ -76,7 +76,8 @@ function Page({ page, pages, width, onPage, shortcuts, chips, extension, onTour 
   const art = <Card padding={14} style={{ alignSelf: wide ? 'flex-start' : 'stretch', alignItems: 'center' }}><WikiArt id={page.art} width={wide ? W.art : Math.min(inner - 30, W.art * 1.4)} nativeID={`lienzo-help-art-${page.id}`} /></Card>;
   const heading = (title: string) => <Txt kind="heading" accessibilityRole="header" style={{ marginTop: 6 }}>{title}</Txt>;
   return <View nativeID={`lienzo-help-page-${page.id}`} style={{ width: inner, gap: 14 }}>
-    <View style={{ flexDirection: wide ? 'row' : 'column-reverse', gap: 20, alignItems: wide ? 'flex-start' : 'stretch' }}>
+    {/* The picture keeps clear of the sheet's close button in the corner. */}
+    <View style={{ flexDirection: wide ? 'row' : 'column-reverse', gap: 20, alignItems: wide ? 'flex-start' : 'stretch', marginRight: wide && !u.compact ? 36 : 0 }}>
       <View style={{ flex: wide ? 1 : undefined, gap: 6, minWidth: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Icon name={section?.icon ?? 'BookOpen'} size={13} color={u.c.accent} /><Txt kind="label" style={{ ...labelStyle, color: u.c.accent }}>{section?.title ?? 'Help'}</Txt></View>
         <Txt kind="display" accessibilityRole="header" style={{ fontSize: u.compact ? 24 : S.title.size, lineHeight: u.compact ? 30 : S.title.lineHeight, letterSpacing: S.title.letterSpacing, marginRight: u.compact ? 40 : 0 }}>{page.title}</Txt>
@@ -115,7 +116,7 @@ export function WikiContent({ width, page: requested, onPage, extensions, shortc
     </View>;
     return <View nativeID="lienzo-help" style={{ flex: 1, minHeight: 0 }}>
       <View style={{ paddingHorizontal: 8, paddingTop: 8, minHeight: 52, flexDirection: 'row', alignItems: 'center' }}><Button label="All topics" icon="ChevronLeft" variant="ghost" onPress={() => setIndex(true)} /></View>
-      <ScrollView ref={scroll} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}><Page page={page} pages={pages} width={width} onPage={go} shortcuts={shortcuts} chips={chips} extension={extension} onTour={onTour} /></ScrollView>
+      <ScrollView ref={scroll} style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}><Page page={page} pages={pages} width={width} onPage={go} shortcuts={shortcuts} chips={chips} extension={extension} onTour={onTour} /></ScrollView>
     </View>;
   }
   return <View nativeID="lienzo-help" style={{ flex: 1, minHeight: 0, flexDirection: 'row' }}>
