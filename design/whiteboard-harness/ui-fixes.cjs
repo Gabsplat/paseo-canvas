@@ -6,7 +6,7 @@
 const assert=require('node:assert/strict');const fs=require('node:fs');
 (async()=>{
  const theme=process.argv[2]||'oscuro',parts=(process.argv[3]||'sheets,icons,shader,screens').split(','),out=(process.env.LIENZO_SHOTS||'/tmp')+'/lienzo-ui-'+(theme==='papel'?'light':'dark')+'-';
- const W=1280,H=800;
+ const compact=parts.includes('compact'),W=compact?390:1280,H=compact?844:800;
  const pages=await(await fetch('http://127.0.0.1:9222/json/list')).json();
  const page=pages.find(p=>p.type==='page'&&p.url.startsWith('http://127.0.0.1:8765/'));if(!page)throw Error('QA page missing');
  const ws=new WebSocket(page.webSocketDebuggerUrl);await new Promise((ok,no)=>{ws.addEventListener('open',ok,{once:true});ws.addEventListener('error',no,{once:true});});
@@ -20,7 +20,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const tap=async(x,y)=>{await mouse('mouseMoved',x,y);await mouse('mousePressed',x,y,1);await mouse('mouseReleased',x,y);await pause(250);};
  const q=s=>JSON.stringify(s);
  const rect=sel=>ev(`(()=>{const e=document.querySelector(${q(sel)});if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);
- const click=async sel=>{await wait(`!!document.querySelector(${q(sel)})`,sel);const r=await rect(sel);await tap(r.x+r.w/2,r.y+r.h/2);};
+ const click=async sel=>{await wait(`!!document.querySelector(${q(sel)})`,sel);await ev(`document.querySelector(${q(sel)}).scrollIntoView({block:'nearest',inline:'nearest'})`);await pause(120);const r=await rect(sel);await tap(r.x+r.w/2,r.y+r.h/2);};
  const hover=async sel=>{const r=await rect(sel);if(!r)throw Error('Missing '+sel);await mouse('mouseMoved',r.x+r.w/2,r.y+r.h/2);await pause(300);};
  const key=async(key,code,modifiers=0,text)=>{await call('Input.dispatchKeyEvent',{type:'keyDown',key,code,modifiers,text});await call('Input.dispatchKeyEvent',{type:'keyUp',key,code,modifiers});await pause(220);};
  const type=async text=>{await call('Input.insertText',{text});await pause(300);};
@@ -32,8 +32,13 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  const openCatalog=async name=>{await click('#lienzo-tool-add');await wait('!!document.querySelector("#lienzo-add-menu")');await setField('#lienzo-add-search',name.replace('…',''));await click(`#lienzo-add-menu [role=menuitem][aria-label=${q(name)}]`);};
  try{
  await call('Runtime.enable');await call('Page.enable');
- await call('Emulation.setDeviceMetricsOverride',{width:W,height:H,deviceScaleFactor:1,mobile:false});
- await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme='+theme});await wait('!!document.querySelector("#lienzo-toolbar")');await pause(700);
+ await call('Emulation.setDeviceMetricsOverride',{width:W,height:H,deviceScaleFactor:compact?2:1,mobile:false});
+ await call('Page.navigate',{url:'http://127.0.0.1:8765/?theme='+theme+(compact?'&compact=1':'')});await wait('!!document.querySelector("#lienzo-toolbar")');await pause(700);
+ if(compact){
+  // Compact: the sheet rises from the bottom, full width.
+  await openCatalog('Video');await wait('!!document.querySelector("#lienzo-sheet-video")');await setField('#lienzo-sheet-url','https://www.youtube.com/watch?v=aqz-KE-bpKQ');await pause(online?1500:400);await shot('compact-video');
+  const r=await rect('#lienzo-sheet-video');assert.ok(r.x>=-1&&r.x+r.w<=W+1&&r.y+r.h<=H+1,'inside the viewport '+JSON.stringify(r));await key('Escape','Escape');
+ }
  if(parts.includes('sheets')){
   // Window: empty, a page, a site that refuses frames, then add one.
   await openCatalog('Window');await wait('!!document.querySelector("#lienzo-sheet-page")');

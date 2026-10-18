@@ -11,7 +11,7 @@ import { NATIVE, easeOut, useReducedMotion } from './motion';
 import { tokens } from './tokens';
 import { Button, IconButton, Txt, useUI } from './ui';
 import { attachDrop, fetchSvgUrl, focusFirstField, onEscapeKey, pickSvgFile, readSvgFile, WebSvg, isMacPlatform } from './web';
-import { describeLink, fetchLinkTitle, linkBlock, type LinkDescription, type LinkIntent } from './media';
+import { describeLink, fetchLinkPreview, linkBlock, type LinkDescription, type LinkIntent } from './media';
 import { sheetShadow } from './Screen';
 import { sanitizeSvg } from '../shared/svg';
 import type { SvgInsertOptions } from './whiteboard-tools';
@@ -99,7 +99,7 @@ const INTENT: Record<LinkIntent, { title: string; icon: string; subtitle: string
 export const linkSheetCopy = INTENT;
 
 /** What the link will become, drawn as it would look: the image itself, a video's thumbnail and title, a page's site. */
-function LinkPreview({ link, intent, title, imageState, onImage }: { link: LinkDescription; intent: LinkIntent; title: string | null; imageState: 'loading' | 'ok' | 'failed'; onImage(state: 'ok' | 'failed'): void }) {
+function LinkPreview({ link, intent, title, thumbnail, imageState, onImage }: { link: LinkDescription; intent: LinkIntent; title: string | null; thumbnail?: string | null; imageState: 'loading' | 'ok' | 'failed'; onImage(state: 'ok' | 'failed'): void }) {
   const u = useUI();
   const frame = { height: A.preview.height, borderRadius: A.preview.radius, overflow: 'hidden' as const, backgroundColor: u.c.surface0, borderWidth: 1, borderColor: u.c.border };
   if (link.status !== 'ok') return <View nativeID="lienzo-sheet-preview" style={[frame, { borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 24 }]}>
@@ -115,7 +115,7 @@ function LinkPreview({ link, intent, title, imageState, onImage }: { link: LinkD
     <View style={{ position: 'absolute', left: 10, top: 10 }}>{badge}</View>
   </View>;
   if (link.provider) return <View nativeID="lienzo-sheet-preview" style={frame}>
-    {link.thumbnail ? <Image source={{ uri: link.thumbnail }} resizeMode="cover" style={{ width: '100%', height: '100%' }} accessibilityLabel="Video thumbnail" /> : <View style={{ flex: 1, backgroundColor: u.c.surface2 }} />}
+    {link.thumbnail ?? thumbnail ? <Image source={{ uri: (link.thumbnail ?? thumbnail)! }} resizeMode="cover" style={{ width: '100%', height: '100%' }} accessibilityLabel="Video thumbnail" /> : <View style={{ flex: 1, backgroundColor: u.c.surface2 }} />}
     <View pointerEvents="none" style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: withAlpha('#000000', .55) }}><Icon name="Play" size={22} color="#ffffff" /></View></View>
     <View style={{ position: 'absolute', left: 10, top: 10 }}>{badge}</View>
     <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: withAlpha(u.c.surface1, .94), borderTopWidth: 1, borderColor: u.c.border }}>{meta}</View>
@@ -137,13 +137,13 @@ export type LinkSheetProps = { intent: LinkIntent | null; onClose(): void; panel
   /** Adds the block. Resolves false when nothing was added (the sheet stays open). */
   onAdd(block: ReturnType<typeof linkBlock>): boolean | Promise<boolean> };
 export function LinkSheet({ intent, onClose, panel, disabled = false, onAdd }: LinkSheetProps) {
-  const u = useUI(), [raw, setRaw] = useState(''), [caption, setCaption] = useState(''), [title, setTitle] = useState<string | null>(null), [image, setImage] = useState<'loading' | 'ok' | 'failed'>('loading'), [drop, setDrop] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const u = useUI(), [raw, setRaw] = useState(''), [caption, setCaption] = useState(''), [title, setTitle] = useState<string | null>(null), [thumb, setThumb] = useState<string | null>(null), [image, setImage] = useState<'loading' | 'ok' | 'failed'>('loading'), [drop, setDrop] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const zone = useRef<View>(null), kind = intent ?? 'page', link = useMemo(() => describeLink(raw, kind), [raw, kind]), url = link.status === 'ok' ? link.url : '';
   useEffect(() => { setRaw(''); setCaption(''); setError(''); setBusy(false); }, [intent]);
-  useEffect(() => { setImage('loading'); setTitle(null); setError(''); }, [url]);
+  useEffect(() => { setImage('loading'); setTitle(null); setThumb(null); setError(''); }, [url]);
   useEffect(() => {
     if (link.status !== 'ok' || !link.oembed) return; let live = true;
-    const timer = setTimeout(() => { void fetchLinkTitle(link.oembed!).then(found => { if (live) setTitle(found); }); }, 250);
+    const timer = setTimeout(() => { void fetchLinkPreview(link.oembed!).then(found => { if (live) { setTitle(found.title); setThumb(found.thumbnail); } }); }, 250);
     return () => { live = false; clearTimeout(timer); };
   }, [url]);
   useEffect(() => intent ? attachDrop(zone.current, { over: setDrop, text: text => setRaw(text.trim()) }) : undefined, [intent]);
@@ -160,7 +160,7 @@ export function LinkSheet({ intent, onClose, panel, disabled = false, onAdd }: L
     footer={<Footer hint={`↵ ${copy.action} · Esc Close`} label={copy.action} disabled={!ready} busy={busy} onCancel={onClose} onSubmit={() => { void submit(); }} />}>
     <View ref={zone} style={{ gap: A.gap, borderRadius: 12, ...(drop ? { outlineWidth: 2, outlineStyle: 'dashed', outlineColor: u.c.accent, outlineOffset: 6 } as object : {}) }}>
       <LabelledField label="Link" icon="Link" nativeID="lienzo-sheet-url" value={raw} onChange={setRaw} placeholder={copy.placeholder} onSubmit={() => { void submit(); }} disabled={disabled} />
-      <LinkPreview link={link} intent={intent} title={title} imageState={image} onImage={setImage} />
+      <LinkPreview link={link} intent={intent} title={title} thumbnail={thumb} imageState={image} onImage={setImage} />
       {warning ? <Notice tone="warning" nativeID="lienzo-sheet-warning">{warning}</Notice> : link.status === 'ok' && link.note ? <Notice tone="note" nativeID="lienzo-sheet-note">{link.note}</Notice> : null}
       <LabelledField label={copy.caption} optional nativeID="lienzo-sheet-caption" value={caption} onChange={setCaption} placeholder={intent === 'page' ? link.status === 'ok' ? link.host : 'The site’s name' : 'A line under it on the canvas'} helper={copy.captionHelp} onSubmit={() => { void submit(); }} disabled={disabled} />
       {!!error && <Notice tone="error">{error}</Notice>}

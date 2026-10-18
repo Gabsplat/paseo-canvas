@@ -825,12 +825,13 @@ can be inspected. Reset clears playhead and transient tokens, preserving graph c
 
 ### 18.10 GLSL shader
 
-A single declared fragment shader draws inside the existing WebGL adapter. Declared uniforms
-produce only the few controls that support the guiding question. Uniform names matching numeric
+A single declared fragment shader draws inside the existing WebGL adapter. Since §36.3 the card is the picture
+alone by default; the question, title, sliders, Reset and autoplay are optional. Declared uniforms
+produce only the few controls that support what is being explored. Uniform names matching numeric
 scope variables bind to those values; local uniforms retain local defaults. Renderer-owned time
 starts only after play. Never generate arbitrary source or HTML to build a control.
 
-Compile and link errors appear as "No se pudo compilar el shader" plus the bounded compiler message
+Compile and link errors appear as "The shader did not compile" plus the bounded compiler message
 as code. Keep the control panel and reset available. If WebGL is unavailable, show "WebGL no está
 disponible" and a declared static reference if present. Cap resolution, source size and uniforms;
 release programs and drawing resources on unmount. Do not auto-start continuous rendering when
@@ -1320,3 +1321,79 @@ Each entry: a round glyph on a thin rail, the actor ("You", or the agent's name 
 happened (the transaction label) and the time; undo and redo entries show their own glyph. Chips name the changed
 things that still exist; pressing one closes the sheet, selects it and flies the camera there. Undo and Redo sit on
 the title row. Empty: "Nothing yet."
+
+## 36. Adding things: sheets, icons, shaders and screens that fit (October 2026)
+
+Verified with `design/whiteboard-harness/ui-fixes.cjs` (RN-web, plain headless Chromium, dark, light and compact) and in the desktop preview; captures in
+`design/qa-ui-fixes-2026-10/`.
+
+### 36.1 The add sheets
+
+A Window, an image, a video, a sound and an SVG are added through one compact sheet per kind (`client/AddSheets.tsx`,
+tokens `face.addSheet`), in the language of the screens: the canvas dimmed, a 520 wide sheet at 14 % of the panel's
+height (a bottom sheet on compact), radius 16, `surface1`, the screens' long shadow. Its header is a 36 accent tile
+with the kind's icon, the name in `title` and one muted line saying what it adds. Its footer, on `surface0` under a
+hairline, has the keys on the left ("↵ Add video · Esc Close") and Cancel and the primary action on the right; the
+action is never full width.
+
+- **Link sheets** (Window, Image, Video, Audio). A field labelled "Link" (label above, a leading link icon, focused on
+  open; a link without a scheme is read as https). Under it, a 200 high preview of what the link will become, decided
+  as you type by `describeLink` in `client/media.ts`: a YouTube or Vimeo link shows its thumbnail, the "YouTube ·
+  Video" badge, a play glyph and the title (and, for Vimeo, the thumbnail) from the provider’s oEmbed (best effort, no key, omitted credentials); an
+  image shows the image itself; a page or a file shows a small window with the site, the badge ("Web page", "Sound")
+  and the address. Empty, the preview is a dashed box that says what to paste. A note or a warning in plain words sits
+  under it: a link of another kind says what it becomes ("This is a YouTube video, so it becomes a video player"); a
+  site known to refuse framing (GitHub, Google, X, LinkedIn…) says the Window will stay blank and can still be opened
+  from its bar; plain http says it may be blocked; a page link in the Image, Video or Audio sheet says it may not play
+  and will show as a link; an image that does not load says so. Then "Caption" (or "Title" for a Window, which names
+  its bar) with "Optional" on the right of its label. A link dropped on the sheet fills the field. Files from the
+  computer are not offered: Media and Windows store web links only.
+- **Import SVG.** Three tabs in a segmented row: Paste code · File · URL (native shows Paste code only). Pasted code is
+  checked as you type and drawn in a 168 high preview; what the static dialect refuses is said in words (scripts, links,
+  images or animation; too large; not an SVG). File has a dashed drop row with "Choose file…"; an `.svg` dropped
+  anywhere on the sheet loads into it. URL has its field and Load, then the preview. ⌘↵ inserts from Paste code; ↵
+  from File and URL.
+
+### 36.2 The icon library
+
+"Icons" in the + catalog opens a 420 × 484 popover above the toolbar (`client/IconLibrary.tsx`, logic in
+`client/icon-library.ts`, tokens `face.icons`): the title with "293 offline · open sets online", a search field
+(focused), category chips (Recent, All, Systems, Data, People & places, Security, Flow, Status & shapes, Everyday), a
+grid of 48 cells with 26 glyphs, eight to a row, paged 96 at a time ("Show 96 more"), and a footer naming the icon
+under the pointer with its set and licence, beside "Import SVG…". Click adds at the centre of the view; dragging a cell
+onto the canvas drops it there; ↵ in the search adds the first result; Escape closes.
+
+- **Offline**: 293 Lucide icons (ISC; `client/assets/lucide-LICENSE` and `lucide-source.json`), generated by
+  `scripts/lucide-set.mjs` from the installed `lucide-react` into `client/icon-set.ts` (64 KB), searched by name,
+  extra words ("docker", "agent", "bank") and category, every query word matching the start of a word.
+- **Online**: from two letters, after a 350 ms pause, the search also asks Iconify's public API
+  (`api.iconify.design/search`, then one `<set>.json?icons=…` per set on the page) across fourteen open-licence sets
+  (Lucide, Tabler, Phosphor, Material Design Icons, Material Symbols, Carbon, Remix, Heroicons, Fluent, SVG Logos,
+  Simple Icons, Devicon, VSCode Icons, Skill Icons: MIT, ISC, Apache-2.0 or CC0). Results come under "Online ·
+  Iconify" with "Load more"; icons the static SVG dialect refuses are left out. Offline or failing, the section says so
+  in words and the offline set keeps working.
+- Each inserted icon is a static `wb-svg` block whose `caption`, `source` (`lucide:server`,
+  `iconify:logos:postgresql`) and `license` ("CC0-1.0 · SVG Logos (Gil Barbara)") carry where it came from.
+- **Recent**: the last 16 icons used, in the host's `interface` settings (`recentIcons`; online ones keep their SVG up
+  to 4 KB so they work offline). With recents, the popover opens on Recent, followed by all icons.
+
+### 36.3 The shader block
+
+A shader is a picture. By default its card has no header and no padding: the shader fills it edge to edge inside the
+radius-10 border (`foreground` at 0.1, 0.22 on hover, accent when selected), and the whole picture is the handle to
+drag it by; the wheel over it pans the canvas. What sits around it is chosen by the agent or the person, in the block's
+data: `question` (a line above the picture), `showTitle` (the block's title on a small glass label in the top-left
+corner), `controls` (`overlay`, the default: the sliders on a glass panel along the bottom edge while the block is
+selected; `below`: a strip under the picture; `none`), `reset` (a Reset button with the controls) and `autoplay`
+(starts `u_time` when it comes into view, never under reduced motion). A paused shader with time shows a small Play
+button over its bottom-left corner. Errors cover the picture in words. A block stored before, with a question and none
+of these choices, keeps its old face: question above, sliders and Reset below (`glslChrome` in
+`shared/renderers/glsl-shader.ts`).
+
+### 36.4 Screens that fit
+
+A screen's sheet is as tall as its content, up to the usual 960 × 680 frame, so a short screen leaves no empty well at
+the bottom. Extensions and History stay centred. Settings and Lienzos keep their top edge still while the section or
+the search changes their height. A longer content scrolls inside the frame as before; compact stays full screen; the
+guide keeps its fixed stage.
+

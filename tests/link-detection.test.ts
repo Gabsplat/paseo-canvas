@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { describeLink, fetchLinkTitle, linkBlock, normaliseLink, FRAME_REFUSING_HOSTS } from '../plugin/client/media';
+import { describeLink, fetchLinkPreview, linkBlock, normaliseLink, FRAME_REFUSING_HOSTS } from '../plugin/client/media';
 
 const ok = (raw: string, intent: Parameters<typeof describeLink>[1]) => {
   const link = describeLink(raw, intent); assert.equal(link.status, 'ok', raw); return link as Extract<typeof link, { status: 'ok' }>;
@@ -62,12 +62,13 @@ test('the block a link becomes: a Window titled by its caption, or Media with ki
   assert.deepEqual(linkBlock(ok('https://example.com/a.png', 'image'), ''), { renderer: 'image-ref', title: '', data: { url: 'https://example.com/a.png', caption: '', mediaKind: 'image' } });
 });
 
-test('the oEmbed title is best effort: a failure, a bad answer or no network reads as no title', async () => {
-  const calls: unknown[] = [];
-  assert.equal(await fetchLinkTitle('https://o.example/x', async (url, init) => { calls.push([url, init]); return { ok: true, json: async () => ({ title: ' A talk ' }) }; }), 'A talk');
+test('the oEmbed title and thumbnail are best effort: a failure, a bad answer or no network read as nothing', async () => {
+  const calls: unknown[] = [], none = { title: null, thumbnail: null };
+  assert.deepEqual(await fetchLinkPreview('https://o.example/x', async (url, init) => { calls.push([url, init]); return { ok: true, json: async () => ({ title: ' A talk ', thumbnail_url: 'https://i.vimeocdn.com/video/1.jpg' }) }; }), { title: 'A talk', thumbnail: 'https://i.vimeocdn.com/video/1.jpg' });
   assert.deepEqual(calls, [['https://o.example/x', { credentials: 'omit' }]]);
-  assert.equal(await fetchLinkTitle('u', async () => ({ ok: false, json: async () => ({ title: 'x' }) })), null);
-  assert.equal(await fetchLinkTitle('u', async () => ({ ok: true, json: async () => ({ title: 3 }) })), null);
-  assert.equal(await fetchLinkTitle('u', async () => { throw new Error('offline'); }), null);
-  assert.equal(await fetchLinkTitle('u', undefined), null);
+  assert.deepEqual(await fetchLinkPreview('u', async () => ({ ok: true, json: async () => ({ title: 'T', thumbnail_url: 'javascript:alert(1)' }) })), { title: 'T', thumbnail: null });
+  assert.deepEqual(await fetchLinkPreview('u', async () => ({ ok: false, json: async () => ({ title: 'x' }) })), none);
+  assert.deepEqual(await fetchLinkPreview('u', async () => ({ ok: true, json: async () => ({ title: 3 }) })), none);
+  assert.deepEqual(await fetchLinkPreview('u', async () => { throw new Error('offline'); }), none);
+  assert.deepEqual(await fetchLinkPreview('u', undefined), none);
 });

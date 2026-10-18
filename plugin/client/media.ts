@@ -97,12 +97,15 @@ export function linkBlock(link: Extract<LinkDescription, { status: 'ok' }>, capt
   if (link.kind === 'page') return { renderer: 'preview-frame', title: text, data: { url: link.url, description: text || link.url } };
   return { renderer: 'image-ref', title: (fetchedTitle ?? '').slice(0, 300), data: { url: link.url, caption: text, mediaKind: link.kind } };
 }
-/** A video's title from its provider's oEmbed answer, when it gives one. Best effort: errors read as no title. */
-export async function fetchLinkTitle(oembed: string, fetcher: ((url: string, init: { credentials: 'omit' }) => Promise<{ ok: boolean; json(): Promise<unknown> }>) | undefined = (globalThis as unknown as { fetch?: (url: string, init: { credentials: 'omit' }) => Promise<{ ok: boolean; json(): Promise<unknown> }> }).fetch): Promise<string | null> {
-  if (!fetcher) return null;
+/** A video's title and thumbnail from its provider's oEmbed answer. Best effort: errors read as nothing found. */
+export async function fetchLinkPreview(oembed: string, fetcher: ((url: string, init: { credentials: 'omit' }) => Promise<{ ok: boolean; json(): Promise<unknown> }>) | undefined = (globalThis as unknown as { fetch?: (url: string, init: { credentials: 'omit' }) => Promise<{ ok: boolean; json(): Promise<unknown> }> }).fetch): Promise<{ title: string | null; thumbnail: string | null }> {
+  const none = { title: null, thumbnail: null };
+  if (!fetcher) return none;
   try {
-    const response = await fetcher(oembed, { credentials: 'omit' }); if (!response.ok) return null;
-    const body = await response.json() as { title?: unknown; author_name?: unknown };
-    return typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 300) : null;
-  } catch { return null; }
+    const response = await fetcher(oembed, { credentials: 'omit' }); if (!response.ok) return none;
+    const body = await response.json() as { title?: unknown; thumbnail_url?: unknown };
+    const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 300) : null;
+    const thumbnail = typeof body?.thumbnail_url === 'string' && /^https:\/\//.test(body.thumbnail_url) ? safeUrl(body.thumbnail_url) : null;
+    return { title, thumbnail };
+  } catch { return none; }
 }

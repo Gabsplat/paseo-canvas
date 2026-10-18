@@ -42,6 +42,7 @@ omabox run -- node "$PWD/dist/panel-qa/copilot.cjs"
 omabox run -- node "$PWD/dist/panel-qa/screens.cjs" oscuro          # Lienzos, guide, Settings, Extensions, History
 omabox run -- node "$PWD/dist/panel-qa/screens.cjs" papel compact   # any of oscuro|papel, with or without compact
 omabox run -- node "$PWD/dist/panel-qa/guide.cjs"
+omabox run -- node "$PWD/dist/panel-qa/ui-fixes.cjs" oscuro sheets,icons,shader,screens   # §36; online steps need the network
 ```
 
 The scenarios also run against a plain headless Chromium (no omabox), which is how the screens were verified:
