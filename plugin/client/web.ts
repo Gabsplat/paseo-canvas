@@ -303,11 +303,12 @@ export function captureKeys(handler: (event: PanelKey) => boolean): () => void {
   return () => doc.removeEventListener('keydown', listener, true);
 }
 /** Escape anywhere in the page while a screen is open (bubbling, so a key recorder or a field can take it first). */
-export function onEscapeKey(handler: () => boolean): () => void {
+/** Escape anywhere in the page. `capture` also hears it from a focused text field (react-native-web stops its keys). */
+export function onEscapeKey(handler: () => boolean, capture = false): () => void {
   const doc = browser().document; if (!doc) return () => {};
   const listener = (event: BrowserKeyEvent) => { if (event.key === 'Escape' && handler()) { event.preventDefault(); event.stopPropagation(); } };
-  doc.addEventListener('keydown', listener, false);
-  return () => doc.removeEventListener('keydown', listener, false);
+  doc.addEventListener('keydown', listener, capture);
+  return () => doc.removeEventListener('keydown', listener, capture);
 }
 /** ⌘ on Apple platforms, Ctrl elsewhere. Native clients ask React Native. */
 export function isMacPlatform(): boolean {
@@ -843,4 +844,36 @@ export function attachGridKeys(element: unknown, handler: (key: string) => boole
   if (!browser().document || !node?.addEventListener) return () => {};
   const listener = (event: BrowserKeyEvent) => { if (!event.ctrlKey && !event.metaKey && handler(event.key)) { event.preventDefault(); event.stopPropagation(); } };
   node.addEventListener('keydown', listener); return () => node.removeEventListener('keydown', listener);
+}
+/** Drag and drop onto an add sheet: a dropped link (from another tab) or a dropped file. Native ignores it. */
+export type DroppedFile = { name: string; type: string; size: number; text(): Promise<string> };
+export function attachDrop(element: unknown, handlers: { over(active: boolean): void; text?(text: string): void; file?(file: DroppedFile): void }): () => void {
+  const node = element as BrowserElement | null; if (!browser().document || !node?.addEventListener) return () => {};
+  type DragEvent = BrowserKeyEvent & { dataTransfer?: { types?: ArrayLike<string>; files?: ArrayLike<DroppedFile>; getData(type: string): string; dropEffect?: string } | null };
+  let depth = 0;
+  const accepts = (e: DragEvent) => { const types = Array.from(e.dataTransfer?.types ?? []); return types.includes('Files') ? !!handlers.file : types.some(t => t === 'text/uri-list' || t === 'text/plain') && !!handlers.text; };
+  const enter = (e: DragEvent) => { if (!accepts(e)) return; e.preventDefault(); depth++; handlers.over(true); };
+  const over = (e: DragEvent) => { if (!accepts(e)) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; };
+  const leave = () => { depth = Math.max(0, depth - 1); if (!depth) handlers.over(false); };
+  const drop = (e: DragEvent) => {
+    if (!accepts(e)) return; e.preventDefault(); e.stopPropagation(); depth = 0; handlers.over(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file && handlers.file) { handlers.file(file); return; }
+    const uri = e.dataTransfer?.getData('text/uri-list')?.split(/\r?\n/).find(line => line && !line.startsWith('#')), text = uri || e.dataTransfer?.getData('text/plain') || '';
+    if (text && handlers.text) handlers.text(text);
+  };
+  const events: [string, (e: DragEvent) => void][] = [['dragenter', enter], ['dragover', over], ['dragleave', leave], ['drop', drop]];
+  for (const [name, fn] of events) node.addEventListener(name, fn as (event: BrowserKeyEvent) => void);
+  return () => { for (const [name, fn] of events) node.removeEventListener(name, fn as (event: BrowserKeyEvent) => void); };
+}
+/** Reads a dropped SVG file through the same limits as the file picker. */
+export async function readSvgFile(file: DroppedFile): Promise<string> {
+  if (!/\.svg$/i.test(file.name) && file.type !== 'image/svg+xml') throw new Error('That file is not an SVG.');
+  if (file.size > SVG_LIMITS.bytes) throw new Error('The SVG is larger than 64 KB.');
+  return sanitizeSvg(await file.text()).svg;
+}
+/** Focuses the first text field inside an element, after it has mounted. */
+export function focusFirstField(element: unknown) {
+  const node = element as BrowserElement | null; if (!browser().document || !node?.querySelector) return;
+  setTimeout(() => { try { node.querySelector('input, textarea')?.focus(); } catch {} }, 30);
 }

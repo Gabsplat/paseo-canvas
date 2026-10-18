@@ -4,13 +4,13 @@ import { type PanelProps, AgentSheet, capabilities, useAgent, useSettings } from
 import { Icon, ScrollView, useToast } from './host';
 import type { BlockType, CanvasGroup, CanvasOperation } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
-import { Button, Chip, IconButton, Input, Field, friendlyError, Modal, Txt, UIProvider, useUI, MenuRow, MenuDivider, TooltipProvider, TooltipLayer } from './ui';
+import { Button, Chip, IconButton, Field, friendlyError, Modal, Txt, UIProvider, useUI, MenuRow, MenuDivider, TooltipProvider, TooltipLayer } from './ui';
 import { Canvas, type CanvasApi } from './Canvas';
 import { DocumentActions } from './DocumentActions';
 import { SelectionBar, SelectionProperties } from './SelectionActions';
 import { AgentModal } from './AgentModal';
 import { visual } from './Blocks';
-import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, safeUrl, type Point, type Rect } from './logic';
+import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
 import { isMacPlatform, keyboard, type PanelKey } from './web';
 import { Onboarding } from './Onboarding';
 import { claimFirstGuide } from './guide';
@@ -19,10 +19,11 @@ import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
 import { usePresentation } from './usePresentation';
 import { ExtensionTool, extensionIcon } from './Extensions';
-import { StyleIsland, LibraryPopover, SvgImportDialog } from './FloatingTools';
+import { StyleIsland, LibraryPopover } from './FloatingTools';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
-import { mediaSource } from './media';
+import { type linkBlock } from './media';
+import { LinkSheet, SvgSheet } from './AddSheets';
 import { isWhiteboardRenderer, learnerLayerIds, strokeLayers, type WbRenderer, type WbDrawData, type WbShape } from '../shared/whiteboard';
 import { Toolbar, GLOSSARY, shapeIcon, type ToolId, type PinnedTool } from './Toolbar';
 import { AddMenu, type ToolEntry } from './AddMenu';
@@ -132,7 +133,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   useEffect(() => { if (!undoLabel) return; const timer = setTimeout(() => setUndoLabel(''), 5000); return () => clearTimeout(timer); }, [undoLabel]);
   useEffect(() => shortcutRegistry.subscribe(() => setRegistryTick(t => t + 1)), []);
   const [saveSlow, setSaveSlow] = useState(false);
-  const [ventana, setVentana] = useState<VentanaKind | null>(null), [mediaUrl, setMediaUrl] = useState(''), [mediaCaption, setMediaCaption] = useState(''), [mediaError, setMediaError] = useState('');
+  const [ventana, setVentana] = useState<VentanaKind | null>(null);
   // Hide all UI (⌘.) hides the floating controls. Failures and the canvas zoom stay visible.
   const [immersive, setImmersive] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false), guideClaim = useRef(false), guideMounted = useRef(true);
@@ -251,15 +252,15 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (copies.length > 200) { toast.error('Duplicate at most 200 things at a time.'); return; }
     void c.edit(copies.map(({ item, prefix }) => ({ type: 'entity.duplicate', id: item.id, idPrefix: prefix })), 'Duplicate selection').then(next => { if (next) void c.select(copies.map(({ item, prefix }) => prefix + '.' + item.id)); });
   }
-  function insert(type: BlockType, data = type.defaults) {
-    if (!doc) { openDocuments(); return; } if (disabled) return;
-    if (isWhiteboardRenderer(type.renderer)) { if (type.renderer === 'wb-svg') setSvgOpen(true); else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return; }
+  function insert(type: BlockType, data = type.defaults, title = type.name): Promise<boolean> {
+    if (!doc) { openDocuments(); return Promise.resolve(false); } if (disabled) return Promise.resolve(false);
+    if (isWhiteboardRenderer(type.renderer)) { if (type.renderer === 'wb-svg') setSvgOpen(true); else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return Promise.resolve(false); }
     const parent = c.selection.length === 1 ? doc.groups.find(g => g.id === c.selection[0]) : undefined;
     const activeBlock = c.selection.length === 1 ? doc.blocks.find(block => block.id === c.selection[0]) : undefined, rect = activeBlock ? rectsNow().get(activeBlock.id) : undefined;
     const parentGroupId = parent?.id ?? activeBlock?.parentGroupId ?? null, parentRect = parentGroupId ? rectsNow().get(parentGroupId) : undefined;
     const position = rect ? { x: rect.x + rect.width + tokens.graph.gap.node - (parentRect?.x ?? 0), y: rect.y - (parentRect?.y ?? 0) } : parent ? undefined : geometry.current.center;
     const id = newId('block');
-    void (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title: type.name, typeId: type.id, data, parentGroupId, ...(position ? { position } : {}) } }], `Add ${type.name}`); if (next) await c.select([id]); })();
+    return (async () => { const next = await c.edit([{ type: 'block.create', block: { id, title, typeId: type.id, data, parentGroupId, ...(position ? { position } : {}) } }], `Add ${type.name}`); if (next) await c.select([id]); return !!next; })();
   }
   /** M: a new, empty Frame in the middle of the view (inside the selected Frame, if one is selected). */
   function createGroup() {
@@ -267,17 +268,13 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     const parent = c.selection.length === 1 ? doc.groups.find(group => group.id === c.selection[0]) : undefined, id = newId('group');
     void c.edit([{ type: 'group.create', group: { id, title: 'Untitled Frame', description: '', blockIds: [], groupIds: [], parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], 'Add Frame').then(next => { if (next) void c.select([id]); });
   }
-  const openVentana = (kind: VentanaKind) => { if (!doc) { openDocuments(); return; } setAddOpen(false); setMediaError(''); setVentana(kind); };
-  /** W: a Window. A web page becomes a live preview; an image, video or audio link becomes a player. */
-  function insertVentana() {
-    if (!doc || disabled || !ventana) return;
-    const url = safeUrl(mediaUrl), source = url ? mediaSource(url) : null;
-    if (!url) { setMediaError('Use a valid HTTP or HTTPS address.'); return; }
-    const page = ventana === 'page' && source?.kind !== 'video' && source?.kind !== 'audio' && source?.kind !== 'image';
-    const type = page ? c.catalog?.blockTypes.find(type => type.renderer === 'preview-frame') : c.catalog?.blockTypes.find(type => type.id === 'media' && type.renderer === 'image-ref');
-    if (!type) { setMediaError('That kind of Window is not in the local catalog.'); return; }
-    insert(type, page ? { ...type.defaults, url, description: mediaCaption || url } : { ...type.defaults, url, caption: mediaCaption, mediaKind: source?.kind ?? (ventana === 'page' ? 'reference' : ventana) });
-    setVentana(null); setMediaUrl(''); setMediaCaption(''); setMediaError('');
+  const openVentana = (kind: VentanaKind) => { if (!doc) { openDocuments(); return; } setAddOpen(false); setVentana(kind); };
+  /** W: a Window. A web page becomes a live preview; an image, video or audio link becomes a player (AddSheets.tsx). */
+  async function insertLink(link: ReturnType<typeof linkBlock>): Promise<boolean> {
+    if (!doc || disabled) return false;
+    const type = link.renderer === 'preview-frame' ? c.catalog?.blockTypes.find(type => type.renderer === 'preview-frame') : c.catalog?.blockTypes.find(type => type.id === 'media' && type.renderer === 'image-ref');
+    if (!type) { toast.error('That kind of Window is not in the local catalog.'); return false; }
+    return insert(type, { ...type.defaults, ...link.data }, link.title);
   }
   const rendererOf = (typeId: string) => c.catalog?.blockTypes.find(type => type.id === typeId)?.renderer;
   const selectedWhiteboard = doc?.blocks.filter(block => c.selection.includes(block.id) && isWhiteboardRenderer(rendererOf(block.typeId))) ?? [];
@@ -314,7 +311,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (!c.busy) { setSaveSlow(false); return; }
     const timer = setTimeout(() => setSaveSlow(true), 400); return () => clearTimeout(timer);
   }, [c.busy]);
-  useEffect(() => { setTool('select'); setToolLocked(false); setAddOpen(false); setLibraryOpen(false); setSvgOpen(false); setLibraryError(''); setInteractionId(null); setRename(false); setVentana(null); setMediaUrl(''); setMediaCaption(''); setMediaError(''); }, [doc?.id]);
+  useEffect(() => { setTool('select'); setToolLocked(false); setAddOpen(false); setLibraryOpen(false); setSvgOpen(false); setLibraryError(''); setInteractionId(null); setRename(false); setVentana(null); }, [doc?.id]);
   function changeStyle(patch: Partial<ToolStyle>) {
     if (disabled) return;
     setToolStyle(previous => ({ ...previous, ...patch }));
@@ -654,14 +651,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + F.top.height + 6, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
     <CommandPalette open={paletteOpen} items={paletteItems} recent={recent} chips={chips} width={width} height={panelHeight} onClose={() => setPaletteOpen(false)} onRun={(item, background) => { runPaletteItem(item); if (background) toast.show('Running: ' + item.title, { variant: 'info' }); }} onQuery={query => { if (query.trim().toLowerCase() === 'mate') setKettle(k => k + 1); }} />
     <TooltipLayer />
-    <Modal title={ventana === 'image' ? 'Image' : ventana === 'video' ? 'Video' : ventana === 'audio' ? 'Audio' : 'Window'} open={!!ventana} onOpenChange={open => { if (!open) setVentana(null); }}><Modal.Content>
-      <Txt kind="small" muted>{ventana === 'page' ? GLOSSARY.ventana + ' Paste a link to a page, a video or a sound.' : 'Paste a link. Players never start on their own.'}</Txt>
-      <Input label={ventana === 'page' ? 'Address of the page or media' : 'Address'} placeholder="https://…" value={mediaUrl} onChange={setMediaUrl} readOnly={disabled} />
-      <Input label={ventana === 'page' ? 'What it shows (optional)' : 'Caption (optional)'} value={mediaCaption} onChange={setMediaCaption} readOnly={disabled} />
-      {!!mediaError && <Txt kind="small" style={{ color: u.c.statusDanger }}>{mediaError}</Txt>}
-      <Button label={ventana === 'page' ? 'Add Window' : 'Add'} variant="primary" disabled={disabled || !mediaUrl.trim()} onPress={insertVentana} />
-    </Modal.Content></Modal>
-    <SvgImportDialog open={svgOpen} onClose={() => setSvgOpen(false)} onInsert={insertSvg} />
+    <LinkSheet intent={ventana} onClose={() => setVentana(null)} panel={panelBox} disabled={disabled} onAdd={insertLink} />
+    <SvgSheet open={svgOpen} onClose={() => setSvgOpen(false)} panel={panelBox} onInsert={insertSvg} />
     <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
     <Modal title="Menu" open={overflow && u.compact} onOpenChange={setOverflow}><Modal.Content><View>{menuRows}</View></Modal.Content></Modal>
     {settings.saveError && <View style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, right: 12, padding: 8, backgroundColor: u.c.surface1 }}><Txt kind="small" muted>Could not remember that you saw the guide.</Txt><Button label="Retry" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}
