@@ -39,7 +39,7 @@ async function restart(toast: ReturnType<typeof useToast>) {
 /** A small switch, as in the copilot popover. */
 function Switch({ value, onChange, disabled, label }: { value: boolean; onChange(next: boolean): void; disabled?: boolean; label: string }) {
   const u = useUI();
-  return <Pressable nativeID="lienzo-updates-auto" accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value, disabled: !!disabled }} disabled={disabled} onPress={() => onChange(!value)}
+  return <Pressable nativeID="lienzo-updates-auto" accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value, disabled: !!disabled }} aria-checked={value} disabled={disabled} onPress={() => onChange(!value)}
     style={{ width: 36, height: 20, borderRadius: 10, padding: 2, justifyContent: 'center', backgroundColor: value ? u.c.accent : u.c.surface2, borderWidth: 1, borderColor: value ? u.c.accent : u.c.border, opacity: disabled ? .45 : 1 }}>
     <View style={{ width: 14, height: 14, borderRadius: 7, alignSelf: value ? 'flex-end' : 'flex-start', backgroundColor: value ? u.c.accentForeground : u.c.foregroundMuted }} />
   </Pressable>;
@@ -50,7 +50,7 @@ export function AboutUpdatesCard() {
   const u = useUI(), toast = useToast(), current = useUpdateStatus(), settings = useSettings(updateSettings), [now, setNow] = useState(Date.now());
   useEffect(() => { void poll(); const tick = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(tick); }, []);
   const state = current?.state, words = state ? updateWords(state, now) : null;
-  const color = { muted: u.c.foregroundMuted, normal: u.c.foreground, good: u.c.statusSuccess, warning: u.c.statusWarning, danger: u.c.statusDanger }[words?.tone ?? 'normal'];
+  const color = { muted: u.c.foregroundMuted, normal: u.c.accent, good: u.c.statusSuccess, warning: u.c.statusWarning, danger: u.c.statusDanger }[words?.tone ?? 'normal'];
   const unavailable = !state || state.kind === 'off' || state.kind === 'blocked';
   const auto = settings.status === 'ready' ? settings.values.autoCheck : true;
   const check = async () => {
@@ -85,13 +85,13 @@ export function AboutUpdatesCard() {
   </View>;
 }
 
-/** "Update ready · Restart": a quiet pill in the bottom-left corner once an update is downloaded. */
+/** "Update ready · Restart": a quiet pill in the bottom-left corner once an update is downloaded (above the toolbar on compact). */
 export function UpdatePill() {
   const u = useUI(), toast = useToast(), current = useUpdateStatus(), [hidden, setHidden] = useState<string | null>(null), [hover, setHover] = useState(false);
   const state = current?.state;
   if (state?.kind !== 'ready' || hidden === state.version) return null;
   const inset = u.compact ? tokens.island.insetCompact : tokens.island.inset;
-  return <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', top: inset + 52, left: 0, right: 0, alignItems: 'center' } : { position: 'absolute', left: inset, bottom: inset }}>
+  return <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', bottom: inset + 64, left: 0, right: 0, alignItems: 'center' } : { position: 'absolute', left: inset, bottom: inset }}>
     <View nativeID="lienzo-update-pill" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: 40, paddingLeft: 12, paddingRight: 4, gap: 6, borderRadius: 20 }]}>
       <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: u.c.accent }} />
       <Txt kind="small" style={{ fontWeight: '600' }}>Update ready</Txt>

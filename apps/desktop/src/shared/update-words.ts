@@ -15,6 +15,6 @@ export function updateWords(state: UpdateState, now = Date.now()): { title: stri
     case 'checking': return { title: 'Checking…', detail: null, tone: 'normal' };
     case 'downloading': return { title: `Downloading ${Math.floor(state.percent)} %`, detail: `Version ${state.version}, in the background`, tone: 'normal' };
     case 'ready': return { title: 'Ready to restart', detail: `Version ${state.version} is downloaded. Restart Lienzo to use it, or it goes in when you quit.`, tone: 'good' };
-    case 'error': return { title: 'Could not update', detail: state.message, tone: 'danger' };
+    case 'error': return { title: 'Update failed', detail: state.message, tone: 'danger' };
   }
 }

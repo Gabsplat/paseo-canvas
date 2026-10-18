@@ -385,7 +385,7 @@ test("errors become words and never escape", async () => {
   const engine = new FakeEngine(), { instance } = controller(engine);
   engine.next = async () => { throw Object.assign(new Error("getaddrinfo ENOTFOUND github.com"), { code: "ENOTFOUND" }); };
   await instance.check(); await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(instance.state, { kind: "error", message: "Could not reach the update server. Lienzo will try again later.", checkedAt: null });
+  assert.deepEqual(instance.state, { kind: "error", message: "Could not reach the update server. Check the connection and try again.", checkedAt: null });
   engine.next = async e => { e.emit("error", new Error("sha512 checksum mismatch, expected abc, got def")); throw new Error("sha512 checksum mismatch"); };
   await instance.check(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(instance.state.kind === "error" && instance.state.message, "The download did not match its checksum, so it was thrown away.");
@@ -460,6 +460,6 @@ test("Settings → About words for every state", () => {
   assert.equal(updateWords({ kind: "checking" }, now).title, "Checking…");
   assert.equal(updateWords({ kind: "downloading", version: "0.2.0", percent: 42.7 }, now).title, "Downloading 42 %");
   assert.equal(updateWords({ kind: "ready", version: "0.2.0" }, now).title, "Ready to restart");
-  assert.deepEqual(updateWords({ kind: "error", message: "Could not reach the update server. Lienzo will try again later.", checkedAt: null }, now), { title: "Could not update", detail: "Could not reach the update server. Lienzo will try again later.", tone: "danger" });
+  assert.deepEqual(updateWords({ kind: "error", message: "Could not reach the update server. Check the connection and try again.", checkedAt: null }, now), { title: "Update failed", detail: "Could not reach the update server. Check the connection and try again.", tone: "danger" });
   assert.equal(updateWords({ kind: "blocked", reason: MOVE_TO_APPLICATIONS }, now).detail, MOVE_TO_APPLICATIONS);
 });

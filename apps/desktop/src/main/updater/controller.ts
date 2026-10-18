@@ -24,7 +24,7 @@ export interface ControllerOptions {
 export function describeUpdateError(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error ?? '');
   const code = (error as { code?: string } | null)?.code ?? '';
-  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION|did not answer in time/i.test(`${code} ${text}`)) return 'Could not reach the update server. Lienzo will try again later.';
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION|did not answer in time/i.test(`${code} ${text}`)) return 'Could not reach the update server. Check the connection and try again.';
   if (/sha512 checksum mismatch|does not match the release checksum|checksum/i.test(text)) return 'The download did not match its checksum, so it was thrown away.';
   if (/\b404\b|No release was found|Cannot find .*latest/i.test(text)) return 'No release was found on the update server.';
   if (/Refused to download|ERR_BLOCKED_BY_CLIENT/i.test(text)) return 'The update came from an unexpected address, so it was refused.';
