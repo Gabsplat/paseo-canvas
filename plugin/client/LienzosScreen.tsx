@@ -12,7 +12,7 @@ import { visual } from './Blocks';
 import { documentContent } from './logic';
 import { Button, Chip, IconButton, Segments, Txt, friendlyError, useUI } from './ui';
 import { MateDrawing } from './Eggs';
-import { Card, ScreenBody, ScreenEmpty, ScreenHeader, SearchField, Stagger } from './Screen';
+import { Card, ScreenBody, ScreenEmpty, ScreenHeader, SearchField, Stagger, useScreenRoot } from './Screen';
 import { filterLienzos, lienzoMeta, thumbnailModel, type LienzoSort, type LienzoSummary } from './screens';
 import { tokens } from './tokens';
 
@@ -124,14 +124,14 @@ function LienzoCard({ summary, document, c, open, current, width, index, onOpen 
 }
 
 export function LienzosScreen({ c, width, onOpen, onNew, open }: { c: CanvasController; width: number; onOpen(id: string): void; onNew(): void; open: boolean }) {
-  const u = useUI(), [grid, setGrid] = useState(0), [query, setQuery] = useState(''), [sort, setSort] = useState<LienzoSort>('recent'), [loading, setLoading] = useState(false), [error, setError] = useState('');
+  const u = useUI(), root = useScreenRoot(), [grid, setGrid] = useState(0), [query, setQuery] = useState(''), [sort, setSort] = useState<LienzoSort>('recent'), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const list = useMemo(() => filterLienzos(c.documents, query, sort), [c.documents, query, sort]);
   const documentOf = useThumbnailDocuments(c, c.documents, open);
   useEffect(() => { if (!open) return; setLoading(true); setError(''); void c.refreshList().catch(e => setError(friendlyError(e))).finally(() => setLoading(false)); }, [open]);
   const pad = u.compact ? 16 : S.padding, inner = grid || Math.max(0, width - 2 - 2 * pad), gap = u.compact ? 12 : S.gap;
   const minColumn = u.compact ? 150 : S.thumb.minColumn, columns = Math.max(1, Math.min(4, Math.floor((inner + gap) / (minColumn + gap)))), cardWidth = Math.floor((inner - gap * (columns - 1)) / columns);
   const has = c.documents.length > 0;
-  return <View nativeID="lienzo-lienzos" style={{ flex: 1, minHeight: 0 }}>
+  return <View nativeID="lienzo-lienzos" style={root}>
     <ScreenHeader title="Lienzos" subtitle="Every canvas you and your agents drew in. Pick one to open it."
       actions={has ? <Button label="New Lienzo" icon="Plus" variant="primary" disabled={c.busy || c.offline} onPress={onNew} /> : undefined}>
       {has && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

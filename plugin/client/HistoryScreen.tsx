@@ -8,7 +8,7 @@ import { Icon, useAgent } from './host';
 import type { CanvasController } from './useCanvas';
 import { withAlpha, type Tone } from './color';
 import { Button, Txt, useUI } from './ui';
-import { ScreenBody, ScreenEmpty, ScreenHeader, SectionLabel, Stagger } from './Screen';
+import { ScreenBody, ScreenEmpty, ScreenHeader, SectionLabel, Stagger, useScreenRoot } from './Screen';
 import { entryTargets, historyByDay, timeOf, type HistoryEntry } from './screens';
 
 const AGENT_TONES: readonly Tone[] = ['violeta', 'turquesa', 'exito', 'aviso', 'acento'];
@@ -23,7 +23,7 @@ function Actor({ entry }: { entry: HistoryEntry }) {
 }
 
 export function HistoryScreen({ c, open, onFly, onUndo, onRedo }: { c: CanvasController; open: boolean; onFly(ids: string[]): void; onUndo(): void; onRedo(): void }) {
-  const u = useUI(), doc = c.view?.document, [entries, setEntries] = useState<HistoryEntry[] | null>(null), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
+  const u = useUI(), root = useScreenRoot(), doc = c.view?.document, [entries, setEntries] = useState<HistoryEntry[] | null>(null), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!open || !doc) return; let live = true; setFailed(false);
     void c.api.history({ workspaceId: c.workspaceId, documentId: doc.id }).then(result => { if (live) setEntries(result.transactions as HistoryEntry[]); }).catch(() => { if (live) setFailed(true); });
@@ -31,7 +31,7 @@ export function HistoryScreen({ c, open, onFly, onUndo, onRedo }: { c: CanvasCon
   }, [open, doc?.id, doc?.revision, attempt]);
   const days = entries ? historyByDay(entries) : [], disabled = c.busy || c.offline;
   let index = 0;
-  return <View nativeID="lienzo-history" style={{ flex: 1, minHeight: 0 }}>
+  return <View nativeID="lienzo-history" style={root}>
     <ScreenHeader title="History" subtitle={doc ? `Every change to “${doc.title}”, yours and your agents’. Press a chip to go there.` : 'Open a Lienzo to see its changes.'}
       actions={doc ? <>
         <Button label="Undo" icon="Undo2" disabled={disabled || !c.view?.canUndo} onPress={onUndo} />

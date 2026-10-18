@@ -581,17 +581,17 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const closeScreen = () => setScreen(null);
   const pinnedRows = pinnedEntries.map(e => ({ id: e.id, name: e.name, icon: e.icon, description: e.description }));
   const screens = <>
-    <Screen open={screen?.kind === 'lienzos'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-lienzos" label="Lienzos">
+    <Screen open={screen?.kind === 'lienzos'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-lienzos" label="Lienzos" fit="top">
       <LienzosScreen c={c} width={frame.width} open={screen?.kind === 'lienzos'} onNew={() => { void newCanvas(); }} onOpen={id => { setScreen(null); if (id !== doc?.id) void c.open(id); }} />
     </Screen>
-    <Screen open={screen?.kind === 'history'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-history" label="History">
+    <Screen open={screen?.kind === 'history'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-history" label="History" fit="center">
       <HistoryScreen c={c} open={screen?.kind === 'history'} onUndo={() => { void changeRevision('undo'); }} onRedo={() => { void changeRevision('redo'); }}
         onFly={ids => { setScreen(null); void c.select(ids); setTimeout(() => canvas.current?.flyToIds(ids), 0); }} />
     </Screen>
-    <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions">
+    <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions" fit="center">
       <ExtensionsContent c={c} width={frame.width} />
     </Screen>
-    <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
+    <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" fit="top" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
       {screen?.kind === 'settings' && <SettingsContent key={screen.section} section={screen.section} c={c} width={frame.width - railWidth} list={resolved.list} defs={shortcutRegistry.all()} overrides={overrides} chips={chips}
         saveShortcuts={next => savePrefs({ shortcuts: next })} pinned={pinnedRows} savePinned={ids => savePrefs({ pinned: ids })} onGuide={() => { setScreen(null); setGuideOpen(true); }} />}
     </Screen>

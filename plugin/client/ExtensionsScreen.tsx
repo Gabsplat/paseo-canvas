@@ -10,7 +10,7 @@ import type { CanvasPack, CatalogExtension } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { Button, CheckRow, Chip, Txt, friendlyError, useUI } from './ui';
 import { downloadJson, pickJsonFile } from './web';
-import { Card, ScreenBody, ScreenHeader, SectionLabel, Stagger } from './Screen';
+import { Card, ScreenBody, ScreenHeader, SectionLabel, Stagger, useScreenRoot } from './Screen';
 import { PERMISSION_WORDS, exportAllMine, exportOne, EXTENSION_MESSAGES, extensionActions, extensionOrigin, fileName, type ExtensionReview as Review } from './screens';
 import { extensionIcon } from './Extensions';
 
@@ -62,7 +62,7 @@ function ReviewCard({ review, busy, onInstall, onCancel }: { review: Review; bus
 }
 
 export function ExtensionsContent({ c, width, embedded = false }: { c: CanvasController; width: number; embedded?: boolean }) {
-  const u = useUI(), actions = extensionActions(c as unknown as Parameters<typeof extensionActions>[0]), [review, setReview] = useState<Review | null>(null), [error, setError] = useState(''), [pending, setPending] = useState(false), [note, setNote] = useState('');
+  const u = useUI(), root = useScreenRoot(), actions = extensionActions(c as unknown as Parameters<typeof extensionActions>[0]), [review, setReview] = useState<Review | null>(null), [error, setError] = useState(''), [pending, setPending] = useState(false), [note, setNote] = useState('');
   const installed = c.catalog?.extensions ?? [], mine = exportAllMine(c.catalog), busy = pending || c.offline, web = u.layout.platform === 'web';
   const run = async (work: () => Promise<unknown>) => { setPending(true); setError(''); setNote(''); try { await work(); } catch (e) { const message = e instanceof Error ? e.message : ''; setError((Object.values(EXTENSION_MESSAGES) as string[]).includes(message) ? message : friendlyError(e)); } finally { setPending(false); } };
   const pick = () => run(async () => { const text = await pickJsonFile(); if (text !== null) setReview(await actions.review(text)); });
@@ -91,7 +91,7 @@ export function ExtensionsContent({ c, width, embedded = false }: { c: CanvasCon
     </Card>
   </>;
   if (embedded) return <View style={{ gap: 16 }}><View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>{toolbar}</View>{body}</View>;
-  return <View nativeID="lienzo-extensions" style={{ flex: 1, minHeight: 0 }}>
+  return <View nativeID="lienzo-extensions" style={root}>
     <ScreenHeader title="Extensions" subtitle="Small tools for the + catalog and the Properties panel. Add them, share them, or write your own." actions={toolbar} />
     <ScreenBody>{body}</ScreenBody>
   </View>;

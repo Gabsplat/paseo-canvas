@@ -79,10 +79,14 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
   await click('#lienzo-shader-shader-bare');await wait('!!document.querySelector("#lienzo-shader-shader-bare-overlay input")','overlay sliders on selection');await shot('shader-selected');
  }
  if(parts.includes('screens')){
-  for(const [open,id,name] of [['Extensions','#lienzo-screen-extensions','extensions'],['History','#lienzo-screen-history','history']]){
+  for(const [open,id,name] of [['Extensions','#lienzo-screen-extensions','extensions'],['History','#lienzo-screen-history','history'],['Lienzos','#lienzo-screen-lienzos','lienzos']]){
    await click('#lienzo-document-island [aria-label="Menu"]');await click('#lienzo-interactive-menu [aria-label='+q(open)+']');await wait(`!!document.querySelector(${q(id)})`);await pause(600);await shot('screen-'+name);
-   const r=await rect(id);console.log(name,'sheet',JSON.stringify(r));await key('Escape','Escape');await pause(300);
+   const r=await rect(id);console.log(name,'sheet',JSON.stringify(r));assert.ok(r.h<600,name+' fits its content');await key('Escape','Escape');await pause(300);
   }
+  // Settings keeps its top edge while sections change height; a long section scrolls inside the usual frame.
+  await click('#lienzo-document-island [aria-label="Menu"]');await click('#lienzo-interactive-menu [aria-label="Settings"]');await wait('!!document.querySelector("#lienzo-screen-settings")');await pause(500);
+  for(const section of ['shortcuts','toolbar','extensions','about']){await click('#lienzo-rail-'+section);await pause(500);const r=await rect('#lienzo-screen-settings');console.log('settings',section,JSON.stringify(r));assert.ok(r.h<=681);await shot('settings-'+section);}
+  await key('Escape','Escape');
  }
  assert.deepEqual(await ev('__panelQA.actions'),[],'nothing is sent to an agent');
  assert.equal(uncaught.length,0,JSON.stringify(uncaught[0]??''));
