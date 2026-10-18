@@ -428,6 +428,8 @@ const baseTokens = {
       "stepMs": 160,
       "wheelMs": 120,
       "wheelNotch": 40,
+      "wheelZoom": 0.002,
+      "pinchZoom": 0.0032,
       "deceleration": 0.995,
       "flickMin": 0.2,
       "stopBelow": 0.02

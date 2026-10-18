@@ -180,7 +180,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       userCamera.current?.();
       if (!e.command) { halt(); setCam({ scale: cam.current.scale, offset: { x: cam.current.offset.x - e.dx, y: cam.current.offset.y - e.dy } }); return; }
       // A trackpad pinch arrives as many small steps and is followed exactly; a wheel notch is one big step and is eased.
-      const from = goal.current ?? cam.current, next = zoomAround(from, from.scale * Math.exp(-e.dy * .002), e);
+      const from = goal.current ?? cam.current, next = zoomAround(from, from.scale * Math.exp(-e.dy * (Math.abs(e.dy) >= C.wheelNotch ? C.wheelZoom : C.pinchZoom)), e);
       if (Math.abs(e.dy) >= C.wheelNotch) flyTo(next, C.wheelMs); else { halt(); setCam(next); }
     });
     const middle = attachMiddlePan(viewport.current, e => { userCamera.current?.(); halt(); setCam({ scale: cam.current.scale, offset: { x: cam.current.offset.x + e.dx, y: cam.current.offset.y + e.dy } }); }, v => momentum(v.vx, v.vy));
