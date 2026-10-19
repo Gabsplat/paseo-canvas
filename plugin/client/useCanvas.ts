@@ -17,6 +17,7 @@ export function useCanvas(workspaceId: string) {
     catalog: useRpc(rpc.readCatalog), catalogMutate: useRpc(rpc.mutateCatalog), validate: useRpc(rpc.validatePack), import: useRpc(rpc.importPack),
     about: useRpc(rpc.readAbout), remove: useRpc(rpc.deleteDocument), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
     runtimeSet: useRpc(rpc.setRuntime), history: useRpc(rpc.readHistory), extensionStorage: useRpc(rpc.extensionStorage),
+    putMedia: useRpc(rpc.putMedia), readMedia: useRpc(rpc.readMedia),
   };
   const apiRef = useRef(api); apiRef.current = api;
   const [view, setView] = useState<DocumentView | null>(null), current = useRef(view);

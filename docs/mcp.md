@@ -143,6 +143,18 @@ References to media remain links in this native first version; there is no embed
 
 The built-in `preview` type accepts `data.description` and optional `data.url`.
 The `media` type accepts `data.url`, optional `data.caption` and `data.mediaKind`.
+Besides an http(s) link, a media `data.url` may be an image a person brought from their computer:
+`lienzo-media:<sha256>.<png|jpg|webp|gif|svg>`, a file the host keeps in `<canvas directory>/media/`, or a small inline
+`data:image/…;base64,` URL (up to 256 KB, used only when a host cannot store files). The server checks both: the
+reference's shape, and that inline bytes are the image type they claim (an inline SVG must pass the SVG sanitizer).
+Agents read these URLs as they are and may copy them to another media block; they cannot fetch the picture. The panel
+stores files with `canvas.media.put` (`{ workspaceId, data: base64, name? }` → `{ url, mime, bytes, existed }`; 10 MB,
+type sniffed from the bytes, SVG sanitized, deduplicated by hash) and reads them with `canvas.media.read`
+(`{ workspaceId, url }` → `{ mime, data, bytes }`). Neither is an agent tool.
+
+Copies and exports keep image references as references: duplicating a Lienzo on the same host shows the same
+pictures. A document or pack moved to another computer carries the reference without the file, and the card says the
+image is not stored there; add the file again (or use an http(s) link) for images that must travel.
 Both allow an empty URL for a labelled conceptual example. Nonempty URLs must be HTTP/HTTPS
 without embedded credentials. The backend does not fetch them. The frontend can open native
 links and apply its web-only preview policy. Packs contain no HTML, scripts or executable hooks.

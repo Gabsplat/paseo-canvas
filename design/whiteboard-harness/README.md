@@ -46,6 +46,7 @@ omabox run -- node "$PWD/dist/panel-qa/screens.cjs" papel compact   # any of osc
 omabox run -- node "$PWD/dist/panel-qa/guide.cjs"
 omabox run -- node "$PWD/dist/panel-qa/wiki.cjs" papel compact   # Help, Discover (catalog served locally), Publish…
 omabox run -- node "$PWD/dist/panel-qa/ui-fixes.cjs" oscuro sheets,icons,shader,screens   # §37; online steps need the network
+omabox run -- node "$PWD/dist/panel-qa/ui-prefs.cjs"   # Appearance light/dark, Properties collapsed by default, images dropped and pasted (CDP, HTTP, OUT)
 omabox run -- node "$PWD/dist/panel-qa/glfit.cjs" oscuro   # 20 shaders on one shared WebGL context; content-fitting mini app and shader controls (needs --use-angle=swiftshader)
 ```
 

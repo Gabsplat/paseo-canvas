@@ -309,6 +309,8 @@ export function keyboard(element: unknown, handler: (event: PanelKey) => boolean
   if (!browser().document || !node?.addEventListener) return () => {};
   const listener = (event: BrowserKeyEvent) => {
     const target = event.target;
+    // Tab, Enter and Space on a control in the Properties panel or a dialog move focus or press it, as on any page.
+    if ((event.key === 'Tab' || event.key === 'Enter' || event.key === ' ') && !event.metaKey && !event.ctrlKey && target?.closest('#lienzo-right-panel,[role="dialog"]')) return;
     if (target?.closest(FIELDS + ',[id^="lienzo-interactive-"]')) { if (global && !target.closest('iframe') && global(keyOf(event, true))) { event.preventDefault(); event.stopPropagation(); } return; }
     if (handler(keyOf(event, false))) { event.preventDefault(); event.stopPropagation(); }
   };
@@ -905,8 +907,8 @@ export function attachGridKeys(element: unknown, handler: (key: string) => boole
   node.addEventListener('keydown', listener); return () => node.removeEventListener('keydown', listener);
 }
 /** Drag and drop onto an add sheet: a dropped link (from another tab) or a dropped file. Native ignores it. */
-export type DroppedFile = { name: string; type: string; size: number; text(): Promise<string> };
-export function attachDrop(element: unknown, handlers: { over(active: boolean): void; text?(text: string): void; file?(file: DroppedFile): void }): () => void {
+export type DroppedFile = { name: string; type: string; size: number; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
+export function attachDrop(element: unknown, handlers: { over(active: boolean): void; text?(text: string): void; file?(file: DroppedFile, all: DroppedFile[]): void }): () => void {
   const node = element as BrowserElement | null; if (!browser().document || !node?.addEventListener) return () => {};
   type DragEvent = BrowserKeyEvent & { dataTransfer?: { types?: ArrayLike<string>; files?: ArrayLike<DroppedFile>; getData(type: string): string; dropEffect?: string } | null };
   let depth = 0;
@@ -917,13 +919,61 @@ export function attachDrop(element: unknown, handlers: { over(active: boolean): 
   const drop = (e: DragEvent) => {
     if (!accepts(e)) return; e.preventDefault(); e.stopPropagation(); depth = 0; handlers.over(false);
     const file = e.dataTransfer?.files?.[0];
-    if (file && handlers.file) { handlers.file(file); return; }
+    if (file && handlers.file) { handlers.file(file, Array.from(e.dataTransfer?.files ?? [])); return; }
     const uri = e.dataTransfer?.getData('text/uri-list')?.split(/\r?\n/).find(line => line && !line.startsWith('#')), text = uri || e.dataTransfer?.getData('text/plain') || '';
     if (text && handlers.text) handlers.text(text);
   };
   const events: [string, (e: DragEvent) => void][] = [['dragenter', enter], ['dragover', over], ['dragleave', leave], ['drop', drop]];
   for (const [name, fn] of events) node.addEventListener(name, fn as (event: BrowserKeyEvent) => void);
   return () => { for (const [name, fn] of events) node.removeEventListener(name, fn as (event: BrowserKeyEvent) => void); };
+}
+// ---- Image files from the computer: dropped on the canvas, pasted, or chosen. They become Media blocks (media-store.ts).
+type FileLike = { name: string; type: string; size: number; arrayBuffer(): Promise<ArrayBuffer> };
+type FileTransfer = { types?: ArrayLike<string>; files?: ArrayLike<FileLike>; items?: ArrayLike<{ kind: string; type: string; getAsFile(): FileLike | null }>; dropEffect?: string } | null | undefined;
+const hasFiles = (data: FileTransfer) => Array.from(data?.types ?? []).includes('Files');
+function transferFiles(data: FileTransfer): FileLike[] {
+  const files = Array.from(data?.files ?? []);
+  if (files.length) return files;
+  return Array.from(data?.items ?? []).filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is FileLike => !!file);
+}
+/**
+ * Files dragged from the computer onto `element`: `over` while they hover (to show the drop cue), then `drop` with
+ * them and the page point they were let go at. Links and text dragged in are left alone; native ignores it.
+ */
+export function attachFileDrop(element: unknown, handlers: { enabled(): boolean; over(active: boolean): void; drop(files: FileLike[], page: { x: number; y: number }): void }): () => void {
+  const node = element as BrowserElement | null; if (!browser().document || !node?.addEventListener) return () => {};
+  type DragEvent = BrowserKeyEvent & { dataTransfer?: FileTransfer; clientX: number; clientY: number; defaultPrevented?: boolean };
+  let depth = 0;
+  const enter = (e: DragEvent) => { if (!hasFiles(e.dataTransfer) || !handlers.enabled()) return; e.preventDefault(); depth++; handlers.over(true); };
+  const over = (e: DragEvent) => { if (!hasFiles(e.dataTransfer) || !handlers.enabled()) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; };
+  const leave = (e: DragEvent) => { if (!hasFiles(e.dataTransfer)) return; depth = Math.max(0, depth - 1); if (!depth) handlers.over(false); };
+  const drop = (e: DragEvent) => {
+    if (!hasFiles(e.dataTransfer)) return; depth = 0; handlers.over(false);
+    // A sheet with its own drop zone (Add image) took it first.
+    if (e.defaultPrevented || !handlers.enabled()) { e.preventDefault(); return; }
+    e.preventDefault(); const files = transferFiles(e.dataTransfer); if (files.length) handlers.drop(files, { x: e.clientX, y: e.clientY });
+  };
+  const events: [string, (e: DragEvent) => void][] = [['dragenter', enter], ['dragover', over], ['dragleave', leave], ['drop', drop]];
+  for (const [name, fn] of events) node.addEventListener(name, fn as (event: BrowserKeyEvent) => void);
+  return () => { for (const [name, fn] of events) node.removeEventListener(name, fn as (event: BrowserKeyEvent) => void); };
+}
+/** ⌘V with files on the clipboard (a screenshot, a copied image), outside text fields. True from `paste` takes it. */
+export function attachFilePaste(paste: (files: FileLike[]) => boolean): () => void {
+  const doc = browser().document; if (!doc) return () => {};
+  type PasteEvent = BrowserKeyEvent & { clipboardData?: FileTransfer };
+  const listener = (e: PasteEvent) => { if (isTextTarget(e.target)) return; const files = transferFiles(e.clipboardData); if (files.length && paste(files)) e.preventDefault(); };
+  doc.addEventListener('paste', listener as (event: BrowserKeyEvent) => void);
+  return () => doc.removeEventListener('paste', listener as (event: BrowserKeyEvent) => void);
+}
+/** "Choose file…": the system picker, several at once. Resolves an empty list when cancelled. */
+export function pickFiles(accept: string, multiple = true): Promise<FileLike[]> {
+  const host = browser(); if (!host.document) return Promise.resolve([]);
+  return new Promise(resolve => {
+    const input = host.document!.createElement('input') as BrowserElement & { multiple: boolean; files?: ArrayLike<FileLike> }; input.type = 'file'; input.accept = accept; input.multiple = multiple;
+    input.addEventListener('cancel', () => { input.remove(); resolve([]); });
+    input.addEventListener('change', () => { const files = Array.from(input.files ?? []); input.remove(); resolve(files); });
+    input.click();
+  });
 }
 /** Reads a dropped SVG file through the same limits as the file picker. */
 export async function readSvgFile(file: DroppedFile): Promise<string> {

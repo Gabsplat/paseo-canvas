@@ -58,12 +58,12 @@ export type CopilotRecord = z.infer<typeof copilotRecordSchema>;
 export { copilotRecordSchema };
 export type Actor = HistoryEntry["actor"];
 
-export async function atomicWrite(path: string, data: string): Promise<void> {
+export async function atomicWrite(path: string, data: string | Uint8Array): Promise<void> {
   const temporary = `${path}.${randomUUID()}.tmp`;
   let handle;
   try {
     handle = await open(temporary, "wx", 0o600);
-    await handle.writeFile(data, "utf8");
+    await (typeof data === "string" ? handle.writeFile(data, "utf8") : handle.writeFile(data));
     await handle.sync();
     await handle.close(); handle = undefined;
     await rename(temporary, path);

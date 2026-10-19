@@ -1,0 +1,37 @@
+{
+  "checks": [
+    {
+      "name": "Settings → Appearance in light, then Dark switches every surface at once",
+      "result": "pass"
+    },
+    {
+      "name": "⌘⇧L switches back to light",
+      "result": "pass"
+    },
+    {
+      "name": "Properties of a note: the header, every section collapsed",
+      "result": "pass"
+    },
+    {
+      "name": "Properties of a shader: collapsed; Content expands with Enter-free click and is remembered",
+      "result": "pass"
+    },
+    {
+      "name": "Keyboard: Tab reaches a section header and Space opens it",
+      "result": "pass"
+    },
+    {
+      "name": "Dropping three image files creates three Media blocks at the drop point, a step apart",
+      "result": "pass"
+    },
+    {
+      "name": "Dropping the same file again stores it once; pasting an image adds one at the view centre",
+      "result": "pass"
+    },
+    {
+      "name": "A file that is not an image is refused in words",
+      "result": "pass"
+    }
+  ],
+  "uncaught": []
+}

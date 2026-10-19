@@ -37,6 +37,7 @@ export const DEFAULT_SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'view.fitSelection', label: 'Fit selection', group: 'Navigation', keys: ['shift+2'], when: 'selection' },
   { id: 'panel.right', label: 'Properties panel', group: 'Navigation', keys: ['mod+\\'], when: 'document' },
   { id: 'ui.hide', label: 'Hide all UI', group: 'Navigation', keys: ['mod+.'], when: 'document' },
+  { id: 'view.theme', label: 'Switch light and dark', group: 'Navigation', keys: ['mod+shift+l'], when: 'always' },
   { id: 'help.shortcuts', label: 'Keyboard shortcuts', group: 'Navigation', keys: ['?'], when: 'always' },
   { id: 'edit.undo', label: 'Undo', group: 'Editing', keys: ['mod+z'], when: 'document' },
   { id: 'edit.redo', label: 'Redo', group: 'Editing', keys: ['mod+shift+z'], when: 'document' },

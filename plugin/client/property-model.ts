@@ -42,6 +42,51 @@ const issueText = (issue: { path: PropertyKey[]; message: string }) => {
   const where = issue.path.map(String).filter(Boolean).join('.');
   return where ? `${where}: ${issue.message}` : issue.message;
 };
+// ---- Sections ------------------------------------------------------------------------------------------------------
+
+/**
+ * Which Properties sections are open (RightPanel PanelSection). Every section starts collapsed under the header that
+ * names the kind and the title; what the person opens or closes is remembered by section title for the session, so a
+ * new selection keeps the same ones open. A flow that asks for one section (Edit text, a data problem, instructions
+ * from the menu) opens it for the selection it was asked for (`scope`), without changing what is remembered.
+ */
+export function createSectionMemory() {
+  const chosen = new Map<string, boolean>(), forced = new Map<string, string>(), listeners = new Set<() => void>();
+  let version = 0;
+  const emit = () => { version++; listeners.forEach(listener => listener()); };
+  const isOpen = (title: string, defaultOpen = false, scope = '') => forced.get(title) === scope || (chosen.get(title) ?? defaultOpen);
+  return {
+    isOpen,
+    /** The person pressed the header: closing a forced section closes it, and both are remembered. */
+    toggle(title: string, defaultOpen = false, scope = '') { const open = isOpen(title, defaultOpen, scope); forced.delete(title); chosen.set(title, !open); emit(); },
+    /** Opens a section for one selection only. */
+    force(title: string, scope: string) { if (forced.get(title) === scope) return; forced.set(title, scope); emit(); },
+    reset() { chosen.clear(); forced.clear(); emit(); },
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    version: () => version,
+  };
+}
+export type SectionMemory = ReturnType<typeof createSectionMemory>;
+export const sectionMemory = createSectionMemory();
+/** One selection, as forced sections know it: the selected ids and the selected link. */
+export const sectionScope = (selection: readonly string[], linkId?: string | null) => `${selection.join('|')}#${linkId ?? ''}`;
+/**
+ * The section a block's own problem lives in, so Properties opens there: data the server would refuse, a required
+ * field still empty, Controls with no variables or one that is not declared, a flow with no events. Null when fine.
+ */
+export function attentionSection(type: BlockType | undefined, block: CanvasBlock | undefined, document?: CanvasDocument): 'Content' | null {
+  if (!type || !block) return null;
+  if (dataIssue(type, block.data)) return 'Content';
+  // A required field left blank (a Media with no link). An empty list is a valid start, not a problem.
+  if (type.properties.some(p => p.required && (block.data[p.key] === undefined || typeof block.data[p.key] === 'string' && !String(block.data[p.key]).trim()))) return 'Content';
+  if (type.renderer === 'controls') {
+    const names = Array.isArray(block.data.variables) ? block.data.variables as string[] : [];
+    if (!names.length) return 'Content';
+    if (document) { const declared = new Set(scopesOf(document, block.id).flatMap(scope => scope.variables.map(v => v.name))); if (names.some(name => !declared.has(name))) return 'Content'; }
+  }
+  if (type.renderer === 'animated-flow' && !(Array.isArray(block.data.events) && block.data.events.length)) return 'Content';
+  return null;
+}
 /**
  * The first reason the server would refuse this data, in words, or null. Mirrors the server's checks: the renderer's
  * schema, required fields, declared keys and the kind of each field. Keeps a person from waiting for a refusal.

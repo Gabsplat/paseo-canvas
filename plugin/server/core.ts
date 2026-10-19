@@ -6,6 +6,7 @@ import { CanvasStore } from "./store";
 import { CanvasService } from "./service";
 import { ToolRouter, toolNames, type CallerScope } from "./tools";
 import { CopilotService } from "./copilot";
+import { MediaStore } from "./media";
 import { AgentGateway, type HandlerContext, type ServerHost } from "./host";
 
 /** The plugin's version (plugin/package.json). */
@@ -29,6 +30,7 @@ export interface CanvasCore {
   readonly copilot: CopilotService;
   readonly gateway: AgentGateway;
   readonly router: ToolRouter;
+  readonly media: MediaStore;
   /** Removes the lifecycle hooks. The store stays open. */
   stop(): Promise<void>;
 }
@@ -43,7 +45,7 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.registerSettings(canvasPreferences);
   host.registerSettings(interfacePreferences);
   const store = new CanvasStore(options.directory), service = new CanvasService(store), gateway = new AgentGateway(service);
-  const copilot = new CopilotService(service, toolNames);
+  const copilot = new CopilotService(service, toolNames), media = new MediaStore(options.directory);
   const router = new ToolRouter(service, options.resolveScope ?? (owner => gateway.scope(owner)), copilot);
   const agents = host.runsAgents;
   const ensureTools = options.ensureTools ?? (async () => {});
@@ -66,6 +68,8 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.validatePack, input => service.validatePack(input));
   host.handle(rpc.importPack, input => service.importPack(input));
   host.handle(rpc.readAbout, () => ({ version: options.version ?? LIENZO_VERSION, dataFile: store.file, host: host.kind }));
+  host.handle(rpc.putMedia, input => media.put(input.data));
+  host.handle(rpc.readMedia, input => media.read(input.url));
   host.handle(rpc.readSharing, input => service.sharing(input));
   host.handle(rpc.configureSharing, input => service.configureSharing(input));
   host.handle(rpc.createSheet, input => service.createSheet(input));
@@ -108,7 +112,7 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
     }));
   }
   return {
-    host, store, service, copilot, gateway, router,
+    host, store, service, copilot, gateway, router, media,
     async stop() { for (const remove of removers.reverse()) remove(); },
   };
 }

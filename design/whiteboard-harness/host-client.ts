@@ -5,6 +5,10 @@ import { documentViewSchema, documentSummarySchema, type CanvasDocument } from '
 import { reduce } from '../../plugin/server/reducer';
 export type PluginHostProps = any; export type PluginWorkspacePanelProps = any;
 import { findAndReplace } from '../../tests/fixtures/find-replace';
+import { fromBase64, mediaRef, parseMediaRef, prepareImage, toBase64 } from '../../plugin/shared/media';
+// Images from the computer, kept in memory by content hash as the server keeps them on disk (plugin/server/media.ts).
+const media=new Map<string,string>();
+const sha256=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes as unknown as ArrayBuffer)),b=>b.toString(16).padStart(2,'0')).join('');
 // Example data: one tool "made here", the contract-test extension. Nothing ships with the app.
 const catalog: any = { revision: 0, blockTypes: builtinTypes, packs: [], extensions: [{ ...findAndReplace, source: 'local', granted: true }] };
 const communication = { instructions: '', intent: '', audience: '' };
@@ -34,7 +38,7 @@ const opIds=(operations:any[])=>[...new Set(operations.map((o:any)=>o.block?.id?
 const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime,latestAgent}));
 // `seed` stands in for another author; `seedAgent` runs the reducer as the assistant actor. `actions` stays empty:
 // the canvas is one-way and has no RPC that sends to an agent (a call to one throws "does not implement").
-(globalThis as any).__panelQA={addDocument:(d:any,agent?:string)=>{if(agent)agents.set(d.id,agent);others.set(d.id,{workspaceId:'qa-workspace',description:'',example:false,selectedIds:[],communication,links:[],groups:[],blocks:[],revision:1,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:new Date().toISOString(),...d});},documents:()=>[doc,...others.values()].map(d=>d.id),setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};agentTx++;latestAgent={transactionId:'qa-tx-'+agentTx,revision:doc.revision,at:new Date().toISOString(),label:'Example agent edit '+agentTx,kind:'edit',ids:opIds(operations),removed:[]};},view:snapshot};
+(globalThis as any).__panelQA={addDocument:(d:any,agent?:string)=>{if(agent)agents.set(d.id,agent);others.set(d.id,{workspaceId:'qa-workspace',description:'',example:false,selectedIds:[],communication,links:[],groups:[],blocks:[],revision:1,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:new Date().toISOString(),...d});},documents:()=>[doc,...others.values()].map(d=>d.id),setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};agentTx++;latestAgent={transactionId:'qa-tx-'+agentTx,revision:doc.revision,at:new Date().toISOString(),label:'Example agent edit '+agentTx,kind:'edit',ids:opIds(operations),removed:[]};},view:snapshot,media:()=>[...media.keys()]};
 async function invoke(contract:any, raw:any) {
  const input=contract.input.parse(raw), name=contract.name;
  // Every call names its Lienzo; the stand-in keeps one open at a time and swaps the rest in and out.
@@ -76,6 +80,8 @@ async function invoke(contract:any, raw:any) {
    runtime={blocks,scopes};runtimeVersion++;output={runtime,runtimeVersion};
  }
  else if(name==='canvas.extension.storage'){const key=doc.id+'\u0000'+input.extensionId;if(input.action==='set'){if(input.value===null)extensionStorage.delete(key);else extensionStorage.set(key,structuredClone(input.value));}output={value:extensionStorage.has(key)?structuredClone(extensionStorage.get(key)):null};}
+ else if(name==='canvas.media.put'){const bytes=fromBase64(input.data);if(!bytes)throw Error('VALIDATION not base64');let image;try{image=prepareImage(bytes);}catch(e:any){throw Error((e.code??'VALIDATION')+': '+e.message);}const url=mediaRef(await sha256(image.bytes),image.extension),existed=media.has(url);media.set(url,toBase64(image.bytes));output={url,mime:image.mime,bytes:image.bytes.length,existed};}
+ else if(name==='canvas.media.read'){const data=media.get(input.url),ref=parseMediaRef(input.url);if(!data||!ref)throw Error('NOT_FOUND: That image is not stored on this computer.');output={mime:ref.mime,data,bytes:Math.floor(data.length*3/4)};}
  else throw Error('QA host does not implement '+name);
  return contract.output.parse(output);
 }

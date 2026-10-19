@@ -112,11 +112,11 @@ test("a Paseo state file copied in shows its documents in the app's one workspac
 test("host settings keep Paseo's revision rules", async t => {
   const app = await desktop(t);
   const first = await settle(app, "settings.interface.read", {});
-  assert.deepEqual(first.value, { status: "ready", revision: "0", values: { pinned: [], shortcuts: {}, recentIcons: [] } });
+  assert.deepEqual(first.value, { status: "ready", revision: "0", values: { pinned: [], shortcuts: {}, appearance: "system", recentIcons: [] } });
   const saved = await settle(app, "settings.interface.write", { revision: "0", values: { pinned: ["tool.pencil"], shortcuts: {} } });
-  assert.deepEqual(saved.value, { status: "saved", revision: "1", values: { pinned: ["tool.pencil"], shortcuts: {}, recentIcons: [] } });
+  assert.deepEqual(saved.value, { status: "saved", revision: "1", values: { pinned: ["tool.pencil"], shortcuts: {}, appearance: "system", recentIcons: [] } });
   const stale = await settle(app, "settings.interface.write", { revision: "0", values: { pinned: [], shortcuts: {} } });
   assert.equal((stale.value as { status: string }).status, "conflict");
   const reset = await settle(app, "settings.interface.reset", { revision: "1" });
-  assert.deepEqual(reset.value, { status: "saved", revision: "2", values: { pinned: [], shortcuts: {}, recentIcons: [] } });
+  assert.deepEqual(reset.value, { status: "saved", revision: "2", values: { pinned: [], shortcuts: {}, appearance: "system", recentIcons: [] } });
 });

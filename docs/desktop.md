@@ -93,7 +93,11 @@ The app keeps its state in Electron's `userData` folder, which is `~/.config/Lie
 
 - `canvas/state.json` holds the canvas state, in the plugin's format `paseo-canvas-state/1`. `canvas/writer.lock`
   stops a second writer.
-- `settings.json` holds the host settings, including "Automatically check for updates" (`desktop-updates`).
+- `canvas/media/` holds the images people drop, paste or choose, one file per picture named by its SHA-256.
+- `settings.json` holds the host settings, including "Automatically check for updates" (`desktop-updates`) and the
+  interface choices (`interface`: pinned tools, shortcuts, Appearance). The window opens in the saved Appearance:
+  the main process sets `nativeTheme.themeSource` from it before the window exists, and again whenever it changes
+  (`desktop.appearance`), so the title area and the background behind the page match the panel.
 - `updates/` (macOS only) holds a downloaded update until it is installed.
 - `desktop.json` is optional: `{ "mcpPort": 7421 }`.
 

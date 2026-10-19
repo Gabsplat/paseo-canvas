@@ -13,12 +13,15 @@ import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
 import { requestTitleEdit, visual } from './Blocks';
 import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
-import { isMacPlatform, keyboard, type PanelKey } from './web';
+import { attachFileDrop, attachFilePaste, isMacPlatform, keyboard, type PanelKey } from './web';
+import { imageFiles, imageTitle, provideMediaHost, storeImage, type ImageFile } from './media-store';
+import { MEDIA_LIMITS } from '../shared/media';
 import { Onboarding } from './Onboarding';
 import { claimFirstGuide } from './guide';
 import { canvasPreferences, interfacePreferences } from '../shared/preferences';
 import { tokens } from './tokens';
-import { withAlpha, type Tone } from './color';
+import { isDark, withAlpha, type Tone } from './color';
+import { APPEARANCES, adoptAppearance, chooseAppearance, getAppearance, type Appearance } from './appearance';
 import { usePresentation } from './usePresentation';
 import { ExtensionTool, extensionIcon, type ExtensionStage } from './Extensions';
 import { extensionView } from '../shared/extensions';
@@ -28,6 +31,7 @@ import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOpti
 import { islandStyle } from './whiteboard-visuals';
 import { type linkBlock } from './media';
 import { panelFits } from './panel-actions';
+import { sectionMemory, sectionScope } from './property-model';
 import { LinkSheet, SvgSheet } from './AddSheets';
 import { isWhiteboardRenderer, learnerLayerIds, strokeLayers, type WbRenderer, type WbDrawData, type WbShape } from '../shared/whiteboard';
 import { Toolbar, GLOSSARY, shapeIcon, type ToolId, type PinnedTool } from './Toolbar';
@@ -158,14 +162,21 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const disabled = c.busy || c.offline || c.loading;
   const mac = isMacPlatform();
   // ---- Shortcuts and pins: the person's choices live in the host's `interface` settings; the registry resolves them.
-  const savedPrefs = prefs.status === 'ready' ? prefs.values as { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[] } : undefined;
+  const savedPrefs = prefs.status === 'ready' ? prefs.values as { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[]; appearance?: Appearance } : undefined;
   const pinnedIds = pinnedLocal ?? savedPrefs?.pinned ?? [], overrides = overridesLocal ?? savedPrefs?.shortcuts ?? {}, recentIcons = recentLocal ?? savedPrefs?.recentIcons ?? [];
-  const savePrefs = (patch: { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[] }) => {
+  // The saved appearance seeds the live one (appearance.ts), here and when another client of the host changes it.
+  useEffect(() => { if (savedPrefs) adoptAppearance(savedPrefs.appearance); }, [savedPrefs?.appearance]);
+  const savePrefs = (patch: { pinned?: string[]; shortcuts?: Record<string, string>; recentIcons?: RecentIcon[]; appearance?: Appearance }) => {
     if (patch.pinned) setPinnedLocal(patch.pinned); if (patch.shortcuts) setOverridesLocal(patch.shortcuts); if (patch.recentIcons) setRecentLocal(patch.recentIcons);
     if (prefs.status !== 'ready') return;
     // Recent icons are a convenience: losing one is not worth a notice.
-    void prefs.save({ pinned: patch.pinned ?? pinnedIds, shortcuts: patch.shortcuts ?? overrides, recentIcons: patch.recentIcons ?? recentIcons }, prefs.revision).then(saved => { if (!saved && !patch.recentIcons) toast.error('Your choice was not saved for next time. It still applies now.'); });
+    void prefs.save({ ...savedPrefs, pinned: patch.pinned ?? pinnedIds, shortcuts: patch.shortcuts ?? overrides, recentIcons: patch.recentIcons ?? recentIcons, appearance: patch.appearance ?? getAppearance() }, prefs.revision).then(saved => {
+      if (saved && patch.appearance) adoptAppearance(patch.appearance, true);
+      if (!saved && !patch.recentIcons) toast.error('Your choice was not saved for next time. It still applies now.');
+    });
   };
+  /** Settings → Appearance, ⌘K and the shortcut: applies at once, then is kept for next time. */
+  const chooseTheme = (next: Appearance) => { chooseAppearance(next); savePrefs({ appearance: next }); };
   const resolved = shortcutRegistry.resolve(overrides);
   // What an open extension sees of the canvas and may do to it beside the document: the camera, a highlight (never saved).
   const framedRef = useRef<() => void>(() => {}), viewSubs = useRef(new Set<() => void>()), docRef = useRef(doc); docRef.current = doc;
@@ -204,7 +215,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const openScreen = (next: ScreenState) => { setAddOpen(false); setLibraryOpen(false); setOverflow(false); setPaletteOpen(false); setImmersive(false); setScreen(next); };
   const openExtensions = () => openScreen({ kind: 'extensions' });
   const openHelp = (page: string = HOME_PAGE) => openScreen({ kind: 'help', page });
-  const openSettings = (section: SettingsSection = 'shortcuts') => openScreen({ kind: 'settings', section });
+  const openSettings = (section: SettingsSection = 'appearance') => openScreen({ kind: 'settings', section });
   function openDocuments() { openScreen({ kind: 'lienzos' }); }
   async function newCanvas() {
     if (disabled) return;
@@ -221,7 +232,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   function editSelectedText() {
     const block = doc?.blocks.find(b => b.id === c.selection[0]);
     if (!u.compact && block && isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer)) canvas.current?.editSelection();
-    else if (!(block && mode === 'canvas' && requestTitleEdit(block.id))) showPanel();
+    else if (!(block && mode === 'canvas' && requestTitleEdit(block.id))) { sectionMemory.force(block ? 'Content' : 'Frame', sectionScope(c.selection, linkId)); showPanel(); }
   }
   function reorder(id: string, delta: number) {
     if (!doc || disabled) return; const entity = [...doc.blocks, ...doc.groups].find(e => e.id === id), group = doc.groups.find(g => g.id === entity?.parentGroupId); if (!entity || !group) return;
@@ -288,6 +299,37 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     void c.edit([{ type: 'group.create', group: { id, title: 'Untitled Frame', description: '', blockIds: [], groupIds: [], parentGroupId: parent?.id ?? null, ...(!parent ? { position: geometry.current.center } : {}) } }], 'Add Frame').then(next => { if (next) void c.select([id]); });
   }
   const openVentana = (kind: VentanaKind) => { if (!doc) { openDocuments(); return; } setAddOpen(false); setVentana(kind); };
+  // ---- Images from the computer: dropped on the canvas, pasted (⌘V) or chosen in Add image. The host keeps the files.
+  useEffect(() => { provideMediaHost({ put: input => c.api.putMedia({ workspaceId, ...input }), read: input => c.api.readMedia({ workspaceId, ...input }) }); return () => provideMediaHost(null); }, [c.api.putMedia, c.api.readMedia, workspaceId]);
+  const [fileOver, setFileOver] = useState(false), [imagesBusy, setImagesBusy] = useState(false);
+  /** Media blocks for the image files, centred on `page` (the drop point) or the view, a step apart. False when none was added. */
+  async function addImages(files: readonly ImageFile[], page?: Point): Promise<boolean> {
+    if (!doc) { openDocuments(); return false; } if (disabled || imagesBusy) return false;
+    const images = imageFiles(files), type = c.catalog?.blockTypes.find(t => t.id === 'media' && t.renderer === 'image-ref');
+    if (!images.length) { toast.error(files.length === 1 ? 'That file is not an image Lienzo can add. Use PNG, JPEG, WebP, GIF or SVG.' : 'None of those files is an image Lienzo can add. Use PNG, JPEG, WebP, GIF or SVG.'); return false; }
+    if (!type) { toast.error('Media is not in the local catalog.'); return false; }
+    const list = images.slice(0, MEDIA_LIMITS.files), documentId = doc.id, problems: string[] = [];
+    setImagesBusy(true);
+    try {
+      const stored = [];
+      for (const file of list) { try { stored.push(await storeImage(file)); } catch (error) { problems.push(friendlyError(error)); } }
+      if (problems.length) toast.error(problems.length === 1 ? problems[0] : `${problems.length} files were not added. ${problems[0]}`);
+      if (!stored.length || c.current.current?.document.id !== documentId) return false;
+      // One image is centred where it was let go; several lie in rows of up to three, the first one there.
+      const at = (page && canvas.current?.worldAt(page)) || canvas.current?.viewportCenter() || geometry.current.center, M = tokens.media.upload, W = tokens.size.blockWidth.standard;
+      const ids = stored.map(() => newId('block')), operations: CanvasOperation[] = stored.map((image, i) => ({ type: 'block.create', block: { id: ids[i], title: imageTitle(image.name), typeId: type.id, parentGroupId: null,
+        data: { ...type.defaults, url: image.url, caption: '', mediaKind: 'image' }, position: { x: Math.round(at.x - W / 2 + i % M.columns * (W + M.gap)), y: Math.round(at.y - M.centreOffset + Math.floor(i / M.columns) * (M.rowHeight + M.gap)) } } }));
+      const next = await c.edit(operations, stored.length === 1 ? 'Add image' : `Add ${stored.length} images`);
+      if (!next) return false;
+      await c.select(ids);
+      if (images.length > list.length) toast.show(`Added the first ${MEDIA_LIMITS.files} images. Add the rest in another go.`, { variant: 'warning' });
+      else if (stored.some(image => image.inline)) toast.show('Kept inside this Lienzo: this host cannot store image files.', { variant: 'warning' });
+      return true;
+    } finally { setImagesBusy(false); }
+  }
+  const images = useRef<{ add: typeof addImages; accepts(): boolean }>({ add: addImages, accepts: () => false }); images.current = { add: addImages, accepts: () => !!doc && !disabled && !imagesBusy && !ventana && !screen && !guideOpen && !paletteOpen };
+  useEffect(() => attachFileDrop(root.current, { enabled: () => images.current.accepts(), over: setFileOver, drop: (files, page) => { void images.current.add(files, page); } }), []);
+  useEffect(() => attachFilePaste(files => { if (!images.current.accepts() || !imageFiles(files).length) return false; void images.current.add(files); return true; }), []);
   /** W: a Window. A web page becomes a live preview; an image, video or audio link becomes a player (AddSheets.tsx). */
   async function insertLink(link: ReturnType<typeof linkBlock>): Promise<boolean> {
     if (!doc || disabled) return false;
@@ -422,8 +464,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     style={selectionKinds.size > 0 ? styleNode : undefined} /> : null;
   const documentProperties = doc ? <View nativeID="lienzo-properties-document">
     <View style={{ paddingHorizontal: F.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>Lienzo</Txt><Txt kind="bodyStrong" numberOfLines={2}>{doc.title}</Txt><Txt kind="small" muted>{GLOSSARY.lienzo}</Txt></View>
-    <PanelSection title="This Lienzo"><DocumentActions controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
-    <PanelSection title="Variables" defaultOpen={!!doc.variables?.length}><VariablesEditor controller={c} scopeId={DOCUMENT_SCOPE} disabled={disabled} /></PanelSection>
+    <PanelSection title="This Lienzo" defaultOpen><DocumentActions controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
+    <PanelSection title="Variables" summary={doc.variables?.length ? String(doc.variables.length) : undefined}><VariablesEditor controller={c} scopeId={DOCUMENT_SCOPE} disabled={disabled} /></PanelSection>
   </View> : null;
   const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Frame', ventana: 'Window' }[toolId] : 'Tool';
   const tabs: PanelTab[] = [];
@@ -481,7 +523,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     items.push({ id: 'lienzo.all', group: 'Lienzos', title: 'All Lienzos', subtitle: 'Your Lienzos, with thumbnails', icon: 'LayoutGrid', keywords: 'home documents files open', run: openDocuments });
     for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy, run: () => { void c.open(d.id); } });
     items.push(
-      { id: 'settings.open', group: 'Settings', title: 'Settings', subtitle: 'Shortcuts, toolbar, extensions, about', icon: 'Settings', keywords: 'preferences options', run: () => openSettings('shortcuts') },
+      { id: 'settings.open', group: 'Settings', title: 'Settings', subtitle: 'Appearance, shortcuts, toolbar, extensions, about', icon: 'Settings', keywords: 'preferences options', run: () => openSettings('appearance') },
+      ...APPEARANCES.map((a): PaletteItem => ({ id: `theme.${a.id}`, group: 'Settings', title: `Theme: ${a.label}`, subtitle: getAppearance() === a.id ? 'In use' : a.id === 'system' ? `Follow ${capabilities.kind === 'paseo' ? 'Paseo' : 'the system'}` : a.detail, icon: a.icon, keywords: 'appearance theme dark light mode night day colour color', shortcut: a.id === (isDark(u.c.surface0) ? 'light' : 'dark') ? key('view.theme') : undefined, run: () => chooseTheme(a.id) })),
       { id: 'settings.shortcuts', group: 'Settings', title: 'Keyboard shortcuts', subtitle: 'See and reassign keys', icon: 'Keyboard', keywords: 'keys keyboard bindings cheat sheet', shortcut: key('help.shortcuts'), run: () => openSettings('shortcuts') },
       { id: 'settings.toolbar', group: 'Settings', title: 'Toolbar', subtitle: 'Pinned tools', icon: 'PanelBottom', keywords: 'pin pinned tools', run: () => openSettings('toolbar') },
       { id: 'settings.about', group: 'Settings', title: 'About Lienzo', subtitle: 'Version and where your Lienzos live', icon: 'Info', keywords: 'version data path', run: () => openSettings('about') },
@@ -510,6 +553,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       case 'view.fitSelection': canvas.current?.zoomToSelection(); return true;
       case 'panel.right': togglePanel(); return true;
       case 'ui.hide': setAddOpen(false); setImmersive(v => !v); return true;
+      case 'view.theme': chooseTheme(isDark(u.c.surface0) ? 'light' : 'dark'); return true;
       case 'edit.undo': void changeRevision('undo'); return true;
       case 'edit.redo': void changeRevision('redo'); return true;
       case 'edit.duplicate': duplicateSelection(); return true;
@@ -588,7 +632,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <MenuRow icon="Compass" label="Instructions for the agent" disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
       <MenuDivider />
       <MenuRow icon="Puzzle" label="Extensions" onPress={openExtensions} />
-      <MenuRow icon="Settings" label="Settings" onPress={() => openSettings('shortcuts')} />
+      <MenuRow icon="Settings" label="Settings" onPress={() => openSettings()} />
       <MenuRow icon="Keyboard" label="Keyboard shortcuts" hint={keyLabel('help.shortcuts')} onPress={() => openSettings('shortcuts')} />
       <MenuRow icon="CircleHelp" label="Help" onPress={() => openHelp()} />
       <MenuRow icon="BookOpen" label="Lienzo guide" onPress={() => { setOverflow(false); setGuideOpen(true); }} />
@@ -628,7 +672,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     </Screen>
     <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" fit="top" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
       {screen?.kind === 'settings' && <SettingsContent key={screen.section} section={screen.section} c={c} width={frame.width - railWidth} list={resolved.list} defs={shortcutRegistry.all()} overrides={overrides} chips={chips}
-        saveShortcuts={next => savePrefs({ shortcuts: next })} pinned={pinnedRows} savePinned={ids => savePrefs({ pinned: ids })} onGuide={() => { setScreen(null); setGuideOpen(true); }} />}
+        appearance={getAppearance()} onAppearance={chooseTheme} themeKey={keyLabel('view.theme')} saveShortcuts={next => savePrefs({ shortcuts: next })} pinned={pinnedRows} savePinned={ids => savePrefs({ pinned: ids })} onGuide={() => { setScreen(null); setGuideOpen(true); }} />}
     </Screen>
     <Screen open={screen?.kind === 'help'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-help" label="Help">
       {screen?.kind === 'help' && <WikiContent width={frame.width} page={screen.page} onPage={page => setScreen({ kind: 'help', page })} extensions={c.catalog?.extensions ?? []} shortcuts={resolved.list} chips={chips} onTour={() => { setScreen(null); setGuideOpen(true); }} />}
@@ -645,6 +689,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
+      {imagesBusy && <View pointerEvents="none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 31 }}><View nativeID="lienzo-images-busy" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><LoadingEgg /><Txt kind="small">Adding images…</Txt></View></View>}
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}
       {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, left: islandLeft, maxWidth: Math.max(0, width - 24 - 120 - u.inset.left) }}><View nativeID="lienzo-document-island" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
         <IconButton icon="Menu" label="Menu" detail="Lienzos, history, agent, extensions and settings." size={36} onPress={() => { setAddOpen(false); setOverflow(true); }} />
@@ -662,7 +707,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         <View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}><Button label="Add something" icon="Plus" disabled={disabled} onPress={() => setAddOpen(true)} /></View>
       </View>}
       {doc && !immersive && !u.compact && <View pointerEvents="box-none" style={{ position: 'absolute', bottom: toolbarBottom, left: tokens.island.inset, right: tokens.island.inset, alignItems: 'center' }}><View pointerEvents="box-none" onLayout={e => { const { x, width: w } = e.nativeEvent.layout; setToolbarBox({ x: x + tokens.island.inset, width: w }); }}>{toolbar}</View></View>}
-      {panelVisible && !u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={panelTop} maxHeight={panelMax} shortcut={keyLabel('panel.right')} focusSection={panel.focus === 'instruction' ? 'Instructions for the agent' : undefined} />}
+      {panelVisible && !u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={panelTop} maxHeight={panelMax} shortcut={keyLabel('panel.right')} focusSection={panel.focus === 'instruction' ? 'Instructions for the agent' : undefined} scope={sectionScope(c.selection, linkId)} />}
       <View pointerEvents="box-none" style={{ position: 'absolute', top: u.compact ? tokens.size.topBarCompact + 8 : tokens.island.bannerTop, left: 12, right: panelVisible && !u.compact ? F.rightPanel.width + 24 : 12 }}>{doc && (c.failure || c.offline || reload) && <View pointerEvents="box-none" style={{ padding: 12, gap: 8 }}>
           {c.failure && <Banner title={c.failure.conflict ? 'The Lienzo changed while you were editing' : 'The change was not saved'} icon={c.failure.conflict ? 'GitCompareArrows' : 'CircleAlert'} color={c.failure.conflict ? u.c.statusWarning : u.c.statusDanger} message={c.failure.conflict ? 'Another edit changed the Lienzo and yours was not saved. You can apply it again on top of the current content, or discard it.' : c.failure.message}>
             {c.failure.retry && <Button label={c.failure.conflict ? 'Apply my change again' : 'Retry'} variant="primary" small disabled={disabled} onPress={() => { void c.failure?.retry?.().catch(e => c.fail(e)); }} />}<Button label="Discard" variant="ghost" small onPress={c.clearFailure} />
@@ -681,7 +726,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     </View>
     {u.compact && doc && !immersive && selectionBar}
     {u.compact && doc && !immersive && <View style={{ paddingHorizontal: 8, paddingTop: F.toolbar.compactPadding.top, paddingBottom: F.toolbar.compactPadding.bottom }}>{toolbar}</View>}
-    {panelVisible && u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={0} maxHeight={Math.max(320, panelHeight - 120)} open />}
+    {panelVisible && u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={0} maxHeight={Math.max(320, panelHeight - 120)} open focusSection={panel.focus === 'instruction' ? 'Instructions for the agent' : undefined} scope={sectionScope(c.selection, linkId)} />}
     {addOpen && <><Pressable accessibilityLabel="Close the catalog" onPress={() => setAddOpen(false)} style={{ position: 'absolute', inset: 0, zIndex: 40 }} />
       <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 6, zIndex: 41, alignItems: 'center' } : { position: 'absolute', left: addLeft, bottom: toolbarBottom + F.toolbar.height + F.catalog.offset, zIndex: 41 }}>
         <AddMenu entries={entries} pinned={pinnedIds} onPin={togglePin} onClose={() => setAddOpen(false)} onManage={openExtensions} maxHeight={Math.min(F.catalog.maxHeight, Math.max(240, panelHeight - toolbarBottom - F.toolbar.height - 80))} width={u.compact ? Math.min(F.catalog.width, width - 16) : F.catalog.width} />
@@ -690,8 +735,15 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     {overflow && !u.compact && <><Pressable accessibilityLabel="Close the menu" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
       <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: islandLeft, top: tokens.island.inset + F.top.height + 6, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
     <CommandPalette open={paletteOpen} items={paletteItems} recent={recent} chips={chips} width={width} height={panelHeight} onClose={() => setPaletteOpen(false)} onRun={(item, background) => { runPaletteItem(item); if (background) toast.show('Running: ' + item.title, { variant: 'info' }); }} onQuery={query => { if (query.trim().toLowerCase() === 'mate') setKettle(k => k + 1); }} />
+    {/* Above every island: files from the computer are about to land on the canvas. */}
+    {fileOver && <View pointerEvents="none" nativeID="lienzo-file-drop" style={{ position: 'absolute', inset: tokens.media.upload.dropInset, borderRadius: tokens.media.upload.dropRadius, borderWidth: 2, borderStyle: 'dashed', borderColor: u.c.accent, backgroundColor: withAlpha(u.c.accent, .06), alignItems: 'center', justifyContent: 'center', zIndex: 40 }}>
+      <View style={[islandStyle(u, true), { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }]}>
+        <View style={{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: u.wash('acento') }}><Icon name="ImagePlus" size={18} color={u.c.accent} /></View>
+        <View style={{ gap: 2 }}><Txt kind="bodyStrong">Drop to add the images here</Txt><Txt kind="small" muted>PNG, JPEG, WebP, GIF or SVG, up to {MEDIA_LIMITS.bytes / 1024 / 1024} MB each</Txt></View>
+      </View>
+    </View>}
     <TooltipLayer />
-    <LinkSheet intent={ventana} onClose={() => setVentana(null)} panel={panelBox} disabled={disabled} onAdd={insertLink} />
+    <LinkSheet intent={ventana} onClose={() => setVentana(null)} panel={panelBox} disabled={disabled} onAdd={insertLink} onFiles={files => addImages(files)} />
     <SvgSheet open={svgOpen} onClose={() => setSvgOpen(false)} panel={panelBox} onInsert={insertSvg} />
     <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
     <Modal title="Menu" open={overflow && u.compact} onOpenChange={setOverflow}><Modal.Content><View>{menuRows}</View></Modal.Content></Modal>

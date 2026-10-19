@@ -12,7 +12,7 @@ test('a link typed without a scheme is read as https; other schemes are refused 
   assert.equal(normaliseLink('not a link'), null);
   assert.deepEqual(describeLink('', 'page'), { status: 'empty' });
   const file = describeLink('file:///home/me/cat.png', 'image'); assert.equal(file.status, 'invalid');
-  assert.match((file as { message: string }).message, /Files on this computer/);
+  assert.match((file as { message: string }).message, /drop the file here or press Choose file/);
   assert.match((describeLink('javascript:alert(1)', 'page') as { message: string }).message, /web links/);
   assert.match((describeLink('hello there', 'video') as { message: string }).message, /not a web link/);
 });
