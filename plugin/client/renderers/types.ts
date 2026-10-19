@@ -9,6 +9,8 @@ export type RendererProps<Data = unknown> = {
   ui: ReturnType<typeof useUI>; runtime: RendererRuntime; scope: RendererScope;
   /** The canvas selection, and a way to move it: how a renderer points at other cards. Absent outside a canvas. */
   selection?: readonly string[]; select?(ids: string[]): void;
+  /** A card with a stored size: the least height that still shows what must never be clipped (controls). The card grows to it. */
+  reportMinimumHeight?(height: number): void;
 };
 export type RendererVisual = { icon: string; tone: string; width: 'standard' | 'wide' | 'node' };
 export type LinkMotionToken = { linkId: string; progress: number; kind: 'message' | 'signal' | 'value'; label: string; sign?: 1 | -1; delay?: number };

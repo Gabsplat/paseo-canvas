@@ -84,12 +84,15 @@ function adapter(h: ReturnType<typeof harness>, probe: ReturnType<typeof fakeGL>
   const owned: Slot[] = [], frames = new Map<number, (t: number) => void>(), canvasEvents = new Map<string, Function>(), docEvents = new Map<string, Function>();
   let intersection: Function = () => {}, sequence = 0;
   const globals = globalThis as unknown as Record<string, any>, old = new Map<string, unknown>();
-  const document = { hidden: false, addEventListener: (name: string, cb: Function) => docEvents.set(name, cb), removeEventListener: (name: string) => docEvents.delete(name) };
+  // The page's one shared WebGL canvas, and the 2D canvas each card copies its picture into.
+  const shared = { width: 0, height: 0, getContext: (kind: string) => kind === 'webgl' && available ? probe.gl : null, addEventListener: (name: string, cb: Function) => canvasEvents.set(name, cb), removeEventListener: (name: string) => canvasEvents.delete(name) };
+  const document = { hidden: false, createElement: () => shared, addEventListener: (name: string, cb: Function) => docEvents.set(name, cb), removeEventListener: (name: string) => docEvents.delete(name) };
+  const copies: number[][] = [], view = { clearRect() {}, drawImage: (_source: unknown, ...rect: number[]) => copies.push(rect) };
   const host = { document, devicePixelRatio: 3, requestAnimationFrame: (cb: (t: number) => void) => { frames.set(++sequence, cb); return sequence; }, cancelAnimationFrame: (id: number) => frames.delete(id),
     IntersectionObserver: class { constructor(cb: Function) { intersection = cb; } observe() {} disconnect() {} }, ResizeObserver: class { constructor(_cb: Function) {} observe() {} disconnect() {} } };
   for (const [key, value] of Object.entries(host)) { old.set(key, globals[key]); globals[key] = value; }
-  const canvas = { clientWidth: 400, clientHeight: 225, width: 0, height: 0, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 225 }), getContext: () => available ? probe.gl : null,
-    addEventListener: (name: string, cb: Function) => canvasEvents.set(name, cb), removeEventListener: (name: string) => canvasEvents.delete(name), setPointerCapture() {}, releasePointerCapture() {} };
+  const canvas = { clientWidth: 400, clientHeight: 225, width: 0, height: 0, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 225 }), getContext: (kind: string) => kind === '2d' ? view : null,
+    addEventListener() {}, removeEventListener() {}, setPointerCapture() {}, releasePointerCapture() {} };
   let node: Element;
   const render = () => {
     node = h.render(); const stage = find(node, GLSurface);
@@ -99,7 +102,7 @@ function adapter(h: ReturnType<typeof harness>, probe: ReturnType<typeof fakeGL>
     find(tree, 'canvas').props.ref.current = canvas; commit(owned); return node;
   };
   render();
-  return { render, canvas, frames, document,
+  return { render, canvas, frames, document, shared, copies,
     show(value: boolean) { intersection([{ isIntersecting: value }]); },
     frame(time = 0) { const pending = [...frames.values()]; frames.clear(); for (const cb of pending) cb(time); },
     hideTab(value: boolean) { document.hidden = value; docEvents.get('visibilitychange')!(); },

@@ -9,7 +9,8 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   if (specifier === 'react-native' || (specifier.endsWith('/ui') && context.parentURL?.includes('/plugin/client/'))) return { url: new URL('./fixtures/native-headless.ts', `file://${__filename}`).href, shortCircuit: true };
   return nextResolve(specifier, context);
 } });
-const { WebCanvasSurface, WebGLSurface, WebRange, compileGLProgram, MAX_LIVE_GL_CONTEXTS } = require('../plugin/client/web');
+const { WebCanvasSurface, WebGLSurface, WebRange, compileGLProgram } = require('../plugin/client/web');
+const { sharedGLContexts } = require('../plugin/client/shared-gl');
 const { CanvasSurface, GLSurface, NativeLearningFallback } = require('../plugin/client/Surfaces');
 const { controlsRenderer } = require('../plugin/client/renderers/controls');
 const children = (node: Element): Element[] => (Array.isArray(node.props.children) ? node.props.children.flat(Infinity) : [node.props.children]).filter((x: unknown) => x && typeof x === 'object');
@@ -18,7 +19,9 @@ function harness(kind: '2d' | 'webgl', props: Record<string, unknown>, gl?: Reco
   reset(); Platform.OS = 'web';
   const frames = new Map<number, (time: number) => void>(), docEvents = new Map<string, () => void>(), canvasEvents = new Map<string, (event: any) => void>();
   const observers: Record<string, Function> = {}; let sequence = 0;
-  const doc = { hidden: false, addEventListener: (name: string, cb: () => void) => docEvents.set(name, cb), removeEventListener: (name: string) => docEvents.delete(name) };
+  // WebGL drawings share the page's one context on a canvas of its own and copy into their card's 2D canvas.
+  const sharedEvents = new Map<string, (event: any) => void>(), shared = { width: 0, height: 0, getContext: (k: string) => k === 'webgl' ? gl ?? null : null, addEventListener: (name: string, cb: (e: any) => void) => sharedEvents.set(name, cb), removeEventListener: (name: string) => sharedEvents.delete(name) };
+  const doc = { hidden: false, createElement: () => shared, addEventListener: (name: string, cb: () => void) => docEvents.set(name, cb), removeEventListener: (name: string) => docEvents.delete(name) };
   const globals = globalThis as unknown as Record<string, any>, old = new Map<string, unknown>();
   const host = { document: doc, devicePixelRatio: 2, requestAnimationFrame: (cb: (time: number) => void) => { frames.set(++sequence, cb); return sequence; }, cancelAnimationFrame: (id: number) => frames.delete(id),
     IntersectionObserver: class { constructor(cb: Function) { observers.intersection = cb; } observe() {} disconnect() {} },
@@ -26,15 +29,15 @@ function harness(kind: '2d' | 'webgl', props: Record<string, unknown>, gl?: Reco
   };
   for (const [key, value] of Object.entries(host)) { old.set(key, globals[key]); globals[key] = value; }
   const transforms: number[][] = []; let saved = 0, restored = 0;
-  const ctx = { save: () => saved++, restore: () => restored++, setTransform: (...args: number[]) => transforms.push(args) };
-  const canvas = { clientWidth: 200, clientHeight: 100, width: 0, height: 0, getBoundingClientRect: () => ({ left: 10, top: 20, width: 300, height: 150 }), getContext: () => kind === '2d' ? ctx : gl,
+  const copies: number[][] = [], ctx = { save: () => saved++, restore: () => restored++, setTransform: (...args: number[]) => transforms.push(args), clearRect() {}, drawImage: (_source: unknown, ...rect: number[]) => copies.push(rect) };
+  const canvas = { clientWidth: 200, clientHeight: 100, width: 0, height: 0, getBoundingClientRect: () => ({ left: 10, top: 20, width: 300, height: 150 }), getContext: (k: string) => k === '2d' ? ctx : null,
     addEventListener: (name: string, cb: (e: any) => void) => canvasEvents.set(name, cb), removeEventListener: (name: string) => canvasEvents.delete(name), setPointerCapture() {}, releasePointerCapture() {},
   };
   const element = (kind === '2d' ? WebCanvasSurface : WebGLSurface)({ id: 'test', label: 'Graph', height: 100, ...props } as any) as unknown as Element;
   const root = (element.type as Function)(element.props) as Element, node = find(root, 'canvas')!;
   node.props.ref.current = canvas;
   const cleanups = effects.map(effect => effect()).filter((value): value is () => void => typeof value === 'function');
-  return { canvas, node, doc, docEvents, frames, observers, canvasEvents, transforms, balances: () => [saved, restored],
+  return { canvas, node, doc, docEvents, frames, observers, canvasEvents, sharedEvents, shared, copies, transforms, balances: () => [saved, restored],
     frame(time = 0) { const pending = [...frames.values()]; frames.clear(); pending.forEach(cb => cb(time)); },
     close() { cleanups.reverse().forEach(fn => fn()); for (const [key, value] of old) { if (value === undefined) delete globals[key]; else globals[key] = value; } },
   };
@@ -56,16 +59,16 @@ test('2D adapter uses camera/DPR pixels, logical pointer coordinates, resizes, a
 });
 function fakeGL() {
   let disposed = 0;
-  return { viewport() {}, getExtension: () => ({ loseContext: () => disposed++ }), disposed: () => disposed };
+  return { COLOR_BUFFER_BIT: 1, viewport() {}, clearColor() {}, clear() {}, getExtension: () => ({ loseContext: () => disposed++ }), disposed: () => disposed };
 }
 test('WebGL adapter pauses on context loss, reinitializes on restore, and releases its context', () => {
   const gl = fakeGL(); let initializations = 0, draws = 0, releases = 0;
   const h = harness('webgl', { animated: true, initialize: () => { initializations++; return { dispose: () => releases++ }; }, draw: () => draws++ }, gl);
   try {
     h.observers.intersection([{ isIntersecting: true }]); h.frame(); assert.equal(draws, 1);
-    let prevented = false; h.canvasEvents.get('webglcontextlost')!({ preventDefault() { prevented = true; } });
+    let prevented = false; h.sharedEvents.get('webglcontextlost')!({ preventDefault() { prevented = true; } });
     assert.equal(prevented, true); assert.equal(h.frames.size, 0); h.frame(); assert.equal(draws, 1); assert.equal(releases, 1);
-    h.canvasEvents.get('webglcontextrestored')!({}); h.frame(); assert.equal(initializations, 2); assert.equal(draws, 2);
+    h.sharedEvents.get('webglcontextrestored')!({}); h.frame(); assert.equal(initializations, 2); assert.equal(draws, 2);
   } finally { h.close(); }
   assert.equal(gl.disposed(), 1); assert.equal(releases, 2);
 });
@@ -85,15 +88,18 @@ test('surface visibility pauses playback on hidden stages and pixel caps bound p
     assert.deepEqual(visibility, [false, true, false, true, false]); assert.equal(h.frames.size, 0);
   } finally { h.close(); }
 });
-test('WebGL context cap degrades in Spanish and freeing a context permits another one', () => {
-  const held: ReturnType<typeof harness>[] = [];
+test('twenty WebGL drawings share one context and all draw; none is refused', () => {
+  const held: ReturnType<typeof harness>[] = [], gl = fakeGL(), draws = new Map<number, number>();
   try {
-    for (let i = 0; i < MAX_LIVE_GL_CONTEXTS; i++) held.push(harness('webgl', { draw() {} }, fakeGL()));
-    const overflow = harness('webgl', { draw() {} }, fakeGL());
-    assert.ok(updates.some(message => String(message).includes('Too many WebGL drawings'))); overflow.close();
-    held.pop()!.close();
-    const next = harness('webgl', { draw() {} }, fakeGL()); assert.ok(!updates.some(message => String(message).includes('Too many'))); next.close();
+    for (let i = 0; i < 20; i++) held.push(harness('webgl', { id: `s${i}`, draw: () => draws.set(i, (draws.get(i) ?? 0) + 1) }, gl));
+    held.forEach(h => h.observers.intersection([{ isIntersecting: true }])); held.at(-1)!.frame(16);
+    assert.equal(sharedGLContexts(), 1); assert.equal(draws.size, 20); assert.ok(held.every(h => h.copies.length === 1 && h.canvas.width === 600));
+    assert.ok(!updates.some(message => /Too many|could not/.test(String(message))));
+    // Off screen keeps its last frame and takes no more; coming back draws at once even when nothing animates.
+    held[3].observers.intersection([{ isIntersecting: false }]); held[3].observers.resize(); held.at(-1)!.frame(32); assert.equal(draws.get(3), 1);
+    held[3].observers.intersection([{ isIntersecting: true }]); held.at(-1)!.frame(48); assert.equal(draws.get(3), 2); assert.equal(draws.get(4), 1);
   } finally { held.reverse().forEach(h => h.close()); }
+  assert.equal(sharedGLContexts(), 0); assert.equal(gl.disposed(), 1);
 });
 test('shader compilation/link diagnostics return without throwing and release temporary resources', () => {
   const deleted: object[] = []; let linked = false;

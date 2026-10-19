@@ -3,7 +3,7 @@ import { Animated, PanResponder, Pressable, View, type GestureResponderEvent, ty
 import { Icon, ScrollView } from './host';
 import type { CanvasBlock, CanvasDocument, CanvasGroup } from '../shared/model';
 import type { CanvasController } from './useCanvas';
-import { alignmentGuides, anchorCard, boundsOf, connectOperations, descriptionKey, dropTarget, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
+import { alignmentGuides, anchorCard, boundsOf, connectOperations, descriptionKey, minimumKey, dropTarget, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows, requestTitleEdit } from './Blocks';
@@ -76,7 +76,7 @@ function sameCard(a: CardProps, b: CardProps) {
     && p.view?.document.example === n.view?.document.example;
 }
 const Card = React.memo(function Card({ interacting, block, height, selected, lifted, detailsSide, cursor, controller, onSelect, onInspect, onPacks, onReorder, onHover, onMeasure }: CardProps) {
-  return <ContentInteractionProvider value={interacting}><BlockCard controller={controller} onSelect={onSelect} onInspect={onInspect} onPacks={onPacks} onReorder={onReorder} block={block} height={height} selected={selected} dragging={lifted} onHover={onHover} detailsSide={detailsSide} cursor={cursor} onMeasure={h => onMeasure(block.id, h)} /></ContentInteractionProvider>;
+  return <ContentInteractionProvider value={interacting}><BlockCard controller={controller} onSelect={onSelect} onInspect={onInspect} onPacks={onPacks} onReorder={onReorder} block={block} height={height} selected={selected} dragging={lifted} onHover={onHover} detailsSide={detailsSide} cursor={cursor} onMeasure={(h, minimum) => onMeasure(minimum ? minimumKey(block.id) : block.id, h)} /></ContentInteractionProvider>;
 }, sameCard);
 const BlockItem = React.memo(function BlockItem({ left, top, width, resizeHandlers, resizeCursor, anim, dim, ringed, handlers, accent, shadow, ...card }: BlockItemProps) {
   return <Animated.View nativeID={`lienzo-entity-${card.block.id}`} {...handlers} style={{ position: 'absolute', left, top, width: anim.target ? anim.w : width, zIndex: card.lifted || card.selected ? 3 : 2, ...noSelect, opacity: anim.enter, transform: [{ translateX: anim.x }, { translateY: anim.y }, { scale: anim.scale }] }}>
@@ -117,6 +117,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const pressed = useRef<string | null>(null);
   const viewport = useRef<View>(null), marks = useRef<View>(null), links = useRef<LinkLayerHandle>(null), vp = useRef<Point | null>(null);
   const layout = useMemo(() => layoutCanvas(doc, heights, c.catalog, size.width || undefined), [doc, heights, c.catalog, size.width]), rects = layout.rects, index = layout.index;
+  // A resize stops where a card's controls would be cut (a shader's measured floor), not only at its type's minimum.
+  const measuredHeights = useRef(heights); measuredHeights.current = heights;
+  const resizeFloor = (block: CanvasBlock, catalog: typeof c.catalog) => { const min = minimumBlockSize(block, catalog), floor = measuredHeights.current[minimumKey(block.id)]; return floor ? { ...min, height: Math.max(min.height, Math.ceil(floor)) } : min; };
   const roots = [...doc.groups, ...doc.blocks].filter(e => !e.parentGroupId).map(e => rects.get(e.id)!);
   const minX = Math.min(0, ...roots.map(r => r.x)), minY = Math.min(0, ...roots.map(r => r.y)), maxX = Math.max(0, ...roots.map(r => r.x + r.width)), maxY = Math.max(0, ...roots.map(r => r.y + r.height));
   const bound = { x: minX - 600, y: minY - 600, width: maxX - minX + 1200, height: maxY - minY + 1200 };
@@ -451,7 +454,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       if (kind === 'wb-shape' && block.data.shape === 'line' && (state.handle === 'start' || state.handle === 'end')) { const box = resizeLineBox(state.start, block.data as unknown as Parameters<typeof resizeLineBox>[1], delta, state.handle, state.proportional); state.next = box.size; state.nextPosition = box.position; state.from = box.from; }
       else { const box = resizeWhiteboardBox(state.start, delta, state.handle, whiteboardMinSize(kind, block.data), kind === 'wb-svg' || state.proportional && kind !== 'wb-text'); state.next = { width: box.width, height: kind === 'wb-text' ? state.start.height : box.height }; state.nextPosition = { x: box.x, y: kind === 'wb-text' ? state.start.y : box.y }; }
       const a = animOf(state.id, NATIVE); a.x.setValue(state.nextPosition.x - state.start.x); a.y.setValue(state.nextPosition.y - state.start.y);
-    } else state.next = resizeBlockSize(state.start, delta, minimumBlockSize(block, c.catalog), state.proportional);
+    } else state.next = resizeBlockSize(state.start, delta, resizeFloor(block, c.catalog), state.proportional);
     const a = animOf(state.id, NATIVE); a.w.setValue(state.next.width); a.h.setValue(state.next.height);
     for (const id of state.parents) {
       const group = layout.index.groups.get(id), r = rects.get(id); if (!group || !r) continue;
@@ -484,7 +487,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       const patch: Partial<Omit<CanvasBlock, 'id'>> = kind === 'wb-text' ? { position, data: { width: state.next.width } } : { position, size: state.next, ...(state.from ? { data: { from: state.from } } : {}) };
       void c.edit([{ type: 'block.update', id: state.id, patch }], kind === 'wb-text' ? 'Resize text' : 'Resize shape').then(next => finish(next?.document)); return;
     }
-    const final = resizeBlockSize(state.next, { x: 0, y: 0 }, minimumBlockSize(block, c.catalog), state.proportional, true);
+    const final = resizeBlockSize(state.next, { x: 0, y: 0 }, resizeFloor(block, c.catalog), state.proportional, true);
     settle(a.w, final.width); settle(a.h, final.height);
     void c.edit([{ type: 'block.update', id: state.id, patch: { size: final } }], `Resize “${block.title}”`).then(next => finish(next?.document));
   }

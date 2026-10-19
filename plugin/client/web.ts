@@ -7,6 +7,7 @@ import { frameSandbox } from './media';
 import type { LinkMotionSample } from './renderers/types';
 import { sanitizeSvg, SVG_LIMITS } from '../shared/svg';
 import { useContentInteraction } from './interaction';
+import { GL_LIMITS, joinSharedGL, surfacePixels, type GLClient } from './shared-gl';
 interface BrowserEventTarget {
   addEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
   removeEventListener(name: string, listener: (event: BrowserKeyEvent) => void, capture?: boolean): void;
@@ -81,10 +82,11 @@ export function WebFrame({ url, title, border, height, surface, player = false, 
  * What every mini app gets before its own code: a `lienzo` object that talks to the canvas page through messages. It
  * only believes messages from the canvas page: mini apps can post to each other, and one must not pass for the canvas.
  * `setState` stores a small JSON value on the block for the agent to read; `send` is kept for pages written before it
- * and only records the last call on the block. Nothing a page does reaches the agent by itself.
+ * and only records the last call on the block. Nothing a page does reaches the agent by itself. It also reports the height
+ * of the page's content (`fit`) whenever it changes, so a window without a stored size can fit it.
  */
-export const HTML_APP_BRIDGE = "<script>(function(){var l=[],c=null,m=[],r=null,w={},q=0;function post(m){m.lienzo=1;parent.postMessage(m,'*')}window.lienzo={setState:function(v){return new Promise(function(ok,no){var id=++q;w[id]={ok:ok,no:no};post({type:'state',id:id,value:v===undefined?null:v})})},get state(){return c&&c.state!==undefined?c.state:null},send:function(k,p){post({type:'event',kind:String(k),payload:p===undefined?null:p})},resize:function(h){post({type:'resize',height:Number(h)})},select:function(id){post({type:'select',id:String(id)})},onContext:function(f){l.push(f);if(c)f(c)},get context(){return c},onFrame:function(f){m.push(f);if(r)f(r)},get frame(){return r}};addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||e.source!==parent)return;if(d.type==='frame'){r=d.frame;m.forEach(function(f){try{f(r)}catch(_){}});return}if(d.type==='stored'){var x=w[d.id];if(!x)return;delete w[d.id];if(d.ok)x.ok();else x.no(new Error(d.error||'Not saved'));return}if(d.type!=='context')return;c=d.context;try{document.documentElement.style.colorScheme=c.theme.dark?'dark':'light'}catch(_){}l.forEach(function(f){try{f(c)}catch(_){}})});post({type:'ready'})})();</script>";
-export type HtmlAppMessage = { type: 'ready' } | { type: 'state'; id: unknown; value: unknown } | { type: 'event'; kind: unknown; payload: unknown } | { type: 'resize'; height: unknown } | { type: 'select'; id: unknown };
+export const HTML_APP_BRIDGE = "<script>(function(){var l=[],c=null,m=[],r=null,w={},q=0;function post(m){m.lienzo=1;parent.postMessage(m,'*')}window.lienzo={setState:function(v){return new Promise(function(ok,no){var id=++q;w[id]={ok:ok,no:no};post({type:'state',id:id,value:v===undefined?null:v})})},get state(){return c&&c.state!==undefined?c.state:null},send:function(k,p){post({type:'event',kind:String(k),payload:p===undefined?null:p})},resize:function(h){post({type:'resize',height:Number(h)})},select:function(id){post({type:'select',id:String(id)})},onContext:function(f){l.push(f);if(c)f(c)},get context(){return c},onFrame:function(f){m.push(f);if(r)f(r)},get frame(){return r}};addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||e.source!==parent)return;if(d.type==='frame'){r=d.frame;m.forEach(function(f){try{f(r)}catch(_){}});return}if(d.type==='stored'){var x=w[d.id];if(!x)return;delete w[d.id];if(d.ok)x.ok();else x.no(new Error(d.error||'Not saved'));return}if(d.type!=='context')return;c=d.context;try{document.documentElement.style.colorScheme=c.theme.dark?'dark':'light'}catch(_){}l.forEach(function(f){try{f(c)}catch(_){}})});post({type:'ready'});var fh=0,fs=0;function fit(){fs=0;try{var d=document.documentElement,h=d.scrollHeight>d.clientHeight+1?d.scrollHeight:Math.ceil(d.getBoundingClientRect().height);if(h>0&&Math.abs(h-fh)>=2){fh=h;post({type:'fit',height:h,width:d.scrollWidth})}}catch(_){}}function soon(){if(fs)return;fs=1;try{(typeof requestAnimationFrame==='function'?requestAnimationFrame:setTimeout)(fit)}catch(_){fs=0}}function watch(){try{var o=new ResizeObserver(soon);o.observe(document.documentElement);if(document.body)o.observe(document.body)}catch(_){}try{new MutationObserver(soon).observe(document.documentElement,{childList:true,subtree:true,characterData:true})}catch(_){}try{addEventListener('load',soon)}catch(_){}soon()}try{if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch);else watch()}catch(_){}})();</script>";
+export type HtmlAppMessage = { type: 'ready' } | { type: 'state'; id: unknown; value: unknown } | { type: 'event'; kind: unknown; payload: unknown } | { type: 'resize'; height: unknown } | { type: 'fit'; height: unknown; width?: unknown } | { type: 'select'; id: unknown };
 /**
  * A page written by the author or an agent, running in a sandboxed frame with an opaque origin: scripts run, but it
  * cannot reach the canvas page, its storage or its cookies. It hears only the context it is sent and is heard only
@@ -99,7 +101,7 @@ export function WebHtml({ id, html, title, surface, context, onMessage }: { id: 
     const listen = (event: { source: unknown; data: unknown }) => {
       const data = event.data as { lienzo?: unknown; type?: unknown } | null;
       if (!frame.current?.contentWindow || event.source !== frame.current.contentWindow || !data || data.lienzo !== 1 || typeof data.type !== 'string') return;
-      if (data.type === 'ready') { ready.current = true; post(); } else if (['state', 'event', 'resize', 'select'].includes(data.type)) latest.current.onMessage(data as HtmlAppMessage, message => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, ...message }, '*'); } catch {} });
+      if (data.type === 'ready') { ready.current = true; post(); } else if (['state', 'event', 'resize', 'fit', 'select'].includes(data.type)) latest.current.onMessage(data as HtmlAppMessage, message => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, ...message }, '*'); } catch {} });
     };
     host.addEventListener('message', listen); return () => { host.removeEventListener?.('message', listen); ready.current = false; };
   }, [html]);
@@ -684,71 +686,88 @@ interface DrawingHost {
   ResizeObserver?: new (cb: () => void) => { observe(node: unknown): void; disconnect(): void };
   IntersectionObserver?: new (cb: (entries: { isIntersecting: boolean }[]) => void) => { observe(node: unknown): void; disconnect(): void };
 }
-export const MAX_LIVE_GL_CONTEXTS = 8;
-let liveGLContexts = 0;
 function DrawingSurface({ kind, ...props }: (CanvasSurfaceProps | GLSurfaceProps) & { kind: '2d' | 'webgl' }) {
   const ref = useRef<DrawingCanvas | null>(null), latest = useRef(props), invalidate = useRef<() => void>(() => {});
   latest.current = props; const [error, setError] = useState('');
   useEffect(() => {
     if (Platform.OS !== 'web' || !ref.current || !browser().document) return;
     const canvas = ref.current, doc = browser().document!, host = globalThis as unknown as DrawingHost;
-    let context: Canvas2DContext | GLContext | null = null, frameId = 0, visible = !host.IntersectionObserver, lost = false, stopped = false, allocated = false, allocatedContext: GLContext | null = null, dispose: (() => void) | undefined;
     const report = (message: string) => { setError(message); latest.current.onError?.(message); };
-    const initialize = () => {
-      try {
-        if (kind === 'webgl' && !allocated && liveGLContexts >= MAX_LIVE_GL_CONTEXTS) { report('Too many WebGL drawings are open. Close another one and open this block again.'); return; }
-        context = canvas.getContext(kind) as typeof context;
-        if (!context) { report('The browser does not offer this drawing context.'); return; }
-        if (kind === 'webgl') {
-          if (!allocated) { allocated = true; liveGLContexts++; }
-          allocatedContext = context as GLContext;
-          const result = (latest.current as GLSurfaceProps).initialize?.(context as GLContext);
-          dispose = result?.dispose; if (result?.error) { report('The drawing could not be prepared. Check the shader or its settings.'); latest.current.onError?.(result.error); context = null; return; }
-        }
-        setError('');
-      } catch (error) { report('The drawing could not start. Check its settings and open the block again.'); context = null; }
-    };
-    const active = () => !stopped && visible && !doc.hidden && !lost && !!context;
-    let notified: boolean | undefined;
+    let visible = !host.IntersectionObserver, stopped = false, notified: boolean | undefined;
+    if (kind === 'webgl') {
+      // A WebGL drawing borrows the page's one shared context (shared-gl.ts) and keeps only a 2D canvas of its own.
+      const view = canvas.getContext('2d') as Canvas2DContext | null;
+      let context: GLContext | null = null, dispose: (() => void) | undefined, halted = false;
+      const ready = () => !stopped && visible && !doc.hidden;
+      const notify = () => { const value = ready() && !!context; if (value !== notified) { notified = value; latest.current.onVisibilityChange?.(value); } };
+      const client: GLClient = { fresh: true, last: -Infinity, ready: () => ready() && !!context && !halted, animated: () => !!latest.current.animated,
+        pixels() {
+          const width = canvas.clientWidth, height = canvas.clientHeight; if (!width || !height) return null;
+          return surfacePixels(width, height, host.devicePixelRatio ?? 1, canvas.getBoundingClientRect().width, latest.current.maxPixelSize, GL_LIMITS.floor, GL_LIMITS.edge);
+        },
+        start(gl) {
+          context = null;
+          if (!gl || !view) { report('The browser does not offer this drawing context.'); notify(); return; }
+          try {
+            const result = (latest.current as GLSurfaceProps).initialize?.(gl);
+            dispose = result?.dispose;
+            if (result?.error) { report('The drawing could not be prepared. Check the shader or its settings.'); latest.current.onError?.(result.error); }
+            else { context = gl; setError(''); }
+          } catch { report('The drawing could not start. Check its settings and open the block again.'); }
+          notify();
+        },
+        lost() {
+          const cleanup = dispose; dispose = undefined; context = null; notify();
+          try { cleanup?.(); } finally { report('The WebGL context was lost. Waiting for it to come back.'); }
+        },
+        draw(gl, size, time, source) {
+          if (canvas.width !== size.width || canvas.height !== size.height) { canvas.width = size.width; canvas.height = size.height; }
+          try {
+            (latest.current as GLSurfaceProps).draw(gl, { width: canvas.clientWidth, height: canvas.clientHeight, pixelRatio: size.pixelRatio, time });
+            view!.clearRect(0, 0, size.width, size.height); view!.drawImage(source, 0, source.height - size.height, size.width, size.height, 0, 0, size.width, size.height);
+          } catch { halted = true; report('The drawing could not be drawn. Check the parameters and try again.'); }
+        },
+      };
+      const shared = joinSharedGL(client);
+      const wake = () => { halted = false; shared.wake(); };
+      const visibility = () => { notify(); if (!doc.hidden) wake(); else shared.update(); };
+      invalidate.current = wake;
+      // Coming into view draws a frame at once, playing or not; leaving it keeps the last frame on the card.
+      const intersection = host.IntersectionObserver ? new host.IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); notify(); if (visible) wake(); else shared.update(); }) : null;
+      const resize = host.ResizeObserver ? new host.ResizeObserver(wake) : null;
+      intersection?.observe(canvas); resize?.observe(canvas); doc.addEventListener('visibilitychange', visibility);
+      notify();
+      return () => {
+        stopped = true; notify(); invalidate.current = () => {}; intersection?.disconnect(); resize?.disconnect(); doc.removeEventListener('visibilitychange', visibility);
+        try { dispose?.(); } finally { shared.leave(); }
+      };
+    }
+    let context: Canvas2DContext | null = null, frameId = 0;
+    try { context = canvas.getContext('2d') as Canvas2DContext | null; if (!context) report('The browser does not offer this drawing context.'); }
+    catch { report('The drawing could not start. Check its settings and open the block again.'); }
+    const active = () => !stopped && visible && !doc.hidden && !!context;
     const notifyVisibility = () => { const value = active(); if (value !== notified) { notified = value; latest.current.onVisibilityChange?.(value); } };
     const schedule = () => { if (active() && !frameId) frameId = host.requestAnimationFrame(draw); };
     const draw = (time: number) => {
       frameId = 0; notifyVisibility(); if (!active()) return;
       const width = canvas.clientWidth, height = canvas.clientHeight; if (!width || !height) return;
       // CSS camera transforms do not change clientWidth. Sample their physical scale at redraw time.
-      const rect = canvas.getBoundingClientRect(), physicalRatio = Math.max(1, Math.min(4, (host.devicePixelRatio ?? 1) * rect.width / width));
-      const cap = Number.isFinite(latest.current.maxPixelSize) ? Math.max(16, Math.min(2048, latest.current.maxPixelSize!)) : Infinity;
-      const pixelRatio = Math.min(physicalRatio, cap / Math.max(width, height));
-      const w = Math.max(1, Math.round(width * pixelRatio)), h = Math.max(1, Math.round(height * pixelRatio));
+      const { width: w, height: h, pixelRatio } = surfacePixels(width, height, host.devicePixelRatio ?? 1, canvas.getBoundingClientRect().width, latest.current.maxPixelSize);
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       try {
-        const frame = { width, height, pixelRatio, time };
-        if (kind === '2d') {
-          const ctx = context as Canvas2DContext; ctx.save();
-          try { ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0); (latest.current as CanvasSurfaceProps).draw(ctx, frame); } finally { ctx.restore(); }
-        } else { const gl = context as GLContext; gl.viewport(0, 0, w, h); (latest.current as GLSurfaceProps).draw(gl, frame); }
-      } catch (error) { report('The drawing could not be drawn. Check the parameters and try again.'); return; }
+        const ctx = context!; ctx.save();
+        try { ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0); (latest.current as CanvasSurfaceProps).draw(ctx, { width, height, pixelRatio, time }); } finally { ctx.restore(); }
+      } catch { report('The drawing could not be drawn. Check the parameters and try again.'); return; }
       if (latest.current.animated) schedule();
     };
     const stop = () => { if (frameId) host.cancelAnimationFrame(frameId); frameId = 0; };
     const visibility = () => { notifyVisibility(); if (doc.hidden) stop(); else schedule(); };
-    const onLost = (event: { preventDefault(): void }) => {
-      event.preventDefault(); lost = true; stop(); notifyVisibility();
-      const cleanup = dispose; dispose = undefined; context = null;
-      try { cleanup?.(); } finally { report('The WebGL context was lost. Waiting for it to come back.'); }
-    };
-    const onRestored = () => { lost = false; initialize(); notifyVisibility(); schedule(); };
-    initialize(); invalidate.current = schedule;
+    invalidate.current = schedule;
     const intersection = host.IntersectionObserver ? new host.IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); notifyVisibility(); if (visible) schedule(); else stop(); }) : null;
     const resize = host.ResizeObserver ? new host.ResizeObserver(schedule) : null;
     intersection?.observe(canvas); resize?.observe(canvas); doc.addEventListener('visibilitychange', visibility);
-    if (kind === 'webgl') { canvas.addEventListener('webglcontextlost', onLost); canvas.addEventListener('webglcontextrestored', onRestored); }
     notifyVisibility(); schedule();
-    return () => {
-      stopped = true; notifyVisibility(); invalidate.current = () => {}; stop(); intersection?.disconnect(); resize?.disconnect(); doc.removeEventListener('visibilitychange', visibility);
-      canvas.removeEventListener('webglcontextlost', onLost); canvas.removeEventListener('webglcontextrestored', onRestored);
-      try { dispose?.(); } finally { if (allocated) { liveGLContexts--; allocatedContext?.getExtension('WEBGL_lose_context')?.loseContext?.(); } }
-    };
+    return () => { stopped = true; notifyVisibility(); invalidate.current = () => {}; stop(); intersection?.disconnect(); resize?.disconnect(); doc.removeEventListener('visibilitychange', visibility); };
   }, [kind, props.id, kind === 'webgl' ? (props as GLSurfaceProps).initialize : undefined]);
   useEffect(() => { invalidate.current(); });
   // A surface that reads the wheel (a world with a camera) takes it whole: the page must not scroll or zoom under it.

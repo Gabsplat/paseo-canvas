@@ -66,6 +66,9 @@ export function documentContent(doc: CanvasDocument, own = false): DocumentConte
 }
 export type Segment = { from: Point; to: Point };
 export const descriptionKey = (groupId: string) => `${groupId}#description`;
+/** A sized card's measured floor (a shader's controls): its height never goes below it, so nothing is clipped. */
+export const minimumKey = (blockId: string) => `${blockId}#minimum`;
+export const sizedHeight = (stored: number, minimum?: number) => Math.max(stored, Number.isFinite(minimum) ? Math.ceil(minimum!) : 0);
 export type Box = Pick<Rect, 'x' | 'y' | 'width' | 'height'>;
 // Stored positions carry no size, so whoever wrote them (a person, an agent, a template) could not know how large the
 // neighbours would measure. Once real sizes are known, siblings that intersect are pushed apart: the one nearer the
@@ -377,7 +380,7 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
         const r = { x: 0, y: 0, width, height, depth, hidden }; rects.set(id, r); return r;
       }
       const preferred = getRendererSpec(renderer)?.defaultSize;
-      const r = { x: 0, y: 0, width: block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? nodeDensity(doc, block).width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size?.height ?? heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
+      const r = { x: 0, y: 0, width: block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? nodeDensity(doc, block).width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size ? sizedHeight(block.size.height, heights[minimumKey(id)]) : heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
       rects.set(id, r); return r;
     }
     const g = groups.get(id)!, children = [...g.blockIds, ...g.groupIds].filter(child => index.entities.has(child));

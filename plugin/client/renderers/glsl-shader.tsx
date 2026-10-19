@@ -32,6 +32,10 @@ export function prepareShader(gl: GLContext, data: GlslShaderData): { resources?
   } catch (error) { dispose(); return { error: boundedShaderMessage(error instanceof Error ? error.message : String(error)) }; }
 }
 
+/** The least picture a sized card keeps: room for what sits on it (the overlay's sliders and Play), else a strip. */
+export function shaderSurfaceFloor(controls: 'overlay' | 'below' | 'none', uniforms: number, transport: boolean): number {
+  return Math.max(96, controls === 'overlay' ? uniforms ? 48 * uniforms + 64 : transport ? 52 : 0 : 0);
+}
 function GlslShader(props: RendererProps<GlslShaderData>) {
   const { data, block, ui, readOnly, runtime, availableWidth } = props;
   const parsed = glslShaderState(data, runtime.state);
@@ -39,7 +43,8 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
   const clock = useRef({ seconds: parsed.time, saved: parsed.time, playing: false, last: null as number | null, visited: [parsed.time, parsed.time] as [number, number] });
   if (!clock.current.playing && clock.current.saved !== parsed.time) { clock.current.seconds = parsed.time; clock.current.saved = parsed.time; clock.current.last = null; }
   const [playing, setPlaying] = useState(false), [compileError, setCompileError] = useState(''), [surfaceError, setSurfaceError] = useState(''), [eventError, setEventError] = useState(''), [attempt, setAttempt] = useState(0);
-  const bundle = useRef<Resources | null>(null), failed = useRef(false), visible = useRef(false), ranges = useRef<Record<string, [number, number]>>({});
+  const bundle = useRef<Resources | null>(null), failed = useRef(false), visible = useRef(false), ranges = useRef<Record<string, [number, number]>>({}), measured = useRef({ parts: {} as Record<string, number>, sent: 0 }), report = useRef(() => {});
+  useEffect(() => report.current());
   const clearResources = () => { const old = bundle.current; bundle.current = null; old?.dispose(); };
   const save = (state: GlslShaderState) => { live.current.state = state; clock.current.saved = state.time; live.current.props.runtime.set(state); };
   const valuesNow = () => Object.fromEntries(live.current.props.data.uniforms.map(u => {
@@ -144,17 +149,29 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     {data.builtins.time && <Button label={playing ? 'Pause' : 'Play'} small disabled={readOnly || broken} onPress={play} />}
     {chrome.reset && <Button label="Reset" small variant="ghost" disabled={readOnly} onPress={reset} />}
   </View>;
-  const height = Math.max(140, Math.round((availableWidth || 360) * 10 / 16));
+  // Without a stored size the picture keeps 16:10 and the card grows around it. With one, the picture takes what the
+  // controls leave, down to a floor; below that the card grows (reportMinimumHeight), so the controls are never cut.
+  const height = Math.max(140, Math.round((availableWidth || 360) * 10 / 16)), sized = !!block.size;
+  const floor = shaderSurfaceFloor(chrome.controls, data.uniforms.length, !!transport);
+  // What sits above and below the picture, measured piece by piece: a cut-off card cannot measure its own overflow.
+  const below = chrome.controls === 'below' && (!!data.uniforms.length || !!transport), shown = { question: !!chrome.question, below, error: !!eventError };
+  const send = () => {
+    const m = measured.current; for (const part of Object.keys(m.parts)) if (!shown[part as keyof typeof shown]) delete m.parts[part];
+    if (!sized) return; const minimum = Math.ceil(Object.values(m.parts).reduce((sum, h) => sum + h, floor));
+    if (Math.abs(minimum - m.sent) >= 1) { m.sent = minimum; live.current.props.reportMinimumHeight?.(minimum); }
+  };
+  const measure = (part: keyof typeof shown) => (e: { nativeEvent: { layout: { height: number } } }) => { measured.current.parts[part] = e.nativeEvent.layout.height; send(); };
+  report.current = send;
   const glass = { backgroundColor: withAlpha(ui.c.surface1 ?? ui.c.surface0, .86), borderRadius: 10, borderWidth: 1, borderColor: withAlpha(ui.c.foreground, .1), backdropFilter: 'blur(10px)' } as object;
   // The picture: the shader edge to edge. Everything else sits on it only when chosen, or under it.
   const overlay = chrome.controls === 'overlay' && (selected || !playing && data.builtins.time);
   return <View style={{ flex: 1, minHeight: 0 }}>
-    {!!chrome.question && <Txt style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 }}>{chrome.question}</Txt>}
-    <View nativeID={`lienzo-shader-${block.id}`} style={{ flex: 1, minHeight: height, backgroundColor: ui.c.surface0, overflow: 'hidden' }}>
+    {!!chrome.question && <Txt onLayout={measure('question')} style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 }}>{chrome.question}</Txt>}
+    <View nativeID={`lienzo-shader-${block.id}`} style={{ flex: 1, minHeight: sized ? floor : height, backgroundColor: ui.c.surface0, overflow: 'hidden' }}>
       <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}><GLSurface id={`glsl-${block.id}`} passive label={chrome.question || block.title || 'Shader'} summary={summary} height="100%" maxPixelSize={data.maxPixelSize}
         animated={playing} initialize={initialize} draw={draw} onVisibilityChange={onVisible} onError={message => {
           pause('drawing error');
-          setSurfaceError(message.includes('does not offer this drawing context') ? 'WebGL is not available' : message.includes('Too many') ? 'Too many WebGL drawings are open. Close another one and open this block again.' : message.includes('was lost') ? 'The WebGL context was lost. Waiting for it to come back.' : 'The shader could not start. Open the block again.');
+          setSurfaceError(message.includes('does not offer this drawing context') ? 'WebGL is not available' : message.includes('was lost') ? 'The WebGL context was lost. Waiting for it to come back.' : 'The shader could not start. Open the block again.');
         }} /></View>
       {chrome.title && !!block.title && <View pointerEvents="none" style={[glass, { position: 'absolute', left: 10, top: 10, maxWidth: '80%', paddingHorizontal: 10, paddingVertical: 5 }]}><Txt kind="heading" numberOfLines={1}>{block.title}</Txt></View>}
       {broken && <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, padding: 14, gap: 6, backgroundColor: withAlpha(ui.c.surface0, .94) }}>
@@ -165,8 +182,8 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
         {selected && sliders}{transport}
       </View>}
     </View>
-    {chrome.controls === 'below' && (!!data.uniforms.length || !!transport) && <View style={{ padding: 14, gap: 12 }}>{sliders}{transport}</View>}
-    {!!eventError && <Txt kind="small" style={{ color: ui.c.statusDanger, paddingHorizontal: 14, paddingBottom: 8 }}>{eventError}</Txt>}
+    {below && <View onLayout={measure('below')} style={{ padding: 14, gap: 12, flexShrink: 0 }}>{sliders}{transport}</View>}
+    {!!eventError && <Txt onLayout={measure('error')} kind="small" style={{ color: ui.c.statusDanger, paddingHorizontal: 14, paddingBottom: 8 }}>{eventError}</Txt>}
   </View>;
 }
 export const glslShaderRenderer: ClientRenderer<GlslShaderData> = { id: 'glsl-shader', Component: GlslShader, visual: { icon: 'Sparkles', tone: 'neutro', width: 'wide' } };

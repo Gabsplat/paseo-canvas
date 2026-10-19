@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { HTML_APP_LIMITS, htmlAppInteraction, htmlAppState, type HtmlAppData } from '../../shared/renderers/html-app';
+import { HTML_APP_FIT, HTML_APP_LIMITS, htmlAppFit, htmlAppHeight, htmlAppInteraction, htmlAppState, type HtmlAppData } from '../../shared/renderers/html-app';
 import { isDark } from '../color';
 import { Txt } from '../ui';
 import { WebHtml } from '../web';
@@ -11,8 +11,12 @@ import type { RendererProps, ClientRenderer } from './types';
  * the block's lastInteraction. Nothing is sent to the agent.
  */
 function HtmlApp({ data, block, ui, document, selection = [], select, runtime }: RendererProps<HtmlAppData>) {
-  const [asked, setAsked] = useState<number | null>(null);
-  const height = block.size ? '100%' as const : asked ?? data.height ?? HTML_APP_LIMITS.defaultHeight;
+  const [asked, setAsked] = useState<number | null>(null), [fitted, setFitted] = useState<number | null>(null), settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (settle.current) clearTimeout(settle.current); }, []);
+  // The window follows the page's content, settled briefly so a page that grows in steps does not jump at each one.
+  // It is a measured height like any other card's: nothing is written to the document.
+  const fit = (value: unknown) => { const next = htmlAppFit(value); if (next === null) return; if (settle.current) clearTimeout(settle.current); settle.current = setTimeout(() => { settle.current = null; setFitted(next); }, HTML_APP_FIT.settleMs); };
+  const chosen = htmlAppHeight({ sized: !!block.size, asked, fitted, initial: data.height }), height = chosen === 'fill' ? '100%' as const : chosen;
   const stored = runtime.state.state === undefined ? null : runtime.state.state, storedKey = JSON.stringify(stored);
   // What the page is told: enough to match the theme, restore what it stored and react to the selection.
   const context = useMemo(() => ({
@@ -23,7 +27,8 @@ function HtmlApp({ data, block, ui, document, selection = [], select, runtime }:
   if (ui.layout.platform !== 'web') return <View style={{ padding: 12, gap: 4 }}><Txt kind="bodyStrong">{block.title || 'Mini app'}</Txt><Txt kind="small" muted>This mini app runs in the web and desktop apps.</Txt></View>;
   return <View style={{ height: block.size ? block.size.height - 28 : height }}>
     <WebHtml id={block.id} html={data.html} title={block.title || 'Mini app'} surface={ui.c.surface0} context={context} onMessage={(message, reply) => {
-      if (message.type === 'resize' && typeof message.height === 'number' && Number.isFinite(message.height)) setAsked(Math.max(HTML_APP_LIMITS.minHeight, Math.min(HTML_APP_LIMITS.maxHeight, Math.round(message.height))));
+      if (message.type === 'fit') fit(message.height);
+      else if (message.type === 'resize' && typeof message.height === 'number' && Number.isFinite(message.height)) setAsked(Math.max(HTML_APP_LIMITS.minHeight, Math.min(HTML_APP_LIMITS.maxHeight, Math.round(message.height))));
       else if (message.type === 'select' && typeof message.id === 'string' && [...document.blocks, ...document.groups].some(e => e.id === message.id)) select?.([message.id]);
       else if (message.type === 'state') {
         const value = htmlAppState(message.value);
