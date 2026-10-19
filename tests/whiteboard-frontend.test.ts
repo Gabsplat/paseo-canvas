@@ -222,15 +222,15 @@ test('the toolbar orders its tools as the brief, and a fast press on an inactive
   const props = (active: string, extra: any = {}) => ({ active, shape: 'rect', locked: false, disabled: false, onTool: (t: string) => picked.push(t), onShape() {}, onLock: (v: boolean) => locks.push(v), pinned: [], onAdd() {}, addOpen: false, keyLabel: (id: string) => ({ 'tool.pencil': 'P', 'tool.select': 'V' } as any)[id], ...extra });
   const tools = (tree: any[]) => tree.filter(n => n.type === 'Pressable' && String(n.props.nativeID).startsWith('lienzo-tool-'));
   let tree = h.render(props('select'));
-  assert.deepEqual(tools(tree).map(n => n.props.nativeID.slice(12)), ['select', 'hand', 'pencil', 'shape', 'text', 'arrow', 'eraser', 'marco', 'ventana', 'add']);
-  assert.deepEqual(tools(tree).map(n => n.props.accessibilityLabel), ['Select', 'Hand', 'Pencil', 'Shape', 'Text', 'Arrow', 'Eraser', 'Frame', 'Window', 'More tools']);
+  assert.deepEqual(tools(tree).map(n => n.props.nativeID.slice(12)), ['select', 'hand', 'pencil', 'shape', 'text', 'arrow', 'eraser', 'marco', 'ventana', 'comment', 'add']);
+  assert.deepEqual(tools(tree).map(n => n.props.accessibilityLabel), ['Select', 'Hand', 'Pencil', 'Shape', 'Text', 'Arrow', 'Eraser', 'Frame', 'Window', 'Comment', 'More tools']);
   assert.match(tools(tree)[7].props.accessibilityHint, /A frame that holds things together/); assert.match(tools(tree)[8].props.accessibilityHint, /A window onto a web page/);
   const press = (active: string, id: string) => { const t = tools(h.render(props(active))).find(n => n.props.nativeID === 'lienzo-tool-' + id); t.props.onPress({ stopPropagation() {} }); h.tick(); };
   press('select', 'text'); press('select', 'text'); assert.deepEqual(picked, ['text', 'text']); assert.deepEqual(locks, []);
   press('text', 'text'); assert.deepEqual(locks, [true], 'a double press on the tool in hand keeps it');
   press('select', 'marco'); press('select', 'marco'); assert.deepEqual(picked.slice(-2), ['marco', 'marco']); assert.deepEqual(locks, [true], 'Frame acts once and never locks');
   const blocked = tools(h.render(props('select', { disabled: true }))).map(n => [n.props.nativeID.slice(12), n.props.disabled]);
-  assert.deepEqual(blocked, [['select', false], ['hand', false], ['pencil', true], ['shape', true], ['text', true], ['arrow', true], ['eraser', true], ['marco', true], ['ventana', true], ['add', false]]);
+  assert.deepEqual(blocked, [['select', false], ['hand', false], ['pencil', true], ['shape', true], ['text', true], ['arrow', true], ['eraser', true], ['marco', true], ['ventana', true], ['comment', true], ['add', false]]);
 });
 test('pressing Shape again opens its flyout, and pinned tools follow with their 1–9 badges', () => {
   const h = toolbarHarness(), shapes: string[] = [], ran: string[] = [];

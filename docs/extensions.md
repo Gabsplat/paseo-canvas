@@ -128,6 +128,17 @@ clears it) and resolves it back. One value per extension and per Lienzo, at most
 beside the document (like mini-app runtime state: no revision, no history, not in `canvas_read`, not shown to the
 agent). A Lienzo holds storage for at most 64 extensions. No permission.
 
+### Comments
+
+`lienzo.comments` (added to API 1; feature-detect it) reads and writes the person's notes pinned on the canvas, the same
+threads the Comment tool makes and `canvas_comments` reads. `list({ status })` (`"open"` by default, `"resolved"` or
+`"all"`) resolves `[{ id, status, anchor, messages: [{ author: "person"|"agent", name, text, at }] }]`; the anchor is
+`{ kind: "block"|"group", id }` or `{ kind: "point", x, y }` in world units. Reading needs no permission, like the
+context. `create(anchor, text)` resolves `{ id }`; `reply(id, text)` and `resolve(id)` resolve `{ id }`. Writing needs
+the existing `edit` permission (no new permission: a comment changes what the agent will read, as an edit does) and is
+signed as the person "via" the extension's name. Comments have no revision and no undo. Headless actions have no
+`lienzo.comments`: they run for the agent, which has `canvas_comments`.
+
 ### Fullscreen
 
 The frame is created with `allow="fullscreen"`, so `document.fullscreenEnabled` is true where the host page allows it

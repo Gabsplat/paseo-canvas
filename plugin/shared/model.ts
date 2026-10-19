@@ -169,6 +169,8 @@ export const documentViewSchema = z.object({
   canUndo: z.boolean(), canRedo: z.boolean(),
   selectionVersion: revisionSchema, runtimeVersion: revisionSchema, runtime: runtimeStateSchema.default({ blocks: {}, scopes: {} }),
   latestAgent: latestAgentSchema.nullable().optional(),
+  // Counter of the document's comments (shared/comments.ts): changes when a thread changes, never with the revision.
+  commentsVersion: revisionSchema.optional(),
 }).strict();
 export const documentSummarySchema = documentSchema.pick({
   id: true, workspaceId: true, title: true, description: true, example: true, revision: true, updatedAt: true,
