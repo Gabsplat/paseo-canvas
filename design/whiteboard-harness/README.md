@@ -47,6 +47,7 @@ omabox run -- node "$PWD/dist/panel-qa/guide.cjs"
 omabox run -- node "$PWD/dist/panel-qa/wiki.cjs" papel compact   # Help, Discover (catalog served locally), Publish…
 omabox run -- node "$PWD/dist/panel-qa/ui-fixes.cjs" oscuro sheets,icons,shader,screens   # §37; online steps need the network
 omabox run -- node "$PWD/dist/panel-qa/glfit.cjs" oscuro   # 20 shaders on one shared WebGL context; content-fitting mini app and shader controls (needs --use-angle=swiftshader)
+omabox run -- node "$PWD/dist/panel-qa/shaderplay.cjs" oscuro   # Play/Pause by real presses (with a slip), resume after leaving the view, no writes from drawing (swiftshader)
 ```
 
 The scenarios also run against a plain headless Chromium (no omabox), which is how the screens were verified:

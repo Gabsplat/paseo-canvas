@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { glslShaderDataSchema, glslShaderSpec, glslShaderState, glslUtf8Length, type GlslShaderData } from '../plugin/shared/renderers/glsl-shader';
+import { glslShaderDataSchema, glslShaderSpec, glslShaderState, glslSummary, glslUtf8Length, glslWantsToPlay, type GlslShaderData } from '../plugin/shared/renderers/glsl-shader';
 import { documentSchema } from '../plugin/shared/model';
 import { resolveScope } from '../plugin/shared/learning';
 import { LearningRuntimeStore } from '../plugin/client/learning-state';
@@ -201,16 +201,20 @@ test('real scope store binds before transport acknowledgement, including sibling
   }
 });
 
-test('time starts only by play gesture, pauses offscreen/tab/unmount and never sends RAF noise', () => {
+test('time starts by a play gesture, pauses offscreen/tab, resumes when back unless the person paused, no RAF noise', () => {
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p);
+  const near = (want: number) => assert.ok(Math.abs(p.uniforms.u_time[0] - want) < 1e-9, `u_time ${p.uniforms.u_time} != ${want}`);
   try {
     a.show(true); a.render(); a.frame(1000); a.render(); a.frame(2000); assert.deepEqual(p.uniforms.u_time, [0]); assert.equal(h.events.length, 0);
-    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(3000); a.frame(3100); a.frame(3200); assert.deepEqual(p.uniforms.u_time, [.2]); assert.equal(h.writes.length, 0); assert.equal(h.events.length, 0);
-    a.show(false); assert.equal(h.events.length, 1); assert.equal(h.events[0][1].time, .2); assert.deepEqual(h.events[0][1].visited, [0, .2]); assert.equal(a.frames.size, 0);
-    a.show(true); a.render(); a.frame(10000); assert.deepEqual(p.uniforms.u_time, [.2]); assert.equal(find(a.render(), GLSurface).props.animated, false);
-    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(11000); a.frame(11100); a.hideTab(true); assert.equal(h.events.length, 2);
-    a.hideTab(false); a.render(); a.frame(20000); assert.ok(Math.abs(p.uniforms.u_time[0] - .3) < 1e-9);
-    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(21000); a.frame(21100);
+    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(3000); a.frame(3100); a.frame(3200); near(.2); assert.equal(h.writes.length, 0); assert.equal(h.events.length, 0);
+    a.show(false); assert.equal(h.events.length, 1); assert.equal(h.events[0][1].time, .2); assert.equal(h.events[0][1].reason, 'out of view'); assert.deepEqual(h.events[0][1].visited, [0, .2]); assert.equal(a.frames.size, 0);
+    // Back in view: it was playing, so it plays again on its own, from where it stopped.
+    a.show(true); a.render(); assert.equal(find(a.render(), GLSurface).props.animated, true); assert.ok(button(a.render(), 'Pause'));
+    a.frame(10000); near(.2); a.frame(10100); near(.3); a.hideTab(true); assert.equal(h.events.length, 2);
+    a.hideTab(false); a.render(); a.frame(20000); a.frame(20100); near(.4);
+    button(a.render(), 'Pause').props.onPress(); assert.equal(h.events.length, 3); assert.equal(h.events[2][1].reason, 'paused by the person');
+    // Paused by the person: leaving and coming back keeps it still, and records nothing more.
+    a.show(false); a.show(true); a.render(); a.frame(30000); a.frame(30100); near(.4); assert.equal(find(a.render(), GLSurface).props.animated, false); assert.ok(button(a.render(), 'Play'));
   } finally { a.close(); }
   assert.equal(h.events.length, 3); assert.equal(h.events.at(-1)![0], 'glsl-shader.pause'); p.assertFreed();
 });
@@ -220,7 +224,9 @@ test('visibility cleanup plus core dispose, context restoration, recompilation a
   try {
     a.show(true); a.render(); a.frame(); button(a.render(), 'Play').props.onPress(); a.render(); a.frame(100); a.frame(200);
     a.lost(); assert.equal(a.frames.size, 0); assert.equal(h.events.length, 1); p.assertFreed();
-    a.restored(); a.render(); a.frame(300); assert.equal(find(a.render(), GLSurface).props.animated, false); assert.deepEqual(p.uniforms.u_time, [.1]);
+    // A lost context is not the person's pause: once it is restored, time runs on from where it stopped.
+    a.restored(); a.render(); a.frame(300); assert.equal(find(a.render(), GLSurface).props.animated, true); assert.deepEqual(p.uniforms.u_time, [.1]);
+    a.frame(350); assert.ok(Math.abs(p.uniforms.u_time[0] - .15) < 1e-9);
     const initializer = find(a.render(), GLSurface).props.initialize, losses = p.settings.lost, programs = p.created.program.length;
     h.props.data = timed(); h.props.data.fragmentSource += '\n// recompiled'; a.render(); a.frame(400);
     assert.equal(find(a.render(), GLSurface).props.initialize, initializer); assert.equal(p.settings.lost, losses); assert.equal(p.created.program.length, programs + 1);
@@ -239,9 +245,11 @@ test('physical resolution honors default 512 and explicit 1024, even under DPR 3
 
 test('no WebGL and native fallback are honest, controls/reset remain visible and readOnly callbacks cannot write', () => {
   const h = harness(), p = fakeGL(), a = adapter(h, p, false);
-  try { const node = a.render(); assert.match(text(node), /WebGL is not available/); assert.match(text(node), /Static reference/); assert.ok(find(node, WebRange)); assert.ok(button(node, 'Reset')); assert.equal(p.created.program.length, 0); } finally { a.close(); }
+  try { const node = a.render(); assert.match(text(node), /WebGL is not available/); assert.match(text(node), /a picture drawn by a shader/); assert.ok(find(node, WebRange)); assert.ok(button(node, 'Reset')); assert.equal(p.created.program.length, 0); } finally { a.close(); }
   const frozen = harness(timed(), true), node = frozen.render();
-  for (const control of all(node).filter(n => n.type === Button)) { assert.equal(control.props.disabled, true); control.props.onPress(); }
+  // Watching is not editing: Play stays available read-only and keeps its time local; Reset and sliders cannot write.
+  for (const control of all(node).filter(n => n.type === Button)) { assert.equal(control.props.disabled, control.props.label !== 'Play', control.props.label); control.props.onPress(); }
+  assert.ok(button(frozen.render(), 'Pause'), 'read-only Play still runs the clock');
   const range = find(node, WebRange); assert.equal(range.props.disabled, true); range.props.onChange(10); range.props.onSettle(10); assert.equal(frozen.writes.length, 0); assert.equal(frozen.events.length, 0); frozen.close();
   const native = harness(base(), false, 'ios'), fallback = native.render(); assert.match(text(fallback), /Static/); assert.ok(find(fallback, NativeLearningFallback)); assert.equal(find(fallback, GLSurface), undefined); assert.equal(button(fallback, 'Reset').props.disabled, true);
   button(fallback, 'Reset').props.onPress(); assert.equal(native.writes.length, 0); native.close(); Platform.OS = 'web';
@@ -274,17 +282,35 @@ test('reset recovers a transient draw failure and never leaves playback running 
   p.assertFreed();
 });
 
-test('play is rejected offscreen, manual pause settles once, and readOnly transition stops existing playback', () => {
+test('Play pressed before the picture is drawable runs once drawn; manual pause settles once; readOnly does not stop playback', () => {
   const h = harness(timed()), p = fakeGL(), a = adapter(h, p);
   try {
-    button(a.render(), 'Play').props.onPress(); assert.equal(find(a.render(), GLSurface).props.animated, false);
-    a.show(true); a.frame(0); button(a.render(), 'Play').props.onPress(); a.render(); a.frame(100); a.frame(200);
+    button(a.render(), 'Play').props.onPress(); assert.equal(find(a.render(), GLSurface).props.animated, true, 'the wish to play is kept');
+    assert.equal(p.uniforms.u_time, undefined, 'nothing drawn off screen');
+    a.show(true); a.render(); a.frame(0); a.frame(100); a.frame(200); assert.ok(Math.abs(p.uniforms.u_time[0] - .2) < 1e-9);
     button(a.render(), 'Pause').props.onPress(); assert.equal(h.events.length, 1); assert.equal(h.events[0][1].reason, 'paused by the person');
-    a.render(); a.frame(10000); assert.deepEqual(p.uniforms.u_time, [.1]);
-    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(10100); a.frame(10200); h.props.readOnly = true; a.render();
-    assert.equal(h.events.length, 2); assert.equal(h.events[1][1].reason, 'read only'); assert.equal(find(a.render(), GLSurface).props.animated, false);
+    a.render(); a.frame(10000); assert.ok(Math.abs(p.uniforms.u_time[0] - .2) < 1e-9);
+    button(a.render(), 'Play').props.onPress(); a.render(); a.frame(10100); a.frame(10200); h.props.readOnly = true; a.render(); a.frame(10300);
+    assert.equal(h.events.length, 1, 'no "read only" pause'); assert.equal(find(a.render(), GLSurface).props.animated, true); assert.ok(Math.abs(p.uniforms.u_time[0] - .4) < 1e-9);
   } finally { a.close(); }
-  p.assertFreed();
+  assert.equal(h.events.length, 1, 'read-only: leaving saves nothing'); p.assertFreed();
+});
+
+test('autoplay wish, kept across remounts: the person\'s pause wins; the summary is the block\'s own or a plain line', () => {
+  const data = (patch: Record<string, unknown> = {}) => ({ builtins: { resolution: true, time: true }, autoplay: true, ...patch }) as Parameters<typeof glslWantsToPlay>[0];
+  assert.equal(glslWantsToPlay(data(), {}, false), true);
+  assert.equal(glslWantsToPlay(data(), {}, true), false, 'reduced motion');
+  assert.equal(glslWantsToPlay(data({ autoplay: false }), {}, false), false);
+  assert.equal(glslWantsToPlay(data({ builtins: { resolution: true, time: false } }), {}, false), false, 'no u_time, nothing to play');
+  const paused = (reason: string) => ({ lastInteraction: { kind: 'glsl-shader.pause', label: 'Pause shader', at: '2026-10-19T00:00:00.000Z', payload: { time: 3, reason } } });
+  assert.equal(glslWantsToPlay(data(), paused('paused by the person'), false), false);
+  assert.equal(glslWantsToPlay(data(), paused('out of view'), false), true);
+  assert.equal(glslWantsToPlay(data(), { lastInteraction: 'junk' } as never, false), true);
+  assert.equal(glslSummary({ staticSummary: 'Blue rings.' }, 'Rings'), 'Blue rings.');
+  assert.match(glslSummary({}, 'Rings'), /^Rings: a picture drawn by a shader/); assert.match(glslSummary({}, '  '), /^Shader:/);
+  // A new block is not given a summary or a resolution limit it did not ask for: both are read-time defaults.
+  assert.equal('staticSummary' in glslShaderSpec.blockType.defaults, false); assert.equal('maxPixelSize' in glslShaderSpec.blockType.defaults, false);
+  assert.match(glslShaderSpec.guidance, /staticSummary is optional/);
 });
 
 // ---- Optional chrome (docs/design.md §36.3).
