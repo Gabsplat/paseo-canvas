@@ -14,6 +14,7 @@ import { clone, newId, reduce, validateDocument, normalizeBlock, effectiveInstru
 import { nextSheetPlacement, sheetSummaries } from "./sheets";
 import { runExtensionAction } from "./actions";
 import { EXTENSION_LIMITS } from "../shared/extensions";
+import { COMMENT_LIMITS, commentAnchorSchema, commentTextSchema, type CommentAnchor, type CommentAuthor, type CommentThread, type CommentsView } from "../shared/comments";
 
 const timestamp = () => new Date().toISOString();
 type State = Parameters<Parameters<CanvasStore["transaction"]>[0]>[0];
@@ -28,7 +29,7 @@ const view = (record: DocumentRecord, actor: Actor = "user", agentId?: string): 
   canUndo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && !entry.undone),
   canRedo: record.history.some(entry => entry.kind === "edit" && entry.actor === actor && (actor !== "agent" || entry.agentId === agentId) && entry.undone),
   selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion, runtime: clone(record.runtime),
-  latestAgent: latestAgent(record),
+  latestAgent: latestAgent(record), commentsVersion: record.comments?.version ?? 0,
 });
 /** The agent's most recent transaction, for "go to latest": changed IDs that still exist, and what it removed. */
 export function latestAgent(record: Pick<DocumentRecord, "document" | "history">, agentId?: string): LatestAgent | null {
@@ -65,9 +66,50 @@ function recordEdit(record: DocumentRecord, next: CanvasDocument, actor: Actor, 
   record.history.push(entry);
   record.history = record.history.slice(-50);
   while (record.history.length > 1 && Buffer.byteLength(JSON.stringify(record.history)) > 8 * 1024 * 1024) record.history.shift();
+  orphanComments(record, before, delta.removed);
   record.document = next;
   const oldRuntime = JSON.stringify(record.runtime); cleanRuntime(next, record.runtime);
   if (oldRuntime !== JSON.stringify(record.runtime)) touchRuntime(record);
+}
+
+/** Where an entity starts in world units when every level up to the root has an explicit position; else undefined. */
+function absoluteCorner(document: CanvasDocument, id: string): { x: number; y: number } | undefined {
+  let entity: CanvasDocument["blocks"][number] | CanvasDocument["groups"][number] | undefined = [...document.blocks, ...document.groups].find(e => e.id === id), x = 0, y = 0;
+  const width = entity && "typeId" in entity ? entity.size?.width ?? 240 : 320;
+  for (let depth = 0; entity && depth < 8; depth++) {
+    if (!entity.position) return undefined;
+    x += entity.position.x; y += entity.position.y;
+    const parent = entity.parentGroupId; if (!parent) return { x: x + width, y };
+    entity = document.groups.find(g => g.id === parent);
+  }
+  return undefined;
+}
+/**
+ * A thread pinned to an entity that a transaction removed stays where its pin was last seen, as a free point, and
+ * remembers what it was about. Comments are never deleted with the drawing.
+ */
+function orphanComments(record: DocumentRecord, before: CanvasDocument, removed: string[]) {
+  if (!record.comments?.threads.length || !removed.length) return;
+  const gone = new Set(removed); let changed = false;
+  record.comments.threads = record.comments.threads.map((thread, index) => {
+    const anchor = thread.anchor;
+    if (anchor.kind === "point" || !gone.has(anchor.id)) return thread;
+    changed = true;
+    const at = anchor.at ?? absoluteCorner(before, anchor.id) ?? { x: 24 + (index % 10) * 32, y: 24 }, entity = [...before.blocks, ...before.groups].find(e => e.id === anchor.id);
+    return { ...thread, anchor: { kind: "point", x: at.x, y: at.y }, orphanedFrom: { kind: anchor.kind, id: anchor.id, title: (entity?.title || "Untitled").slice(0, 300) }, updatedAt: timestamp() };
+  });
+  if (changed) record.comments.version++;
+}
+const commentText = (text: string) => { const parsed = commentTextSchema.safeParse(text); if (!parsed.success) throw new CanvasError("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid comment."); return parsed.data; };
+const commentsView = (record: DocumentRecord, threadId?: string): CommentsView => ({ documentId: record.document.id, commentsVersion: record.comments?.version ?? 0, threads: clone(record.comments?.threads ?? []), ...(threadId ? { threadId } : {}) });
+function threadOf(record: DocumentRecord, threadId: string): CommentThread {
+  const thread = record.comments?.threads.find(t => t.id === threadId);
+  if (!thread) throw new CanvasError("NOT_FOUND", `Comment thread ${threadId} was not found on this Lienzo.`);
+  return thread;
+}
+function commentsChanged(record: DocumentRecord) {
+  record.comments!.version++;
+  if (Buffer.byteLength(JSON.stringify(record.comments)) > COMMENT_LIMITS.bytes) throw new CanvasError("TOO_LARGE", "The comments of one Lienzo cannot exceed 1 MiB. Delete resolved threads first.");
 }
 
 export class CanvasService {
@@ -80,7 +122,8 @@ export class CanvasService {
   async read(input: RpcInput<typeof rpc.readDocument>, actor: Actor = "user", agentId?: string) { return view(documentRecord(await this.store.read(), input.documentId, input.workspaceId), actor, agentId); }
   async watch(input: RpcInput<typeof rpc.watchDocument>) {
     const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
-    return { revision: record.document.revision, runtimeVersion: record.runtimeVersion, ...(input.knownRevision !== record.document.revision || input.knownRuntimeVersion !== record.runtimeVersion ? { view: view(record) } : {}) };
+    const commentsVersion = record.comments?.version ?? 0;
+    return { revision: record.document.revision, runtimeVersion: record.runtimeVersion, commentsVersion, ...(input.knownRevision !== record.document.revision || input.knownRuntimeVersion !== record.runtimeVersion || input.knownCommentsVersion !== undefined && input.knownCommentsVersion !== commentsVersion ? { view: view(record) } : {}) };
   }
   /** Deletes a Lienzo and its history. A conversation whose copilot drew there gets a new one the next time it is turned on. */
   remove(input: RpcInput<typeof rpc.deleteDocument>) {
@@ -256,15 +299,17 @@ export class CanvasService {
       .filter(item => item.document.workspaceId === input.workspaceId && item.document.selectedIds.length && (!agentId || reachable(state, item, agentId)))
       .sort((a, b) => (b.selectedAt ?? "").localeCompare(a.selectedAt ?? "") || b.document.updatedAt.localeCompare(a.document.updatedAt))[0];
     if (!record) return { documentId: null, ids: [], entities: [], note: "Nothing is selected in any Lienzo of this workspace. Ask the person to select what they mean, or read the canvas with canvas_read." };
-    const document = record.document, ids = document.selectedIds;
+    const document = record.document, ids = document.selectedIds, open = record.comments?.threads.filter(thread => thread.status === "open") ?? [];
     const entities = ids.slice(0, SELECTION_ENTITIES).map(id => {
       const entity = [...document.blocks, ...document.groups].find(entity => entity.id === id)!;
       const runtime = Object.hasOwn(record!.runtime.blocks, id) ? clone(record!.runtime.blocks[id]) : undefined;
-      return { entity: "typeId" in entity ? { ...entity, data: compactData(entity.data) } : entity, effectiveInstructions: effectiveInstructions(document, id), ...(runtime ? { state: runtime } : {}) };
+      const pinned = open.filter(thread => thread.anchor.kind !== "point" && thread.anchor.id === id).length;
+      return { entity: "typeId" in entity ? { ...entity, data: compactData(entity.data) } : entity, effectiveInstructions: effectiveInstructions(document, id), ...(runtime ? { state: runtime } : {}), ...(pinned ? { openComments: pinned } : {}) };
     });
     return {
       documentId: document.id, title: document.title, revision: document.revision, selectionVersion: record.selectionVersion,
       ...(record.selectedAt ? { selectedAt: record.selectedAt } : {}), ids, entities,
+      ...(open.length ? { openComments: open.length, commentsHint: "The person left comments on this Lienzo; read them with canvas_comments list when they refer to them." } : {}),
       ...(ids.length > SELECTION_ENTITIES ? { hasMore: true, hint: `Only the first ${SELECTION_ENTITIES} are described; read the rest with canvas_read ids.` } : {}),
       ...(!ids.length ? { note: "Nothing is selected in this Lienzo. Ask the person to select what they mean." } : {}),
     };
@@ -308,6 +353,82 @@ export class CanvasService {
       }
       return { ...summary, revision: record.document.revision, committed: !!entry, ...(entry ? { transactionId: entry.id, label: entry.label, changed: entry.changed, removed: entry.removed } : {}), ...(selection ? { selection } : {}) };
     });
+  }
+  // ---- Comments. Never a revision, never history: a comment does not break anyone's expectedRevision.
+  async comments(input: RpcInput<typeof rpc.listComments>) { return commentsView(documentRecord(await this.store.read(), input.documentId, input.workspaceId)); }
+  /** A new thread with its first message. An entity anchor must exist; a pin on it follows it. */
+  async createComment(input: { workspaceId: string; documentId: string; anchor: CommentAnchor; text: string }, author: CommentAuthor) {
+    const anchor = commentAnchorSchema.parse(input.anchor), text = commentText(input.text);
+    return this.store.transaction(state => {
+      const record = documentRecord(state, input.documentId, input.workspaceId), comments = record.comments ??= { version: 0, threads: [] };
+      if (comments.threads.length >= COMMENT_LIMITS.threads) throw new CanvasError("TOO_LARGE", `A Lienzo holds at most ${COMMENT_LIMITS.threads} comment threads. Delete resolved ones first.`);
+      if (anchor.kind !== "point") {
+        const list = anchor.kind === "block" ? record.document.blocks : record.document.groups;
+        if (!list.some(entity => entity.id === anchor.id)) throw new CanvasError("NOT_FOUND", `${anchor.kind === "block" ? "Block" : "Group"} ${anchor.id} is not on this Lienzo.`);
+        if (!anchor.at) { const at = absoluteCorner(record.document, anchor.id); if (at) anchor.at = { x: at.x + anchor.dx, y: at.y + anchor.dy }; }
+      }
+      const now = timestamp(), thread: CommentThread = { id: newId("thread"), anchor, status: "open", createdAt: now, updatedAt: now, messages: [{ id: newId("msg"), author: clone(author), text, createdAt: now }] };
+      comments.threads.push(thread); commentsChanged(record);
+      return commentsView(record, thread.id);
+    });
+  }
+  async replyComment(input: { workspaceId: string; documentId: string; threadId: string; text: string }, author: CommentAuthor) {
+    const text = commentText(input.text);
+    return this.store.transaction(state => {
+      const record = documentRecord(state, input.documentId, input.workspaceId), thread = threadOf(record, input.threadId);
+      if (thread.messages.length >= COMMENT_LIMITS.messages) throw new CanvasError("TOO_LARGE", `A thread holds at most ${COMMENT_LIMITS.messages} messages. Start a new one.`);
+      // A reply reopens a resolved thread: there is something to look at again.
+      const now = timestamp(); thread.messages.push({ id: newId("msg"), author: clone(author), text, createdAt: now }); thread.updatedAt = now;
+      if (thread.status === "resolved") { thread.status = "open"; delete thread.resolvedAt; }
+      commentsChanged(record); return commentsView(record, thread.id);
+    });
+  }
+  /** Resolve or reopen. Doing what is already done changes nothing. */
+  setCommentStatus(input: { workspaceId: string; documentId: string; threadId: string }, status: CommentThread["status"]) {
+    return this.store.transaction(state => {
+      const record = documentRecord(state, input.documentId, input.workspaceId), thread = threadOf(record, input.threadId);
+      if (thread.status !== status) {
+        thread.status = status; thread.updatedAt = timestamp();
+        if (status === "resolved") thread.resolvedAt = thread.updatedAt; else delete thread.resolvedAt;
+        commentsChanged(record);
+      }
+      return commentsView(record, thread.id);
+    });
+  }
+  deleteComment(input: RpcInput<typeof rpc.deleteComment>) {
+    return this.store.transaction(state => {
+      const record = documentRecord(state, input.documentId, input.workspaceId); threadOf(record, input.threadId);
+      record.comments!.threads = record.comments!.threads.filter(thread => thread.id !== input.threadId); commentsChanged(record);
+      return commentsView(record);
+    });
+  }
+  /** The client's note of where pins on entities are drawn: kept for orphaning, with no counter change (a hint). */
+  locateComments(input: RpcInput<typeof rpc.locateComments>) {
+    return this.store.transaction(state => {
+      const record = documentRecord(state, input.documentId, input.workspaceId); let updated = 0;
+      for (const point of input.points) {
+        const thread = record.comments?.threads.find(t => t.id === point.threadId);
+        if (!thread || thread.anchor.kind === "point") continue;
+        if (thread.anchor.at && Math.abs(thread.anchor.at.x - point.x) < .5 && Math.abs(thread.anchor.at.y - point.y) < .5) continue;
+        thread.anchor.at = { x: point.x, y: point.y }; updated++;
+      }
+      return { updated };
+    });
+  }
+  /** Finds the Lienzo of a thread among the documents of a workspace the agent may reach. */
+  async commentDocument(workspaceId: string, threadId: string, agentId?: string): Promise<string> {
+    const state = await this.store.read();
+    const record = Object.values(state.documents).find(item => item.document.workspaceId === workspaceId && item.comments?.threads.some(thread => thread.id === threadId) && (!agentId || reachable(state, item, agentId)));
+    if (!record) throw new CanvasError("NOT_FOUND", `Comment thread ${threadId} was not found; canvas_comments list shows the threads.`);
+    return record.document.id;
+  }
+  /** The Lienzo comments are read from when no documentId is given: the copilot's, else the one selected in most recently. */
+  async defaultCommentDocument(workspaceId: string, agentId: string): Promise<string | null> {
+    const state = await this.store.read(), copilot = state.copilot[agentId]?.documentId;
+    if (copilot && Object.hasOwn(state.documents, copilot) && state.documents[copilot].document.workspaceId === workspaceId && reachable(state, state.documents[copilot], agentId)) return copilot;
+    const record = Object.values(state.documents).filter(item => item.document.workspaceId === workspaceId && reachable(state, item, agentId))
+      .sort((a, b) => (b.selectedAt ?? "").localeCompare(a.selectedAt ?? "") || b.document.updatedAt.localeCompare(a.document.updatedAt))[0];
+    return record?.document.id ?? null;
   }
   async catalog() { return catalogView((await this.store.read()).catalog); }
   async validatePack(input: RpcInput<typeof rpc.validatePack>) { return packIssues(input.pack, await this.catalog()); }

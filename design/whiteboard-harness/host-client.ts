@@ -31,10 +31,18 @@ const undo:CanvasDocument[]=[], redo:CanvasDocument[]=[], log:any[]=[], errors:a
 // What the agent's last transaction changed, as the server derives it from history (stand-in: the ids the operations name).
 let latestAgent:any=null,agentTx=0;
 const opIds=(operations:any[])=>[...new Set(operations.map((o:any)=>o.block?.id??o.group?.id??o.link?.from??o.id).filter((id:any)=>typeof id==='string'&&[...doc.blocks,...doc.groups].some((e:any)=>e.id===id)))];
-const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime,latestAgent}));
+// Comments stand-in (example data): per document, a counter and threads, never a revision. The real server keeps them in state.json.
+const comments=new Map<string,{version:number;threads:any[]}>();let commentSeq=0;
+const commentsOf=(id:string)=>{let c=comments.get(id);if(!c){c={version:0,threads:[]};comments.set(id,c);}return c;};
+const commentsView=(threadId?:string)=>({documentId:doc.id,commentsVersion:commentsOf(doc.id).version,threads:structuredClone(commentsOf(doc.id).threads),...(threadId?{threadId}:{})});
+const commentThread=(anchor:any,messages:any[],status='open')=>{const now=new Date().toISOString();return {id:'qa-thread-'+(++commentSeq),anchor,status,createdAt:messages[0]?.createdAt??now,updatedAt:messages[messages.length-1]?.createdAt??now,...(status==='resolved'?{resolvedAt:now}:{}),messages:messages.map((m:any)=>({id:'qa-msg-'+(++commentSeq),createdAt:now,...m}))};};
+const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime,latestAgent,commentsVersion:commentsOf(doc.id).version}));
 // `seed` stands in for another author; `seedAgent` runs the reducer as the assistant actor. `actions` stays empty:
 // the canvas is one-way and has no RPC that sends to an agent (a call to one throws "does not implement").
-(globalThis as any).__panelQA={addDocument:(d:any,agent?:string)=>{if(agent)agents.set(d.id,agent);others.set(d.id,{workspaceId:'qa-workspace',description:'',example:false,selectedIds:[],communication,links:[],groups:[],blocks:[],revision:1,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:new Date().toISOString(),...d});},documents:()=>[doc,...others.values()].map(d=>d.id),setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};agentTx++;latestAgent={transactionId:'qa-tx-'+agentTx,revision:doc.revision,at:new Date().toISOString(),label:'Example agent edit '+agentTx,kind:'edit',ids:opIds(operations),removed:[]};},view:snapshot};
+(globalThis as any).__panelQA={addDocument:(d:any,agent?:string)=>{if(agent)agents.set(d.id,agent);others.set(d.id,{workspaceId:'qa-workspace',description:'',example:false,selectedIds:[],communication,links:[],groups:[],blocks:[],revision:1,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:new Date().toISOString(),...d});},documents:()=>[doc,...others.values()].map(d=>d.id),setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};agentTx++;latestAgent={transactionId:'qa-tx-'+agentTx,revision:doc.revision,at:new Date().toISOString(),label:'Example agent edit '+agentTx,kind:'edit',ids:opIds(operations),removed:[]};},view:snapshot,
+ // A thread as the person or an agent left it: seedComment({kind:'block',id:'server'}, [{author:{kind:'person'},text:'…'}]).
+ seedComment:(anchor:any,messages:any[],status='open')=>{const c=commentsOf(doc.id),t=commentThread(anchor.kind==='point'?anchor:{dx:0,dy:0,...anchor},messages,status);c.threads.push(t);c.version++;return t.id;},
+ comments:()=>structuredClone(commentsOf(doc.id))};
 async function invoke(contract:any, raw:any) {
  const input=contract.input.parse(raw), name=contract.name;
  // Every call names its Lienzo; the stand-in keeps one open at a time and swaps the rest in and out.
@@ -56,7 +64,19 @@ async function invoke(contract:any, raw:any) {
    catalog.revision++;output=catalog;
  }
  else if(name==='canvas.read'){if(input.documentId!==doc.id)throw Error('NOT_FOUND');output=snapshot();}
- else if(name==='canvas.watch') output={revision:doc.revision,runtimeVersion,...(input.knownRevision!==doc.revision?{view:snapshot()}:{})};
+ else if(name==='canvas.watch'){const cv=commentsOf(doc.id).version;output={revision:doc.revision,runtimeVersion,commentsVersion:cv,...(input.knownRevision!==doc.revision||input.knownCommentsVersion!==undefined&&input.knownCommentsVersion!==cv?{view:snapshot()}:{})};}
+ else if(name.startsWith('canvas.comments.')){
+   const c=commentsOf(doc.id),thread=input.threadId?c.threads.find((t:any)=>t.id===input.threadId):undefined,now=new Date().toISOString();
+   if(input.threadId&&!thread)throw Error('NOT_FOUND thread');
+   if(name==='canvas.comments.list')output=commentsView();
+   else if(name==='canvas.comments.locate'){for(const p of input.points){const t=c.threads.find((t:any)=>t.id===p.threadId);if(t&&t.anchor.kind!=='point')t.anchor.at={x:p.x,y:p.y};}output={updated:input.points.length};}
+   else{await new Promise(r=>setTimeout(r,45));
+     if(name==='canvas.comments.create'){const t=commentThread(input.anchor,[{author:{kind:'person'},text:input.text}]);c.threads.push(t);c.version++;output=commentsView(t.id);}
+     else if(name==='canvas.comments.reply'){thread.messages.push({id:'qa-msg-'+(++commentSeq),author:{kind:'person'},text:input.text,createdAt:now});thread.updatedAt=now;thread.status='open';delete thread.resolvedAt;c.version++;output=commentsView(thread.id);}
+     else if(name==='canvas.comments.resolve'||name==='canvas.comments.reopen'){thread.status=name.endsWith('resolve')?'resolved':'open';thread.updatedAt=now;c.version++;output=commentsView(thread.id);}
+     else if(name==='canvas.comments.delete'){c.threads=c.threads.filter((t:any)=>t.id!==thread.id);c.version++;output=commentsView();}
+     else throw Error('QA host does not implement '+name);}
+ }
  else if(name==='canvas.selection.set'){if(input.expectedSelectionVersion!==selectionVersion)throw Error('selection version conflict');doc={...doc,selectedIds:input.ids};selectionVersion++;output=snapshot();}
  else if(name==='canvas.mutate'){
    await new Promise(r=>setTimeout(r,45));

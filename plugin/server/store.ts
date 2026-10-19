@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { connectionSchema, copilotSettingsSchema, documentSchema, sharingModeSchema, type CanvasDocument } from "../shared/model";
+import { commentsRecordSchema } from "../shared/comments";
 import { catalogStorageSchema, catalogView } from "./catalog";
 import { CanvasError } from "../shared/errors";
 import { clone, validateDocument } from "./reducer";
@@ -31,6 +32,8 @@ const recordSchema = z.preprocess(withoutRetiredKeys, z.object({
   extensionStorage: z.record(z.string(), runtimeJsonSchema).optional(),
   // When the person last changed the selection: canvas_selection without a documentId reads the latest one.
   selectedAt: z.iso.datetime().optional(),
+  // Comment threads pinned on the canvas. Not drawing content: no revision, no history; absent in older state files.
+  comments: commentsRecordSchema.optional(),
   // Agent that created the document through MCP. Scopes access when the workspace keeps one canvas per agent.
   ownerAgentId: z.string().optional(),
 }).strict());

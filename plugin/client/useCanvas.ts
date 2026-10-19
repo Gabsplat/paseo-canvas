@@ -17,6 +17,8 @@ export function useCanvas(workspaceId: string) {
     catalog: useRpc(rpc.readCatalog), catalogMutate: useRpc(rpc.mutateCatalog), validate: useRpc(rpc.validatePack), import: useRpc(rpc.importPack),
     about: useRpc(rpc.readAbout), remove: useRpc(rpc.deleteDocument), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
     runtimeSet: useRpc(rpc.setRuntime), history: useRpc(rpc.readHistory), extensionStorage: useRpc(rpc.extensionStorage),
+    comments: useRpc(rpc.listComments), commentCreate: useRpc(rpc.createComment), commentReply: useRpc(rpc.replyComment), commentResolve: useRpc(rpc.resolveComment),
+    commentReopen: useRpc(rpc.reopenComment), commentDelete: useRpc(rpc.deleteComment), commentLocate: useRpc(rpc.locateComments),
   };
   const apiRef = useRef(api); apiRef.current = api;
   const [view, setView] = useState<DocumentView | null>(null), current = useRef(view);
@@ -80,7 +82,7 @@ export function useCanvas(workspaceId: string) {
       const v = current.current, g = generation.current;
       if (v) {
         try {
-          const change = await apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion });
+          const change = await apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion, knownCommentsVersion: v.commentsVersion ?? 0 });
           if (!stopped && g === generation.current) { if (change.view) accept(change.view); setOffline(false); }
         } catch { if (!stopped && g === generation.current) setOffline(true); }
       }

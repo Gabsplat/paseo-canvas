@@ -1,5 +1,6 @@
 import type { RpcContract, RpcInput, RpcOutput, SettingsDefinition } from "../shared/contract";
 import { CanvasError } from "../shared/errors";
+import { agentLabel } from "../shared/comments";
 import type { CanvasService } from "./service";
 
 /**
@@ -62,9 +63,13 @@ export class AgentGateway {
     if (!this.paseo) throw new CanvasError("UNAVAILABLE", "Open the canvas panel or retry after the agent session opens.");
     return this.paseo;
   }
+  /** The name each verified agent signs comments with (its conversation title or provider), kept in memory. */
+  readonly labels = new Map<string, string>();
   async verify(agentId: string, workspaceId?: string) {
     const agent = this.api().agents.ref(agentId);
     const refreshed = await agent.refresh();
+    const info = (refreshed as { agent?: { title?: string | null; provider?: string | null } } | null)?.agent;
+    if (info) this.labels.set(agentId, agentLabel(agentId, info.title, info.provider));
     if (!refreshed || agent.archivedAt || !agent.workspaceId) throw new CanvasError("FORBIDDEN", "Agent is unavailable or has no active workspace.");
     if (workspaceId && agent.workspaceId !== workspaceId) throw new CanvasError("FORBIDDEN", "Agent belongs to another workspace.");
     return agent;
@@ -73,6 +78,6 @@ export class AgentGateway {
     const agentId = await this.service.owner(owner);
     if (!agentId) throw new CanvasError("FORBIDDEN", "Unknown/unbound canvas owner. Use canvas.agent.setup and reload the idle agent.");
     const agent = await this.verify(agentId);
-    return { agentId, workspaceId: agent.workspaceId! };
+    return { agentId, workspaceId: agent.workspaceId!, label: this.labels.get(agentId) };
   }
 }
