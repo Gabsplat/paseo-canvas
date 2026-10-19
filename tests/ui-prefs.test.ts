@@ -82,13 +82,13 @@ test("appearance persists in the interface settings and the desktop window opens
 
 // ---- Properties sections ---------------------------------------------------------------------------------------------
 
-test("sections start collapsed, remember what the person opened, and open for one selection when a flow asks", () => {
+test("every selection starts collapsed; what the person opens lasts for that selection; a flow opens one section", () => {
   const memory = createSectionMemory(), a = sectionScope(["note"]), b = sectionScope(["shader"]);
   assert.equal(memory.isOpen("Content", false, a), false);
   assert.equal(memory.isOpen("This Lienzo", true, a), true, "a panel's only section may start open");
-  memory.toggle("Content", false, a);
-  assert.equal(memory.isOpen("Content", false, b), true, "kept open on the next selection");
-  memory.toggle("Content", false, b); assert.equal(memory.isOpen("Content", false, a), false);
+  memory.toggle("Content", false, a); assert.equal(memory.isOpen("Content", false, a), true);
+  assert.equal(memory.isOpen("Content", false, b), false, "another selection starts collapsed");
+  memory.toggle("Content", false, b); assert.equal(memory.isOpen("Content", false, a), false, "coming back starts collapsed too");
   memory.force("Instructions for the agent", a);
   assert.equal(memory.isOpen("Instructions for the agent", false, a), true);
   assert.equal(memory.isOpen("Instructions for the agent", false, b), false, "a forced section is for its selection only");
