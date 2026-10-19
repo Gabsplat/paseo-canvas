@@ -7,6 +7,7 @@ import { FILE_TREE_LIMITS, type FileTreeData } from '../shared/renderers/file-tr
 import type { AnimatedFlowData, AnimatedFlowEvent } from '../shared/renderers/animated-flow';
 import type { GlslUniform } from '../shared/renderers/glsl-shader';
 import { tokens } from './tokens';
+import { renameInBindings } from '../shared/bindings';
 
 export type Property = BlockType['properties'][number];
 type Json = CanvasBlock['data'][string];
@@ -323,6 +324,8 @@ export function variableOperations(document: CanvasDocument, scopeId: string, ne
       const patch = uniformsPatch(source, uniforms, uniforms.map(u => u.name === from ? { ...u, name: to } : u), { [from]: to });
       ops.push({ type: 'block.update', id: b.id, patch: { data: patch } });
     }
+    // Bound properties follow a rename too. A removed variable leaves its bindings inert: Properties warns about them.
+    for (const { id, bindings } of renameInBindings(document, scopeId, from, to)) ops.push({ type: 'block.update', id, patch: { bindings } });
   }
   return ops;
 }

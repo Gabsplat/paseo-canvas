@@ -62,6 +62,14 @@ export class LearningRuntimeStore {
     if (value !== null && (!Number.isFinite(value) || value < variable.min || value > variable.max)) throw new Error(`Variable ${name} is outside its declared range.`);
     this.pending.set(`scope:${variable.scopeId}:${name}`, { sequence: ++this.sequence, scope: { id: variable.scopeId, values: { [name]: value } } }); this.changed(settled);
   }
+  /** Writes a variable of one scope directly (extensions): the declaration must be in that scope. */
+  setScopeVariable(scopeId: string, name: string, value: number | null, settled = false) {
+    if (!this.document) return;
+    const declarations = scopeId === '$document' ? this.document.variables : this.document.groups.find(g => g.id === scopeId)?.variables, variable = declarations?.find(v => v.name === name);
+    if (!variable) throw new Error(`Variable ${name} is not declared in ${scopeId}.`);
+    if (value !== null && (!Number.isFinite(value) || value < variable.min || value > variable.max)) throw new Error(`Variable ${name} is outside its declared range.`);
+    this.pending.set(`scope:${scopeId}:${name}`, { sequence: ++this.sequence, scope: { id: scopeId, values: { [name]: value } } }); this.changed(settled);
+  }
   private changed(settled: boolean) {
     this.publish(); clearTimeout(this.timer);
     if (settled) void this.flush().catch(this.failure);

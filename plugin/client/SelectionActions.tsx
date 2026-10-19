@@ -15,6 +15,7 @@ import { usePresentation } from './usePresentation';
 import { RegisteredRenderer } from './renderers/RegisteredRenderer';
 import { recordInteraction } from './useLearning';
 import { BlockContent, VariablesEditor } from './PropertyEditors';
+import { BindingsEditor } from './Bindings';
 import { needsContentInteraction } from './interaction';
 import { linkTone } from './Links';
 import { HiddenResult } from './HiddenResult';
@@ -159,6 +160,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
   return <View nativeID="lienzo-properties">{head}
     {style && <PanelSection title="Style">{style}</PanelSection>}
     {block && !isWhiteboardSelection(c, selected) && <PanelSection title="Content">{fields}</PanelSection>}
+    {block && type && <PanelSection title="Bindings" defaultOpen={!!block.bindings}><BindingsEditor key={block.id} controller={c} block={block} type={type} disabled={disabled} rect={rects().get(block.id)} /></PanelSection>}
     {group && <PanelSection title="Frame">
       <Field key={group.id + ':title'} label="Title" value={group.title} disabled={disabled} onSave={title => patchEntity({ title }, 'Edit title')} />
       <Field key={group.id + ':purpose'} label="Purpose" value={group.description} multiline disabled={disabled} helper="One sentence: what this Frame is for." onSave={description => patchEntity({ description }, 'Edit Frame purpose')} />

@@ -1507,3 +1507,54 @@ the bottom. History stays centred. Settings, Extensions (Installed · Discover) 
 while the section, the tab or the search changes their height. A longer content scrolls inside the frame as before; compact stays full screen; the
 guide keeps its fixed stage.
 
+
+## 38. Bound to a variable (October 2026)
+
+A binding makes a property follow a variable (`shared/bindings.ts`, docs/mcp.md "Bindings"). The design rule: **the
+rule is content, the value is live**. Editing a binding is an ordinary labelled transaction; moving the variable is
+runtime only and never touches History, so a slider dragged for ten seconds leaves no trail.
+
+### 38.1 Properties → Bindings
+
+- A section of its own, under Style or Content, open by default only when the block has bindings. It never reaches
+  into another section's fields, so it lives beside the collapsed-by-default Properties work without touching it.
+- One row per bindable property: label left, the stored value muted in mono (or its swatch for a colour), and a
+  24 px chain-link button (`Link2`) at the right edge. Width, Height, the two colours and Text are up front; shift,
+  rotation, opacity, outline width, corner radius and text size wait under **More properties** until one is bound.
+- A bound row swaps the stored value for a **variable pill** (22 px, radius 11, a 6 px dot in the variable's series
+  colour from §18.3 and its label in 600 weight, on a 14 % wash of that colour) followed by what it gives now (`212 px`,
+  `81°`, `92 %`, a swatch, or the quoted text), and the chain-link turns accent. The same colour marks the variable in
+  the Variables section, so the eye can follow one value across the panel.
+- An inert binding (its variable was deleted) shows the pill in `statusWarning` with a warning triangle and the word
+  *inert*; its form explains why and offers another variable or Unbind. Nothing is removed silently.
+
+### 38.2 The bind form
+
+Pressing the chain-link opens the form in place under its row (the row gains a border and `surface1`), like Picker:
+it never floats over the panel's scroll and never clips.
+
+1. **Follows**: the variables the block can see, nearest scope first, each with its series dot, label, scope · name and
+   current value; a name declared nearer hides the same name further out. Empty: one line on where variables live and
+   **New variable**, which declares one on the Lienzo and binds it in one transaction.
+2. **Mapping**, written as a sentence: *When Speed goes from [0] to [10] / width goes from [40] to [400]*, with
+   **Stay inside that range** (clamp, on by default). Colours: *Hue along a range* (two ranges and a 12-step hue ramp
+   preview) or *By thresholds* (rows of *From [n]* and the eight whiteboard swatches). Text: one field with `{v}`.
+3. **Formula instead** (a Disclosure, closed unless used): a mono field for `v * 20 + 40`; the help line under it turns
+   `statusDanger` with the parser's own message while it is wrong, and the values at both ends of the range show once
+   it is right.
+4. A `surface2` strip says **Now Speed 5 → 220 px** live, then Unbind (ghost) and Done.
+
+A new binding starts with something visible: the variable's whole range onto half to one and a half times the stored
+size, 0–360° for rotation, 20–100 % opacity, hue 200° → 0° (cool to warm) for colours, `Speed: {v}` for text.
+
+### 38.3 On the canvas
+
+- Bound values are drawn every frame the variable moves. Size feeds layout, so links leave from the bound edge and
+  Frames grow; shift and rotation are drawn only, links and Frames keep the stored place (said in the row's help).
+- Hues are lit for the theme: saturation 68 %, lightness 46 % on Papel and 64 % on Tinta, so a bound fill keeps
+  the contrast of the whiteboard palette. A label on a solid bound fill takes paper or ink by the fill's luminance.
+- A selected box whose size is bound shows **Bound to Speed** (a 20 px accent pill with the chain-link, 6 px under the
+  box, kept at screen size) instead of resize handles: dragging a handle would fight the variable. Unbind gives the
+  handles back. Moving the box still works.
+
+Tokens: `face.bindings` (icon, button, pill, popover, hint, hue).
