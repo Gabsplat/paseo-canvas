@@ -11,7 +11,7 @@ import { DESKTOP_WORKSPACE, desktopStatus, openExternal, settingsRpc, writeClipb
 
 export type * from '../../../../plugin/client/host/contract';
 
-declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult>; trafficLights?: boolean; onFullScreen?(listener: (fullScreen: boolean) => void): () => void } } }
+declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult>; trafficLights?: boolean; onFullScreen?(listener: (fullScreen: boolean) => void): () => void; saveFile?(file: { name: string; mime: string; text: string }): Promise<boolean>; onOpenFile?(listener: (file: { name: string; text: string; error?: string }) => void): () => void } } }
 
 /** Electron IPC through the preload's one function; in the browser preview, the preview server's POST /rpc. */
 export async function invoke(name: string, input: unknown): Promise<unknown> {
@@ -199,6 +199,9 @@ let aboutUpdates: React.ComponentType | null = null;
 export function provideAboutUpdates(component: React.ComponentType) { aboutUpdates = component; }
 export const AboutUpdates: ClientHost['AboutUpdates'] = function AboutUpdatesSlot() { const Body = aboutUpdates; return Body ? <Body /> : null; };
 
+// .lienzo files: the system's Save dialog, and files opened with the app. The browser preview has neither: it downloads.
+export const files: ClientHost['files'] = window.lienzo?.saveFile && window.lienzo.onOpenFile ? { save: file => window.lienzo!.saveFile!(file), onOpen: listener => window.lienzo!.onOpenFile!(listener) } : null;
+
 // Every export above, checked against the contract in one place.
-const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AboutUpdates };
+const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AboutUpdates, files };
 void host;

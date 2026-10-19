@@ -17,6 +17,15 @@ asar: true
 publish:
   provider: generic
   url: https://github.com/Gabsplat/paseo-canvas/releases/latest/download
+# .lienzo files open with the app (docs/desktop.md, "Lienzo files"): macOS sends open-file, Windows and Linux pass the
+# path as an argument, forwarded to the running app by the single-instance lock. Linux AppImages register the type only
+# once integrated (AppImageLauncher or appimaged), which writes the .desktop entry with this MimeType.
+fileAssociations:
+  - ext: lienzo
+    name: Lienzo
+    description: A Lienzo canvas
+    mimeType: application/vnd.lienzo+json
+    role: Editor
 linux:
   target: [AppImage]
   category: Graphics

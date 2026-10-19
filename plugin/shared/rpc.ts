@@ -1,6 +1,7 @@
 import { runtimeJsonSchema, runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
 import { defineRpc } from "./contract";
 import { MEDIA_LIMITS } from "./media";
+import { LIENZO_FILE, lienzoReviewSchema } from "./lienzo-file";
 import { commentAnchorSchema, commentTextSchema, commentsViewSchema, COMMENT_LIMITS } from "./comments";
 import { z } from "zod";
 import {
@@ -40,6 +41,10 @@ export const configureSharing = defineRpc({ name: "canvas.sharing", input: scope
 export const readInjection = defineRpc({ name: "canvas.injection.read", input: z.object({}).strict(), output: configureInjection.output });
 // Images from the person's computer (shared/media.ts): stored by content hash beside the Lienzo data, read back as base64.
 export const putMedia = defineRpc({ name: "canvas.media.put", input: scopeSchema.extend({ data: z.string().max(Math.ceil(MEDIA_LIMITS.bytes * 4 / 3) + 4), name: z.string().max(300).optional() }), output: z.object({ url: z.string(), mime: z.string(), bytes: z.number().int().nonnegative(), existed: z.boolean() }) });
+// A Lienzo as a .lienzo file (shared/lienzo-file.ts). Export answers the file's text; import reads it, always as a new
+// Lienzo, all or nothing. dryRun answers the review (what the file brings, what is new or differs) and saves nothing.
+export const exportLienzo = defineRpc({ name: "canvas.lienzo.export", input: readInputSchema.extend({ comments: z.boolean().default(false), runtime: z.boolean().default(false) }), output: z.object({ fileName: z.string(), mime: z.string(), text: z.string(), bytes: z.number().int(), images: z.number().int(), missingImages: z.number().int() }) });
+export const importLienzo = defineRpc({ name: "canvas.lienzo.import", input: scopeSchema.extend({ text: z.string().max(LIENZO_FILE.maxBytes, `A .lienzo file can be up to ${LIENZO_FILE.maxBytes / 1024 / 1024} MB.`), dryRun: z.boolean().default(false) }), output: lienzoReviewSchema.extend({ committed: z.boolean(), documentId: idSchema.optional() }) });
 export const readMedia = defineRpc({ name: "canvas.media.read", input: scopeSchema.extend({ url: z.string().max(200) }), output: z.object({ mime: z.string(), data: z.string(), bytes: z.number().int().nonnegative() }) });
 
 export const runtimeReadInputSchema = readInputSchema.extend({ blockIds: z.array(idSchema).max(4).default([]), scopeIds: z.array(z.union([idSchema, z.literal('$document')])).max(4).default([]) });

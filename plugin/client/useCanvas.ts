@@ -18,6 +18,7 @@ export function useCanvas(workspaceId: string) {
     about: useRpc(rpc.readAbout), remove: useRpc(rpc.deleteDocument), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
     runtimeSet: useRpc(rpc.setRuntime), history: useRpc(rpc.readHistory), extensionStorage: useRpc(rpc.extensionStorage),
     putMedia: useRpc(rpc.putMedia), readMedia: useRpc(rpc.readMedia),
+    exportLienzo: useRpc(rpc.exportLienzo), importLienzo: useRpc(rpc.importLienzo),
     comments: useRpc(rpc.listComments), commentCreate: useRpc(rpc.createComment), commentReply: useRpc(rpc.replyComment), commentResolve: useRpc(rpc.resolveComment),
     commentReopen: useRpc(rpc.reopenComment), commentDelete: useRpc(rpc.deleteComment), commentLocate: useRpc(rpc.locateComments),
   };
@@ -180,10 +181,17 @@ export function useCanvas(workspaceId: string) {
     });
     return !!done;
   }
+  /** Opens a Lienzo this client just imported: known here, so it is not announced as one an agent made elsewhere. */
+  async function openImported(id: string) {
+    knownIds.current?.add(id);
+    const [, catalog] = await Promise.all([refreshList(), apiRef.current.catalog({}).catch(() => null)]);
+    if (catalog && active.current) setCatalog(catalog);
+    await open(id);
+  }
   async function refresh() {
     const v = current.current; if (!v) return;
     try { accept(await apiRef.current.read({ workspaceId, documentId: v.document.id })); setOffline(false); } catch (e) { fail(e, refresh); }
   }
-  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, task, create, remove, refreshList, settle, arrival };
+  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, task, create, remove, refreshList, settle, arrival, openImported };
 }
 export type CanvasController = ReturnType<typeof useCanvas>;

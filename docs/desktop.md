@@ -86,6 +86,21 @@ stdio MCP bridge and setup snippets stay in `server/paseo.ts`.
 - **Menu**: File (copy the Claude Code MCP command, close or quit), Edit, View (reload, developer tools, zoom, full
   screen) and Window. Undo and redo show their keys but leave them to the page, which undoes text or the canvas.
 
+## Lienzo files
+
+A Lienzo can be shared as a `.lienzo` file ([mcp.md](mcp.md#lienzo-files)). The desktop app adds two things over
+Paseo, through the preload (`window.lienzo.saveFile`, `window.lienzo.onOpenFile`) and the host's `files`:
+
+- **Export** shows the system's Save dialog (Documents, the title as the name, `.lienzo` added when missing). The browser
+  preview and Paseo download the file instead.
+- **Opening a file with the app.** `electron-builder.yml` registers `fileAssociations` for `.lienzo`
+  (`application/vnd.lienzo+json`, role Editor). On macOS the file arrives through `open-file`, also before the app is
+  ready (the file that launched it); on Windows and Linux as an argument of the process, or of a second instance, which
+  the single-instance lock forwards to the running app (`second-instance`). The main process queues the paths; the page
+  takes them when it is ready (`lienzo:take-files`, pinged by `lienzo:files-waiting`) and opens the import review. A
+  file over 50 MB or unreadable shows the review with the reason. An AppImage registers the type only once it is
+  integrated (AppImageLauncher or appimaged), which writes the `.desktop` entry with the MIME type.
+
 ## State
 
 The app keeps its state in Electron's `userData` folder, which is `~/.config/Lienzo` on Linux and

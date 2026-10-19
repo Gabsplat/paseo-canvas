@@ -69,6 +69,20 @@ export interface HostCapabilities {
   readonly runsAgents: boolean;
 }
 
+/** A file the person saves or opens: a .lienzo file (shared/lienzo-file.ts). */
+/** `error`: the host could not read it (too large, unreadable); `text` is then empty. */
+export interface HostFile { readonly name: string; readonly text: string; readonly error?: string }
+/**
+ * Files the host handles itself: the desktop app saves with the system's Save dialog and hands over the .lienzo files
+ * the system opens with it. Absent (Paseo): the panel downloads through the browser and opens with a file picker.
+ */
+export interface HostFiles {
+  /** Resolves false when the person cancelled the dialog. */
+  save(file: HostFile & { mime: string }): Promise<boolean>;
+  /** Files opened with the app (double-click, "Open with", a drop on its icon), including any that started it. */
+  onOpen(listener: (file: HostFile) => void): () => void;
+}
+
 export interface ClientHost {
   Icon: ComponentType<IconProps>;
   ScrollView: ForwardRefExoticComponent<ScrollViewProps & RefAttributes<NativeScrollView>>;
@@ -88,4 +102,5 @@ export interface ClientHost {
   AgentSettings: ComponentType<{ connectedAgentId: string | null }> | null;
   /** Settings → About on hosts that update themselves (the desktop app): update state, check, the auto-check switch. */
   AboutUpdates: ComponentType | null;
+  files: HostFiles | null;
 }

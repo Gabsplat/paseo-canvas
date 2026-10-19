@@ -63,6 +63,7 @@ function runtime(controller: any) {
     './shortcuts': shortcuts, './palette': palette,
     './appearance': { APPEARANCES: [], adoptAppearance() {}, chooseAppearance() {}, getAppearance: () => 'system', useAppearance: () => 'system', themeFor: (_appearance: string, theme: unknown) => theme },
     './property-model': propertyModel, './media-store': mediaStore, '../shared/media': sharedMedia,
+    './LienzoFile': { ExportSheet: control('ExportSheet'), ImportSheet: control('ImportSheet'), isLienzoName: (name: string) => /\.lienzo$/i.test(name), onOpenLienzo: () => () => {}, pickLienzoFile: async () => null, readLienzoFile: async () => null },
     './Comments': { CommentLayer: control('CommentLayer'), CommentsList: control('CommentsList'), useComments: () => ({ threads: [], placing: false, open: null, listOpen: false, pins: true, openCount: 0, resolvedCount: 0, setPlacing() {}, setOpen() {}, setListOpen() {}, setPins() {} }) },
   };
   const load = (name: string) => {
@@ -193,9 +194,11 @@ test('examples, templates and collections are gone from the menu, ⌘K, the empt
   const labels = JSON.stringify(nodes(tree).map(node => [node.props.label, node.props.title, node.props.accessibilityLabel]));
   const items = find(tree, 'CommandPalette').props.items('');
   const titles = JSON.stringify(items.map((i: any) => [i.title, i.subtitle]));
-  for (const gone of ['Use a template', 'Import a collection', 'Export this Lienzo', 'Export selection', 'Duplicate as my own', 'Save as template', 'Collections', 'Examples']) {
+  for (const gone of ['Use a template', 'Import a collection', 'Export selection', 'Duplicate as my own', 'Save as template', 'Collections', 'Examples']) {
     assert.ok(!labels.includes(gone), 'panel: ' + gone); assert.ok(!titles.includes(gone), '⌘K: ' + gone);
   }
+  // Sharing came back as one thing: the whole Lienzo as a .lienzo file, never a raw JSON dump.
+  assert.equal(JSON.stringify(items.filter((i: any) => /lienzo/i.test(i.title) && /export|import/i.test(i.title)).map((i: any) => i.id)), JSON.stringify(['lienzo.export', 'lienzo.import']));
   assert.ok(!items.some((i: any) => String(i.id).startsWith('template.')));
   const props = { controller: f.controller, panelRoot: { current: null }, disabled: false, linkId: null, onLink() {}, rects: () => new Map(), release() {}, add() {}, duplicate() {}, remove() {}, groupSelection() {}, connectSelection() {}, editText() {}, interact() {}, undoNotice() {} };
   const rows = JSON.stringify(nodes(r.modules['./SelectionActions'].SelectionProperties(props)).map(node => node.props.label ?? node.props.accessibilityLabel));

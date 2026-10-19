@@ -30,6 +30,8 @@ export const commentThreadSchema = z.object({
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(), resolvedAt: z.iso.datetime().optional(),
   // Set when the entity the thread was pinned to was deleted: its title, so the list can still say what it was about.
   orphanedFrom: z.object({ kind: z.enum(["block", "group"]), id: idSchema, title: z.string().max(300) }).strict().optional(),
+  // Came in a .lienzo file (shared/lienzo-file.ts): its authors are the other computer's, kept as they were.
+  imported: z.literal(true).optional(),
   messages: z.array(commentMessageSchema).min(1).max(COMMENT_LIMITS.messages),
 }).strict();
 export const commentsRecordSchema = z.object({ version: revisionSchema, threads: z.array(commentThreadSchema).max(COMMENT_LIMITS.threads) }).strict();

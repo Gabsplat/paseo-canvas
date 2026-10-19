@@ -73,7 +73,7 @@ function AgentTag({ agentId }: { agentId: string }) {
 }
 
 type Mode = 'idle' | 'menu' | 'rename' | 'delete';
-function LienzoCard({ summary, document, c, open, current, width, index, firstColumn, onOpen }: { summary: LienzoSummary; document?: CanvasDocument; c: CanvasController; open: boolean; current: boolean; width: number; index: number; firstColumn: boolean; onOpen(): void }) {
+function LienzoCard({ summary, document, c, open, current, width, index, firstColumn, onOpen, onExport }: { summary: LienzoSummary; document?: CanvasDocument; c: CanvasController; open: boolean; current: boolean; width: number; index: number; firstColumn: boolean; onOpen(): void; onExport(): void }) {
   const u = useUI(), [hover, setHover] = useState(false), [mode, setMode] = useState<Mode>('idle'), [draft, setDraft] = useState(summary.title), [error, setError] = useState('');
   const busy = c.busy || c.offline, thumbWidth = Math.max(0, width - 2), thumbHeight = u.compact ? 104 : S.thumb.height;
   const trigger = useRef<View>(null), floating = useRef<View>(null), dismiss = () => { dismissedAt = Date.now(); setMode('idle'); };
@@ -120,7 +120,7 @@ function LienzoCard({ summary, document, c, open, current, width, index, firstCo
         <IconButton icon="Ellipsis" label={`More for ${summary.title}`} active={mode === 'menu' || mode === 'delete'} onPress={() => setMode(m => m === 'idle' ? 'menu' : 'idle')} />
       </View>}
       {mode === 'menu' && <View ref={floating} nativeID={`lienzo-card-menu-${summary.id}`} accessibilityRole="menu" style={{ position: 'absolute', ...(u.compact ? { bottom: 54, right: 6 } : { top: 46, right: 8 }), width: 168, padding: 4, borderRadius: 10, borderWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1, zIndex: 5, boxShadow: `0 12px 28px ${withAlpha('#000000', .18)}` } as object}>
-        {([['Rename', 'Pencil', () => setMode('rename')], ['Duplicate', 'CopyPlus', () => { void duplicate(); }], ['Delete…', 'Trash2', () => setMode('delete')]] as const).map(([label, icon, run]) =>
+        {([['Rename', 'Pencil', () => setMode('rename')], ['Duplicate', 'CopyPlus', () => { void duplicate(); }], ['Export…', 'FileOutput', () => { setMode('idle'); onExport(); }], ['Delete…', 'Trash2', () => setMode('delete')]] as const).map(([label, icon, run]) =>
           <Pressable key={label} accessibilityRole="menuitem" accessibilityLabel={label} disabled={busy} onPress={e => { e.stopPropagation(); run(); }} style={({ pressed, ...state }) => ({ minHeight: 32, paddingHorizontal: 10, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 10, opacity: busy ? .45 : 1, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>
             <Icon name={icon} size={14} color={label === 'Delete…' ? u.c.statusDanger : u.c.foregroundMuted} /><Txt style={{ color: label === 'Delete…' ? u.c.statusDanger : u.c.foreground }}>{label}</Txt></Pressable>)}
       </View>}
@@ -135,7 +135,7 @@ function LienzoCard({ summary, document, c, open, current, width, index, firstCo
   </Stagger>;
 }
 
-export function LienzosScreen({ c, width, onOpen, onNew, open }: { c: CanvasController; width: number; onOpen(id: string): void; onNew(): void; open: boolean }) {
+export function LienzosScreen({ c, width, onOpen, onNew, onExport, onImport, open }: { c: CanvasController; width: number; onOpen(id: string): void; onNew(): void; onExport(id: string): void; onImport(): void; open: boolean }) {
   const u = useUI(), root = useScreenRoot(), [grid, setGrid] = useState(0), [query, setQuery] = useState(''), [sort, setSort] = useState<LienzoSort>('recent'), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const list = useMemo(() => filterLienzos(c.documents, query, sort), [c.documents, query, sort]);
   const documentOf = useThumbnailDocuments(c, c.documents, open);
@@ -144,8 +144,8 @@ export function LienzosScreen({ c, width, onOpen, onNew, open }: { c: CanvasCont
   const minColumn = u.compact ? 150 : S.thumb.minColumn, columns = Math.max(1, Math.min(4, Math.floor((inner + gap) / (minColumn + gap)))), cardWidth = Math.floor((inner - gap * (columns - 1)) / columns);
   const has = c.documents.length > 0;
   return <View nativeID="lienzo-lienzos" style={root}>
-    <ScreenHeader title="Lienzos" subtitle="Every canvas you and your agents drew in. Pick one to open it."
-      actions={has ? <Button label="New Lienzo" icon="Plus" variant="primary" disabled={c.busy || c.offline} onPress={onNew} /> : undefined}>
+    <ScreenHeader title="Lienzos" subtitle="Every canvas you and your agents drew in. Pick one to open it, or drop a .lienzo file here to import it."
+      actions={has ? <><Button label="Import…" icon="FileInput" disabled={c.offline} onPress={onImport} /><Button label="New Lienzo" icon="Plus" variant="primary" disabled={c.busy || c.offline} onPress={onNew} /></> : undefined}>
       {has && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <SearchField nativeID="lienzo-lienzos-search" value={query} onChange={setQuery} placeholder="Search Lienzos" />
         <View style={{ width: 168 }}><Segments value={sort} options={[{ value: 'recent', label: 'Recent' }, { value: 'name', label: 'Name' }]} onChange={setSort} /></View>
@@ -154,12 +154,12 @@ export function LienzosScreen({ c, width, onOpen, onNew, open }: { c: CanvasCont
     <ScreenBody>
       {!!error && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Txt kind="small" style={{ color: u.c.statusDanger, flex: 1 }}>{error}</Txt><Button label="Retry" small onPress={() => { setError(''); void c.refreshList().catch(e => setError(friendlyError(e))); }} /></View>}
       {!has && !loading && <ScreenEmpty art={<MateDrawing size={104} />} title="No Lienzos yet." detail="Start one, or ask your agent to draw something.">
-        <Button label="New Lienzo" icon="Plus" variant="primary" disabled={c.busy || c.offline} onPress={onNew} />
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" icon="Plus" variant="primary" disabled={c.busy || c.offline} onPress={onNew} /><Button label="Import…" icon="FileInput" disabled={c.offline} onPress={onImport} /></View>
       </ScreenEmpty>}
       {!has && loading && <Txt muted>Loading Lienzos…</Txt>}
       {has && !list.length && <ScreenEmpty title={`Nothing matches “${query.trim()}”.`} detail="Try another word, or clear the search."><Button label="Clear the search" variant="ghost" onPress={() => setQuery('')} /></ScreenEmpty>}
       {!!list.length && <View onLayout={e => setGrid(Math.floor(e.nativeEvent.layout.width))} style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
-        {list.map((d, i) => <LienzoCard key={d.id} index={i} summary={d} document={documentOf(d.id)} c={c} width={cardWidth} firstColumn={i % columns === 0} open={d.id === c.view?.document.id} current={d.id === c.view?.document.id} onOpen={() => onOpen(d.id)} />)}
+        {list.map((d, i) => <LienzoCard key={d.id} index={i} summary={d} document={documentOf(d.id)} c={c} width={cardWidth} firstColumn={i % columns === 0} open={d.id === c.view?.document.id} current={d.id === c.view?.document.id} onOpen={() => onOpen(d.id)} onExport={() => onExport(d.id)} />)}
       </View>}
     </ScreenBody>
   </View>;

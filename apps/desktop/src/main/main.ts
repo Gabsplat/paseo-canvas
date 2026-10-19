@@ -1,6 +1,8 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron';
-import { join } from 'node:path';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
 import { FULL_SCREEN_CHANNEL, TRAFFIC_LIGHTS } from '../shared/chrome';
+import { FILES_WAITING_CHANNEL, LIENZO_FILE_MAX_BYTES, SAVE_FILE_CHANNEL, TAKE_FILES_CHANNEL, isLienzoPath, type OpenedFile } from '../shared/files';
 import { startDesktop, type Desktop } from './core';
 import { createAppUpdates } from './updater';
 import type { UpdateController } from './updater/controller';
@@ -32,6 +34,36 @@ function createWindow() {
   window.on('enter-full-screen', fullScreen); window.on('leave-full-screen', fullScreen); window.webContents.on('did-finish-load', fullScreen);
   window.on('closed', () => { window = null; });
   void window.loadFile(join(__dirname, 'renderer', 'index.html'));
+}
+
+// ---- .lienzo files. One opened with the app (double-click, "Open with", a drop on the icon) waits here until the page
+// takes it: on macOS it arrives through open-file, possibly before the app is ready; on Windows and Linux as an argument
+// of this process or, when Lienzo is already running, of the second instance, forwarded through the instance lock.
+const waitingFiles: string[] = [];
+function openFiles(paths: readonly string[]) {
+  if (!paths.length) return;
+  waitingFiles.push(...paths);
+  if (window) { if (window.isMinimized()) window.restore(); window.focus(); window.webContents.send(FILES_WAITING_CHANNEL); }
+  else if (desktop && app.isReady()) createWindow();
+}
+const filesIn = (argv: readonly string[], cwd = process.cwd()) => argv.slice(1).filter(isLienzoPath).map(path => resolve(cwd, path));
+async function takeFiles(): Promise<OpenedFile[]> {
+  const paths = waitingFiles.splice(0);
+  return Promise.all(paths.map(async (path): Promise<OpenedFile> => {
+    const name = basename(path);
+    try {
+      if ((await stat(path)).size > LIENZO_FILE_MAX_BYTES) return { name, text: '', error: `“${name}” is larger than ${LIENZO_FILE_MAX_BYTES / 1024 / 1024} MB, the most a .lienzo file can be.` };
+      return { name, text: await readFile(path, 'utf8') };
+    } catch { return { name, text: '', error: `“${name}” could not be read.` }; }
+  }));
+}
+async function saveFile(file: unknown): Promise<boolean> {
+  const { name, text } = (file ?? {}) as { name?: unknown; text?: unknown };
+  if (typeof name !== 'string' || typeof text !== 'string' || Buffer.byteLength(text) > LIENZO_FILE_MAX_BYTES || !window) return false;
+  const choice = await dialog.showSaveDialog(window, { title: 'Export this Lienzo', defaultPath: join(app.getPath('documents'), basename(name)), filters: [{ name: 'Lienzo', extensions: ['lienzo'] }], properties: ['createDirectory', 'showOverwriteConfirmation'] });
+  if (choice.canceled || !choice.filePath) return false;
+  await writeFile(isLienzoPath(choice.filePath) ? choice.filePath : choice.filePath + '.lienzo', text, 'utf8');
+  return true;
 }
 
 function buildMenu() {
@@ -87,6 +119,8 @@ async function start() {
     if (!window || event.sender !== window.webContents) return { ok: false, message: 'FORBIDDEN: Unknown caller.' };
     return desktop!.settle(name, input);
   });
+  ipcMain.handle(SAVE_FILE_CHANNEL, (event, file: unknown) => window && event.sender === window.webContents ? saveFile(file) : false);
+  ipcMain.handle(TAKE_FILES_CHANNEL, event => window && event.sender === window.webContents ? takeFiles() : []);
   nativeTheme.themeSource = await desktop.appearance();
   nativeTheme.on('updated', () => window?.setBackgroundColor(windowBackground()));
   buildMenu();
@@ -95,7 +129,13 @@ async function start() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
+  app.on('second-instance', (_event, argv, workingDirectory) => {
+    if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
+    openFiles(filesIn(argv, workingDirectory));
+  });
+  // macOS: before ready (the file that launched the app) and after (one opened while it runs).
+  app.on('open-file', (event, path) => { event.preventDefault(); if (isLienzoPath(path)) openFiles([path]); });
+  waitingFiles.push(...filesIn(process.argv));
   app.whenReady().then(start);
   app.on('activate', () => { if (!window && desktop) createWindow(); });
   app.on('window-all-closed', () => { if (!isMac) app.quit(); });

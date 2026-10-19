@@ -1675,3 +1675,43 @@ A reference whose file is not on this computer (a document copied from elsewhere
 image-off icon and "This image is not stored here…". A host that cannot store files gets the image inline as a data
 URL, up to 256 KB, with a warning toast that it was kept inside the Lienzo. Stored images have no "Open outside" button.
 
+## 41. Sharing a Lienzo as a file (October 2026)
+
+One Lienzo travels as a `.lienzo` file (docs/mcp.md, "Lienzo files"). Two dialogs, both in the add sheet's shell
+(§37.1) at 560 wide (`face.lienzoFile`): dimmed canvas, a 36 px accent tile with the icon, the title and one line under
+it, the body, and the footer with the keys on the left and Cancel and the primary action on the right.
+
+**Where.** Export: the document menu (after Rename), `…` on a card in Lienzos (between Duplicate and Delete…), ⌘K
+"Export this Lienzo…". Import: Import… in the Lienzos header (secondary, beside New Lienzo) and in its empty state,
+Import… on the empty panel, ⌘K "Import a Lienzo…", a dropped `.lienzo` file anywhere a Lienzo could open (the canvas,
+Lienzos, the empty panel), and the desktop app opening a file. While a file hovers outside a canvas, the drop cue of §40
+says "Drop a .lienzo file to import it" with a file-input icon; on a canvas the image cue adds "A .lienzo file opens as
+a new Lienzo."
+
+**Summary card.** Both dialogs lead with the same card on `surface0`: the Lienzo's real thumbnail (132 × 88, the
+Lienzos card drawing, radius 8, 1 px border) and beside it the title in the title face with two muted lines: what it
+holds ("4 blocks · 1 Sheet · 1 image inside") and, in export, the file name in the code face; in the review, the image
+size and, when the title is taken here, "Imports as “… (imported)”: you already have one with this name." in body
+colour, since it is the one line that changes what happens.
+
+**Export.** Under "Include", two options as whole-row toggles (min 52 tall, radius 10): an 18 px box (accent fill and a
+check when on), a strong title and one muted line. Comments ("1 thread, open and resolved, with who wrote them";
+disabled with "This Lienzo has no comments." when there are none) and "What people did with interactive blocks"
+("Control values, quiz answers, mini app state and what extensions kept on this Lienzo. Off: the blocks start fresh.").
+Both start off: sharing the drawing is the common case and the least surprising. On, the row takes a 6 % accent wash
+and an accent border at 55 %. A quiet note (`surface2`, info icon) says history is not included and that images, custom
+block types and extensions travel inside. Export (primary, file-output icon) saves with the system dialog on desktop
+or downloads in the browser, closes, and a success toast names the file and its size.
+
+**Review.** The subtitle says when and from what it was exported; the title names the file. After the card, two facts
+side by side on `surface2` (Comments, Interactive state), the value strong when included and muted when not ("Not
+included: blocks start fresh"). Then "Block types it brings" and "Extensions it brings", one 40 px row each: a 28 px
+icon tile, the name and a muted line (the type id; what the extension asks to do, or "Reads and selects only"), and a
+status chip centred on the row: **New** (acento), **Installed** (neutro), **Yours kept** (aviso) when this computer has
+a different one. A muted line under extensions repeats that imported ones only read and select until allowed. Warnings
+are amber notices in plain words. The footer hint adds the file size. The primary is "Import as a new Lienzo": there is
+no overwrite, so there is no second choice to make. Loading is the egg and "Reading the file…"; a refused file is a red
+notice with only Close. After importing, the new Lienzo opens and a toast says "Imported “…”".
+
+Tokens: `face.lienzoFile` (width, thumb, card, option, row, status tones).
+
