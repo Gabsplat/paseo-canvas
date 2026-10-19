@@ -23,7 +23,7 @@ export const corePages: readonly WikiPage[] = [
   // ---- Start here
   { id: "start.lienzo", section: "start", title: "What Lienzo is", icon: "Frame", art: "agent",
     summary: "A canvas next to your agent, where it draws what it explains.",
-    purpose: "Lienzo (Spanish for canvas) is a canvas that lives next to your agent. The agent draws what it explains as cards, links and Frames while you talk to it in your own chat. You can draw on it too, rearrange it, and point at things to ask about them. Each document is also called a Lienzo; they are kept on this computer and listed in Lienzos.",
+    purpose: "Lienzo is a canvas that lives next to your agent. The agent draws what it explains as cards, links and Frames while you talk to it in your own chat. You can draw on it too, rearrange it, and point at things to ask about them. Each document is also called a Lienzo; they are kept on this computer and listed in Lienzos.",
     byHand: ["Open Lienzos from the title at the top, or from the menu.", "Press New Lienzo, or pick one to open.", "Draw with the toolbar at the bottom, or ask your agent to draw."],
     askAgent: ["Draw how a login request travels through our app.", "Explain caching on the Lienzo, one Sheet per idea."],
     tips: ["The canvas never sends anything to the agent. You talk to it in its chat; it reads what you selected.", "Every change can be undone, yours and the agent's."],

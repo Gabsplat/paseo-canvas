@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { GLSL_TIME_MAX, glslChrome, glslShaderState, glslUtf8Length, type GlslShaderData, type GlslShaderState } from '../../shared/renderers/glsl-shader';
+import { GLSL_TIME_MAX, glslChrome, glslShaderState, glslSummary, glslUtf8Length, glslWantsToPlay, type GlslShaderData, type GlslShaderState } from '../../shared/renderers/glsl-shader';
 import { GLSurface, NativeLearningFallback, compileGLProgram, type GLContext, type SurfaceFrame } from '../Surfaces';
 import { WebRange, prefersReducedMotion } from '../web';
 import { withAlpha } from '../color';
@@ -42,8 +42,11 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
   const live = useRef({ props, state: parsed }); live.current = { props, state: parsed };
   const clock = useRef({ seconds: parsed.time, saved: parsed.time, playing: false, last: null as number | null, visited: [parsed.time, parsed.time] as [number, number] });
   if (!clock.current.playing && clock.current.saved !== parsed.time) { clock.current.seconds = parsed.time; clock.current.saved = parsed.time; clock.current.last = null; }
-  const [playing, setPlaying] = useState(false), [compileError, setCompileError] = useState(''), [surfaceError, setSurfaceError] = useState(''), [eventError, setEventError] = useState(''), [attempt, setAttempt] = useState(0);
-  const bundle = useRef<Resources | null>(null), failed = useRef(false), visible = useRef(false), ranges = useRef<Record<string, [number, number]>>({}), measured = useRef({ parts: {} as Record<string, number>, sent: 0 }), report = useRef(() => {});
+  // `want` is whether time should run: the person's Play/Pause, else autoplay. The clock itself runs only while the
+  // picture is drawn (draw() starts it), so out of view it stops and coming back resumes it without a press.
+  const want = useRef<boolean | null>(null); if (want.current === null) want.current = glslWantsToPlay(data, runtime.state, prefersReducedMotion());
+  const [playing, setPlaying] = useState(want.current), [compileError, setCompileError] = useState(''), [surfaceError, setSurfaceError] = useState(''), [eventError, setEventError] = useState(''), [attempt, setAttempt] = useState(0);
+  const bundle = useRef<Resources | null>(null), failed = useRef(false), ranges = useRef<Record<string, [number, number]>>({}), measured = useRef({ parts: {} as Record<string, number>, sent: 0 }), report = useRef(() => {});
   useEffect(() => report.current());
   const clearResources = () => { const old = bundle.current; bundle.current = null; old?.dispose(); };
   const save = (state: GlslShaderState) => { live.current.state = state; clock.current.saved = state.time; live.current.props.runtime.set(state); };
@@ -54,14 +57,18 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
   const settle = (kind: string, payload: RendererProps['block']['data'], label: string) => {
     setEventError(''); void live.current.props.runtime.record(kind, payload, label).catch(() => setEventError('The setting could not be saved. Check the connection and try again.'));
   };
-  const pause = (reason: string) => {
+  // Stops the clock. `keep` leaves the wish to play (out of view, leaving): it starts again once drawn. Watching is not
+  // editing: the time is block state, not the document, so only a real read-only Lienzo (offline) skips the save.
+  const pause = (reason: string, keep = false) => {
+    if (!keep) { want.current = false; setPlaying(false); }
     if (!clock.current.playing) return;
-    clock.current.playing = false; clock.current.last = null; setPlaying(false);
+    clock.current.playing = false; clock.current.last = null;
+    if (live.current.props.readOnly) return;
     save({ ...live.current.state, time: clock.current.seconds });
     settle('glsl-shader.pause', { time: clock.current.seconds, visited: clock.current.visited, values: valuesNow(), reason }, 'Pause shader');
   };
-  useEffect(() => { if (readOnly) pause('read only'); }, [readOnly]);
-  useEffect(() => () => { pause('left the block'); clearResources(); }, []);
+  const start = () => { clock.current.playing = true; clock.current.last = null; clock.current.visited = [clock.current.seconds, clock.current.seconds]; };
+  useEffect(() => () => { pause('left the block', true); clearResources(); }, []);
   // Recompile programs inside the same context. Changing initialize would tear down the adapter
   // and lose its WebGL context on the same canvas, so the host initializer stays stable.
   const signature = JSON.stringify([data.fragmentSource, data.uniforms.map(u => u.name), data.builtins]);
@@ -71,7 +78,7 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     clearResources(); failed.current = false; setCompileError(''); setSurfaceError('');
     compilation.current.built = compilation.current.wanted; compilation.current.builtAttempt = compilation.current.attempt;
     const prepared = prepareShader(gl, live.current.props.data);
-    if (prepared.error) { failed.current = true; setCompileError(prepared.error); pause('compile error'); }
+    if (prepared.error) { failed.current = true; setCompileError(prepared.error); pause('compile error', true); }
     bundle.current = prepared.resources ?? null;
     const owned = prepared.resources;
     // Keep the adapter active on compile failure so its generic overlay does not hide diagnostics.
@@ -81,6 +88,7 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     const compiled = compilation.current;
     if (compiled.built !== compiled.wanted || compiled.builtAttempt !== compiled.attempt || (!bundle.current && !failed.current)) initialize(gl);
     const resource = bundle.current; if (!resource || resource.gl !== gl) return;
+    if (want.current && !clock.current.playing && live.current.props.data.builtins.time) start();
     if (clock.current.playing) {
       if (clock.current.last !== null) clock.current.seconds = Math.min(GLSL_TIME_MAX, clock.current.seconds + Math.max(0, Math.min(250, frame.time - clock.current.last)) / 1000);
       clock.current.last = frame.time; clock.current.visited[1] = clock.current.seconds;
@@ -97,29 +105,23 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     } catch { setSurfaceError('The shader could not be drawn. Reset the experiment.'); pause('drawing error'); clearResources(); failed.current = true; }
   };
   const onVisibilityChange = (drawable: boolean) => {
-    visible.current = drawable;
-    if (!drawable) { pause('out of view'); clearResources(); }
+    if (!drawable) { pause('out of view', true); clearResources(); }
   };
   const reset = () => {
     if (live.current.props.readOnly || ui.layout.platform !== 'web') return;
-    clock.current = { seconds: 0, saved: 0, last: null, playing: false, visited: [0, 0] }; setPlaying(false); ranges.current = {};
+    clock.current = { seconds: 0, saved: 0, last: null, playing: false, visited: [0, 0] }; want.current = false; setPlaying(false); ranges.current = {};
     if (failed.current) setAttempt(attempt + 1);
     live.current.state = { values: {}, time: 0 }; live.current.props.runtime.set(null);
     // Shared variables are owned by their own control. This reset clears local values and time only.
     settle('glsl-shader.reset', { time: 0, values: valuesNow() }, 'Reset shader');
   };
-  const summary = data.staticSummary ?? 'Shader without a declared static reference. It has not run on this device.';
+  const summary = glslSummary(data, block.title);
   const chrome = glslChrome(data), native = ui.layout.platform !== 'web', selected = !!props.selection?.includes(block.id);
+  // Play asks for time; it runs from the next drawn frame, so a press before the picture is drawable is kept, not lost.
   const play = () => {
-    if (live.current.props.readOnly || !visible.current || failed.current) return;
-    if (clock.current.playing) pause('paused by the person');
-    else { clock.current.playing = true; clock.current.last = null; clock.current.visited = [clock.current.seconds, clock.current.seconds]; setPlaying(true); }
-  };
-  // Autoplay starts the clock once the picture is in view, unless the person asked the system for less motion.
-  const autoplayed = useRef(false);
-  const onVisible = (drawable: boolean) => {
-    onVisibilityChange(drawable);
-    if (drawable && chrome.autoplay && data.builtins.time && !autoplayed.current && !live.current.props.readOnly && !failed.current && !prefersReducedMotion()) { autoplayed.current = true; play(); }
+    if (failed.current) return;
+    if (want.current) { pause('paused by the person'); return; }
+    want.current = true; setPlaying(true);
   };
   if (native) return <View nativeID={`lienzo-interactive-shader-${block.id}-static`} style={{ gap: 8, padding: chrome.question ? 0 : 12 }}>{!!chrome.question && <Txt>{chrome.question}</Txt>}<Txt kind="label" muted>Static</Txt><NativeLearningFallback summary={summary} />{chrome.reset && <Button label="Reset" small variant="ghost" disabled onPress={reset} />}</View>;
   const sliders = data.uniforms.map(u => {
@@ -146,7 +148,7 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
   });
   const broken = !!compileError || !!surfaceError;
   const transport = (data.builtins.time || chrome.reset) && <View nativeID={`lienzo-interactive-shader-${block.id}-transport`} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-    {data.builtins.time && <Button label={playing ? 'Pause' : 'Play'} small disabled={readOnly || broken} onPress={play} />}
+    {data.builtins.time && <Button label={playing ? 'Pause' : 'Play'} small disabled={broken} onPress={play} />}
     {chrome.reset && <Button label="Reset" small variant="ghost" disabled={readOnly} onPress={reset} />}
   </View>;
   // Without a stored size the picture keeps 16:10 and the card grows around it. With one, the picture takes what the
@@ -169,8 +171,9 @@ function GlslShader(props: RendererProps<GlslShaderData>) {
     {!!chrome.question && <Txt onLayout={measure('question')} style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 }}>{chrome.question}</Txt>}
     <View nativeID={`lienzo-shader-${block.id}`} style={{ flex: 1, minHeight: sized ? floor : height, backgroundColor: ui.c.surface0, overflow: 'hidden' }}>
       <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}><GLSurface id={`glsl-${block.id}`} passive label={chrome.question || block.title || 'Shader'} summary={summary} height="100%" maxPixelSize={data.maxPixelSize}
-        animated={playing} initialize={initialize} draw={draw} onVisibilityChange={onVisible} onError={message => {
-          pause('drawing error');
+        animated={playing} initialize={initialize} draw={draw} onVisibilityChange={onVisibilityChange} onError={message => {
+          // A lost context comes back by itself (the hub restarts the drawing): keep the wish to play for then.
+          pause('drawing error', message.includes('was lost'));
           setSurfaceError(message.includes('does not offer this drawing context') ? 'WebGL is not available' : message.includes('was lost') ? 'The WebGL context was lost. Waiting for it to come back.' : 'The shader could not start. Open the block again.');
         }} /></View>
       {chrome.title && !!block.title && <View pointerEvents="none" style={[glass, { position: 'absolute', left: 10, top: 10, maxWidth: '80%', paddingHorizontal: 10, paddingVertical: 5 }]}><Txt kind="heading" numberOfLines={1}>{block.title}</Txt></View>}

@@ -423,6 +423,13 @@ export function isEditingTarget(target: unknown): boolean {
   if (pointerElement(target)?.closest?.('[id^="lienzo-grab-"]') && !pointerElement(target)?.closest?.('input,textarea,[contenteditable="true"]')) return false;
   return Platform.OS === 'web' && !!pointerElement(target)?.closest?.('input,textarea,select,[contenteditable="true"],[data-lienzo-interacting="true"],[id^="lienzo-using-"],iframe,video,audio,[id^="lienzo-interactive-range-"],[id^="lienzo-interactive-surface-"]');
 }
+const CONTROLS = 'button,a,input,select,textarea,[role="button"],[role="checkbox"],[role="radio"],[role="slider"],[role="switch"],[role="menuitem"],[role="link"]';
+/** A control (Play, Reset, a checkbox…) inside a card's interactive region: its press is the control's, never a card drag.
+ * The card's own grab area is a button too, but it is not inside an interactive region, so the picture still drags. */
+export function isCardControl(target: unknown): boolean {
+  const control = pointerElement(target)?.closest?.(CONTROLS);
+  return !!control?.closest?.('[id^="lienzo-interactive-"]');
+}
 export type EntityPointerHandlers = {
   enabled(): boolean;
   /** A plain click on a part of the entity that is not itself a control: its text, its padding. */
@@ -441,7 +448,7 @@ export function attachEntityDrag(element: unknown, handlers: EntityPointerHandle
   const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, pointerId: e.pointerId ?? 0 });
   const entity = (e: Event) => pointerElement(e.target)?.closest?.('[id^="lienzo-entity-"]')?.id?.slice('lienzo-entity-'.length);
   const down = (e: Event) => {
-    if (e.button !== 0 || !handlers.enabled() || isEditingTarget(e.target) || pointerElement(e.target)?.closest?.('[id^="lienzo-interactive-resize-"],[id^="lienzo-link-handle-"]')) return;
+    if (e.button !== 0 || !handlers.enabled() || isEditingTarget(e.target) || isCardControl(e.target) || pointerElement(e.target)?.closest?.('[id^="lienzo-interactive-resize-"],[id^="lienzo-link-handle-"]')) return;
     const id = entity(e); if (!id) return;
     const p = point(e); pending = { id, start: p, last: p, time: Date.now(), active: false }; velocity = { vx: 0, vy: 0 };
   };

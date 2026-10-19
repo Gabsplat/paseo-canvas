@@ -68,10 +68,24 @@ export function glslShaderState(data: GlslShaderData, raw: Record<string, JSONVa
   }
   return { values, time: typeof raw.time === 'number' && Number.isFinite(raw.time) ? Math.max(0, Math.min(GLSL_TIME_MAX, raw.time)) : 0 };
 }
+/** What a device that cannot run the shader says instead: the block's own summary, else a plain line from its title. */
+export function glslSummary(data: Pick<GlslShaderData, 'staticSummary'>, title?: string): string {
+  return data.staticSummary ?? `${title?.trim() || 'Shader'}: a picture drawn by a shader. It has not run on this device.`;
+}
+/**
+ * Whether time should run as soon as the picture can be drawn: the block plays on its own (autoplay with u_time, not under
+ * reduced motion) and the person did not pause it last time (their pause is kept in the block state across remounts).
+ */
+export function glslWantsToPlay(data: Pick<GlslShaderData, 'autoplay' | 'builtins' | 'question' | 'showTitle' | 'controls' | 'reset'>, raw: Record<string, JSONValue>, reducedMotion: boolean): boolean {
+  if (!data.builtins.time || reducedMotion || !glslChrome(data).autoplay) return false;
+  const last = raw.lastInteraction, payload = last && typeof last === 'object' && !Array.isArray(last) ? last.payload : undefined;
+  const reason = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload.reason : undefined;
+  return !(last && typeof last === 'object' && !Array.isArray(last) && last.kind === 'glsl-shader.pause' && reason === 'paused by the person');
+}
 export const glslShaderSpec = {
   id: 'glsl-shader', dataSchema: glslShaderDataSchema, interactive: true,
   minSize: { width: 200, height: 140 }, defaultSize: { width: 480, height: 320 },
-  guidance: 'A complete WebGL1 GLSL fragment of up to 4096 bytes and up to four float uniforms declared with ranges. A uniform named like a variable of its Frame or the Lienzo takes that shared value. Declare u_resolution vec2 and u_time float only when their builtins are on. By default the card is the shader alone, edge to edge; add only what helps: question (a line above), showTitle (the block title over the picture), controls (overlay = small sliders on the picture, the default; below = a strip under it; none = no sliders on the card), reset (a Reset button), autoplay (start u_time when in view). Without autoplay, time starts when the person presses play. What the person tried (values, time, lastInteraction) stays in the block state: read it with canvas_selection or canvas_read ids.',
+  guidance: 'A complete WebGL1 GLSL fragment of up to 4096 bytes and up to four float uniforms declared with ranges. A uniform named like a variable of its Frame or the Lienzo takes that shared value. Declare u_resolution vec2 and u_time float only when their builtins are on. By default the card is the shader alone, edge to edge; add only what helps: question (a line above), showTitle (the block title over the picture), controls (overlay = small sliders on the picture, the default; below = a strip under it; none = no sliders on the card), reset (a Reset button), autoplay (start u_time when in view; it pauses out of view and resumes when back, unless the person paused it). Without autoplay, time starts when the person presses play. staticSummary is optional: one line saying what this particular shader shows, for devices that cannot run it; leave it out rather than reuse the text of another shader. What the person tried (values, time, lastInteraction) stays in the block state: read it with canvas_selection or canvas_read ids.',
   blockType: {
     id: 'glsl-shader', renderer: 'glsl-shader', name: 'GLSL shader', description: 'Explore an image computed from a few parameters. WebGL on desktop and web; a static reference on native.',
     properties: [
@@ -80,7 +94,7 @@ export const glslShaderSpec = {
       { key: 'uniforms', label: 'Parameters', kind: 'json', required: true, help: 'Each one is a float uniform with a slider. The shader code declares it.' },
       { key: 'builtins', label: 'Resolution and time', kind: 'json', required: false, advanced: true },
       { key: 'maxPixelSize', label: 'Resolution limit', kind: 'number', required: false, advanced: true, help: 'Largest side drawn, in pixels (16 to 1024).' },
-      { key: 'staticSummary', label: 'Static reference', kind: 'text', required: false, advanced: true, help: 'What the picture shows, for devices that cannot run it.' },
+      { key: 'staticSummary', label: 'Static reference', kind: 'text', required: false, advanced: true, help: 'Optional. One line on what this shader shows, for devices that cannot run it.' },
       { key: 'controls', label: 'Controls', kind: 'text', required: false, options: ['overlay', 'below', 'none'], help: 'Where the sliders sit: over the picture when selected, under it, or not on the card.' },
       { key: 'showTitle', label: 'Show the title on the picture', kind: 'boolean', required: false },
       { key: 'reset', label: 'Reset button', kind: 'boolean', required: false },
@@ -89,8 +103,7 @@ export const glslShaderSpec = {
     defaults: {
       fragmentSource: 'precision mediump float;\nuniform vec2 u_resolution;\nuniform float frequency;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution;\n  float band = 0.5 + 0.5 * sin(uv.x * frequency * 6.283185);\n  gl_FragColor = vec4(vec3(band), 1.0);\n}',
       uniforms: [{ name: 'frequency', label: 'Frequency', min: 1, max: 12, value: 4, step: 0.1 }],
-      builtins: { resolution: true, time: false }, maxPixelSize: 512,
-      staticSummary: 'Static reference: grey vertical stripes. The frequency sets how many stripes appear.',
+      builtins: { resolution: true, time: false },
     },
   },
 } satisfies RendererSpec;

@@ -10,7 +10,7 @@ The pages of Help in the app (menu → Help, ⌘K, or the ? in the Properties pa
 
 A canvas next to your agent, where it draws what it explains.
 
-Lienzo (Spanish for canvas) is a canvas that lives next to your agent. The agent draws what it explains as cards, links and Frames while you talk to it in your own chat. You can draw on it too, rearrange it, and point at things to ask about them. Each document is also called a Lienzo; they are kept on this computer and listed in Lienzos.
+Lienzo is a canvas that lives next to your agent. The agent draws what it explains as cards, links and Frames while you talk to it in your own chat. You can draw on it too, rearrange it, and point at things to ask about them. Each document is also called a Lienzo; they are kept on this computer and listed in Lienzos.
 
 #### By hand
 
