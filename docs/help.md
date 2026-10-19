@@ -749,6 +749,32 @@ The canvas never talks to the agent: your chat does. Select a card, a Frame or a
 - “What is wrong with the cards I selected?”
 - “Expand this Frame into its own Sheet.”
 
+### Comments
+
+Pin a note on a card, a Frame or a spot; your agent reads it when you ask.
+
+A comment is a note you leave on the canvas, the way you would in a shared doc: a question about a card, something to fix in a Frame, an idea for an empty spot. It stays pinned there and follows the card when it moves. Comments are not part of the drawing: they never change it, never conflict with the agent's edits and are not in History or Undo. The canvas never sends them to your agent; when you are ready, say "look at the comments" in your chat and the agent reads the open ones, answers you there, and may reply briefly in a thread or resolve it.
+
+Shortcut: C
+
+#### By hand
+
+1. Press C (or Comment in the toolbar), then press a card, a Frame or an empty spot.
+2. Write the note; Enter sends it, Shift+Enter starts a new line, Esc closes.
+3. Press a pin to read the thread and reply. ✓ resolves it; ⋯ deletes it.
+4. The Comments button at the top right lists them, open or resolved; press one to go there. The eye hides the pins.
+
+#### Ask your agent
+
+- “Look at the comments on this Lienzo.”
+- “Answer the open comments on Sheet 2 and resolve the ones you fixed.”
+
+#### Tips
+
+- Resolved threads hide their pin; find them again under Resolved.
+- If the card under a comment is deleted, the comment stays where it was and says what it was on.
+- The agent signs its replies; they show its name and "by your agent".
+
 ### Instructions for the agent
 
 Tell the agent how to explain, on a Lienzo, a Frame or a card.

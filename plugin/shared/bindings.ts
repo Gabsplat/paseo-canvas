@@ -1,4 +1,4 @@
-// Property bindings (docs/mcp.md "Bindings", docs/design.md §38): a block property follows a variable at render time.
+// Property bindings (docs/mcp.md "Bindings", docs/design.md §39): a block property follows a variable at render time.
 // The stored document holds only the rule; the value comes from runtime variables, so moving a slider never writes a
 // revision. One registry says what can be bound, so the server, the renderers and the Properties panel agree.
 import { z } from 'zod';

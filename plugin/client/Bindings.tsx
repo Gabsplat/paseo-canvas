@@ -1,4 +1,4 @@
-// Bindings in Properties (docs/design.md §38): each property a block can tie to a variable, with a chain-link button
+// Bindings in Properties (docs/design.md §39): each property a block can tie to a variable, with a chain-link button
 // that opens the bind form in place. A bound property shows its variable as a pill and what it gives now. Editing a
 // binding is one labelled transaction; the value it follows moves at runtime and is never saved by moving it.
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';

@@ -1508,13 +1508,81 @@ while the section, the tab or the search changes their height. A longer content 
 guide keeps its fixed stage.
 
 
-## 38. Bound to a variable (October 2026)
+## 38. Comments (October 2026)
+
+Verified with `design/whiteboard-harness/comments.cjs` (RN-web, plain headless Chromium: dark and light at 1280, a
+narrow 760 window, compact 420); captures in `design/qa-comments-2026-10/`. Tokens `face.comments`.
+
+Comments are the person's notes pinned on the canvas, read by the agent with `canvas_comments` when the person asks
+in their own chat. They sit beside the drawing, never in it: no revision, no History, no Undo. Nothing on the canvas
+sends them anywhere.
+
+### 38.1 Pins
+
+- **Shape.** A 26 px speech bubble: a circle whose bottom-left corner is square (radius 3) and points at what it is
+  about. A 2 px ring in `surface1` separates it from any card, plus the island's soft two-step shadow. Pins are drawn
+  in screen space over the cards and under the selection toolbar, at a fixed size at every zoom.
+- **Who.** The first author decides the pin: the person is ink (`foreground`) with a small head-and-shoulders figure
+  cut out in `surface1`; the agent is the accent with its spark (`Sparkles`, the glyph History already uses for the
+  agent). Same avatars, at 22 px, in the thread and 20 px in the list.
+- **Where.** On a card or a Frame the tip sits 6 px outside the top-right corner (up and right), clear of the corner
+  resize handle, the link handle and the card's content; several threads on one entity stand side by side 22 px apart,
+  overlapping like an avatar stack. On an empty spot the tip is the spot. A pin follows its entity; if the entity is
+  deleted, the thread stays where its pin was last drawn and says "Was on “…”, since deleted".
+- **States.** A reply count badge (15 px, `surface1`, hairline) at the top-right when a thread has replies. Hover lifts
+  it 5 % and shows a one-line preview (author, time, two lines of text) beside it; the open thread's pin is 10 % larger
+  with an accent ring. Resolved pins are hidden; while the list shows Resolved they come back at 55 % with a check.
+- **Never a drag.** Pins and the popover live in their own layer (`lienzo-tools-comments`), a sibling of the pan
+  surface, so pressing or dragging them never moves a card, pans, or draws with the tool in hand.
+
+### 38.2 The Comment tool
+
+`C` (registry `tool.comment`, free before) or the Comment button, alone in the last toolbar group (`MessageSquarePlus`).
+While it is on, the canvas shows a crosshair, a small island at the top ("Press a card, a Frame or an empty spot",
+naming the target under the pointer) and a dashed accent outline around what a press would pin to: the smallest card
+under the pointer, else the innermost Frame, else the spot. A press opens a new-comment popover there with a provisional
+"+" pin; nothing is saved until it is sent. Esc or `C` again lets go. On a compact panel the tool also brings the canvas
+out of the list view so a spot can be chosen.
+
+### 38.3 The thread
+
+One popover, 320 wide (radius 12, `surface1`, the popover elevation), beside the pin: on the right when it fits, else on
+the left, clamped clear of the top islands, the bottom toolbar and the right panel.
+
+- **Header** (44 high, hairline below): "Comment" in `heading` (or "New comment"), a green "Resolved" chip when it is,
+  and one muted line saying where it is ("On “Servidor”", "On the canvas"). Actions on the right: ⋯ (Delete thread,
+  with an inline confirmation that names the number of messages), ✓ Resolve (closes the popover) or ↺ Reopen, ✕ Close.
+- **Messages** (12 padding, 12 apart, scrolling past 300): avatar, then the name in `bodyStrong` ("You", or the agent's
+  label), "by your agent" in the accent for the agent, "via <extension>" when an extension wrote it, the relative time
+  muted, and the text in `body`, selectable.
+- **Reply box**: a rounded field on `surface0` that grows from one line to 120 px, with a round 28 px send button that
+  fills with the accent once there is text. Enter sends, Shift+Enter is a new line, Esc closes. One muted line under it
+  says so; past 1800 characters a counter appears (danger past 2000). A reply to a resolved thread reopens it. Pressing
+  outside closes the popover unless a new comment has text in it.
+
+### 38.4 The list
+
+The Comments button in the top-right island (`MessageSquare`, with an accent count of open threads) opens a
+"Comments" tab in the right panel; it is also in the menu and ⌘K (Comments, Hide comment pins, Comment). Open/Resolved
+segments with counts, and an eye that hides or shows the pins. Rows (64 min, newest activity first): avatar, author and
+time, two lines of the first message, then where it is and the reply count, in the accent when the agent answered.
+Pressing a row frames its card clear of the panel (or centres the spot) and opens the thread. On a compact panel the row
+opens the thread inline in the sheet, with a back arrow. Empty states: "No open comments" with how to add one and that
+the agent reads them when asked; "Nothing resolved yet".
+
+### 38.5 Copilot popover
+
+The Lienzo chip's popover in Paseo says "N open comments on this Lienzo. Ask your agent to look at them when you are
+ready." above Open, only when there are some. It is a reminder for the person; the agent's tool responses carry no
+count.
+
+## 39. Bound to a variable (October 2026)
 
 A binding makes a property follow a variable (`shared/bindings.ts`, docs/mcp.md "Bindings"). The design rule: **the
 rule is content, the value is live**. Editing a binding is an ordinary labelled transaction; moving the variable is
 runtime only and never touches History, so a slider dragged for ten seconds leaves no trail.
 
-### 38.1 Properties → Bindings
+### 39.1 Properties → Bindings
 
 - A section of its own, under Style or Content, open by default only when the block has bindings. It never reaches
   into another section's fields, so it lives beside the collapsed-by-default Properties work without touching it.
@@ -1528,7 +1596,7 @@ runtime only and never touches History, so a slider dragged for ten seconds leav
 - An inert binding (its variable was deleted) shows the pill in `statusWarning` with a warning triangle and the word
   *inert*; its form explains why and offers another variable or Unbind. Nothing is removed silently.
 
-### 38.2 The bind form
+### 39.2 The bind form
 
 Pressing the chain-link opens the form in place under its row (the row gains a border and `surface1`), like Picker:
 it never floats over the panel's scroll and never clips.
@@ -1547,7 +1615,7 @@ it never floats over the panel's scroll and never clips.
 A new binding starts with something visible: the variable's whole range onto half to one and a half times the stored
 size, 0–360° for rotation, 20–100 % opacity, hue 200° → 0° (cool to warm) for colours, `Speed: {v}` for text.
 
-### 38.3 On the canvas
+### 39.3 On the canvas
 
 - Bound values are drawn every frame the variable moves. Size feeds layout, so links leave from the bound edge and
   Frames grow; shift and rotation are drawn only, links and Frames keep the stored place (said in the row's help).

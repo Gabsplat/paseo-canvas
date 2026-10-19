@@ -150,6 +150,17 @@ Blocks bound to a variable (`block.bindings`, see [mcp.md](mcp.md#bindings)) fol
 colours and text on the canvas: a metronome that pulses a shape, a scrubber for a timeline, a keyboard that nudges a
 value. The headless runtime of actions has no `lienzo.variables`.
 
+### Comments
+
+`lienzo.comments` (added to API 1; feature-detect it) reads and writes the person's notes pinned on the canvas, the same
+threads the Comment tool makes and `canvas_comments` reads. `list({ status })` (`"open"` by default, `"resolved"` or
+`"all"`) resolves `[{ id, status, anchor, messages: [{ author: "person"|"agent", name, text, at }] }]`; the anchor is
+`{ kind: "block"|"group", id }` or `{ kind: "point", x, y }` in world units. Reading needs no permission, like the
+context. `create(anchor, text)` resolves `{ id }`; `reply(id, text)` and `resolve(id)` resolve `{ id }`. Writing needs
+the existing `edit` permission (no new permission: a comment changes what the agent will read, as an edit does) and is
+signed as the person "via" the extension's name. Comments have no revision and no undo. Headless actions have no
+`lienzo.comments`: they run for the agent, which has `canvas_comments`.
+
 ### Fullscreen
 
 The frame is created with `allow="fullscreen"`, so `document.fullscreenEnabled` is true where the host page allows it
@@ -320,7 +331,7 @@ the page like any missing function. A future API 2 would live beside
 it. Nothing ships with Lienzo. The find-and-replace tool in `tests/fixtures/find-replace.ts` is written against API 1
 only and is the contract example; `tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract
 broke. The guide the agent gets ends with the complete example of Help → Make your own (`shared/wiki/tutorial.ts`), the
-same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`); so were the `view` and `variables` permissions, `context.view`, `lienzo.view`, `lienzo.keys`, `lienzo.highlight`, `lienzo.storage` and `lienzo.variables`, and `lienzo.open` framing what it opens with `view`. (The kind `view` was retired
+same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`); so were the `view` and `variables` permissions, `context.view`, `lienzo.view`, `lienzo.keys`, `lienzo.highlight`, `lienzo.storage`, `lienzo.comments` and `lienzo.variables`, and `lienzo.open` framing what it opens with `view`. (The kind `view` was retired
 with the one-canvas redesign; the frame API itself did not change.)
 
 ## Not in API 1

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { EXTENSION_API, EXTENSION_FORBIDDEN_OPERATIONS, EXTENSION_LIMITS, EXTENSION_TONES, extensionDocument, extensionVariables, extensionVariableTarget, isExtensionKey, routeExtensionKey, type ExtensionTone, type ExtensionView } from '../shared/extensions';
 import type { CanvasOperation, CatalogExtension, ExtensionPermission } from '../shared/model';
+import type { CommentAnchor, CommentsView } from '../shared/comments';
 import { isDark } from './color';
 import { layoutCanvas } from './logic';
 import { Button, IconButton, Txt, useUI } from './ui';
@@ -94,6 +95,20 @@ function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { 
       if ('error' in target) throw new Error(target.error);
       c.learning.setScopeVariable(target.scope, args.name as string, target.value);
       return { name: args.name, scope: target.scope, value: extensionVariables(latest, c.learning.getSnapshot()).find(v => v.scope === target.scope && v.name === args.name)?.value ?? null };
+    }
+    if (method.startsWith('comments.')) {
+      // The person's notes on the canvas. Reading is free; writing needs "edit" and is signed by the person, via this extension.
+      if (c.offline) throw new Error(`No connection to ${capabilities.name}.`);
+      const scope = { workspaceId: c.workspaceId, documentId: doc.id }, text = typeof args.text === 'string' ? args.text : '', threadId = typeof args.threadId === 'string' ? args.threadId : '';
+      const shape = (view: CommentsView) => view.threads.map(t => ({ id: t.id, status: t.status, anchor: t.anchor.kind === 'point' ? { kind: 'point', x: t.anchor.x, y: t.anchor.y } : { kind: t.anchor.kind, id: t.anchor.id }, messages: t.messages.map(m => ({ author: m.author.kind, name: m.author.kind === 'agent' ? m.author.label : 'You', text: m.text, at: m.createdAt })) }));
+      if (method === 'comments.list') { const status = args.status === 'resolved' || args.status === 'all' ? args.status : 'open'; return shape(await c.api.comments(scope)).filter(t => status === 'all' || t.status === status); }
+      need('edit'); const via = extension.name.slice(0, 80);
+      if (method === 'comments.create') { const a = args.anchor as { kind?: unknown; id?: unknown; x?: unknown; y?: unknown } | undefined;
+        const anchor: CommentAnchor | null = a?.kind === 'point' && typeof a.x === 'number' && typeof a.y === 'number' ? { kind: 'point' as const, x: a.x, y: a.y } : (a?.kind === 'block' || a?.kind === 'group') && known(a.id) ? { kind: a.kind as 'block' | 'group', id: a.id, dx: 0, dy: 0 } : null;
+        if (!anchor) throw new Error('lienzo.comments.create(anchor, text): anchor is { kind: "block" | "group", id } of something on the canvas, or { kind: "point", x, y }.');
+        return { id: (await c.api.commentCreate({ ...scope, anchor, text, via })).threadId }; }
+      if (method === 'comments.reply') { await c.api.commentReply({ ...scope, threadId, text, via }); return { id: threadId }; }
+      if (method === 'comments.resolve') { await c.api.commentResolve({ ...scope, threadId }); return { id: threadId }; }
     }
     if (method === 'close') { onClose?.(); return null; }
     if (method === 'edit') {

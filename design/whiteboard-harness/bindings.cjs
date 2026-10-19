@@ -1,4 +1,4 @@
-// Property bindings (docs/design.md §38), example data: a Controls slider "Speed" drives a rectangle's width, height and
+// Property bindings (docs/design.md §39), example data: a Controls slider "Speed" drives a rectangle's width, height and
 // fill and a free text "Speed: {v}"; moving it writes nothing. Then the bind form in Properties.
 // Usage: node bindings.cjs [oscuro|papel]. Ports: CDP=9222, HTTP=8765, OUT=/tmp unless set.
 const assert=require('node:assert/strict');const fs=require('node:fs');

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { connectionSchema, copilotSettingsSchema, documentSchema, sharingModeSchema, type CanvasDocument } from "../shared/model";
+import { commentsRecordSchema } from "../shared/comments";
 import { catalogStorageSchema, catalogView } from "./catalog";
 import { CanvasError } from "../shared/errors";
 import { clone, validateDocument } from "./reducer";
@@ -31,6 +32,8 @@ const recordSchema = z.preprocess(withoutRetiredKeys, z.object({
   extensionStorage: z.record(z.string(), runtimeJsonSchema).optional(),
   // When the person last changed the selection: canvas_selection without a documentId reads the latest one.
   selectedAt: z.iso.datetime().optional(),
+  // Comment threads pinned on the canvas. Not drawing content: no revision, no history; absent in older state files.
+  comments: commentsRecordSchema.optional(),
   // Agent that created the document through MCP. Scopes access when the workspace keeps one canvas per agent.
   ownerAgentId: z.string().optional(),
 }).strict());
@@ -58,6 +61,29 @@ export type CopilotRecord = z.infer<typeof copilotRecordSchema>;
 export { copilotRecordSchema };
 export type Actor = HistoryEntry["actor"];
 
+/**
+ * A directory fsync makes the rename durable through power loss on Linux and macOS. Windows cannot open a directory
+ * for syncing (EPERM, or EISDIR) and NTFS journals the rename itself, so there it is skipped.
+ */
+export async function syncDirectory(directory: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+  if (platform === "win32") return;
+  let handle;
+  try { handle = await open(directory, "r"); await handle.sync(); }
+  catch (error) { if (!["EPERM", "EISDIR", "EINVAL", "ENOTSUP"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error; }
+  finally { await handle?.close(); }
+}
+/** Windows refuses to replace a file another process (an antivirus, the indexer) briefly holds open; that passes. */
+async function renameOver(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await rename(from, to); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(code) || attempt >= 5) throw error;
+      await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
+    }
+  }
+}
+
 export async function atomicWrite(path: string, data: string): Promise<void> {
   const temporary = `${path}.${randomUUID()}.tmp`;
   let handle;
@@ -66,7 +92,7 @@ export async function atomicWrite(path: string, data: string): Promise<void> {
     await handle.writeFile(data, "utf8");
     await handle.sync();
     await handle.close(); handle = undefined;
-    await rename(temporary, path);
+    await renameOver(temporary, path);
   } finally {
     await handle?.close();
     await rm(temporary, { force: true });
@@ -140,9 +166,7 @@ export class CanvasStore {
     const data = JSON.stringify(state);
     if (Buffer.byteLength(data) > 64 * 1024 * 1024) throw new CanvasError("TOO_LARGE", "Canvas storage exceeds the v1 64 MiB limit. Export documents or reduce history/content.");
     await atomicWrite(this.file, data);
-    // Linux directory fsync makes the rename durable through power loss.
-    const directory = await open(this.directory, "r");
-    try { await directory.sync(); } finally { await directory.close(); }
+    await syncDirectory(this.directory);
   }
   async read(): Promise<CanvasState> {
     await this.initialize();

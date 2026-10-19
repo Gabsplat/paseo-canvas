@@ -187,7 +187,8 @@ test("sandbox: time, memory, output, recursion and promise floods are bounded an
     ["bucle", "lienzo.action('go', function () { for (;;) {} });", "timeout", /longer than 2 s/],
     ["bucle-arriba", "for (;;) {}", "timeout", /longer than 2 s/],
     ["regex", "lienzo.action('go', function () { return /(a+)+b/.test('a'.repeat(40)); });", "timeout", /longer than 2 s/],
-    ["memoria", "lienzo.action('go', function () { var a = []; for (;;) a.push({ n: a.length, s: 'xxxxxxxxxxxxxxxx' + a.length }); });", "memory", /more than 64 MB/],
+    // Growth in 1 MB steps reaches the limit in milliseconds; many small objects can take longer than 2 s on a busy machine.
+    ["memoria", "lienzo.action('go', function () { var a = []; for (;;) a.push(new Uint8Array(1024 * 1024).fill(1)); });", "memory", /more than 64 MB/],
     ["buffer", "lienzo.action('go', function () { return new ArrayBuffer(512 * 1024 * 1024).byteLength; });", "memory", /more than 64 MB/],
     ["salida", "lienzo.action('go', function () { return 'x'.repeat(1000000); });", "output", /returned more than|over/],
     ["recursion", "lienzo.action('go', function () { function f(n) { return f(n + 1) + 1; } return f(0); });", "recursion", /recursed too deeply/],

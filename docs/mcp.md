@@ -194,8 +194,8 @@ verification are coordinator-owned and were not performed by this engineering ta
 
 MCP server name is `paseo-canvas`; plugin ID is `canvas`. The final MCP names are
 `canvas_list`, `canvas_sheet`, `canvas_create`, `canvas_read`, `canvas_apply`, `canvas_group`,
-`canvas_catalog`, `canvas_extension_run`, `canvas_selection`, `canvas_history`, `canvas_undo`, `canvas_redo`,
-`canvas_runtime`. Every response also carries the caller's `copilot` (see Copilot below).
+`canvas_catalog`, `canvas_extension_run`, `canvas_selection`, `canvas_comments`, `canvas_history`, `canvas_undo`,
+`canvas_redo`, `canvas_runtime`. Every response also carries the caller's `copilot` (see Copilot below).
 
 Storage is `$PASEO_HOME/canvas/`, falling back to `~/.paseo/canvas/`. `state.json` is the single
 atomic aggregate containing documents, up to 50 retained history entries per document, selection,
@@ -316,6 +316,45 @@ includes `selectedIds`. `canvas_runtime read` returns the same per-block state w
 
 State files written while the canvas still queued the person's actions carry `events` and `outboundBatches` on each
 document. They load with both dropped and are written back without them.
+
+## Comments
+
+Comments are the person's notes pinned on the canvas (`shared/comments.ts`). A thread is `{id, anchor, status:
+open|resolved, createdAt, updatedAt, resolvedAt?, orphanedFrom?, messages}`; a message is `{id, author, text,
+createdAt}` with `author` `{kind:"person", via?}` or `{kind:"agent", agentId, label}`. The anchor is a block or a group
+(`{kind, id, dx, dy, at?}`: the pin sits at the entity's top-right corner plus `dx`/`dy`, so it follows the entity;
+`at` is the last world point it was drawn at) or a free point (`{kind:"point", x, y}`, world units). Limits: 2000
+characters per message, 50 messages per thread, 200 threads and 1 MiB of comments per Lienzo.
+
+They are stored in the document's record (`comments: {version, threads}`, absent in older state files) but are not
+drawing content: a comment never bumps the document revision, never breaks an `expectedRevision`, is not a History
+transaction and cannot be undone. `commentsVersion` is their own counter: it is in every document view, and
+`canvas.watch` takes `knownCommentsVersion` and returns a view when it moved, so the panel reads them again
+(`canvas.comments.list`). Deleting an anchored entity (an edit, an undo or the agent) turns its threads into free
+points at `at` (or the entity's explicit position) and sets `orphanedFrom: {kind, id, title}`; nothing is lost. A
+reply reopens a resolved thread.
+
+Panel RPCs (no revision): `canvas.comments.list`, `.create {anchor, text}`, `.reply {threadId, text}`, `.resolve`,
+`.reopen`, `.delete {threadId}`, each answering `{documentId, commentsVersion, threads, threadId?}`; and
+`canvas.comments.locate {points: [{threadId, x, y}]}`, the panel's note of where it draws pins on entities (a hint
+for orphaning; it changes no counter). `canvas.copilot.read` carries `document.openComments` for the person's
+popover; tool responses never carry a count.
+
+`canvas_comments` (one tool, by `action`):
+
+- `list {documentId?, status?: open|resolved|all}` (default `open`). Without `documentId`: the caller's copilot
+  Lienzo, else the reachable one the person selected in most recently. Returns `{documentId, title, threads: [{threadId,
+  status, anchor: {kind, id, title, type?, sheet?} | {kind:"point", x, y, wasOn?}, messages: [{author: "person" |
+  "you" | "agent: <label>", text, at}]}], counts}`.
+- `create {documentId, anchor, text}`, `reply {threadId, text}`, `resolve {threadId}`. The agent's messages are signed
+  `{kind:"agent", agentId, label}`; the label is the conversation title (or provider) the host reports, else the MCP
+  client name, else "Agent". The panel shows them as "<label> · by your agent".
+
+`canvas_selection` adds `openComments` to a selected entity with open threads and to the result when the Lienzo has
+any, with a one-line hint. The guide (canvas_list) says when to use comments: read the open ones when the person
+mentions them or before revising a Sheet, answer in the conversation, reply in a thread only briefly, resolve what was
+handled, and leave a comment only for a decision or an open question worth keeping beside the drawing, never to
+narrate. The system-prompt part says nothing about comments (it stays under 1500 characters).
 
 ## Connection and reload
 

@@ -58,6 +58,7 @@ function runtime(controller: any) {
     './ExtensionsScreen': { ExtensionsContent: control('ExtensionsContent') }, './WikiScreen': { WikiContent: control('WikiContent') }, '../shared/wiki': wiki, './SettingsScreen': { SettingsContent: control('SettingsContent'), settingsRail: () => [] },
     './Eggs': { EmptyMate: control('EmptyMate'), Kettle: control('Kettle'), LoadingEgg: control('LoadingEgg'), MateDrawing: control('MateDrawing') },
     './shortcuts': shortcuts, './palette': palette,
+    './Comments': { CommentLayer: control('CommentLayer'), CommentsList: control('CommentsList'), useComments: () => ({ threads: [], placing: false, open: null, listOpen: false, pins: true, openCount: 0, resolvedCount: 0, setPlacing() {}, setOpen() {}, setListOpen() {}, setPins() {} }) },
   };
   const load = (name: string) => {
     const source = readFileSync(new URL(`../plugin/client/${name}.tsx`, import.meta.url), 'utf8');
