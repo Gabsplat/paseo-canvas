@@ -185,3 +185,22 @@ test("the document view exposes the agent's latest transaction for 'go to latest
   assert.deepEqual([latest.documentId, latest.ids, latest.titles], ["d", ["x1"], ["X1"]]);
   assert.equal((await copilot.read({ workspaceId, agentId: "b" })).latest, null);
 });
+
+test("with the copilot on, the agent draws a few blocks per call and an all-cards Sheet gets a nudge", async t => {
+  const { service } = await setup(t), copilot = new CopilotService(service, toolNames);
+  const router = new ToolRouter(service, async () => ({ agentId: "a", workspaceId }), copilot);
+  const documentId = (await set(copilot, { enabled: true })).copilot.documentId!;
+  const sheet = await router.call("canvas_sheet", { action: "create", documentId, expectedRevision: (await service.read({ workspaceId, documentId })).document.revision, title: "Wine" }, "owner") as { id: string; revision: number };
+  const cards = (from: number, count: number) => Array.from({ length: count }, (_, i) => ({ type: "block.create", block: { id: `n${from + i}`, typeId: "node", title: `Step ${from + i}`, data: { summary: "x" }, parentGroupId: sheet.id } }));
+  await assert.rejects(router.call("canvas_apply", { documentId, expectedRevision: sheet.revision, label: "All at once", operations: cards(1, 7) }, "owner"), /piece by piece.*Nothing was applied/);
+  assert.equal((await service.read({ workspaceId, documentId })).document.revision, sheet.revision, "a rejected call changes nothing");
+  const first = await router.call("canvas_apply", { documentId, expectedRevision: sheet.revision, label: "First stage", operations: cards(1, 4) }, "owner") as { revision: number; variety?: string };
+  assert.equal(first.variety, undefined, "a few cards are fine");
+  const second = await router.call("canvas_apply", { documentId, expectedRevision: first.revision, label: "Second stage", operations: cards(5, 2) }, "owner") as { revision: number; variety?: string };
+  assert.match(second.variety ?? "", /only cards so far \(6\)/);
+  const shown = await router.call("canvas_apply", { documentId, expectedRevision: second.revision, label: "A vat", operations: [{ type: "block.create", block: { id: "vat", typeId: "wb-shape", title: "Vat", data: { shape: "cylinder" }, position: { x: 30, y: 40 }, size: { width: 120, height: 160 }, parentGroupId: sheet.id } }] }, "owner") as { variety?: string };
+  assert.equal(shown.variety, undefined, "one element beyond cards ends the nudge");
+  await set(copilot, { enabled: false });
+  const free = await router.call("canvas_apply", { documentId, expectedRevision: (await service.read({ workspaceId, documentId })).document.revision, label: "Asked for", operations: cards(20, 8) }, "owner") as { revision: number };
+  assert.ok(free.revision, "with the copilot off, a requested drawing is not paced");
+});
