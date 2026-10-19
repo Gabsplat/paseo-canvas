@@ -24,7 +24,14 @@ export function CommandPalette({ open, items, recent, onRun, onClose, width, hei
   useEffect(() => { if (open) { setQuery(''); setCursor(0); } }, [open]);
   const sections = useMemo(() => open ? paletteSections(items(query), query, recent, P.perGroup) : [], [open, items, query, recent]);
   const flat = flatten(sections), active = flat[Math.min(cursor, flat.length - 1)];
-  useEffect(() => { if (active) { const y = rows.current.get(active.id); if (y !== undefined) list.current?.scrollTo({ y: Math.max(0, y - P.row * 2), animated: false }); } }, [active?.id]);
+  // Only the keyboard scrolls the list, and only as far as it takes to show the row: a row the pointer hovers is already in
+  // view, and scrolling to it would move another row under the pointer, which would scroll again.
+  const offset = useRef(0), viewport = useRef(0), byKeys = useRef(false);
+  useEffect(() => {
+    if (!active || !byKeys.current) return; byKeys.current = false; const y = rows.current.get(active.id); if (y === undefined) return;
+    const next = y < offset.current ? y - P.header : y + P.row > offset.current + viewport.current ? y + P.row - viewport.current + 12 : null;
+    if (next !== null) list.current?.scrollTo({ y: Math.max(0, next), animated: false });
+  }, [active?.id]);
   if (!open) return null;
   const run = (item: PaletteItem | undefined, background: boolean) => { if (!item || item.disabled) return; if (!background) onClose(); onRun(item, background); };
   const w = Math.min(P.width, Math.max(0, width - 24)), top = Math.round(height * P.top), maxList = Math.min(P.maxHeight, Math.max(160, height - top - P.search - P.footer - 24));
@@ -38,13 +45,13 @@ export function CommandPalette({ open, items, recent, onRun, onClose, width, hei
           onChangeText={value => { setQuery(value); setCursor(0); onQuery?.(value); }}
           onKeyPress={e => {
             const event = e.nativeEvent as unknown as { key: string; metaKey?: boolean; ctrlKey?: boolean }, key = event.key;
-            if (key === 'ArrowDown' || key === 'ArrowUp') { e.preventDefault(); setCursor(c => { const from = Math.min(c, flat.length - 1); return Math.max(0, Math.min(flat.length - 1, from + (key === 'ArrowDown' ? 1 : -1))); }); }
+            if (key === 'ArrowDown' || key === 'ArrowUp') { e.preventDefault(); byKeys.current = true; setCursor(c => { const from = Math.min(c, flat.length - 1); return Math.max(0, Math.min(flat.length - 1, from + (key === 'ArrowDown' ? 1 : -1))); }); }
             else if (key === 'Enter') { e.preventDefault(); run(active, !!(event.metaKey || event.ctrlKey)); }
             else if (key === 'Escape') { e.preventDefault(); onClose(); }
           }}
           style={[u.font('body'), { fontSize: 17, flex: 1, height: P.search - 8, borderWidth: 0, backgroundColor: 'transparent', ...({ outlineStyle: 'none' } as object) }]} />
       </View>
-      <ScrollView ref={list} showsVerticalScrollIndicator={false} style={{ maxHeight: maxList }} contentContainerStyle={{ padding: 6 }} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={list} showsVerticalScrollIndicator={false} scrollEventThrottle={16} onScroll={e => { offset.current = e.nativeEvent.contentOffset.y; }} onLayout={e => { viewport.current = e.nativeEvent.layout.height; }} style={{ maxHeight: maxList }} contentContainerStyle={{ padding: 6 }} keyboardShouldPersistTaps="handled">
         {!flat.length && <Txt muted style={{ padding: 16 }}>Type to search.</Txt>}
         {sections.map(section => { y += P.header; return <View key={section.group}>
           <Txt kind="label" muted style={{ height: P.header, lineHeight: P.header, paddingHorizontal: 10, textTransform: 'uppercase', letterSpacing: .8, fontSize: 11 }}>{section.group}</Txt>
