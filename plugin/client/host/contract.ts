@@ -18,8 +18,13 @@ export interface HostTheme {
 export interface HostProps {
   theme: HostTheme;
   host: { id: string; label: string };
-  layout: { compact: boolean; platform: 'ios' | 'android' | 'web' };
+  layout: { compact: boolean; platform: 'ios' | 'android' | 'web'; inset?: WindowInset };
 }
+/**
+ * Room the host's window controls take inside the panel (the desktop app on macOS draws its traffic lights over the
+ * top-left corner): `left` along the top row, `top` down the left edge. Paseo passes none.
+ */
+export interface WindowInset { readonly left: number; readonly top: number }
 export interface PanelProps extends HostProps { workspaceId: string }
 
 export interface IconProps { name: string; size?: number; color?: string }

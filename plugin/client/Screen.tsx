@@ -5,7 +5,7 @@
  */
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { Animated, Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
-import { Icon, ScrollView, TextInput } from './host';
+import { Icon, ScrollView, TextInput, type WindowInset } from './host';
 import { isDark, withAlpha } from './color';
 import { NATIVE, easeOut, reducedMotion, useReducedMotion } from './motion';
 import { tokens } from './tokens';
@@ -20,11 +20,18 @@ export function sheetShadow(u: ReturnType<typeof useUI>) {
   const dark = isDark(u.c.surface0);
   return S.shadow[dark ? 'dark' : 'light'].map(([x, y, blur, spread, alpha]) => `${x}px ${y}px ${blur}px ${spread}px ${withAlpha(dark ? '#000000' : u.c.foreground, alpha)}`).join(', ');
 }
-/** The sheet's frame for a panel of this size: centred, up to 960 × 680, 24 from the edges; full screen when compact. */
-export function sheetFrame(panel: { width: number; height: number }, compact: boolean) {
-  if (compact) return { left: 0, top: 0, width: panel.width, height: panel.height };
-  const width = Math.max(0, Math.min(S.maxWidth, panel.width - 2 * S.margin)), height = Math.max(0, Math.min(S.maxHeight, panel.height - 2 * S.margin));
-  return { left: (panel.width - width) / 2, top: (panel.height - height) / 2, width, height };
+/**
+ * The sheet's frame for a panel of this size: centred, up to 960 × 680, 24 from the edges; full screen when compact.
+ * A sheet that would reach into the window controls' corner (`inset`) starts below them instead.
+ */
+export function sheetFrame(panel: { width: number; height: number }, compact: boolean, inset: WindowInset = { left: 0, top: 0 }) {
+  const frame = compact ? { left: 0, top: 0, width: panel.width, height: panel.height } : (() => {
+    const width = Math.max(0, Math.min(S.maxWidth, panel.width - 2 * S.margin)), height = Math.max(0, Math.min(S.maxHeight, panel.height - 2 * S.margin));
+    return { left: (panel.width - width) / 2, top: (panel.height - height) / 2, width, height };
+  })();
+  if (frame.left >= inset.left || frame.top >= inset.top) return frame;
+  const bottom = compact ? panel.height : Math.min(panel.height - S.margin, frame.top + frame.height);
+  return { ...frame, top: inset.top, height: Math.max(0, bottom - inset.top) };
 }
 
 export type RailItem = { id: string; label: string; icon: string; detail?: string };
@@ -47,7 +54,7 @@ export function Screen({ open, onClose, panel, nativeID, label, rail, active, on
     return onEscapeKey(() => { close.current(); return true; });
   }, [open]);
   if (!open) return null;
-  const frame = sheetFrame(panel, u.compact), dark = isDark(u.c.surface0), railShown = !!rail?.length && !u.compact, fits = !!fit && !u.compact;
+  const frame = sheetFrame(panel, u.compact, u.inset), dark = isDark(u.c.surface0), railShown = !!rail?.length && !u.compact, fits = !!fit && !u.compact;
   return <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0, zIndex: 200 }}>
     <Animated.View pointerEvents="none" style={{ position: 'absolute', inset: 0, opacity: shown, backgroundColor: withAlpha(dark ? '#000000' : u.c.foreground, S.dim) }} />
     <Pressable accessibilityLabel={`Close ${label}`} onPress={onClose} style={{ position: 'absolute', inset: 0, ...({ cursor: 'default' } as object) }} />

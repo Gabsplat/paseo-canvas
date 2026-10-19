@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron';
 import { join } from 'node:path';
+import { FULL_SCREEN_CHANNEL, TRAFFIC_LIGHTS } from '../shared/chrome';
 import { startDesktop, type Desktop } from './core';
 import { createAppUpdates } from './updater';
 import type { UpdateController } from './updater/controller';
@@ -16,12 +17,17 @@ function createWindow() {
   window = new BrowserWindow({
     width: 1280, height: 820, minWidth: 560, minHeight: 420, title: 'Lienzo', show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#141311' : '#F4F1EA',
+    // On macOS there is no title bar: the traffic lights float over the panel's top row, which keeps clear of them.
+    ...(isMac ? { titleBarStyle: 'hidden' as const, trafficLightPosition: TRAFFIC_LIGHTS } : {}),
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true },
   });
   window.once('ready-to-show', () => window?.show());
   // The app never navigates away or opens windows: links go to the system browser.
   window.webContents.setWindowOpenHandler(({ url }) => { if (safeExternal(url)) void shell.openExternal(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => { if (url !== window?.webContents.getURL()) { event.preventDefault(); if (safeExternal(url)) void shell.openExternal(url); } });
+  // Full screen hides the traffic lights, so the panel gives their corner back; also told after every (re)load.
+  const fullScreen = () => window?.webContents.send(FULL_SCREEN_CHANNEL, window.isFullScreen());
+  window.on('enter-full-screen', fullScreen); window.on('leave-full-screen', fullScreen); window.webContents.on('did-finish-load', fullScreen);
   window.on('closed', () => { window = null; });
   void window.loadFile(join(__dirname, 'renderer', 'index.html'));
 }

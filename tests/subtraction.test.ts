@@ -68,7 +68,7 @@ function runtime(controller: any) {
   };
   const realUI = load('ui');
   modules['./ui'] = Object.fromEntries(['Button', 'Chip', 'Field', 'Input', 'IconButton', 'Segments', 'Txt', 'UIProvider', 'Section', 'CheckRow', 'MenuRow', 'MenuDivider', 'TooltipProvider', 'TooltipLayer'].map(name => [name, control(name)]));
-  Object.assign(modules['./ui'], { Modal: modal, friendlyError: realUI.friendlyError, useTooltip: () => ({ ref: { current: null }, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} }), useUI: () => ({ compact: false, host: { id: 'host' }, layout: { platform: 'web' }, font: () => ({}), c: {}, wash: () => '', tone: () => '' }) });
+  Object.assign(modules['./ui'], { Modal: modal, friendlyError: realUI.friendlyError, useTooltip: () => ({ ref: { current: null }, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} }), useUI: () => ({ compact: false, inset: { left: 0, top: 0 }, host: { id: 'host' }, layout: { platform: 'web' }, font: () => ({}), c: {}, wash: () => '', tone: () => '' }) });
   modules['./SelectionActions'] = load('SelectionActions');
   const panel = load('Panel').LienzoPanel({ theme: {}, layout: {}, host: { id: 'host' }, workspaceId: 'workspace' }).props.children[0];
   // The panel's root view sits inside the tooltip provider.

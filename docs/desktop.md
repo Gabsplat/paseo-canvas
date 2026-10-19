@@ -22,7 +22,7 @@ Electron 44 downloads its binary the first time it is used, into `~/.cache/elect
 | Output | Entry | What it is |
 |---|---|---|
 | `main.cjs` | `src/main/main.ts` | Electron main process: window, menu, IPC, the core and the MCP server |
-| `preload.cjs` | `src/main/preload.ts` | Exposes one function, `window.lienzo.invoke(name, input)` |
+| `preload.cjs` | `src/main/preload.ts` | Exposes `window.lienzo.invoke(name, input)`, plus `trafficLights` and `onFullScreen` for the window chrome |
 | `renderer/` | `src/renderer/main.tsx` | The plugin's `LienzoPanel` under react-native-web |
 | `preview.cjs` | `src/main/preview.ts` | The core plus a local HTTP server for checking the UI in a plain browser |
 
@@ -33,6 +33,15 @@ interpreter that runs extension actions for agents (`plugin/server/sandbox.ts`):
 JavaScript of `@jitl/quickjs-singlefile-browser-release-sync`, so it is bundled into `main.cjs` and `preview.cjs` like
 any module, with no `.wasm` file to copy or unpack from the asar (about 0.9 MB of the bundle). Builds are unsigned unless the
 release workflow finds signing secrets (see Releases). The app updates itself (see Updates).
+
+**macOS window chrome.** There is no title bar (`titleBarStyle: 'hidden'`): the traffic lights float over the panel's
+top-left corner, centred on the row of the top islands (`trafficLightPosition` in `src/shared/chrome.ts`). The preload
+says so (`trafficLights`), and the shell passes `layout.inset` (`{ left: 78, top: 52 }`) to the panel: the document
+island, its menu and the compact top bar start after `left`, and a screen sheet that would reach into the corner
+starts below `top`. The window moves by a 12 px strip along the top edge and by the lights' corner (`-webkit-app-region:
+drag`, in `src/renderer/main.tsx`); a double-click there zooms. In full screen macOS hides the lights, so the main
+process reports `enter-full-screen`/`leave-full-screen` (and the state after every load) and the inset and drag areas
+go away. Windows and Linux keep the system title bar; Paseo passes no inset.
 
 The window has contextIsolation on, nodeIntegration off and the sandbox on. The main process answers IPC only from
 its own window. Links open in the system browser; the page never navigates away.
