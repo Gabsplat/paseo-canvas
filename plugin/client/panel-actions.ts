@@ -71,3 +71,10 @@ export function toolbarPosition(camera: Camera, box: Pick<Rect, 'x' | 'y' | 'wid
   if (pointer && pointer.x >= left && pointer.x <= left + width && pointer.y >= top && pointer.y <= top + tokens.toolbar.height) top = Math.max(safeTop, Math.min(viewport.height - tokens.toolbar.height - clamp, Math.abs(top - above) < 1 ? below : above));
   return { left, top };
 }
+/**
+ * Whether Properties fits beside the canvas without covering it: the panel, its inset on both sides, and the canvas
+ * width that must stay clear (tokens.face.rightPanel.minCanvas). Narrower, it opens only when the person asks for it.
+ */
+export function panelFits(width: number, compact = false): boolean {
+  const P = tokens.face.rightPanel; return !compact && width >= P.width + 2 * P.inset + P.minCanvas;
+}

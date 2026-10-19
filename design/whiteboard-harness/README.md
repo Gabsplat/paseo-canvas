@@ -38,6 +38,7 @@ omabox run -- node "$PWD/dist/panel-qa/many.cjs"
 omabox run -- node "$PWD/dist/panel-qa/face.cjs"          # the stage 1 face; add `papel` for light
 omabox run -- node "$PWD/dist/panel-qa/extensions.cjs"
 omabox run -- node "$PWD/dist/panel-qa/windows.cjs"       # mini app setState stored on its block
+omabox run -- node "$PWD/dist/panel-qa/compact-ui.cjs" oscuro 900  # narrow: Properties waits to be asked; Lienzo delete popover
 omabox run -- node "$PWD/dist/panel-qa/copilot.cjs"
 omabox run -- node "$PWD/dist/panel-qa/screens.cjs" oscuro          # Lienzos, guide, Settings, Extensions, History
 omabox run -- node "$PWD/dist/panel-qa/screens.cjs" papel compact   # any of oscuro|papel, with or without compact

@@ -856,6 +856,12 @@ export function attachZoomMenu(element: unknown, trigger: unknown, dismiss: () =
   doc.addEventListener('pointerdown', outside, true); doc.addEventListener('keydown', key, true);
   return () => { doc.removeEventListener('pointerdown', outside, true); doc.removeEventListener('keydown', key, true); };
 }
+/** A confirmation popover: the menu's dismissal (outside press, Escape) and focus on its safe choice. Native ignores it. */
+export function attachConfirm(element: unknown, trigger: unknown, dismiss: () => void, focus = '[aria-label="Cancel"]'): () => void {
+  const node = element as BrowserElement | null, stop = attachZoomMenu(element, trigger, dismiss);
+  const timer = browser().document && node?.querySelector ? setTimeout(() => { try { node.querySelector(focus)?.focus(); } catch {} }, 30) : undefined;
+  return () => { clearTimeout(timer); stop(); };
+}
 /** Arrow, Home and End inside a grid. The handler returns true when it used the key. Nothing happens on native. */
 export function attachGridKeys(element: unknown, handler: (key: string) => boolean): () => void {
   const node = element as BrowserElement | null;

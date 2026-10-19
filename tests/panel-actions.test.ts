@@ -4,13 +4,14 @@ import { Platform } from './fixtures/native-headless';
 import assert from 'node:assert/strict';
 import { builtinTypes } from '../plugin/shared/builtins';
 import { documentSchema, mutateInputSchema, type CanvasCatalog, type CanvasOperation } from '../plugin/shared/model';
-import { communicationOperation, dataProperties, layoutOperations, leaveGroupOperations, panelShortcut, reorderOperation, toolbarPosition, typeSlot } from '../plugin/client/panel-actions';
+import { communicationOperation, dataProperties, layoutOperations, leaveGroupOperations, panelFits, panelShortcut, reorderOperation, toolbarPosition, typeSlot } from '../plugin/client/panel-actions';
 import { connectOperations, groupOperations, instructionLevels, layoutDocument } from '../plugin/client/logic';
 import { reduce } from '../plugin/server/reducer';
 import { CanvasStore } from '../plugin/server/store';
 import { CanvasService } from '../plugin/server/service';
 import { LearningRuntimeStore } from '../plugin/client/learning-state';
 import { mutation, setup, workspaceId } from './helpers';
+import { tokens } from '../plugin/client/tokens';
 const catalog: CanvasCatalog = { revision: 0, blockTypes: builtinTypes, packs: [], extensions: [] };
 const fixture = () => documentSchema.parse({ id: 'd', workspaceId, title: 'Panel example', description: '', example: true, revision: 0, createdAt: '2026-10-06T00:00:00.000Z', updatedAt: '2026-10-06T00:00:00.000Z', selectedIds: [], communication: { instructions: 'Document', intent: '', audience: '' }, groups: [{ id: 'g', title: 'Group', description: '', blockIds: ['a', 'b'], groupIds: [], position: { x: 50, y: 60 }, layout: { mode: 'stack' }, communication: { instructions: 'Group', intent: 'Intent', audience: 'Audience' }, variables: [{ name: 'x', label: 'X', value: 2, min: 0, max: 10 }] }], blocks: [{ id: 'a', typeId: 'note', title: 'A', parentGroupId: 'g', data: { text: 'Authored text' } }, { id: 'b', typeId: 'node', title: 'B', parentGroupId: 'g', data: { status: 'Nuevo' } }, { id: 'c', typeId: 'note', title: 'C', data: { text: 'Other' } }], links: [] });
 function apply(operations: CanvasOperation[], doc = fixture()) { const parsed = mutateInputSchema.parse({ workspaceId, documentId: doc.id, expectedRevision: doc.revision, operations }); return reduce(doc, parsed.operations, catalog); }
@@ -75,6 +76,13 @@ test('keyboard actions distinguish ungroup, duplicate and ask while writes are d
   assert.equal(panelShortcut('d', true, false, 2, false, false), 'duplicate'); assert.equal(panelShortcut('d', false, false, 2, false, false), undefined);
   assert.equal(panelShortcut('l', false, false, 2, false, false), 'connect'); assert.equal(panelShortcut('l', false, false, 3, false, false), undefined);
   assert.equal(panelShortcut('a', false, false, 1, false, true), 'ask'); assert.equal(panelShortcut('g', true, false, 2, false, true), undefined);
+});
+test('Properties opens by itself only when the panel and a useful canvas both fit; compact never', () => {
+  const P = tokens.face.rightPanel, need = P.width + 2 * P.inset + P.minCanvas;
+  assert.equal(need, 1004);
+  assert.equal(panelFits(1280), true); assert.equal(panelFits(need), true); assert.equal(panelFits(need - 1), false);
+  assert.equal(panelFits(900), false, 'chat and Lienzo side by side'); assert.equal(panelFits(0), false, 'before the first layout');
+  assert.equal(panelFits(1600, true), false, 'a compact panel opens it only when asked');
 });
 test('toolbar clamps at either edge, flips below the top boundary and stays above oversized selections', () => {
   const camera = { scale: 1, offset: { x: 0, y: 0 } }, viewport = { width: 600, height: 700 };
