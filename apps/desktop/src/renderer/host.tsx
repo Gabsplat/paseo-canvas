@@ -4,13 +4,14 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Modal as RNModal, Pressable, ScrollView as RNScrollView, Text, TextInput as RNTextInput, View, useWindowDimensions } from 'react-native';
 import * as lucide from 'lucide-react';
 import type { ZodType, output as ZodOutput } from 'zod';
-import type { AgentSheetProps, AgentSnapshot, ClientHost, HostTheme, IconProps, ModalContentProps, ModalProps, SettingsState, ToastApi, ToastVariant } from '../../../../plugin/client/host/contract';
+import type { AgentSheetProps, AgentSnapshot, ClientHost, HostTheme, IconProps, ModalContentProps, ModalProps, SettingsState, ToastApi, ToastVariant, WindowInset } from '../../../../plugin/client/host/contract';
 import type { RpcContract, SettingsDefinition } from '../../../../plugin/shared/contract';
+import { TRAFFIC_LIGHT_INSET } from '../shared/chrome';
 import { DESKTOP_WORKSPACE, desktopStatus, openExternal, settingsRpc, writeClipboard, type InvokeResult } from '../shared/rpc';
 
 export type * from '../../../../plugin/client/host/contract';
 
-declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult> } } }
+declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult>; trafficLights?: boolean; onFullScreen?(listener: (fullScreen: boolean) => void): () => void } } }
 
 /** Electron IPC through the preload's one function; in the browser preview, the preview server's POST /rpc. */
 export async function invoke(name: string, input: unknown): Promise<unknown> {
@@ -22,6 +23,16 @@ export async function invoke(name: string, input: unknown): Promise<unknown> {
 }
 export async function call<C extends RpcContract>(contract: C, input: unknown): Promise<ZodOutput<C['output']>> {
   return contract.output.parse(await invoke(contract.name, contract.input.parse(input))) as ZodOutput<C['output']>;
+}
+
+// ---- Window chrome: on macOS the traffic lights sit over the top-left corner, except in full screen where they hide.
+let fullScreen = false;
+const chromeListeners = new Set<() => void>();
+window.lienzo?.onFullScreen?.(next => { fullScreen = next; chromeListeners.forEach(listener => listener()); });
+/** The corner the panel keeps clear of the window controls (`layout.inset`), or none. */
+export function useWindowInset(): WindowInset | undefined {
+  const full = useSyncExternalStore(listener => { chromeListeners.add(listener); return () => { chromeListeners.delete(listener); }; }, () => fullScreen);
+  return window.lienzo?.trafficLights && !full ? TRAFFIC_LIGHT_INSET : undefined;
 }
 
 // ---- Theme, supplied by the shell (main.tsx) so host chrome (modals, toasts) matches the panel.

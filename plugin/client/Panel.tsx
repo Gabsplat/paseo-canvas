@@ -592,10 +592,12 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   // On a compact panel the toolbar is docked in the flow at the bottom; floating things clear its strip.
   const compactDock = F.toolbar.height + F.toolbar.compactPadding.top + F.toolbar.compactPadding.bottom;
   const toolbar = <Toolbar active={toolId} shape={toolId === 'arrow' ? shapePick : toolStyle.shape === 'line' && toolStyle.heads !== 'none' ? shapePick : toolStyle.shape} locked={toolLocked} disabled={!doc || disabled} onTool={chooseToolId} onShape={pickShape} onLock={setToolLocked} pinned={pinnedTools} onAdd={() => { setLibraryOpen(false); setAddOpen(open => !open); }} addOpen={addOpen} keyLabel={keyLabel} scroll={u.compact} addRef={addRef} />;
+  // The document island and what drops from it keep clear of the window controls (the desktop app's traffic lights).
+  const islandLeft = tokens.island.inset + u.inset.left;
   const panelTop = F.top.height + tokens.island.inset + F.top.islandGap, panelMax = Math.max(200, panelHeight - panelTop - F.rightPanel.bottomClearance);
   const addLeft = Math.max(tokens.island.inset, Math.min(width - F.catalog.width - tokens.island.inset, toolbarBox.x + toolbarBox.width - F.catalog.width + 24));
   // ---- Screens: one large sheet over the canvas at a time.
-  const panelBox = { width, height: panelHeight }, frame = sheetFrame(panelBox, u.compact), railWidth = u.compact ? 0 : tokens.face.screens.rail;
+  const panelBox = { width, height: panelHeight }, frame = sheetFrame(panelBox, u.compact, u.inset), railWidth = u.compact ? 0 : tokens.face.screens.rail;
   const closeScreen = () => setScreen(null);
   const pinnedRows = pinnedEntries.map(e => ({ id: e.id, name: e.name, icon: e.icon, description: e.description }));
   const screens = <>
@@ -619,7 +621,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   </>;
   const empty = !!doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select';
   return <TooltipProvider root={root}><View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
-    {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
+    {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, paddingLeft: 8 + u.inset.left, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
       <IconButton icon="Menu" label="Menu" onPress={() => setOverflow(true)} /><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center />}<IconButton icon="Undo2" label="Undo" shortcut={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} onPress={() => setPaletteOpen(true)} /><IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} disabled={!doc} active={panelVisible} onPress={togglePanel} />
     </View>}
     <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
@@ -629,7 +631,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}
-      {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, left: tokens.island.inset, maxWidth: Math.max(0, width - 24 - 120) }}><View nativeID="lienzo-document-island" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
+      {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, left: islandLeft, maxWidth: Math.max(0, width - 24 - 120 - u.inset.left) }}><View nativeID="lienzo-document-island" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
         <IconButton icon="Menu" label="Menu" detail="Lienzos, history, agent, extensions and settings." size={36} onPress={() => { setAddOpen(false); setOverflow(true); }} />
         <View style={{ flexShrink: 1, minWidth: 0, maxWidth: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth, ...(rename ? { width: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth } : {}) }}>{title}</View>
         {doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center style={{ marginRight: 6 }} />}
@@ -655,7 +657,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
           {c.failure && c.offline && reload && <Button label="+1 notice" small variant="ghost" onPress={() => setShowAllWarnings(true)} />}
         </View>}</View>
       {doc && !immersive && <LatestPill copilot={copilot} bottom={u.compact ? compactDock + 12 : toolbarBottom + F.toolbar.height + 12} label={c.view?.latestAgent?.label} />}
-      {doc && !u.compact && <HojaMenu copilot={copilot} left={tokens.island.inset} top={tokens.island.inset + F.top.height + 6} maxHeight={Math.max(200, panelHeight - 220)} />}
+      {doc && !u.compact && <HojaMenu copilot={copilot} left={islandLeft} top={tokens.island.inset + F.top.height + 6} maxHeight={Math.max(200, panelHeight - 220)} />}
       {libraryOpen && !immersive && <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 8, alignItems: 'center' } : { position: 'absolute', bottom: toolbarBottom + F.toolbar.height + 8, left: 0, right: 0, alignItems: 'center' }}>
         <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} recent={recentIcons} onRecent={list => savePrefs({ recentIcons: list })} online={!c.offline} maxHeight={Math.max(280, panelHeight - toolbarBottom - F.toolbar.height - 40)} />
       </View>}
@@ -671,7 +673,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       </View></>}
     {/* The menu drops from its button on a wide panel; on a compact one it is a sheet. */}
     {overflow && !u.compact && <><Pressable accessibilityLabel="Close the menu" onPress={() => setOverflow(false)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 40 }} />
-      <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: tokens.island.inset, top: tokens.island.inset + F.top.height + 6, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
+      <View nativeID="lienzo-interactive-menu" accessibilityRole="menu" style={{ position: 'absolute', left: islandLeft, top: tokens.island.inset + F.top.height + 6, width: 288, maxHeight: Math.max(240, panelHeight - tokens.island.inset - 72), zIndex: 41, ...islandStyle(u, true), padding: 0, overflow: 'hidden' }}><ScrollView contentContainerStyle={{ padding: 6 }}>{menuRows}</ScrollView></View></>}
     <CommandPalette open={paletteOpen} items={paletteItems} recent={recent} chips={chips} width={width} height={panelHeight} onClose={() => setPaletteOpen(false)} onRun={(item, background) => { runPaletteItem(item); if (background) toast.show('Running: ' + item.title, { variant: 'info' }); }} onQuery={query => { if (query.trim().toLowerCase() === 'mate') setKettle(k => k + 1); }} />
     <TooltipLayer />
     <LinkSheet intent={ventana} onClose={() => setVentana(null)} panel={panelBox} disabled={disabled} onAdd={insertLink} />

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, Text, View, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon, Modal as HostModal, ScrollView, TextInput, copyText, useToast, capabilities } from './host';
-import type { HostProps } from './host';
+import type { HostProps, WindowInset } from './host';
 import { toneColor, withAlpha, type Tone } from './color';
 import { tokens } from './tokens';
 import { downloadJson, useKeyboardFocus } from './web';
@@ -35,12 +35,13 @@ export function friendlyError(error: unknown): string {
 }
 type Font = keyof typeof tokens.font.style;
 const Context = createContext<HostProps | null>(null);
+const noInset: WindowInset = { left: 0, top: 0 };
 export function UIProvider({ children, ...props }: HostProps & { children: React.ReactNode }) { useReducedMotion(); return <Context.Provider value={props}>{children}</Context.Provider>; }
 export function useHostId(): string | undefined { return useContext(Context)?.host.id; }
 export function useUI() {
   const props = useContext(Context); if (!props) throw new Error('Lienzo UI context unavailable');
   const { theme, layout } = props;
-  return useMemo(() => ({ ...props, c: theme.colors, compact: layout.compact,
+  return useMemo(() => ({ ...props, c: theme.colors, compact: layout.compact, inset: layout.inset ?? noInset,
     tone: (t: Tone) => toneColor(t, theme), wash: (t: Tone) => withAlpha(toneColor(t, theme), tokens.alpha.toneWash),
     washStrong: (t: Tone) => withAlpha(toneColor(t, theme), tokens.alpha.toneWashStrong), toneBorder: (t: Tone) => withAlpha(toneColor(t, theme), tokens.alpha.toneBorder), groupFill: (t: Tone) => withAlpha(toneColor(t, theme), tokens.alpha.groupFill), halo: withAlpha(theme.colors.accent, .2),
     font: (f: Font = 'body', muted = false): TextStyle => {
