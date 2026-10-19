@@ -1,4 +1,4 @@
-import { runtimeStateSchema } from "../shared/learning";
+import { runtimeJsonSchema, runtimeStateSchema, type JSONValue } from "../shared/learning";
 import { mkdir, open, readFile, rename, rm, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -27,6 +27,8 @@ const recordSchema = z.preprocess(withoutRetiredKeys, z.object({
   connection: connectionSchema.nullable(), selectionVersion: z.number().int().nonnegative(),
   runtime: runtimeStateSchema.default({ blocks: {}, scopes: {} }),
   runtimeVersion: z.number().int().nonnegative(),
+  // lienzo.storage: each extension's own small JSON value on this document, by extension id. No revision, no history.
+  extensionStorage: z.record(z.string(), runtimeJsonSchema).optional(),
   // When the person last changed the selection: canvas_selection without a documentId reads the latest one.
   selectedAt: z.iso.datetime().optional(),
   // Agent that created the document through MCP. Scopes access when the workspace keeps one canvas per agent.
@@ -175,15 +177,33 @@ export class CanvasStore {
       if (JSON.stringify(next.runtime) !== JSON.stringify(record.runtime)) {
         runtimeStateSchema.parse(next.runtime);
         record.runtime = next.runtime; record.runtimeVersion = next.runtimeVersion; this.state!.commit++;
-        this.runtimeDirty = true;
-        if (!this.runtimeTimer) this.runtimeTimer = setTimeout(() => {
-          this.runtimeTimer = undefined;
-          void this.flushRuntime().catch(error => { this.runtimeError = error; });
-        }, 250);
+        this.deferPersist();
       }
       return clone(result);
     });
     this.queue = run.catch(() => {}); return run;
+  }
+  /** lienzo.storage of one document, by extension id: like runtime, memory first and disk shortly after, no revision. */
+  extensionStorage<T>(documentId: string, workspaceId: string, change: (storage: Record<string, JSONValue>) => T): Promise<T> {
+    if (this.closing || this.closed) return Promise.reject(new CanvasError('UNAVAILABLE', 'Canvas store is closing.'));
+    const run = this.queue.then(async () => {
+      await this.initialize();
+      const record = documentRecord(this.state!, documentId, workspaceId), before = record.extensionStorage ?? {}, next = clone(before);
+      const result = change(next);
+      if (JSON.stringify(next) !== JSON.stringify(before)) {
+        if (Object.keys(next).length) record.extensionStorage = next; else delete record.extensionStorage;
+        this.state!.commit++; this.deferPersist();
+      }
+      return clone(result);
+    });
+    this.queue = run.catch(() => {}); return run;
+  }
+  private deferPersist() {
+    this.runtimeDirty = true;
+    if (!this.runtimeTimer) this.runtimeTimer = setTimeout(() => {
+      this.runtimeTimer = undefined;
+      void this.flushRuntime().catch(error => { this.runtimeError = error; });
+    }, 250);
   }
   /** Await this for a durability boundary; deferred writes acknowledge memory before disk. */
   async flushRuntime(): Promise<void> {

@@ -52,6 +52,7 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.readDocument, input => service.read(input));
   host.handle(rpc.readRuntime, input => service.runtimeRead(input));
   host.handle(rpc.setRuntime, input => service.runtimeSet(input));
+  host.handle(rpc.extensionStorage, input => service.extensionStorage(input));
   host.handle(rpc.watchDocument, input => service.watch(input));
   host.handle(rpc.createDocument, input => service.create(input));
   host.handle(rpc.mutateDocument, input => service.mutate(input));

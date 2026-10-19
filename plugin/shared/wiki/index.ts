@@ -27,7 +27,7 @@ export function actionsMarkdown(actions: readonly DocumentedAction[]): string {
   return ["## For your agent", "Your agent can use this extension itself: ask it in your chat. Each run is one step in History, marked (agent), that undoes like any other.", actions.map(item).join("\n")].join("\n\n");
 }
 export function extensionPage(extension: DocumentedExtension): WikiPage {
-  const asks = extension.permissions.length ? `It asks to ${extension.permissions.map(p => p === "edit" ? "change the canvas" : p === "network" ? "load things from the internet" : p).join(" and ")}.` : "It only reads the Lienzo and changes the selection.";
+  const asks = extension.permissions.length ? `It asks to ${extension.permissions.map(p => p === "edit" ? "change the canvas" : p === "network" ? "load things from the internet" : p === "view" ? "move the view of the canvas" : p).join(" and ")}.` : "It only reads the Lienzo and changes the selection.";
   return { id: EXTENSION_PAGE_PREFIX + extension.id, section: "extensions", title: extension.name, icon: extension.icon ?? "Puzzle", art: "extension",
     summary: extension.description || "An installed extension.",
     purpose: `${extension.description ? extension.description + " " : ""}Open it from the + catalog, under Extensions. ${asks}`,

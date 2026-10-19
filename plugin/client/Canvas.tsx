@@ -33,7 +33,14 @@ import { attachToolPointer, attachCanvasKeys } from './web';
 export type { CanvasTool } from './whiteboard-tools';
 export type { Camera } from './logic';
 /** What the panel can ask of the canvas: camera moves, and "the next change is a keystroke, do not animate it". */
-export type CanvasApi = { fit(): void; zoomToSelection(): void; flyToIds(ids: string[]): void; zoomStep(direction: 1 | -1): void; zoomTo(scale: number): void; instant(): void; setTool(tool: CanvasTool): void; getTool(): CanvasTool; cancelGesture(): void; viewportCenter(): Point; insertSvg(svg: string, options?: SvgInsertOptions): Promise<boolean>; beginInteraction(id?: string): void; endInteraction(): void; editSelection(): void; editLinkLabel(): void; interactionId(): string | null; cycleLens(): void };
+export type CanvasApi = { fit(): void; zoomToSelection(): void; flyToIds(ids: string[]): void; zoomStep(direction: 1 | -1): void; zoomTo(scale: number): void; instant(): void; setTool(tool: CanvasTool): void; getTool(): CanvasTool; cancelGesture(): void; viewportCenter(): Point; insertSvg(svg: string, options?: SvgInsertOptions): Promise<boolean>; beginInteraction(id?: string): void; endInteraction(): void; editSelection(): void; editLinkLabel(): void; interactionId(): string | null; cycleLens(): void;
+  /** Zoom and the world rectangle on screen, for extensions; null before the canvas has a size. */
+  camera(): { scale: number; bounds: { x: number; y: number; width: number; height: number } } | null;
+  /** Frames these entities clear of the floating panel; false when none of them is on the canvas. A gesture interrupts it. */
+  frameIds(ids: string[], options?: { padding?: number; animate?: boolean }): boolean };
+/** An extension's highlight (lienzo.highlight): an outline in one tone, optionally dimming every other card. Never saved. */
+export type CanvasHighlight = { ids: string[]; dim: boolean; tone: 'accent' | 'success' | 'warning' | 'violet' };
+const HIGHLIGHT_TONES = { accent: 'acento', success: 'exito', warning: 'aviso', violet: 'violeta' } as const;
 const G = tokens.graph, M = tokens.motion, C = tokens.motion.camera;
 type Page = { pageX?: number; pageY?: number; target?: unknown };
 type Box = { x: number; y: number; width: number; height: number };
@@ -81,11 +88,12 @@ const BlockItem = React.memo(function BlockItem({ left, top, width, resizeHandle
     {ringed && <View pointerEvents="none" style={{ position: 'absolute', inset: -4, borderRadius: tokens.radius.block + 4, borderWidth: 2, borderColor: accent }} />}
   </Animated.View>;
 }, (a, b) => a.left === b.left && a.top === b.top && a.width === b.width && a.anim === b.anim && a.dim === b.dim && a.ringed === b.ringed && a.handlers === b.handlers && a.resizeHandlers === b.resizeHandlers && a.resizeCursor === b.resizeCursor && a.accent === b.accent && a.shadow === b.shadow && sameCard(a, b));
-export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, obscuredRight = 0, glowIds = [], onUserCamera }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
+export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, obscuredRight = 0, glowIds = [], onUserCamera, highlight }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
   /** Keys the panel's shortcut registry owns: the canvas lets them through instead of typing them into a selected label. */
   reservedKey?: (key: string) => boolean; lensShortcut?: string;
   /** Pixels on the right covered by a floating panel; the beacon stays clear of them. */
-  obscuredRight?: number; glowIds?: string[]; onUserCamera?: () => void }) {
+  obscuredRight?: number; glowIds?: string[]; onUserCamera?: () => void; highlight?: CanvasHighlight | null }) {
+  const obscured = useRef(obscuredRight); obscured.current = obscuredRight;
   const [interaction, setInteraction] = useState<string | null>(null), interactionRef = useRef<string | null>(null), interactionCallback = useRef(onInteractionChange); interactionCallback.current = onInteractionChange;
   const setInteractionMode = (id: string | null) => { interactionRef.current = id; setInteraction(id); interactionCallback.current?.(id); };
   const styleRef = useRef(toolStyle); styleRef.current = toolStyle; const lockedRef = useRef(toolLocked); lockedRef.current = toolLocked;
@@ -167,6 +175,11 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   function fit(ids?: string[]) {
     const { size, doc } = latest.current; if (!size.width || !size.height) return;
     const box = boundsOf(visible(ids?.length ? ids : [...doc.groups, ...doc.blocks].filter(e => !e.parentGroupId).map(e => e.id))); if (box) flyTo(fitCamera(size, box, tokens.canvas.fitMax), C.fitMs);
+  }
+  function frameIds(ids: string[], options: { padding?: number; animate?: boolean } = {}) {
+    const { size } = latest.current, box = boundsOf(visible(ids)); if (!size.width || !size.height || !box) return false;
+    const padding = Math.max(0, Math.min(400, options.padding ?? tokens.canvas.fitInset)), width = Math.max(Math.min(size.width, 240), size.width - obscured.current);
+    flyTo(fitCamera({ width, height: size.height }, box, tokens.canvas.fitMax, padding), options.animate === false ? 0 : C.fitMs); return true;
   }
   useEffect(() => { if (ready && size.width && size.height && fitted.current !== doc.id) {
     const x = roots.length ? Math.min(...roots.map(r => r.x)) : 0, y = roots.length ? Math.min(...roots.map(r => r.y)) : 0;
@@ -257,7 +270,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const wbRef = useRef(wb); wbRef.current = wb;
   const cancelAll = () => { wbRef.current.cancel(); dragEnd(0, 0, true); resizeEnd(true); clearLinkGesture(); setInteractionMode(null); };
   const beginInteraction = (id?: string) => { const target = id ?? latest.current.c.selection[0]; if (!target) return; const block = latest.current.doc.blocks.find(b => b.id === target); if (!block) return; const renderer = latest.current.c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer; if (isWhiteboardRenderer(renderer)) wbRef.current.edit(target); else if (needsContentInteraction(renderer)) setInteractionMode(target); else requestTitleEdit(target); };
-  useImperativeHandle(api, () => ({ flyToIds: ids => fit(ids), cycleLens: () => setLens(current => LENSES[(LENSES.indexOf(current) + 1) % LENSES.length]), fit: () => fit(), zoomToSelection: () => fit(latest.current.c.selection), zoomStep, zoomTo: scale => zoomTo(scale), instant: () => { instantUntil.current = Date.now() + 600; }, setTool: next => { cancelAll(); chooseTool(next); }, getTool: () => toolRef.current, cancelGesture: cancelAll, viewportCenter: center, insertSvg: (svg, options) => {
+  useImperativeHandle(api, () => ({ flyToIds: ids => fit(ids), frameIds,
+    camera: () => { const { size } = latest.current, k = cam.current; return size.width && size.height ? { scale: k.scale, bounds: { x: -k.offset.x / k.scale, y: -k.offset.y / k.scale, width: size.width / k.scale, height: size.height / k.scale } } : null; }, cycleLens: () => setLens(current => LENSES[(LENSES.indexOf(current) + 1) % LENSES.length]), fit: () => fit(), zoomToSelection: () => fit(latest.current.c.selection), zoomStep, zoomTo: scale => zoomTo(scale), instant: () => { instantUntil.current = Date.now() + 600; }, setTool: next => { cancelAll(); chooseTool(next); }, getTool: () => toolRef.current, cancelGesture: cancelAll, viewportCenter: center, insertSvg: (svg, options) => {
     if (options?.atPage) { const point = options.atPage, origin = vp.current ?? { x: 0, y: 0 }, size = latest.current.size;
       if (point.x < origin.x || point.y < origin.y || point.x > origin.x + size.width || point.y > origin.y + size.height) return Promise.resolve(false);
     } return wbRef.current.insertSvg(svg, options);
@@ -592,6 +606,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     return hovered ? { lit: new Set([hovered.from, hovered.to, ...hovered.links.flatMap(l => [l.from, l.to])]), routes: new Set([hovered.key]), links: new Set(hovered.links.map(l => l.id)) } : (hover ? linkFocus(routes, [hover]) : null) ?? (linkId ? linkFocus(routes, [], linkId) : linkFocus(routes, c.selection));
   }, [routes, hover, linkHover, linkId, c.selection, linkDraft, drag?.live]);
   const lit = (id: string) => !focus || index.chain(id).some(x => focus.lit.has(x));
+  // An extension's highlight with dim on overrides the focus: what it names, and what is inside it, stays lit.
+  const highlighted = useMemo(() => highlight?.ids.length ? new Set(highlight.ids) : null, [highlight]);
+  const shines = (id: string) => highlighted && highlight!.dim ? index.chain(id).some(x => highlighted.has(x)) : lit(id);
   const region = (g: CanvasGroup) => index.mode(g.id) === 'graph' || index.mode(g.parentGroupId ?? null) === 'graph';
   const pressLink = (key: string) => { const route = routes.find(r => r.key === key); if (!route) return; const at = route.links.findIndex(l => l.id === linkId); onLink(route.links[(at + 1) % route.links.length].id); void c.select([]); };
   const excludedLink = (id: string) => { const b = doc.blocks.find(b => b.id === id), kind = b && c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer; return kind === 'wb-draw' || kind === 'wb-shape' && b?.data.shape === 'line'; };
@@ -678,7 +695,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       {whiteboardItems(['wb-shape','wb-svg'])}
       <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
       {doc.blocks.filter(b => !rects.get(b.id)!.hidden && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer)).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
-        return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) ? resizeHandlers(b.id) : undefined} resizeCursor={web ? cursors.resizeNWSE : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!lit(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
+        return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) ? resizeHandlers(b.id) : undefined} resizeCursor={web ? cursors.resizeNWSE : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!shines(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
       {lensLayer}
       {whiteboardItems(['wb-text'])}{whiteboardItems(['wb-draw'])}
       <WhiteboardPreview store={wb.store} origin={bound} />
@@ -691,6 +708,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       </Pressable>}
       {glowIds.map(id => { const r = rects.get(id); if (!r || r.hidden) return null; const g = tokens.face.hojas.glow;
         return <Appear key={`glow-${id}`} ms={M.fast}><View nativeID={`lienzo-glow-${id}`} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x - g, top: r.y - bound.y - g, width: r.width + 2 * g, height: r.height + 2 * g, borderRadius: tokens.radius.group + g, borderWidth: 2, borderColor: u.c.accent, boxShadow: `0 0 28px ${withAlpha(u.c.accent, .55)}`, zIndex: 8 } as object} /></Appear>; })}
+      {highlighted && [...highlighted].map(id => { const r = rects.get(id); if (!r || r.hidden) return null; const g = tokens.face.hojas.glow, tone = u.tone(HIGHLIGHT_TONES[highlight!.tone] ?? 'acento');
+        return <Appear key={`highlight-${id}`} ms={M.fast}><View nativeID={`lienzo-highlight-${id}`} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x - g, top: r.y - bound.y - g, width: r.width + 2 * g, height: r.height + 2 * g, borderRadius: tokens.radius.group + g, borderWidth: 2, borderColor: tone, boxShadow: `0 0 28px ${withAlpha(tone, .55)}`, zIndex: 8 } as object} /></Appear>; })}
       {linkDraft && <><MagnetCue x={draftX} y={draftY} origin={bound} scale={camS} pulse={sparkPulse} active={!!linkDraft.target} /><Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, transform: [{ translateX: Animated.add(Animated.subtract(draftX, bound.x), 12) }, { translateY: Animated.add(Animated.subtract(draftY, bound.y), 12) }], zIndex: 6, paddingHorizontal: 6, minHeight: 20, justifyContent: 'center', borderRadius: tokens.radius.chip, backgroundColor: u.c.surface2, borderWidth: 1, borderColor: u.c.border }}><Txt kind="small" numberOfLines={1}>{linkDraft.target ? `Connect to “${title(linkDraft.target)}”` : 'Bring the tip to a block or a Frame'}</Txt></Animated.View></>}
     </Animated.View>
     </View>

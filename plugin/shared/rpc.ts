@@ -1,4 +1,4 @@
-import { runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
+import { runtimeJsonSchema, runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
 import { defineRpc } from "./contract";
 import { z } from "zod";
 import {
@@ -45,6 +45,10 @@ export const runtimeSetInputSchema = readInputSchema.extend({
 export const runtimeOutputSchema = z.object({ runtimeVersion: revisionSchema, runtime: runtimeStateSchema });
 export const readRuntime = defineRpc({ name: 'canvas.runtime.read', input: runtimeReadInputSchema, output: runtimeOutputSchema });
 export const setRuntime = defineRpc({ name: 'canvas.runtime.set', input: runtimeSetInputSchema, output: runtimeOutputSchema });
+// lienzo.storage: one small JSON value per extension and document. Like runtime it has no revision or history; unlike
+// runtime it is not in the document view, canvas_read or canvas_runtime: only the extension reads it back.
+export const extensionStorageInputSchema = readInputSchema.extend({ extensionId: idSchema, action: z.enum(['get', 'set']), value: runtimeJsonSchema.nullable().default(null) });
+export const extensionStorage = defineRpc({ name: 'canvas.extension.storage', input: extensionStorageInputSchema, output: z.object({ value: runtimeJsonSchema.nullable() }) });
 
 // Copilot: per agent (one conversation). Every new agent has the Lienzo tools; the copilot decides whether it draws.
 const agentScopeSchema = scopeSchema.extend({ agentId: z.string().min(1).max(200) });

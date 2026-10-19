@@ -55,8 +55,10 @@ Your agent saves a manifest: an id, a name, a one-line description, an icon, the
 
 ### The parts of the page
 - `lienzo.onContext(fn)` calls `fn` with the Lienzo (cards, Frames, links, where each one is), the selection and the theme's colours, now and on every change.
-- `lienzo.select(ids)` changes the selection; `lienzo.open(id)` goes to a card on the canvas.
+- `lienzo.select(ids)` changes the selection; `lienzo.open(id)` selects a card (with **view**, it also flies there).
 - `lienzo.edit(operations, label)` changes the canvas in one transaction you can undo. It needs the **edit** permission.
+- `lienzo.view` reads and moves the camera (the **view** permission): `get()`, `fit(ids)`, `onChange(fn)`. Good for a tool that walks the Lienzo like slides.
+- `lienzo.keys.bind(keys, fn)` takes arrows, Space, letters and the like while the tool is open; `lienzo.highlight(ids)` outlines cards for a moment, never saved; `lienzo.storage` keeps a small JSON value for this Lienzo.
 - `lienzo.kit.stage(...)` draws things with the canvas' own selection, hover and drag behaviour.
 - `lienzo.action(name, fn)`, in a script marked `data-lienzo="actions"`, offers a job your agent can run too (step 6).
 
@@ -104,9 +106,9 @@ A saved extension appears at once in the + catalog under Extensions, in ⌘K, an
 
 ## 4. Permissions
 
-Reading and selecting are free; changing the canvas and the internet are asked for.
+Reading and selecting are free; changing the canvas, the internet and moving the view are asked for.
 
-An extension declares what it needs: edit (change the canvas) and network (load things from the internet). Without network it can load nothing from outside its own page. A tool made here by you or your agent holds what it declares. One that arrives in a file or from the catalog holds nothing until you allow it: until then it can only read and select.
+An extension declares what it needs: edit (change the canvas), network (load things from the internet) and view (move the canvas camera, for tools that present or tour the Lienzo). Without network it can load nothing from outside its own page. A tool made here by you or your agent holds what it declares. One that arrives in a file or from the catalog holds nothing until you allow it: until then it can only read and select.
 
 ### By hand
 

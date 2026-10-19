@@ -83,7 +83,7 @@ function Page({ page, pages, width, onPage, shortcuts, chips, extension, onTour 
         <Txt kind="display" accessibilityRole="header" style={{ fontSize: u.compact ? 24 : S.title.size, lineHeight: u.compact ? 30 : S.title.lineHeight, letterSpacing: S.title.letterSpacing, marginRight: u.compact ? 40 : 0 }}>{page.title}</Txt>
         <Txt muted style={{ fontSize: 15, lineHeight: 22 }}>{page.summary}</Txt>
         {keys && keys.assigned[0] && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}><Txt kind="small" muted>Shortcut</Txt><Keys combo={keys.assigned[0]} chips={chips} /></View>}
-        {extension && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>{extension.permissions.length ? extension.permissions.map(p => <Chip key={p} label={p === 'edit' ? 'Changes the canvas' : 'Loads from the internet'} tone={p === 'network' ? 'aviso' : 'acento'} />) : <Chip label="Reads and selects only" icon="Eye" />}</View>}
+        {extension && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>{extension.permissions.length ? extension.permissions.map(p => <Chip key={p} label={p === 'edit' ? 'Changes the canvas' : p === 'view' ? 'Moves the view' : 'Loads from the internet'} tone={p === 'network' ? 'aviso' : 'acento'} />) : <Chip label="Reads and selects only" icon="Eye" />}</View>}
       </View>
       {art}
     </View>

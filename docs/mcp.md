@@ -210,6 +210,7 @@ RPC method names use the installed SDK's lowercase-only syntax.
 | `undoDocument`, `redoDocument` | `canvas.undo`, `canvas.redo` | Scoped document and expected revision return a view |
 | `watchDocument` | `canvas.watch` | Scoped document, known revision/runtime version return versions and an optional changed view |
 | `readRuntime`, `setRuntime` | `canvas.runtime.read`, `canvas.runtime.set` | Scoped bounded reads and non-revisioned block/scope overrides |
+| `extensionStorage` | `canvas.extension.storage` | `lienzo.storage`: `{workspaceId,documentId,extensionId,action:"get"\|"set",value?}`, one JSON value (4 KiB) per installed extension and document; no revision, history or MCP tool |
 | `setSelection` | `canvas.selection.set` | Scoped document, expected selection version and IDs return a view |
 | `readHistory` | `canvas.history` | Scoped document returns retained real transactions, including agent ID |
 | `readCatalog`, `mutateCatalog` | `canvas.catalog.read`, `canvas.catalog.mutate` | Read is `{}`; mutation requires catalog revision and a typed action |

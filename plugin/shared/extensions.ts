@@ -8,7 +8,40 @@ import { EXAMPLE_ACTIONS, EXAMPLE_HTML } from "./wiki/tutorial";
  * sends anything to the agent).
  */
 export const EXTENSION_API = 1;
-export const EXTENSION_LIMITS = { operations: 200, selection: 1200 } as const;
+export const EXTENSION_LIMITS = { operations: 200, selection: 1200, storage: 4096, storedExtensions: 64, keys: 40, padding: 400, viewMs: 100 } as const;
+/** Colours of lienzo.highlight, in the canvas' own tones. */
+export const EXTENSION_TONES = ["accent", "success", "warning", "violet"] as const;
+export type ExtensionTone = typeof EXTENSION_TONES[number];
+/**
+ * Keys a tool may take with lienzo.keys.bind while its panel is open: navigation keys, Enter, Escape, letters and
+ * digits, each alone or with Shift. Never with ⌘, Ctrl or Alt: those stay Lienzo's shortcuts. Letters are lower case.
+ */
+export const EXTENSION_KEY_NAMES = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "PageUp", "PageDown", "Home", "End", "Enter", "Escape"] as const;
+export const EXTENSION_KEY_PATTERN = `^(Shift\\+)?([a-z0-9]|${EXTENSION_KEY_NAMES.join("|")})$`;
+export const isExtensionKey = (name: string) => new RegExp(EXTENSION_KEY_PATTERN).test(name);
+type KeyEventLike = { key: string; code?: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean };
+/** The name a key press has for lienzo.keys ("ArrowRight", "Shift+n", "Space"), or null when no tool may take it. */
+export function extensionKeyName(e: KeyEventLike): string | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  const base = e.key === " " || e.key === "Spacebar" ? "Space" : (EXTENSION_KEY_NAMES as readonly string[]).includes(e.key) ? e.key : /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : /^Digit[0-9]$/.test(e.code ?? "") ? e.code!.slice(5) : /^[0-9]$/.test(e.key) ? e.key : null;
+  return base && (e.shiftKey ? `Shift+${base}` : base);
+}
+/** Where a key pressed in Lienzo goes while a tool is open: its name when the tool bound it and nobody is typing, else null (Lienzo keeps it). */
+export const routeExtensionKey = (e: KeyEventLike, bound: ReadonlySet<string>, typing: boolean): string | null => { if (typing) return null; const name = extensionKeyName(e); return name && bound.has(name) ? name : null; };
+type Box = { x: number; y: number; width: number; height: number };
+/** What lienzo.view.get() and context.view say: zoom, the world rectangle on screen, the Sheet under its centre, and what it shows. */
+export type ExtensionView = { scale: number; bounds: Box; sheetId: string | null; visibleIds: string[] };
+/**
+ * The view an extension is told, from the camera and the canvas' own rectangles (world units). `ids` are the document's
+ * groups and blocks in order; `sheets` its Sheets. Visible means its rectangle overlaps the bounds and it is not folded
+ * inside a collapsed group.
+ */
+export function extensionView(camera: { scale: number; bounds: Box }, rects: ReadonlyMap<string, Box & { hidden?: boolean }>, ids: readonly string[], sheets: readonly string[]): ExtensionView {
+  const b = camera.bounds, cx = b.x + b.width / 2, cy = b.y + b.height / 2, round = (n: number) => Math.round(n * 100) / 100;
+  const visibleIds = ids.filter(id => { const r = rects.get(id); return !!r && !r.hidden && r.x < b.x + b.width && r.x + r.width > b.x && r.y < b.y + b.height && r.y + r.height > b.y; }).slice(0, EXTENSION_LIMITS.selection);
+  const sheetId = sheets.find(id => { const r = rects.get(id); return !!r && !r.hidden && cx >= r.x && cx <= r.x + r.width && cy >= r.y && cy <= r.y + r.height; }) ?? null;
+  return { scale: Math.round(camera.scale * 1000) / 1000, bounds: { x: round(b.x), y: round(b.y), width: round(b.width), height: round(b.height) }, sheetId, visibleIds };
+}
 /** Operations an extension may not send: what is selected and what the assistant is told belong to the person. */
 export const EXTENSION_FORBIDDEN_OPERATIONS = ["selection.set", "communication.set"] as const;
 
@@ -17,11 +50,13 @@ export const EXTENSION_FORBIDDEN_OPERATIONS = ["selection.set", "communication.s
  * shipped as text into a document this plugin does not otherwise control.
  */
 export const EXTENSION_RUNTIME = String.raw`(function(){
-var listeners=[],ctx=null,calls={},seq=0,actions=Object.create(null);
+var listeners=[],ctx=null,calls={},seq=0,actions=Object.create(null),views=[],lastView=null,keys=Object.create(null),KEY=new RegExp(${JSON.stringify(EXTENSION_KEY_PATTERN)});
 function post(m){m.lienzo=1;parent.postMessage(m,'*')}
 function call(method,args){return new Promise(function(ok,no){var id=++seq;calls[id]={ok:ok,no:no};post({type:'call',id:id,method:method,args:args||{}})})}
 window.addEventListener('message',function(e){var d=e.data;if(e.source!==parent||!d||d.lienzo!==1)return;
- if(d.type==='context'){ctx=d.context;listeners.slice().forEach(function(f){try{f(ctx)}catch(err){console.error(err)}})}
+ if(d.type==='context'){ctx=d.context;if(lastView)ctx.view=lastView;listeners.slice().forEach(function(f){try{f(ctx)}catch(err){console.error(err)}})}
+ else if(d.type==='view'){lastView=d.view;if(ctx)ctx.view=d.view;views.slice().forEach(function(f){try{f(d.view)}catch(err){console.error(err)}})}
+ else if(d.type==='key')press(d.key);
  else if(d.type==='result'){var c=calls[d.id];if(!c)return;delete calls[d.id];if(d.ok)c.ok(d.value);else c.no(new Error(d.error||'Error'))}});
 var lienzo=window.lienzo={api:1,
  get context(){return ctx},
@@ -34,6 +69,21 @@ var lienzo=window.lienzo={api:1,
  action:function(n,f){if(typeof f!=='function')throw new TypeError('lienzo.action(name, fn) needs a function.');actions[String(n)]=f;return f},
  run:function(n,input){return new Promise(function(ok){var f=actions[String(n)];if(!f)throw new Error('This extension has no action '+n+'.');ok(f(input===undefined?{}:input,ctx))})},
  kit:{}};
+/* Added to API 1, feature-detect them: the camera (permission "view"), keys while the panel is open, a highlight, storage. */
+lienzo.view={get:function(){return call('view.get',{})},fit:function(ids,o){o=o||{};return call('view.fit',{ids:[].concat(ids||[]),padding:o.padding,animate:o.animate})},
+ onChange:function(f){views.push(f);if(lastView)f(lastView);return function(){views=views.filter(function(x){return x!==f})}}};
+lienzo.highlight=function(ids,o){o=o||{};return call('highlight',{ids:[].concat(ids||[]),dim:!!o.dim,tone:o.tone||'accent'})};
+lienzo.highlight.clear=function(){return call('highlight',{ids:[]})};
+lienzo.storage={get:function(){return call('storage.get',{})},set:function(v){return call('storage.set',{value:v===undefined?null:v})}};
+function keyName(e){if(e.ctrlKey||e.metaKey||e.altKey)return null;var k=e.key,b=k===' '||k==='Spacebar'?'Space':/^(Arrow(Left|Right|Up|Down)|Page(Up|Down)|Home|End|Enter|Escape)$/.test(k)?k:/^[a-z]$/i.test(k)?k.toLowerCase():/^Digit[0-9]$/.test(e.code||'')?e.code.slice(5):/^[0-9]$/.test(k)?k:null;return b&&(e.shiftKey?'Shift+'+b:b)}
+function norm(n){n=String(n);var m=/^(shift\+)?(.+)$/i.exec(n),b=m[2];b=/^[a-z]$/i.test(b)?b.toLowerCase():/^space$/i.test(b)?'Space':b;n=(m[1]?'Shift+':'')+b;if(!KEY.test(n))throw new TypeError('lienzo.keys.bind: '+n+' is not a key a tool can take (arrows, Space, PageUp, PageDown, Home, End, Enter, Escape, a-z, 0-9, alone or with Shift+).');return n}
+function press(n){var fs=keys[n];if(!fs)return false;fs.slice().forEach(function(f){try{f(n)}catch(err){console.error(err)}});return true}
+function bound(){call('keys',{keys:Object.keys(keys)}).catch(function(){})}
+lienzo.keys={bind:function(list,f){if(typeof f!=='function')throw new TypeError('lienzo.keys.bind(keys, fn) needs a function.');list=[].concat(list).map(norm);
+  list.forEach(function(n){(keys[n]=keys[n]||[]).push(f)});bound();var done=false;
+  return function(){if(done)return;done=true;list.forEach(function(n){var fs=(keys[n]||[]).filter(function(x){return x!==f});if(fs.length)keys[n]=fs;else delete keys[n]});bound()}},
+ get bound(){return Object.keys(keys)}};
+window.addEventListener('keydown',function(e){var t=e.target,n;if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||'')))return;n=keyName(e);if(n&&keys[n]){e.preventDefault();press(n)}},true);
 function rounded(g,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));g.beginPath();g.moveTo(x+r,y);g.lineTo(x+w-r,y);g.quadraticCurveTo(x+w,y,x+w,y+r);g.lineTo(x+w,y+h-r);g.quadraticCurveTo(x+w,y+h,x+w-r,y+h);g.lineTo(x+r,y+h);g.quadraticCurveTo(x,y+h,x,y+h-r);g.lineTo(x,y+r);g.quadraticCurveTo(x,y,x+r,y);g.closePath()}
 function cut(g,text,max){text=String(text==null?'':text);if(g.measureText(text).width<=max)return text;var lo=0,hi=text.length;while(lo<hi){var mid=(lo+hi+1)>>1;if(g.measureText(text.slice(0,mid)+'…').width<=max)lo=mid;else hi=mid-1}return lo?text.slice(0,lo)+'…':''}
 lienzo.kit.rounded=rounded;lienzo.kit.fit=cut;
@@ -78,7 +128,7 @@ lienzo.kit.stage=function(o){
  canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
  canvas.addEventListener('dblclick',function(e){var p=pos(e),t=at(p.x,p.y);if(t){if(o.onOpen)o.onOpen(t.id);else lienzo.open(t.id)}else fit()});
  canvas.addEventListener('wheel',function(e){e.preventDefault();var p=pos(e);if(e.ctrlKey||e.metaKey){var s=Math.max(.05,Math.min(8,cam.s*Math.exp(-e.deltaY*.002)));cam={s:s,x:p.x-(p.x-cam.x)/cam.s*s,y:p.y-(p.y-cam.y)/cam.s*s}}else{cam.x-=e.deltaX;cam.y-=e.deltaY}redraw()},{passive:false});
- window.addEventListener('keydown',function(e){if(e.key===' ')space=true;else if(e.key==='Escape')choose([]);else if((e.metaKey||e.ctrlKey)&&e.key==='a'){e.preventDefault();choose(items.map(function(t){return t.id}))}});
+ window.addEventListener('keydown',function(e){if(e.defaultPrevented)return;if(e.key===' ')space=true;else if(e.key==='Escape')choose([]);else if((e.metaKey||e.ctrlKey)&&e.key==='a'){e.preventDefault();choose(items.map(function(t){return t.id}))}});
  window.addEventListener('keyup',function(e){if(e.key===' ')space=false});
  if(window.ResizeObserver)new ResizeObserver(size).observe(canvas);else window.addEventListener('resize',size);size();lienzo.onContext(refresh);
  return{canvas:canvas,fit:fit,redraw:redraw,items:function(){return items},selection:chosen,at:function(x,y){var t=at(x,y);return t?t.id:null}}};
@@ -95,10 +145,11 @@ export function extensionDocument(extension: Pick<CanvasExtension, "html" | "per
   return `<!doctype html><meta charset="utf-8">${granted && extension.permissions.includes("network") ? "" : OFFLINE}<script>${EXTENSION_RUNTIME}</script><body>${extension.html.replace(/^\s*<!doctype[^>]*>/i, "")}`;
 }
 export const EXTENSION_GUIDE = `An extension adds a tool to Lienzo without changing the plugin (kind "tool": it opens as a floating panel over the canvas and usually acts on the selection). Save one with canvas_catalog save_extension { id, kind: "tool", api: 1, name, description, icon (a Lucide icon name), permissions, html }. html is one complete self-contained page: any HTML, CSS and JavaScript, no build step, nothing imported from Lienzo. It runs sandboxed in its own frame. A global lienzo object (API 1, stable across plugin updates) is the only way to the canvas:
-- lienzo.onContext(fn): fn(context) now and on every change. context = { api, extension: { id, kind, name, permissions }, theme: { dark, colors: { background, surface, foreground, muted, border, accent, flow, needs, mentions, areas[] } }, document: { id, title, description, revision, blocks: [{ id, title, typeId, renderer, data, parentGroupId }], groups: [{ id, title, description, blockIds, groupIds, parentGroupId }], links: [{ id, from, to, kind, label }] }, layout: { [id]: { x, y, width, height } } (where each thing is on the canvas), selection: [ids] }. Use theme.colors for every colour so it matches light and dark.
-- lienzo.select(ids) sets the shared selection (the same one the canvas and every tool use). lienzo.open(id) goes to the canvas on that thing. lienzo.close() closes a tool panel.
+- lienzo.onContext(fn): fn(context) now and on every change. context = { api, extension: { id, kind, name, permissions }, theme: { dark, colors: { background, surface, foreground, muted, border, accent, flow, needs, mentions, areas[] } }, document: { id, title, description, revision, blocks: [{ id, title, typeId, renderer, data, parentGroupId }], groups: [{ id, title, description, blockIds, groupIds, parentGroupId }], links: [{ id, from, to, kind, label }] }, layout: { [id]: { x, y, width, height } }, selection: [ids], view? }. layout holds absolute world coordinates for every block and group (Frames and Sheets too) of the whole document, whatever is on screen; only things folded inside a collapsed group are left out. Use theme.colors for every colour so it matches light and dark.
+- lienzo.select(ids) sets the shared selection (the same one the canvas and every tool use). lienzo.open(id) selects that thing; it moves the camera there too only with permission "view". lienzo.close() closes a tool panel.
 - lienzo.edit(operations, label) -> Promise<{ revision }>. Needs permission "edit". operations are the same transactional operations as canvas_apply (block.create/update/delete, group.*, link.*, entity.move, entity.duplicate, document.update), so undo and revision conflicts work; selection.set and communication.set are refused.
 - Permission "network" lets the page load things from the internet; without it only inline code and data: URLs work.
+- Added to API 1; feature-detect them (if (lienzo.view) ...). Permission "view": lienzo.view.get() -> Promise<{ scale, bounds: { x, y, width, height } (world rect on screen), sheetId (Sheet under the centre of the view, or null), visibleIds }>; lienzo.view.fit(ids, { padding?: px, animate?: true }) -> Promise<boolean> flies the camera to frame them (clear of the panel; false if none is on the canvas; any pan, zoom or drag by the person stops it); lienzo.view.onChange(fn) -> unsubscribe, fn(view) at most every 100 ms; context.view is the same object. Camera moves never create revisions or history. No permission: lienzo.keys.bind(keys, fn(key)) -> unbind, while the tool is open these keys pressed anywhere in Lienzo (not while typing in a field) go to fn and not to the canvas: ArrowLeft/Right/Up/Down, Space, PageUp, PageDown, Home, End, Enter, Escape, a-z, 0-9, each alone or "Shift+x"; never with Cmd/Ctrl/Alt; Escape keeps closing and deselecting unless bound. lienzo.highlight(ids, { dim?, tone?: "accent"|"success"|"warning"|"violet" }) outlines things on the canvas (dim fades every other card) and lienzo.highlight.clear() removes it: never saved, gone when the tool closes. lienzo.storage.get() / .set(value) -> Promise: one JSON value per extension and per Lienzo, at most 4 KiB, kept on the server with no revision or history; null clears it. The frame allows fullscreen (document.documentElement.requestFullscreen() after a press).
 - lienzo.kit.stage({ layout(context) -> [{ id, x, y, w, h }], draw(g, view), onMove?(ids, dx, dy), onOpen?(id), onHover?(id) }) gives a tool that draws things the canvas' own behaviour on a 2D canvas it creates: wheel pans, command-wheel zooms, press selects, shift adds, drag on nothing box-selects, drag on a thing moves the selection (only if onMove is given), double press opens, Escape clears. draw runs in world units with view = { scale, selected: { [id]: true }, hover, drag, theme, context, items }. lienzo.kit.card(g, item, view, { title, subtitle, color }) draws a thing with the standard selection and hover look. Prefer the kit whenever a tool shows things: it is what keeps interactions consistent.
 - Actions (optional): what the extension offers an agent, run with canvas_extension_run { extension, action, input, documentId? }. Declare each in the manifest, actions: [{ name, description, input (JSON Schema subset: type object|array|string|number|integer|boolean, properties, required, items, enum, minimum, maximum, minLength, maxLength, minItems, maxItems, additionalProperties; objects are closed by default), returns? }], and register its handler in a script of the page marked <script data-lienzo="actions">: lienzo.action(name, function (input, context) { ... return result; }). That script is plain JavaScript that must not touch the page (no DOM): it runs in the frame, where the page's buttons call lienzo.run(name, input) so the work is written once, and headless on the server in a QuickJS sandbox for the agent. Headless, lienzo has context (document and selection; no theme or layout; lienzo.headless is true), edit (all edits of one run become one undoable transaction labelled "<name> (agent): <label>"; needs "edit", which an imported extension holds only once the person allows it), select, action and run; no timers, network or page; 2 s, 64 MB, 200 operations, a 16 KB JSON result. A failing run changes nothing.
 Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. Optional docs: the extension's own Help page, shown to the person in Help → Extensions: short Markdown (headings, paragraphs, lists, code, links, bold, italic; no HTML, http(s) or mailto links only, up to 20000 characters) or up to 12 sections [{ title, body }]. Write one that says what it is for and how to use it. The person's Help has a "Make your own" walkthrough (canvas_catalog help { page: "make.overview" }). The complete example from it, a tool that rewrites the selected titles in one undoable edit, saved with permissions ["edit"], its docs and actions ${JSON.stringify(EXAMPLE_ACTIONS)}:

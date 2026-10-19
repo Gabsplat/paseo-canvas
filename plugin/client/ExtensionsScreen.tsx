@@ -11,14 +11,14 @@ import type { CanvasController } from './useCanvas';
 import { Button, CheckRow, Chip, Segments, Txt, friendlyError, useUI } from './ui';
 import { downloadJson, pickJsonFile } from './web';
 import { Card, ScreenBody, ScreenHeader, SectionLabel, Stagger, useScreenRoot } from './Screen';
-import { PERMISSION_WORDS, exportAllMine, exportOne, EXTENSION_MESSAGES, extensionActions, extensionOrigin, fileName, publishPlan, type ExtensionReview as Review, type PublishPlan } from './screens';
+import { permissionChip, exportAllMine, exportOne, EXTENSION_MESSAGES, extensionActions, extensionOrigin, fileName, publishPlan, type ExtensionReview as Review, type PublishPlan } from './screens';
 import { DiscoverTab, PublishCard } from './Discover';
 import { extensionIcon } from './Extensions';
 
 export const EXTENSIONS_DOCS = 'https://github.com/Gabsplat/paseo-canvas/blob/master/docs/extensions.md';
 function Permissions({ extension }: { extension: Pick<CatalogExtension, 'permissions'> }) {
   return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-    {extension.permissions.length ? extension.permissions.map(p => <Chip key={p} label={PERMISSION_WORDS[p] ?? p} tone={p === 'network' ? 'aviso' : 'acento'} icon={p === 'network' ? 'Globe' : 'PenLine'} />) : <Chip label="Reads and selects only" icon="Eye" />}
+    {extension.permissions.length ? extension.permissions.map(p => <Chip key={p} {...permissionChip(p)} />) : <Chip label="Reads and selects only" icon="Eye" />}
   </View>;
 }
 
