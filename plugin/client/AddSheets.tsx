@@ -10,7 +10,9 @@ import { isDark, withAlpha } from './color';
 import { NATIVE, easeOut, useReducedMotion } from './motion';
 import { tokens } from './tokens';
 import { Button, IconButton, Txt, useUI } from './ui';
-import { attachDrop, fetchSvgUrl, focusFirstField, onEscapeKey, pickSvgFile, readSvgFile, WebSvg, isMacPlatform } from './web';
+import { attachDrop, fetchSvgUrl, focusFirstField, onEscapeKey, pickFiles, pickSvgFile, readSvgFile, WebSvg, isMacPlatform, type DroppedFile } from './web';
+import type { ImageFile } from './media-store';
+import { MEDIA_ACCEPT } from '../shared/media';
 import { describeLink, fetchLinkPreview, linkBlock, type LinkDescription, type LinkIntent } from './media';
 import { sheetShadow } from './Screen';
 import { sanitizeSvg } from '../shared/svg';
@@ -92,19 +94,20 @@ const KIND_LABEL: Record<string, string> = { page: 'Web page', image: 'Image', v
 const KIND_ICON: Record<string, string> = { page: 'AppWindow', image: 'Image', video: 'Film', audio: 'AudioLines', reference: 'Link' };
 const INTENT: Record<LinkIntent, { title: string; icon: string; subtitle: string; placeholder: string; empty: string; action: string; caption: string; captionHelp?: string }> = {
   page: { title: 'Window', icon: 'AppWindow', subtitle: 'A live web page inside the Lienzo. A video or sound link becomes a player.', placeholder: 'https://example.com', empty: 'Paste or drop a link to a page.', action: 'Add Window', caption: 'Title', captionHelp: 'Shown on the Window’s bar. Without one, the site’s name is used.' },
-  image: { title: 'Image', icon: 'Image', subtitle: 'A picture from a link. Press it on the canvas to see it full size.', placeholder: 'https://example.com/picture.png', empty: 'Paste or drop a link to a .png, .jpg, .webp or .svg.', action: 'Add image', caption: 'Caption' },
+  image: { title: 'Image', icon: 'Image', subtitle: 'A picture from this computer or from a link. Press it on the canvas to see it full size.', placeholder: 'https://example.com/picture.png', empty: 'Drop PNG, JPEG, WebP, GIF or SVG files here, or paste a link to one above.', action: 'Add image', caption: 'Caption' },
   video: { title: 'Video', icon: 'Video', subtitle: 'A YouTube or Vimeo link, or a video file. It never starts on its own.', placeholder: 'https://youtube.com/watch?v=…', empty: 'Paste or drop a YouTube or Vimeo link, or a link to an .mp4 or .webm.', action: 'Add video', caption: 'Caption' },
   audio: { title: 'Audio', icon: 'AudioLines', subtitle: 'A sound file from a link. It never starts on its own.', placeholder: 'https://example.com/episode.mp3', empty: 'Paste or drop a link to an .mp3, .m4a, .ogg or .wav.', action: 'Add audio', caption: 'Caption' },
 };
 export const linkSheetCopy = INTENT;
 
 /** What the link will become, drawn as it would look: the image itself, a video's thumbnail and title, a page's site. */
-function LinkPreview({ link, intent, title, thumbnail, imageState, onImage }: { link: LinkDescription; intent: LinkIntent; title: string | null; thumbnail?: string | null; imageState: 'loading' | 'ok' | 'failed'; onImage(state: 'ok' | 'failed'): void }) {
+function LinkPreview({ link, intent, title, thumbnail, imageState, onImage, onChoose, adding }: { link: LinkDescription; intent: LinkIntent; title: string | null; thumbnail?: string | null; imageState: 'loading' | 'ok' | 'failed'; onImage(state: 'ok' | 'failed'): void; onChoose?(): void; adding?: boolean }) {
   const u = useUI();
   const frame = { height: A.preview.height, borderRadius: A.preview.radius, overflow: 'hidden' as const, backgroundColor: u.c.surface0, borderWidth: 1, borderColor: u.c.border };
   if (link.status !== 'ok') return <View nativeID="lienzo-sheet-preview" style={[frame, { borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 24 }]}>
     <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: u.c.surface2 }}><Icon name={link.status === 'invalid' ? 'Unlink' : INTENT[intent].icon} size={18} color={u.c.foregroundMuted} /></View>
-    <Txt kind="small" muted style={{ textAlign: 'center', maxWidth: 340 }}>{link.status === 'invalid' ? link.message : INTENT[intent].empty}</Txt>
+    <Txt kind="small" muted style={{ textAlign: 'center', maxWidth: 340 }}>{adding ? 'Adding the images…' : link.status === 'invalid' ? link.message : INTENT[intent].empty}</Txt>
+    {onChoose && !adding && <Button label="Choose file…" icon="FolderOpen" small onPress={onChoose} />}
   </View>;
   const badge = <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 8, height: 22, borderRadius: 11, backgroundColor: withAlpha(u.c.surface1, .92), borderWidth: 1, borderColor: u.c.border }}>
     <Icon name={KIND_ICON[link.kind]} size={12} color={u.c.foreground} /><Txt kind="label" style={{ fontWeight: '600' }}>{link.provider ? `${link.provider} · Video` : KIND_LABEL[link.kind]}</Txt></View>;
@@ -134,9 +137,11 @@ function LinkPreview({ link, intent, title, thumbnail, imageState, onImage }: { 
 }
 
 export type LinkSheetProps = { intent: LinkIntent | null; onClose(): void; panel: { width: number; height: number }; disabled?: boolean;
+  /** Image files dropped on the sheet or chosen with "Choose file…" (image intent). Resolves true when they were added. */
+  onFiles?(files: ImageFile[]): Promise<boolean>;
   /** Adds the block. Resolves false when nothing was added (the sheet stays open). */
   onAdd(block: ReturnType<typeof linkBlock>): boolean | Promise<boolean> };
-export function LinkSheet({ intent, onClose, panel, disabled = false, onAdd }: LinkSheetProps) {
+export function LinkSheet({ intent, onClose, panel, disabled = false, onAdd, onFiles }: LinkSheetProps) {
   const u = useUI(), [raw, setRaw] = useState(''), [caption, setCaption] = useState(''), [title, setTitle] = useState<string | null>(null), [thumb, setThumb] = useState<string | null>(null), [image, setImage] = useState<'loading' | 'ok' | 'failed'>('loading'), [drop, setDrop] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const zone = useRef<View>(null), kind = intent ?? 'page', link = useMemo(() => describeLink(raw, kind), [raw, kind]), url = link.status === 'ok' ? link.url : '';
   useEffect(() => { setRaw(''); setCaption(''); setError(''); setBusy(false); }, [intent]);
@@ -146,7 +151,15 @@ export function LinkSheet({ intent, onClose, panel, disabled = false, onAdd }: L
     const timer = setTimeout(() => { void fetchLinkPreview(link.oembed!).then(found => { if (live) { setTitle(found.title); setThumb(found.thumbnail); } }); }, 250);
     return () => { live = false; clearTimeout(timer); };
   }, [url]);
-  useEffect(() => intent ? attachDrop(zone.current, { over: setDrop, text: text => setRaw(text.trim()) }) : undefined, [intent]);
+  const files = intent === 'image' && onFiles && u.layout.platform === 'web' ? onFiles : undefined, latestFiles = useRef(files); latestFiles.current = files;
+  const addFiles = async (list: ImageFile[]) => {
+    const take = latestFiles.current; if (!take || !list.length || disabled || busy) return;
+    setBusy(true); setError('');
+    try { if (await take(list)) onClose(); else setError('No image was added. See the notice on the canvas.'); }
+    catch { setError('The images were not added. Check the connection and try again.'); } finally { setBusy(false); }
+  };
+  const latestAdd = useRef(addFiles); latestAdd.current = addFiles;
+  useEffect(() => intent ? attachDrop(zone.current, { over: setDrop, text: text => setRaw(text.trim()), ...(intent === 'image' ? { file: (_file: DroppedFile, all: DroppedFile[]) => { void latestAdd.current(all); } } : {}) }) : undefined, [intent]);
   if (!intent) return null;
   const copy = INTENT[intent], ready = link.status === 'ok' && !disabled && !busy;
   const submit = async () => {
@@ -160,7 +173,7 @@ export function LinkSheet({ intent, onClose, panel, disabled = false, onAdd }: L
     footer={<Footer hint={`↵ ${copy.action} · Esc Close`} label={copy.action} disabled={!ready} busy={busy} onCancel={onClose} onSubmit={() => { void submit(); }} />}>
     <View ref={zone} style={{ gap: A.gap, borderRadius: 12, ...(drop ? { outlineWidth: 2, outlineStyle: 'dashed', outlineColor: u.c.accent, outlineOffset: 6 } as object : {}) }}>
       <LabelledField label="Link" icon="Link" nativeID="lienzo-sheet-url" value={raw} onChange={setRaw} placeholder={copy.placeholder} onSubmit={() => { void submit(); }} disabled={disabled} />
-      <LinkPreview link={link} intent={intent} title={title} thumbnail={thumb} imageState={image} onImage={setImage} />
+      <LinkPreview link={link} intent={intent} title={title} thumbnail={thumb} imageState={image} onImage={setImage} adding={busy && !!files} onChoose={files && !disabled ? () => { void pickFiles(MEDIA_ACCEPT).then(list => latestAdd.current(list)); } : undefined} />
       {warning ? <Notice tone="warning" nativeID="lienzo-sheet-warning">{warning}</Notice> : link.status === 'ok' && link.note ? <Notice tone="note" nativeID="lienzo-sheet-note">{link.note}</Notice> : null}
       <LabelledField label={copy.caption} optional nativeID="lienzo-sheet-caption" value={caption} onChange={setCaption} placeholder={intent === 'page' ? link.status === 'ok' ? link.host : 'The site’s name' : 'A line under it on the canvas'} helper={copy.captionHelp} onSubmit={() => { void submit(); }} disabled={disabled} />
       {!!error && <Notice tone="error">{error}</Notice>}

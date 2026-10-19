@@ -1303,7 +1303,21 @@ scene shows its last frame and waits for Next. Shown once per host (§11.3), and
 
 ### 35.4 Settings
 
-Only sections that exist: **Shortcuts** — search, "Reset all", groups (Tools, Navigation, Editing, Extensions) as two
+A fixed frame, like a preferences window: 880 × 640 (less on a small panel, 24 from the edges), the same size and
+place for every section, so switching never makes it jump (`screens.window`). The rail runs the full height on the left;
+each section's header (24 px serif title, one muted line, a hairline under it) stays at the top and the body scrolls
+beneath it. Compact panels keep the full-screen sheet with chips. Only sections that exist. **Appearance** (first, where Settings opens) — three cards side by side (stacked when the
+sheet is narrow): System, Light, Dark. Each draws a small Lienzo in its theme (paper, two cards, an accent link, a
+toolbar island); System is split down the middle, Papel left and Tinta right, and says what it follows ("Follows
+Paseo's theme." / "Follows your computer."). The chosen card has a 2 px accent border and a soft accent ring, and a
+filled radio; a keyboard-focused card shows the ring too. Under them one muted line: it changes at once, where it is
+saved, and the key chip of "Switch light and dark" (⌘⇧L). Tokens in `face.sheet.appearance`. ⌘K has "Theme: System",
+"Theme: Light" and "Theme: Dark"; the one in use says "In use". Light and Dark replace the host's theme with Papel or
+Tinta for every surface of the panel at once (every `UIProvider`, so modals and sheets too); System is the host's own
+theme, unchanged. In the desktop app the window's native theme follows as well (`nativeTheme.themeSource`), so the
+title area, the menus and the background behind the page match, from the first frame after a restart.
+
+**Shortcuts** — search, "Reset all", groups (Tools, Navigation, Editing, Extensions) as two
 columns of 40 rows: label on the left, key chips on the right. Pressing a chip records in place (it pulses "Press
 keys…", Escape cancels); keys another shortcut held move here and that row shows a small warning chip "Keys taken by
 …"; an edited row shows a reset icon. **Toolbar** — the pinned tools in order with their keys 1–9, move earlier or
@@ -1376,6 +1390,19 @@ same data goes to the server; editors only change how it is entered. Logic in `c
 holding the fields a type marks `advanced` until they hold a value other than the default; "Raw data (JSON)" last.
 Required fields carry `*` only while empty. A field's `help` is one muted line under its label. Fields a structured
 editor writes together with another (a tree's closed folders) do not show on their own.
+
+**Sections start collapsed.** Properties opens as its header (the kind, muted, and the title, e.g. "GLSL shader /
+Color plano") over a column of section rows: Style, Content, Bindings, Frame, Layout, Variables, Instructions for the agent,
+Connect, Actions, each a 12 px chevron (right when closed, turned down when open) and its name, muted when closed and
+in the foreground when open. A closed section may say what it holds on the right: the number of variables or links,
+"Written" for instructions, "2 bound" for bindings. What the person opens or closes is remembered by section name for the session, so the next
+selection shows the same ones open (`sectionMemory` in `property-model.ts`). A flow that asks for a section opens it
+for that selection only, without changing what is remembered: Edit text when the card cannot take it (Content, or
+Frame), Instructions for the agent from the menu, and a block whose data has a problem (a required field blank, data
+the server would refuse, Controls with no variable or an undeclared one, a flow with no events) opens on Content. The
+document's own panel ("This Lienzo") is its only section, so it starts open. Headers are buttons with
+`aria-expanded`; Tab moves between them and Enter or Space toggles (Tab, Enter and Space inside the panel are the
+page's, not the canvas shortcuts); a keyboard-focused header shows a 2 px inset accent ring.
 
 **Disclosures.** A 28 px row (44 on compact): a 12 px chevron, a small muted semibold label, the count on the right.
 Closed by default. They fold in place inside the section; nothing floats over the panel.
@@ -1626,3 +1653,25 @@ size, 0–360° for rotation, 20–100 % opacity, hue 200° → 0° (cool to war
   handles back. Moving the box still works.
 
 Tokens: `face.bindings` (icon, button, pill, popover, hint, hue).
+
+## 40. Images from the computer (October 2026)
+
+A picture can come from the computer three ways: dropped on the canvas, pasted (⌘V with an image on the clipboard,
+outside text fields), or from the Image sheet, whose preview area is also a drop zone with a "Choose file…" button.
+PNG, JPEG, WebP, GIF and SVG, up to 10 MB each (SVG up to 64 KB, through the static SVG sanitizer), up to 12 at once.
+The bytes decide the kind, never the name.
+
+**Dropping.** While files hover, a 2 px dashed accent outline (inset 12, radius 16) over a 6 % accent wash covers the
+panel, above every island, with one centred island: an accent image icon on a wash, "Drop to add the images here" and
+the formats and size in muted small text. One image lands centred on the drop point; several lie in rows of up to three
+from there (`media.upload`). They are selected afterwards, so Properties shows them. While they upload, a small island
+under the top bar says "Adding images…". A file that is not an image, or is too large, is refused in words in a toast;
+the others are still added.
+
+**Storage.** The host keeps the file beside the Lienzo data, named by its SHA-256 (`canvas/media/<sha256>.<ext>`: the
+desktop app's userData, the plugin's `~/.paseo/canvas`), and the block holds `lienzo-media:<sha256>.<ext>`. The same
+picture is stored once. The card reads it back once per session into a blob URL (a data URL if blob images are refused).
+A reference whose file is not on this computer (a document copied from elsewhere) draws a quiet placeholder: an
+image-off icon and "This image is not stored here…". A host that cannot store files gets the image inline as a data
+URL, up to 256 KB, with a warning toast that it was kept inside the Lienzo. Stored images have no "Open outside" button.
+

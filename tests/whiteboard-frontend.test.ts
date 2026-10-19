@@ -329,7 +329,7 @@ test('real Txt suppresses native text dragging only in passive cards and restore
     if (typeof tree.type === 'function') return mount(tree.type(tree.props));
     return tree;
   }
-  const modules: Record<string, any> = { react, 'react-native': { Text:'NativeText', Platform:{OS:'web',select:(value:any)=>value.default} }, './host': { capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true }, Modal:Object.assign(()=>null,{Content:()=>null}) }, './tokens':{tokens}, './color':{withAlpha:()=>''}, './web':{}, './motion':{useReducedMotion(){}} };
+  const modules: Record<string, any> = { react, 'react-native': { Text:'NativeText', Platform:{OS:'web',select:(value:any)=>value.default} }, './host': { capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true }, Modal:Object.assign(()=>null,{Content:()=>null}) }, './tokens':{tokens}, './color':{withAlpha:()=>''}, './web':{}, './motion':{useReducedMotion(){}}, './appearance':{useAppearance:()=>'system',themeFor:(_a:string,theme:unknown)=>theme} };
   function load(name: string) {
     const output = ts.transpileModule(readFileSync(`plugin/client/${name}`, 'utf8'), { compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true} }).outputText;
     const exports:any={};runInNewContext(output,{exports,require:(id:string)=>{assert.ok(id in modules,id);return modules[id];}});return exports;

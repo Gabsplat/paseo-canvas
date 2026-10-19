@@ -14,6 +14,7 @@ import { Modal, Button, CheckRow, Chip, Field, IconButton, Input, OptionRow, Txt
 import { WebFrame, WebMedia } from './web';
 import { mediaSource } from './media';
 import { ImageViewer } from './ImageViewer';
+import { useMediaUri } from './media-store';
 import { getClientRenderer } from './renderers';
 import { RegisteredRenderer } from './renderers/RegisteredRenderer';
 import { usePresentation } from './usePresentation';
@@ -79,20 +80,22 @@ function ChecklistAdd({ onAdd }: { onAdd(label: string): Promise<unknown> }) {
 }
 function Media({ block, fill = false, bare = false }: { block: CanvasBlock; fill?: boolean; bare?: boolean }) {
   const u = useUI(), toast = useToast(), source = mediaSource(block.data.url, block.data.mediaKind), [failed, setFailed] = useState(false), [playing, setPlaying] = useState(false), [expanded, setExpanded] = useState(false);
-  const url = source?.url;
+  const url = source?.url, local = !!source?.local, view = useMediaUri(url, local);
   React.useEffect(() => { setFailed(false); setPlaying(false); setExpanded(false); }, [url]);
   if (!source) return <Txt kind="small" style={{ color: u.c.statusDanger }}>Add a valid HTTP or HTTPS link in Properties.</Txt>;
   const { kind, embed, provider } = source, icon = tokens.media.kinds[kind], height = kind === 'image' ? tokens.media.image.height : tokens.media.video.height;
   const open = () => { void openExternalUrl(source.url).catch(e => toast.error(String(e))); };
   const frameStyle = { height: fill ? undefined : height, minHeight: fill ? height : undefined, flex: fill ? 1 : undefined, backgroundColor: bare ? u.c.surface0 : u.c.surface2, borderRadius: bare ? 0 : 6, overflow: 'hidden' as const };
   let player: React.ReactNode;
-  if (kind === 'image' && !failed) player = <Pressable nativeID={`lienzo-interactive-image-${block.id}`} accessibilityRole="button" accessibilityLabel={`Ampliar imagen: ${block.title}`} onPress={e => { e.stopPropagation(); setExpanded(true); }} style={frameStyle}><Image source={{ uri: source.url }} accessibilityLabel={str(block.data.caption) || block.title} onError={() => setFailed(true)} resizeMode="contain" style={{ width: '100%', height: '100%' }} /><View pointerEvents="none" style={{ position: 'absolute', right: 8, bottom: 8, width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: u.c.surface1, borderWidth: 1, borderColor: u.c.border }}><Icon name="Maximize" size={14} color={u.c.foreground} /></View></Pressable>;
+  // An image from the person's computer loads from the host; one added on another computer is not here.
+  if (local && view.state !== 'ready') player = <View nativeID={`lienzo-media-${view.state}-${block.id}`} style={[frameStyle, { alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 }]}><Icon name={view.state === 'loading' ? 'Image' : 'ImageOff'} size={20} color={u.c.foregroundMuted} /><Txt kind="small" muted style={{ textAlign: 'center' }}>{view.state === 'loading' ? 'Loading the image…' : 'This image is not stored here. It was added on another computer or its file was removed; add the file again.'}</Txt></View>;
+  else if (kind === 'image' && !failed) player = <Pressable nativeID={`lienzo-interactive-image-${block.id}`} accessibilityRole="button" accessibilityLabel={`Enlarge image: ${block.title}`} onPress={e => { e.stopPropagation(); setExpanded(true); }} style={frameStyle}><Image source={{ uri: view.uri ?? source.url }} accessibilityLabel={str(block.data.caption) || block.title} onError={() => local ? view.retry() : setFailed(true)} resizeMode="contain" style={{ width: '100%', height: '100%' }} /><View pointerEvents="none" style={{ position: 'absolute', right: 8, bottom: 8, width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: u.c.surface1, borderWidth: 1, borderColor: u.c.border }}><Icon name="Maximize" size={14} color={u.c.foreground} /></View></Pressable>;
   else if ((kind === 'video' || kind === 'audio') && u.layout.platform === 'web' && !failed) {
     player = embed ? playing ? <View style={frameStyle}><WebFrame bare={bare} url={embed} title={block.title || provider || 'Video'} border={u.c.border} surface={u.c.surface2} height={fill ? '100%' : height} player /></View> : <Pressable nativeID={`lienzo-interactive-video-${block.id}`} accessibilityRole="button" accessibilityLabel={`Load the ${provider} video`} onPress={e => { e.stopPropagation(); setPlaying(true); }} style={[frameStyle, { alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: u.c.border }]}><Icon name="Film" size={24} color={u.c.foregroundMuted} /><Txt kind="bodyStrong">{provider}</Txt><Txt kind="small" muted>Load player</Txt></Pressable>
       : <View nativeID={`lienzo-interactive-media-${block.id}`} style={kind === 'audio' ? { height: tokens.media.audio.height } : frameStyle}><WebMedia url={source.url} title={block.title || kind} kind={kind} height={fill ? '100%' : height} surface={u.c.surface2} onError={() => setFailed(true)} /></View>;
   } else player = <View style={{ gap: 6 }}><View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}><Icon name={icon} size={20} color={u.tone('turquesa')} /><Txt kind="bodyStrong" style={{ flex: 1 }}>{new URL(source.url).hostname}</Txt></View><Txt kind="code" muted selectable numberOfLines={1}>{source.url}</Txt><Txt kind="small" muted>{failed ? 'The resource could not be loaded. You can open the original link.' : kind === 'reference' ? 'External reference.' : 'Play this resource in the browser.'}</Txt></View>;
-  if (bare) return <View style={{ flexGrow: fill ? 1 : undefined }}>{player}{!!block.data.caption && <Txt kind="small" muted style={{ paddingHorizontal: 10, paddingVertical: 6 }}>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
-  return <View style={{ gap: 8, flexGrow: fill ? 1 : undefined }}>{player}{embed && playing && <Button label="Close player" small variant="ghost" onPress={() => setPlaying(false)} />}<Button label="Open reference" small variant="ghost" icon="ExternalLink" onPress={open} />{!!block.data.caption && <Txt kind="small" muted>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
+  if (bare) return <View style={{ flexGrow: fill ? 1 : undefined }}>{player}{!!block.data.caption && <Txt kind="small" muted style={{ paddingHorizontal: 10, paddingVertical: 6 }}>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={view.uri ?? source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
+  return <View style={{ gap: 8, flexGrow: fill ? 1 : undefined }}>{player}{embed && playing && <Button label="Close player" small variant="ghost" onPress={() => setPlaying(false)} />}{!local && <Button label="Open reference" small variant="ghost" icon="ExternalLink" onPress={open} />}{!!block.data.caption && <Txt kind="small" muted>{str(block.data.caption)}</Txt>}{kind === 'image' && expanded && <ImageViewer url={view.uri ?? source.url} title={block.title} open={expanded} close={() => setExpanded(false)} />}</View>;
 }
 // "Edit text on the canvas" (Enter, F2, Properties) asks the card itself to open its title for typing.
 const titleEditRequests = new Set<(id: string) => boolean>();
@@ -146,7 +149,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   if (!outline && type && WINDOW_RENDERERS.includes(renderer ?? '')) {
     // A web page, a video or a mini app is shown as what it is: a window. A slim bar to hold it by, its name, its own
     // buttons, and the content edge to edge. No card around it and no label saying what kind of block it is.
-    const link = renderer === 'preview-frame' ? safeUrl(block.data.url) : renderer === 'image-ref' ? mediaSource(block.data.url, block.data.mediaKind)?.url : undefined;
+    const link = renderer === 'preview-frame' ? safeUrl(block.data.url) : renderer === 'image-ref' ? (source => source?.local ? undefined : source?.url)(mediaSource(block.data.url, block.data.mediaKind)) : undefined;
     const name = block.title || (link ? new URL(link).hostname : type.name);
     const content = renderer === 'preview-frame' ? <UrlPreview block={block} fill={sized} bare /> : renderer === 'image-ref' ? <Media block={block} fill={sized} bare /> : body;
     return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ opacity, height: sized ? height : undefined }}>

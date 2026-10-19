@@ -34,6 +34,8 @@ export type { CanvasTool } from './whiteboard-tools';
 export type { Camera } from './logic';
 /** What the panel can ask of the canvas: camera moves, and "the next change is a keystroke, do not animate it". */
 export type CanvasApi = { fit(): void; zoomToSelection(): void; flyToIds(ids: string[]): void; zoomStep(direction: 1 | -1): void; zoomTo(scale: number): void; instant(): void; setTool(tool: CanvasTool): void; getTool(): CanvasTool; cancelGesture(): void; viewportCenter(): Point; insertSvg(svg: string, options?: SvgInsertOptions): Promise<boolean>; beginInteraction(id?: string): void; endInteraction(): void; editSelection(): void; editLinkLabel(): void; interactionId(): string | null; cycleLens(): void;
+  /** The canvas point under a page point (a file let go there), or null when it is outside the canvas. */
+  worldAt(page: Point): Point | null;
   /** Zoom and the world rectangle on screen, for extensions; null before the canvas has a size. */
   camera(): { scale: number; bounds: { x: number; y: number; width: number; height: number } } | null;
   /** Frames these entities clear of the floating panel; false when none of them is on the canvas. A gesture interrupts it. */
@@ -291,6 +293,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const cancelAll = () => { wbRef.current.cancel(); dragEnd(0, 0, true); resizeEnd(true); clearLinkGesture(); setInteractionMode(null); };
   const beginInteraction = (id?: string) => { const target = id ?? latest.current.c.selection[0]; if (!target) return; const block = latest.current.doc.blocks.find(b => b.id === target); if (!block) return; const renderer = latest.current.c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer; if (isWhiteboardRenderer(renderer)) wbRef.current.edit(target); else if (needsContentInteraction(renderer)) setInteractionMode(target); else requestTitleEdit(target); };
   useImperativeHandle(api, () => ({ flyToIds: ids => fit(ids), frameIds, centerOn: point => { userCamera.current?.(); goTo(point, true); },
+    worldAt: page => { const origin = vp.current, size = latest.current.size; if (!origin || page.x < origin.x || page.y < origin.y || page.x > origin.x + size.width || page.y > origin.y + size.height) return null; return toWorld(page, origin); },
     camera: () => { const { size } = latest.current, k = cam.current; return size.width && size.height ? { scale: k.scale, bounds: { x: -k.offset.x / k.scale, y: -k.offset.y / k.scale, width: size.width / k.scale, height: size.height / k.scale } } : null; }, cycleLens: () => setLens(current => LENSES[(LENSES.indexOf(current) + 1) % LENSES.length]), fit: () => fit(), zoomToSelection: () => fit(latest.current.c.selection), zoomStep, zoomTo: scale => zoomTo(scale), instant: () => { instantUntil.current = Date.now() + 600; }, setTool: next => { cancelAll(); chooseTool(next); }, getTool: () => toolRef.current, cancelGesture: cancelAll, viewportCenter: center, insertSvg: (svg, options) => {
     if (options?.atPage) { const point = options.atPage, origin = vp.current ?? { x: 0, y: 0 }, size = latest.current.size;
       if (point.x < origin.x || point.y < origin.y || point.x > origin.x + size.width || point.y > origin.y + size.height) return Promise.resolve(false);

@@ -13,6 +13,9 @@ import { tokens } from '../plugin/client/tokens';
 import { canvasPreferences, interfacePreferences } from '../plugin/shared/preferences';
 import * as shortcuts from '../plugin/client/shortcuts';
 import * as palette from '../plugin/client/palette';
+import * as propertyModel from '../plugin/client/property-model';
+import * as mediaStore from '../plugin/client/media-store';
+import * as sharedMedia from '../plugin/shared/media';
 import * as wiki from '../plugin/shared/wiki';
 import { builtinTypes } from '../plugin/shared/builtins';
 import { createInputSchema, blockTypeSchema, type CanvasDocument } from '../plugin/shared/model';
@@ -38,7 +41,7 @@ function runtime(controller: any) {
     react, 'react-native': native,
     './host': { ...host, useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }), AgentSheet: null, capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
     './useCanvas': { useCanvas: () => controller }, './tokens': { tokens }, './logic': logic,
-    '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {} }, './motion': {},
+    '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {}, attachFileDrop: () => () => {}, attachFilePaste: () => () => {} }, './motion': {},
     './panel-actions': panelActions, '../shared/learning': learning, '../shared/extensions': { extensionView: () => null },
     './DocumentActions': { DocumentActions: control('DocumentActions') },
     './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') }, './PropertyEditors': { BlockContent: control('BlockContent'), VariablesEditor: control('VariablesEditor') }, './Bindings': { BindingsEditor: control('BindingsEditor') },
@@ -58,6 +61,8 @@ function runtime(controller: any) {
     './ExtensionsScreen': { ExtensionsContent: control('ExtensionsContent') }, './WikiScreen': { WikiContent: control('WikiContent') }, '../shared/wiki': wiki, './SettingsScreen': { SettingsContent: control('SettingsContent'), settingsRail: () => [] },
     './Eggs': { EmptyMate: control('EmptyMate'), Kettle: control('Kettle'), LoadingEgg: control('LoadingEgg'), MateDrawing: control('MateDrawing') },
     './shortcuts': shortcuts, './palette': palette,
+    './appearance': { APPEARANCES: [], adoptAppearance() {}, chooseAppearance() {}, getAppearance: () => 'system', useAppearance: () => 'system', themeFor: (_appearance: string, theme: unknown) => theme },
+    './property-model': propertyModel, './media-store': mediaStore, '../shared/media': sharedMedia,
     './Comments': { CommentLayer: control('CommentLayer'), CommentsList: control('CommentsList'), useComments: () => ({ threads: [], placing: false, open: null, listOpen: false, pins: true, openCount: 0, resolvedCount: 0, setPlacing() {}, setOpen() {}, setListOpen() {}, setPins() {} }) },
   };
   const load = (name: string) => {

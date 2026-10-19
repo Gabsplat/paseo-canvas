@@ -1,5 +1,6 @@
 import { runtimeJsonSchema, runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
 import { defineRpc } from "./contract";
+import { MEDIA_LIMITS } from "./media";
 import { commentAnchorSchema, commentTextSchema, commentsViewSchema, COMMENT_LIMITS } from "./comments";
 import { z } from "zod";
 import {
@@ -37,6 +38,9 @@ export const configureInjection = defineRpc({ name: "canvas.injection", input: z
 export const readSharing = defineRpc({ name: "canvas.sharing.read", input: scopeSchema, output: z.object({ mode: sharingModeSchema }) });
 export const configureSharing = defineRpc({ name: "canvas.sharing", input: scopeSchema.extend({ mode: sharingModeSchema }), output: readSharing.output });
 export const readInjection = defineRpc({ name: "canvas.injection.read", input: z.object({}).strict(), output: configureInjection.output });
+// Images from the person's computer (shared/media.ts): stored by content hash beside the Lienzo data, read back as base64.
+export const putMedia = defineRpc({ name: "canvas.media.put", input: scopeSchema.extend({ data: z.string().max(Math.ceil(MEDIA_LIMITS.bytes * 4 / 3) + 4), name: z.string().max(300).optional() }), output: z.object({ url: z.string(), mime: z.string(), bytes: z.number().int().nonnegative(), existed: z.boolean() }) });
+export const readMedia = defineRpc({ name: "canvas.media.read", input: scopeSchema.extend({ url: z.string().max(200) }), output: z.object({ mime: z.string(), data: z.string(), bytes: z.number().int().nonnegative() }) });
 
 export const runtimeReadInputSchema = readInputSchema.extend({ blockIds: z.array(idSchema).max(4).default([]), scopeIds: z.array(z.union([idSchema, z.literal('$document')])).max(4).default([]) });
 export const runtimeSetInputSchema = readInputSchema.extend({

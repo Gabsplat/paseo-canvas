@@ -21,6 +21,7 @@ import { linkTone } from './Links';
 import { HiddenResult } from './HiddenResult';
 import { withAlpha } from './color';
 import { PanelSection } from './RightPanel';
+import { attentionSection, sectionMemory, sectionScope } from './property-model';
 
 const toneNames = { neutro: 'Neutral', acento: 'Accent', violeta: 'Violet', turquesa: 'Teal', aviso: 'Amber', peligro: 'Red' } as const;
 const MARCO = 'Frame — holds things together on the canvas.';
@@ -88,6 +89,9 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
   const group = entity && 'groupIds' in entity ? entity : undefined, block = entity && 'typeId' in entity ? entity : undefined;
   const type = c.catalog?.blockTypes.find(t => t.id === block?.typeId), slot = typeSlot(type), link = linkId ? doc.links.find(l => l.id === linkId) : undefined;
   useEffect(() => { setQuery(''); setInstructionTarget(undefined); }, [c.selection.join('|'), linkId]);
+  // Sections start collapsed; a block with a problem in its data opens Content, for this selection only.
+  const attention = attentionSection(type, block, doc), scope = sectionScope(c.selection, linkId);
+  useEffect(() => { if (attention) sectionMemory.force(attention, scope); }, [attention, scope]);
   const apply = async (operations: CanvasOperation[], label: string) => { if (disabled || !operations.length) return; return c.edit(operations, label); };
   const patchEntity = (patch: object, label: string) => entity ? apply([{ type: group ? 'group.update' : 'block.update', id: entity.id, patch } as CanvasOperation], label) : Promise.resolve(undefined);
   const updateLink = (patch: Partial<CanvasLink>, label: string) => link ? apply([{ type: 'link.update', id: link.id, patch }], label) : Promise.resolve(undefined);
@@ -122,6 +126,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
   // Titles come from what is shown: a result still hidden behind a learning gate is never named here.
   const shown = presentation?.document ?? doc, shownTitle = (id: string) => [...shown.blocks, ...shown.groups].find(e => e.id === id)?.title || 'Untitled';
   const heading = link ? `${shownTitle(link.from)} → ${shownTitle(link.to)}` : selected.length > 1 ? `${selected.length} selected` : entity ? shownTitle(entity.id) : 'Untitled';
+  const links = entity ? doc.links.filter(l => l.from === entity.id || l.to === entity.id).length : 0;
   const kindName = link ? 'Link' : selected.length > 1 ? 'Selection' : group ? 'Frame' : type?.name ?? 'Block';
   const head = <View style={{ paddingHorizontal: tokens.face.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>{kindName}</Txt><Txt kind="bodyStrong" numberOfLines={2}>{heading}</Txt></View>;
 
@@ -160,7 +165,7 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
   return <View nativeID="lienzo-properties">{head}
     {style && <PanelSection title="Style">{style}</PanelSection>}
     {block && !isWhiteboardSelection(c, selected) && <PanelSection title="Content">{fields}</PanelSection>}
-    {block && type && <PanelSection title="Bindings" defaultOpen={!!block.bindings}><BindingsEditor key={block.id} controller={c} block={block} type={type} disabled={disabled} rect={rects().get(block.id)} /></PanelSection>}
+    {block && type && <PanelSection title="Bindings" summary={block.bindings && Object.keys(block.bindings).length ? `${Object.keys(block.bindings).length} bound` : undefined}><BindingsEditor key={block.id} controller={c} block={block} type={type} disabled={disabled} rect={rects().get(block.id)} /></PanelSection>}
     {group && <PanelSection title="Frame">
       <Field key={group.id + ':title'} label="Title" value={group.title} disabled={disabled} onSave={title => patchEntity({ title }, 'Edit title')} />
       <Field key={group.id + ':purpose'} label="Purpose" value={group.description} multiline disabled={disabled} helper="One sentence: what this Frame is for." onSave={description => patchEntity({ description }, 'Edit Frame purpose')} />
@@ -171,14 +176,14 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
       {layoutMode === 'graph' && <Segments value={layout?.direction ?? 'down'} options={[{ value: 'down', label: 'Downwards' }, { value: 'right', label: 'To the right' }]} disabled={disabled} onChange={direction => saveLayout({ ...layout, mode: 'graph', direction })} />}
       {layoutMode === 'grid' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Txt>Columns</Txt><IconButton icon="Minus" label="Fewer columns" disabled={disabled || (layout?.columns ?? 2) <= 1} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) - 1 })} /><Txt>{layout?.columns ?? 2}</Txt><IconButton icon="Plus" label="More columns" disabled={disabled || (layout?.columns ?? 2) >= 4} onPress={() => saveLayout({ ...layout, mode: 'grid', columns: (layout?.columns ?? 2) + 1 })} /></View>}
     </PanelSection>}
-    {group && <PanelSection title="Variables" defaultOpen={!!group.variables?.length}><VariablesEditor controller={c} scopeId={group.id} disabled={disabled} /></PanelSection>}
-    {entity && <PanelSection title="Instructions for the agent" defaultOpen={focus === 'instruction' || hasCommunication(entity.communication)}>
+    {group && <PanelSection title="Variables" summary={group.variables?.length ? String(group.variables.length) : undefined}><VariablesEditor controller={c} scopeId={group.id} disabled={disabled} /></PanelSection>}
+    {entity && <PanelSection title="Instructions for the agent" summary={hasCommunication(entity.communication) ? 'Written' : undefined}>
       <Field key={'instruction:' + (target ?? doc.id)} label={target === entity.id ? 'How the agent should talk about this' : target ? `Frame “${targetEntity?.title}”` : 'The whole Lienzo'} value={communication?.instructions ?? ''} multiline inputStyle={{ minHeight: 72, maxHeight: 192 }} disabled={disabled} placeholder="For example: explain it to a beginner, step by step." onSave={instructions => saveCommunication({ instructions })} />
       {levels.length > 0 && <><Txt kind="small" muted>Also applies:</Txt>{levels.map(level => <Button key={level.id} label={level.id === doc.id ? 'The whole Lienzo' : 'Frame “' + level.title + '”'} icon="Compass" variant="ghost" small onPress={() => setInstructionTarget(level.id === doc.id ? null : level.id)} />)}</>}
       {target !== entity.id && <Button label="Back to this one" small variant="ghost" onPress={() => setInstructionTarget(undefined)} />}
       {hasCommunication(communication) && <Button label="Clear" icon="Eraser" variant="ghost" small disabled={disabled} onPress={() => { void saveCommunication({ instructions: '', intent: '', audience: '' }).then(next => { if (next) undoNotice('Instructions cleared'); }); }} />}
     </PanelSection>}
-    {entity && <PanelSection title="Connect" defaultOpen={false}>
+    {entity && <PanelSection title="Connect" summary={links ? String(links) : undefined}>
       <TextInput accessibilityLabel="Find something to connect to" placeholder="Search by title" placeholderTextColor={u.c.foregroundMuted} value={query} onChangeText={setQuery} onSubmitEditing={() => { if (candidates[0]) connectTo(candidates[0].id); }} style={[u.font('body'), { minHeight: u.compact ? 44 : 32, paddingHorizontal: 10, backgroundColor: u.c.surface2, borderRadius: 6, borderWidth: 1, borderColor: u.c.border }]} />
       {candidates.slice(0, 6).map(candidate => <Pressable key={candidate.id} accessibilityRole="menuitem" accessibilityLabel={'Connect to ' + (candidate.title || 'Untitled')} disabled={disabled} accessibilityState={{ disabled }} onPress={() => connectTo(candidate.id)} style={{ minHeight: 40, flexDirection: 'row', gap: 8, alignItems: 'center', opacity: disabled ? .45 : 1 }}><Icon name={'groupIds' in candidate ? 'SquareDashed' : 'CircleDot'} size={16} color={u.c.foregroundMuted} /><View style={{ flex: 1 }}><Txt numberOfLines={1}>{candidate.title || 'Untitled'}</Txt><Txt kind="small" muted numberOfLines={1}>{doc.groups.find(parent => parent.id === candidate.parentGroupId)?.title ?? 'The whole Lienzo'}</Txt></View></Pressable>)}
       {!candidates.length && <Txt kind="small" muted>{query.trim() ? `Nothing matches “${query}”.` : 'Nothing else to connect to.'}</Txt>}{candidates.length > 6 && <Txt kind="small" muted>{candidates.length - 6} more. Type to narrow.</Txt>}

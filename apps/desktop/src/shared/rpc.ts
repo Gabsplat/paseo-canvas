@@ -25,6 +25,8 @@ export const desktopStatus = defineRpc({
   }),
 });
 export const openExternal = defineRpc({ name: 'desktop.open-external', input: z.object({ url: z.string().url().max(4000) }).strict(), output: z.object({ opened: z.boolean() }) });
+/** Light, Dark or System (Settings → Appearance): the window's own background and title area follow it too. */
+export const setAppearance = defineRpc({ name: 'desktop.appearance', input: z.object({ appearance: z.enum(['system', 'light', 'dark']) }).strict(), output: z.object({ applied: z.boolean() }) });
 export const writeClipboard = defineRpc({ name: 'desktop.clipboard.write', input: z.object({ text: z.string().max(1024 * 1024) }).strict(), output: z.object({ written: z.boolean() }) });
 
 /** Settings documents, the same shape Paseo uses for plugin settings. */

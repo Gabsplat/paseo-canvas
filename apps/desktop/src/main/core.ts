@@ -2,7 +2,8 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCanvasCore, type CanvasCore } from '../../../../plugin/server/core';
 import type { CanvasStore } from '../../../../plugin/server/store';
-import { DEFAULT_MCP_PORT, DESKTOP_WORKSPACE, desktopStatus, openExternal, settingsRpc, updateSettings, writeClipboard, type InvokeResult } from '../shared/rpc';
+import { DEFAULT_MCP_PORT, DESKTOP_WORKSPACE, desktopStatus, openExternal, setAppearance, settingsRpc, updateSettings, writeClipboard, type InvokeResult } from '../shared/rpc';
+import { interfacePreferences } from '../../../../plugin/shared/preferences';
 import { DesktopHost } from './host';
 import { McpHttpServer } from './mcp-http';
 
@@ -17,12 +18,14 @@ export interface DesktopOptions {
   /** Explicit MCP port. Otherwise LIENZO_MCP_PORT, then desktop.json `mcpPort`, then the default. */
   mcpPort?: number;
   /** What the shell can do for the renderer: Electron opens links and writes the clipboard; the preview cannot. */
-  shell?: { openExternal(url: string): Promise<boolean>; writeClipboard(text: string): Promise<boolean> };
+  shell?: { openExternal(url: string): Promise<boolean>; writeClipboard(text: string): Promise<boolean>; setAppearance?(appearance: 'system' | 'light' | 'dark'): void };
 }
 export interface Desktop {
   readonly host: DesktopHost;
   /** "Automatically check for updates"; on unless turned off, and on when the settings cannot be read. */
   autoCheckUpdates(): Promise<boolean>;
+  /** Settings → Appearance as saved, so the window opens in it: System when it cannot be read. */
+  appearance(): Promise<'system' | 'light' | 'dark'>;
   readonly core: CanvasCore;
   readonly mcp: McpHttpServer;
   settle(name: unknown, input: unknown): Promise<InvokeResult>;
@@ -78,6 +81,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   }
   host.registerSettings(updateSettings);
   host.handle(openExternal, async ({ url }) => ({ opened: /^https?:\/\//i.test(url) && !!options.shell && await options.shell.openExternal(url) }));
+  host.handle(setAppearance, ({ appearance }) => { if (!options.shell?.setAppearance) return { applied: false }; options.shell.setAppearance(appearance); return { applied: true }; });
   host.handle(writeClipboard, async ({ text }) => ({ written: !!options.shell && await options.shell.writeClipboard(text) }));
   host.handle(desktopStatus, () => ({ version: options.version, dataDirectory: options.dataDirectory, mcp: { url: mcp.url, port: mcp.port, listening: mcp.listening, error: mcpError, clients: mcp.clients() } }));
   return {
@@ -85,6 +89,11 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
     async autoCheckUpdates() {
       const result = await host.invoke(settingsRpc(updateSettings.id).read.name, {}) as { status: string; values?: { autoCheck?: boolean } };
       return result.status !== 'ready' || result.values?.autoCheck !== false;
+    },
+    async appearance() {
+      const result = await host.invoke(settingsRpc(interfacePreferences.id).read.name, {}).catch(() => null) as { status: string; values?: { appearance?: unknown } } | null;
+      const value = result?.status === 'ready' ? result.values?.appearance : undefined;
+      return value === 'light' || value === 'dark' ? value : 'system';
     },
     settle: (name, input) => host.settle(name, input),
     async close() { await mcp.close(); await core.stop(); await core.store.close(); },

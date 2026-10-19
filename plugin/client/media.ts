@@ -1,7 +1,9 @@
 import { safeUrl } from './logic';
 import { tokens } from './tokens';
+import { isLocalImage } from '../shared/media';
 
-export type MediaSource = { kind: 'image' | 'video' | 'audio' | 'reference'; url: string; embed?: string; provider?: 'YouTube' | 'Vimeo' };
+/** `local`: an image from the person's computer, kept by the host or inline (shared/media.ts), not a web link. */
+export type MediaSource = { kind: 'image' | 'video' | 'audio' | 'reference'; url: string; embed?: string; provider?: 'YouTube' | 'Vimeo'; local?: boolean };
 const videoId = /^[\w-]{11}$/;
 const seconds = (value: string | null): number => {
   if (!value) return 0;
@@ -9,8 +11,16 @@ const seconds = (value: string | null): number => {
   const match = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(value);
   return match ? Math.min(604800, Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)) : 0;
 };
+// Checking an inline image decodes it, so the answer is kept for the few seen this session.
+const checked = new Map<string, boolean>();
+function localImage(raw: string): boolean {
+  let ok = checked.get(raw);
+  if (ok === undefined) { ok = isLocalImage(raw); if (checked.size > 64) checked.clear(); checked.set(raw, ok); }
+  return ok;
+}
 /** Provider URLs are rebuilt from their IDs. Query strings cannot enable autoplay or load another origin. */
 export function mediaSource(raw: unknown, requested: unknown = 'reference'): MediaSource | null {
+  if (typeof raw === 'string' && /^(lienzo-media|data):/.test(raw)) return localImage(raw) ? { kind: 'image', url: raw, local: true } : null;
   const url = safeUrl(raw); if (!url) return null;
   const parsed = new URL(url), host = parsed.hostname.toLowerCase(), path = parsed.pathname.split('/').filter(Boolean);
   const youtube = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(host);
@@ -68,7 +78,7 @@ export function normaliseLink(raw: string): string | null {
 export function describeLink(raw: string, intent: LinkIntent): LinkDescription {
   if (!raw.trim()) return { status: 'empty' };
   const url = normaliseLink(raw);
-  if (!url) return { status: 'invalid', message: /^\s*(data|file|javascript|blob):/i.test(raw) ? 'Only web links (https://…) can be added. Files on this computer are not supported here yet.' : 'That is not a web link. Paste one that starts with https://.' };
+  if (!url) return { status: 'invalid', message: /^\s*(data|file|javascript|blob):/i.test(raw) ? intent === 'image' ? 'Only web links (https://…) go in this field. For a picture on this computer, drop the file here or press Choose file….' : 'Only web links (https://…) can be added. To add a picture from this computer, use Image and drop the file.' : 'That is not a web link. Paste one that starts with https://.' };
   const parsed = new URL(url), host = parsed.hostname.replace(/^www\./, ''), file = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() ?? '');
   const source = mediaSource(url, intent === 'page' ? 'reference' : intent)!;
   const name = file && /\.[a-z0-9]{2,5}$/i.test(file) ? file : host;

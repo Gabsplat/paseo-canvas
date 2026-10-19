@@ -10,15 +10,18 @@ import type { CanvasController } from './useCanvas';
 import { withAlpha } from './color';
 import { NATIVE, reducedMotion } from './motion';
 import { Button, IconButton, Txt, useUI } from './ui';
-import { captureKeys } from './web';
+import { captureKeys, useKeyboardFocus } from './web';
 import { Card, ScreenBody, ScreenHeader, SearchField, SectionLabel, Stagger, useScreenRoot, type RailItem } from './Screen';
 import { eventCombo, SHORTCUT_GROUPS, type ResolvedShortcut, type ShortcutDef } from './shortcuts';
 import { moveItem, recordShortcut, resetShortcut } from './screens';
 import { ExtensionsContent } from './ExtensionsScreen';
 import { tokens } from './tokens';
+import { APPEARANCES, LIENZO_THEMES, type Appearance } from './appearance';
+import type { HostTheme } from './host';
 
-export type SettingsSection = 'shortcuts' | 'toolbar' | 'copilot' | 'agents' | 'extensions' | 'about';
+export type SettingsSection = 'appearance' | 'shortcuts' | 'toolbar' | 'copilot' | 'agents' | 'extensions' | 'about';
 export const settingsRail = (): RailItem[] => [
+  { id: 'appearance', label: 'Appearance', icon: 'SunMoon' },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'Keyboard' },
   { id: 'toolbar', label: 'Toolbar', icon: 'PanelBottom' },
   ...(capabilities.runsAgents ? [{ id: 'copilot', label: 'Copilot', icon: 'Sparkles' }] : [{ id: 'agents', label: 'Agents', icon: 'Plug' }]),
@@ -91,6 +94,50 @@ function ShortcutsSection({ list, defs, overrides, chips, save, width }: { list:
   </View>;
 }
 
+/** A small Lienzo in one theme: the paper, a toolbar island, two cards and a link in the accent. */
+function ThemeSketch({ theme, width, height }: { theme: HostTheme; width: number; height: number }) {
+  const c = theme.colors, card = { position: 'absolute' as const, height: height * .26, borderRadius: 4, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, padding: 5, gap: 3 };
+  const line = (w: number | `${number}%`, color = c.foregroundMuted) => <View style={{ width: w, height: 3, borderRadius: 2, backgroundColor: color }} />;
+  return <View style={{ width, height, backgroundColor: c.surface0, overflow: 'hidden' }}>
+    <View style={[card, { left: width * .1, top: height * .2, width: width * .36 }]}>{line('70%', c.foreground)}{line('50%')}</View>
+    <View style={[card, { left: width * .56, top: height * .44, width: width * .34 }]}>{line('60%', c.foreground)}{line('80%')}</View>
+    <View style={{ position: 'absolute', left: width * .46, top: height * .33, width: width * .1, height: 1.5, backgroundColor: c.accent, transform: [{ rotate: '24deg' }] }} />
+    <View style={{ position: 'absolute', left: width * .3, right: width * .3, bottom: height * .08, height: height * .14, borderRadius: 5, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+      <View style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: c.accent }} />{line(10)}{line(10)}
+    </View>
+  </View>;
+}
+
+function AppearanceSection({ value, onChange, width, shortcut }: { value: Appearance; onChange(next: Appearance): void; width: number; shortcut?: string }) {
+  const u = useUI(), A = tokens.face.sheet.appearance, keyboardFocus = useKeyboardFocus(u.layout.platform === 'web'), [focused, setFocused] = useState<Appearance | null>(null);
+  const three = width >= A.cardMin * 3 + A.gap * 2, cardWidth = three ? Math.min(A.cardMax, (width - A.gap * 2) / 3) : Math.min(A.cardMax, width), sketch = { width: cardWidth - 2, height: Math.round((cardWidth - 2) * A.sketchRatio) };
+  const follows = capabilities.kind === 'paseo' ? 'Follows Paseo’s theme.' : 'Follows your computer.';
+  return <View nativeID="lienzo-settings-appearance" style={{ gap: 18 }}>
+    <View accessibilityRole="radiogroup" accessibilityLabel="Appearance" style={{ flexDirection: three ? 'row' : 'column', gap: A.gap }}>
+      {APPEARANCES.map(option => { const on = option.id === value, ring = on || keyboardFocus && focused === option.id;
+        return <Pressable key={option.id} nativeID={`lienzo-appearance-${option.id}`} accessibilityRole="radio" accessibilityLabel={`${option.label}. ${option.id === 'system' ? follows : option.detail}`} accessibilityState={{ checked: on }} aria-checked={on}
+          onPress={() => onChange(option.id)} onFocus={() => setFocused(option.id)} onBlur={() => setFocused(f => f === option.id ? null : f)}
+          style={({ pressed, ...state }) => ({ width: cardWidth, borderRadius: A.radius, borderWidth: on ? 2 : 1, borderColor: ring ? u.c.accent : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .3) : u.c.border, padding: on ? 0 : 1, backgroundColor: u.c.surface1, opacity: pressed ? .9 : 1, ...(on ? { boxShadow: `0 0 0 3px ${withAlpha(u.c.accent, .16)}` } : {}) } as never)}>
+          <View style={{ borderTopLeftRadius: A.radius - 2, borderTopRightRadius: A.radius - 2, overflow: 'hidden', borderBottomWidth: 1, borderColor: u.c.border, flexDirection: 'row' }}>
+            {option.id === 'system' ? <>
+              <View style={{ width: sketch.width / 2, overflow: 'hidden' }}><ThemeSketch theme={LIENZO_THEMES.light} {...sketch} /></View>
+              <View style={{ width: sketch.width / 2, overflow: 'hidden' }}><View style={{ marginLeft: -sketch.width / 2 }}><ThemeSketch theme={LIENZO_THEMES.dark} {...sketch} /></View></View>
+            </> : <ThemeSketch theme={LIENZO_THEMES[option.id]} {...sketch} />}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 }}>
+            <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: on ? u.c.accent : withAlpha(u.c.foregroundMuted, tokens.alpha.glyphRing), alignItems: 'center', justifyContent: 'center' }}>{on && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: u.c.accent }} />}</View>
+            <View style={{ flex: 1, minWidth: 0 }}><Txt kind="bodyStrong" numberOfLines={1}>{option.label}</Txt><Txt kind="small" muted numberOfLines={2}>{option.id === 'system' ? follows : option.detail}</Txt></View>
+            <Icon name={option.icon} size={16} color={on ? u.c.accent : u.c.foregroundMuted} />
+          </View>
+        </Pressable>; })}
+    </View>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+      <Txt kind="small" muted>Changes at once, everywhere in Lienzo. Saved {capabilities.keptFor}.</Txt>
+      {!!shortcut && u.layout.platform === 'web' && <><View style={{ minWidth: 22, height: tokens.face.sheet.keyChip, paddingHorizontal: 6, borderRadius: 5, borderWidth: 1, borderBottomWidth: 2, borderColor: u.c.border, backgroundColor: u.c.surface1, alignItems: 'center', justifyContent: 'center' }}><Txt kind="keys" muted>{shortcut}</Txt></View><Txt kind="small" muted>switches between light and dark.</Txt></>}
+    </View>
+  </View>;
+}
+
 export type PinnedRow = { id: string; name: string; icon: string; description?: string };
 function ToolbarSection({ pinned, save }: { pinned: readonly PinnedRow[]; save(ids: string[]): void }) {
   const u = useUI(), ids = pinned.map(p => p.id);
@@ -154,16 +201,17 @@ function AboutSection({ c }: { c: CanvasController }) {
   </View>;
 }
 
-export function SettingsContent({ section, c, width, list, defs, overrides, chips, saveShortcuts, pinned, savePinned, onGuide }: {
-  section: SettingsSection; c: CanvasController; width: number; list: readonly ResolvedShortcut[]; defs: readonly ShortcutDef[]; overrides: Record<string, string>; chips(combo: string): string[];
+export function SettingsContent({ section, c, width, list, defs, overrides, chips, saveShortcuts, pinned, savePinned, onGuide, appearance, onAppearance, themeKey }: {
+  section: SettingsSection; c: CanvasController; appearance: Appearance; onAppearance(next: Appearance): void; themeKey?: string; width: number; list: readonly ResolvedShortcut[]; defs: readonly ShortcutDef[]; overrides: Record<string, string>; chips(combo: string): string[];
   saveShortcuts(next: Record<string, string>): void; pinned: readonly PinnedRow[]; savePinned(ids: string[]): void; onGuide(): void;
 }) {
   const u = useUI(), root = useScreenRoot(), inner = width - (u.compact ? 32 : 64);
-  const head = { shortcuts: ['Shortcuts', 'Every key Lienzo answers to, yours and your extensions’.'], toolbar: ['Toolbar', 'What sits at the end of the bottom toolbar.'], copilot: ['Copilot', 'How your agent draws while it works.'],
+  const head = { appearance: ['Appearance', 'Light, dark, or the same as around Lienzo.'], shortcuts: ['Shortcuts', 'Every key Lienzo answers to, yours and your extensions’.'], toolbar: ['Toolbar', 'What sits at the end of the bottom toolbar.'], copilot: ['Copilot', 'How your agent draws while it works.'],
     agents: ['Agents', 'Connect the agents you work with over MCP.'], extensions: ['Extensions', 'Small tools for the + catalog and the Properties panel.'], about: ['About', AboutUpdates ? 'Version, updates, and where your Lienzos are kept.' : 'Version, and where your Lienzos are kept.'] }[section];
   return <View nativeID={`lienzo-settings-${section}-screen`} style={root}>
-    <ScreenHeader title={head[0]} subtitle={head[1]} />
-    <ScreenBody>
+    <ScreenHeader title={head[0]} subtitle={head[1]} pinned />
+    <ScreenBody pinned>
+      {section === 'appearance' && <AppearanceSection value={appearance} onChange={onAppearance} width={inner} shortcut={themeKey} />}
       {section === 'shortcuts' && <ShortcutsSection list={list} defs={defs} overrides={overrides} chips={chips} save={saveShortcuts} width={inner} />}
       {section === 'toolbar' && <ToolbarSection pinned={pinned} save={savePinned} />}
       {section === 'copilot' && <CopilotSection onGuide={onGuide} />}

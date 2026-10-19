@@ -6,6 +6,7 @@ import {
   type CanvasBlock, type CanvasGroup, type CanvasLink, type GroupTemplate, type BlockType,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
+import { isLocalImage } from "../shared/media";
 import { bindableFor } from "../shared/bindings";
 import { resolveScope } from "../shared/learning";
 
@@ -30,11 +31,13 @@ export function validateBlockData(block: CanvasBlock, type: BlockType): void {
     if (!parsed.success) throw new CanvasError('VALIDATION', parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '));
   } else schema?.parse(block.data);
   if (type.renderer === "checklist") checklistDataSchema.parse(block.data);
-  if (["preview-frame", "image-ref"].includes(type.renderer ?? "") && block.data.url !== undefined && block.data.url !== "") {
+  // Media may also hold an image from the person's computer: a stored reference or a small inline image (shared/media.ts).
+  const localImage = type.renderer === "image-ref" && isLocalImage(block.data.url);
+  if (["preview-frame", "image-ref"].includes(type.renderer ?? "") && block.data.url !== undefined && block.data.url !== "" && !localImage) {
     try {
       const url = new URL(String(block.data.url));
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
-    } catch { throw new CanvasError("VALIDATION", "Preview/media URLs must be HTTP or HTTPS without credentials."); }
+    } catch { throw new CanvasError("VALIDATION", type.renderer === "image-ref" ? "Media URLs must be HTTP or HTTPS without credentials, or an image stored by Lienzo." : "Preview/media URLs must be HTTP or HTTPS without credentials."); }
   }
   for (const property of type.properties) {
     const value = block.data[property.key];

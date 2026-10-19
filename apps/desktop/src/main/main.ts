@@ -12,11 +12,13 @@ let desktop: Desktop | null = null;
 let window: BrowserWindow | null = null;
 let quitting = false;
 let updates: UpdateController | null = null;
+/** Papel and Tinta's background, shown before the page paints and behind the title area. */
+const windowBackground = () => nativeTheme.shouldUseDarkColors ? '#141311' : '#F4F1EA';
 
 function createWindow() {
   window = new BrowserWindow({
     width: 1280, height: 820, minWidth: 560, minHeight: 420, title: 'Lienzo', show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141311' : '#F4F1EA',
+    backgroundColor: windowBackground(),
     // On macOS there is no title bar: the traffic lights float over the panel's top row, which keeps clear of them.
     ...(isMac ? { titleBarStyle: 'hidden' as const, trafficLightPosition: TRAFFIC_LIGHTS } : {}),
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true },
@@ -59,6 +61,8 @@ async function start() {
       shell: {
         openExternal: async url => { if (!safeExternal(url)) return false; await shell.openExternal(url); return true; },
         writeClipboard: async text => { clipboard.writeText(text); return true; },
+        // Settings → Appearance: the page switches itself; the native parts (title area, menus, background) follow here.
+        setAppearance: appearance => { nativeTheme.themeSource = appearance; window?.setBackgroundColor(windowBackground()); },
       },
     });
   } catch (error) {
@@ -83,6 +87,8 @@ async function start() {
     if (!window || event.sender !== window.webContents) return { ok: false, message: 'FORBIDDEN: Unknown caller.' };
     return desktop!.settle(name, input);
   });
+  nativeTheme.themeSource = await desktop.appearance();
+  nativeTheme.on('updated', () => window?.setBackgroundColor(windowBackground()));
   buildMenu();
   createWindow();
 }

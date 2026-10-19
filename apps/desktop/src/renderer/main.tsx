@@ -3,16 +3,22 @@ import { createRoot } from 'react-dom/client';
 import { useWindowDimensions, View } from 'react-native';
 import { LienzoPanel } from '../../../../plugin/client/Panel';
 import { tokens } from '../../../../plugin/client/tokens';
-import type { HostTheme, WindowInset } from '../../../../plugin/client/host/contract';
-import { DESKTOP_WORKSPACE } from '../shared/rpc';
+import { LIENZO_THEMES, resolveDark, subscribeAppearance, getAppearance, themeFor, useAppearance } from '../../../../plugin/client/appearance';
+import type { WindowInset } from '../../../../plugin/client/host/contract';
+import { DESKTOP_WORKSPACE, setAppearance } from '../shared/rpc';
 import { ConnectAgentBody, ConnectAgentSheet } from './ConnectAgent';
-import { ThemeContext, ToastProvider, provideAboutUpdates, provideAgentSettings, provideAgentSheet, useWindowInset } from './host';
+import { ThemeContext, ToastProvider, call, provideAboutUpdates, provideAgentSettings, provideAgentSheet, useWindowInset } from './host';
 import { UIProvider } from '../../../../plugin/client/ui';
 import { AboutUpdatesCard, UpdatePill } from './Updates';
 
 provideAgentSheet(ConnectAgentSheet);
 provideAgentSettings(ConnectAgentBody);
 provideAboutUpdates(AboutUpdatesCard);
+
+// Settings → Appearance also sets the window's native theme, so the title area and the background behind the page match.
+let told: string | null = null;
+const tellShell = () => { const appearance = getAppearance(); if (appearance === told) return; told = appearance; void call(setAppearance, { appearance }).catch(() => { told = null; }); };
+subscribeAppearance(tellShell);
 
 /** Light or dark, following the operating system and switching with it. */
 function useDarkMode() {
@@ -21,12 +27,6 @@ function useDarkMode() {
   useEffect(() => { const change = () => setDark(query.matches); query.addEventListener('change', change); return () => query.removeEventListener('change', change); }, [query]);
   return dark;
 }
-/** Lienzo's own Papel and Tinta themes, as the host theme Paseo would hand the panel. */
-function themeFor(dark: boolean): HostTheme {
-  const palette = tokens.contributedThemes[dark ? 'lienzo-tinta' : 'lienzo-papel'].colors, status = tokens.mockOnly[dark ? 'dark' : 'light'];
-  return { colors: { surface0: palette.background, surface1: palette.raised, surface2: palette.control, border: palette.border, foreground: palette.foreground, foregroundMuted: palette.mutedForeground, accent: palette.accent, accentForeground: status.onAccent, statusSuccess: status.success, statusWarning: status.warning, statusDanger: status.danger } };
-}
-
 /**
  * With no title bar, the window moves by its top edge: a strip above the top islands and the traffic lights' corner,
  * neither covering a control. macOS zooms on a double-click there, as on a title bar.
@@ -40,13 +40,14 @@ function WindowDrag({ inset }: { inset: WindowInset }) {
 }
 
 function App() {
-  const dark = useDarkMode(), theme = useMemo(() => themeFor(dark), [dark]), { width } = useWindowDimensions();
-  const inset = useWindowInset(), host = useMemo(() => ({ id: 'desktop', label: 'Lienzo' }), []), layout = useMemo(() => ({ compact: width < 600, platform: 'web' as const, inset }), [width < 600, inset]);
+  // The host theme is Papel or Tinta by the operating system; Light or Dark in Settings replaces it (appearance.ts).
+  const systemDark = useDarkMode(), appearance = useAppearance(), dark = resolveDark(appearance, systemDark), host = LIENZO_THEMES[systemDark ? 'dark' : 'light'], theme = themeFor(appearance, host), { width } = useWindowDimensions();
+  const inset = useWindowInset(), shell = useMemo(() => ({ id: 'desktop', label: 'Lienzo' }), []), layout = useMemo(() => ({ compact: width < 600, platform: 'web' as const, inset }), [width < 600, inset]);
   useEffect(() => { document.documentElement.style.colorScheme = dark ? 'dark' : 'light'; document.body.style.backgroundColor = theme.colors.surface0; }, [dark, theme]);
   return <ThemeContext.Provider value={theme.colors}><ToastProvider>
     <View style={{ flex: 1, backgroundColor: theme.colors.surface0 }}>
-      <LienzoPanel workspaceId={DESKTOP_WORKSPACE} host={host} theme={theme} layout={layout} />
-      <UIProvider theme={theme} host={host} layout={layout}><UpdatePill /></UIProvider>
+      <LienzoPanel workspaceId={DESKTOP_WORKSPACE} host={shell} theme={host} layout={layout} />
+      <UIProvider theme={host} host={shell} layout={layout}><UpdatePill /></UIProvider>
       {inset && <WindowDrag inset={inset} />}
     </View>
   </ToastProvider></ThemeContext.Provider>;

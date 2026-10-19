@@ -7,6 +7,7 @@ import { tokens } from './tokens';
 import { downloadJson, useKeyboardFocus } from './web';
 import { usePressScale, useReducedMotion } from './motion';
 import { useContentSelectionAllowed } from './interaction';
+import { themeFor, useAppearance } from './appearance';
 const errorMessages = {
   REVISION_CONFLICT: 'The Lienzo changed. Try the change again on the current version.',
   NOT_FOUND: 'That is no longer available. Open the Lienzo again.',
@@ -36,7 +37,12 @@ export function friendlyError(error: unknown): string {
 type Font = keyof typeof tokens.font.style;
 const Context = createContext<HostProps | null>(null);
 const noInset: WindowInset = { left: 0, top: 0 };
-export function UIProvider({ children, ...props }: HostProps & { children: React.ReactNode }) { useReducedMotion(); return <Context.Provider value={props}>{children}</Context.Provider>; }
+/** Every surface reads its colours here: the host's theme, or Papel/Tinta when the person chose Light or Dark (appearance.ts). */
+export function UIProvider({ children, ...props }: HostProps & { children: React.ReactNode }) {
+  useReducedMotion(); const appearance = useAppearance(), theme = themeFor(appearance, props.theme);
+  const value = useMemo(() => ({ ...props, theme }), [theme, props.layout, props.host]);
+  return <Context.Provider value={value}>{children}</Context.Provider>;
+}
 export function useHostId(): string | undefined { return useContext(Context)?.host.id; }
 export function useUI() {
   const props = useContext(Context); if (!props) throw new Error('Lienzo UI context unavailable');
