@@ -476,6 +476,13 @@ the mode from any canvas tool response, one Sheet per new explanation and revisi
 topic. The longer drawing guide (`drawingGuide`) is returned by `canvas_list` as `guide` instead of
 living in every system prompt.
 
+While the copilot is on, the server paces the agent instead of only asking it to (`plugin/server/pacing.ts`):
+a `canvas_apply` or `canvas_create` that adds more than 6 blocks is rejected with a `VALIDATION` error that
+says to send the next stage only, and nothing is applied. A `canvas_apply` result carries `variety` when a
+Sheet it touched holds 5 or more blocks and all are cards (`node`, `note`, `wb-text`), suggesting a drawing,
+shapes, animated-flow, controls, a mini app or a checklist for the next stage. With the copilot off, a drawing
+the person asked for is not paced.
+
 State is per agent, in `state.json` under `copilot[agentId]`; state files written before it load with
 every agent off. Fields: `enabled` (default false), `cadence` (`thinking` after reasoning or each tool
 use, `step` after each step worth showing — default, `task` once at the end of a task, `custom` with
