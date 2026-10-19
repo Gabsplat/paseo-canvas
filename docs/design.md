@@ -1395,9 +1395,9 @@ editor writes together with another (a tree's closed folders) do not show on the
 Color plano") over a column of section rows: Style, Content, Bindings, Frame, Layout, Variables, Instructions for the agent,
 Connect, Actions, each a 12 px chevron (right when closed, turned down when open) and its name, muted when closed and
 in the foreground when open. A closed section may say what it holds on the right: the number of variables or links,
-"Written" for instructions, "2 bound" for bindings. What the person opens or closes is remembered by section name for the session, so the next
-selection shows the same ones open (`sectionMemory` in `property-model.ts`). A flow that asks for a section opens it
-for that selection only, without changing what is remembered: Edit text when the card cannot take it (Content, or
+"Written" for instructions, "2 bound" for bindings. What the person opens stays open only while that selection does: every new selection, and
+coming back to an earlier one, starts collapsed (`sectionMemory` in `property-model.ts`). A flow that asks for a section
+opens it for that selection too: Edit text when the card cannot take it (Content, or
 Frame), Instructions for the agent from the menu, and a block whose data has a problem (a required field blank, data
 the server would refuse, Controls with no variable or an undeclared one, a flow with no events) opens on Content. The
 document's own panel ("This Lienzo") is its only section, so it starts open. Headers are buttons with

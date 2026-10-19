@@ -46,20 +46,20 @@ const issueText = (issue: { path: PropertyKey[]; message: string }) => {
 // ---- Sections ------------------------------------------------------------------------------------------------------
 
 /**
- * Which Properties sections are open (RightPanel PanelSection). Every section starts collapsed under the header that
- * names the kind and the title; what the person opens or closes is remembered by section title for the session, so a
- * new selection keeps the same ones open. A flow that asks for one section (Edit text, a data problem, instructions
- * from the menu) opens it for the selection it was asked for (`scope`), without changing what is remembered.
+ * Which Properties sections are open (RightPanel PanelSection). Every selection starts with its sections collapsed
+ * under the header that names the kind and the title; what the person opens stays open only while that selection does.
+ * A flow that asks for one section (Edit text, a data problem, instructions from the menu) opens it the same way.
  */
 export function createSectionMemory() {
   const chosen = new Map<string, boolean>(), forced = new Map<string, string>(), listeners = new Set<() => void>();
   let version = 0;
   const emit = () => { version++; listeners.forEach(listener => listener()); };
-  const isOpen = (title: string, defaultOpen = false, scope = '') => forced.get(title) === scope || (chosen.get(title) ?? defaultOpen);
+  const key = (title: string, scope: string) => `${scope}\u0000${title}`;
+  const isOpen = (title: string, defaultOpen = false, scope = '') => forced.get(title) === scope || (chosen.get(key(title, scope)) ?? defaultOpen);
   return {
     isOpen,
-    /** The person pressed the header: closing a forced section closes it, and both are remembered. */
-    toggle(title: string, defaultOpen = false, scope = '') { const open = isOpen(title, defaultOpen, scope); forced.delete(title); chosen.set(title, !open); emit(); },
+    /** The person pressed the header: kept for this selection only (another selection forgets it). */
+    toggle(title: string, defaultOpen = false, scope = '') { const open = isOpen(title, defaultOpen, scope); forced.delete(title); chosen.clear(); chosen.set(key(title, scope), !open); emit(); },
     /** Opens a section for one selection only. */
     force(title: string, scope: string) { if (forced.get(title) === scope) return; forced.set(title, scope); emit(); },
     reset() { chosen.clear(); forced.clear(); emit(); },
