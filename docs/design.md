@@ -1178,7 +1178,10 @@ under the top islands, its height to above the zoom. It shows when something is 
 options, or when an extension tool is open, with a tab per source: Properties (the selection), "<Tool> options", and
 one tab per extension tool; picking a drawing tool brings its tab forward. The pin keeps it open with nothing
 selected, showing the Lienzo (description, instructions for the agent, layout, Variables); ⌘\ and the `PanelRight` button hide
-it or bring it back. Sections fold under 12 px headers. A block shows Content (title, the fields that matter, More
+it or bring it back. It opens by itself only when it fits beside the canvas: panel 300 + both insets + `rightPanel.minCanvas`
+680, so 1004 wide (`panelFits`). Narrower (chat and Lienzo side by side) it would cover what was just pressed, a mini app
+or a control, so a selection, pinned or not, leaves it closed; it opens when asked: `PanelRight`, ⌘\, "Properties" in the
+selection bar, a Frame's or a card's Properties, the resize corner, or an edit that needs it. Sections fold under 12 px headers. A block shows Content (title, the fields that matter, More
 options and Raw data (JSON), §36),
 Style for drawings, Instructions for the agent (with those it inherits), Connect (search a target) and Actions (edit
 on the canvas, interact, reset, duplicate, export, release position, take out of the Frame, move
@@ -1282,7 +1285,7 @@ outlines (Sheets in the accent), cards as filled marks in their tones, drawings 
 between centres; a single small card is not blown up. Under it the serif title (two lines), "Edited 3 h ago · 24
 blocks · 3 Sheets", and the agent working on it (dot and name; the accent while it works). The open Lienzo has an
 accent ring. Search filters as you type (accents and case ignored, every word); sort is Recent · Name. Hovering a
-card shows ⋯: Rename (in place), Duplicate, Delete… (a confirmation inside the card). Choosing a card opens it and
+card shows ⋯: Rename (in place), Duplicate, Delete… (a popover from the ⋯ button, `popover.width.small` wide, elevation `popover`: the danger-washed trash, “Delete “title” and its history? This cannot be undone.”, Cancel (focused) and Delete in red; Escape or a press outside cancels and that press opens nothing; the card and the grid never move). The ⋯ menu closes the same way. Choosing a card opens it and
 closes the sheet. Empty: the mate, "No Lienzos yet." and "Start one, or ask your agent to draw something." There are
 no examples; a stored document marked as an example keeps an "Example" chip by its meta line.
 

@@ -26,6 +26,7 @@ import type { RecentIcon } from './icon-library';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
 import { type linkBlock } from './media';
+import { panelFits } from './panel-actions';
 import { LinkSheet, SvgSheet } from './AddSheets';
 import { isWhiteboardRenderer, learnerLayerIds, strokeLayers, type WbRenderer, type WbDrawData, type WbShape } from '../shared/whiteboard';
 import { Toolbar, GLOSSARY, shapeIcon, type ToolId, type PinnedTool } from './Toolbar';
@@ -427,11 +428,14 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   if (toolOptions && styleNode) tabs.push({ id: 'tool', label: toolName + ' options', icon: tool === 'draw' ? 'Pencil' : tool === 'text' ? 'Type' : tool === 'eraser' ? 'Eraser' : 'Shapes', content: <View nativeID="lienzo-tool-options" style={{ padding: F.rightPanel.padding }}>{styleNode}</View> });
   for (const id of extTools) { const extension = extensionTools.find(e => e.id === id); if (extension && doc) tabs.push({ id: 'ext:' + id, label: extension.name, icon: extensionIcon(extension), help: () => openHelp(pageForSelection({ kind: 'extension', id: extension.id })), scroll: false, content: <ExtensionTool key={id} extension={extension} controller={c} onOpen={id => { void c.select([id]); }} onClose={() => setExtTools(open => open.filter(x => x !== extension.id))} height={Math.min(440, Math.max(240, panelHeight - F.top.height - 2 * tokens.island.inset - F.rightPanel.bottomClearance - F.rightPanel.tabs - 20))} /> }); }
   if (!tabs.length && (panel.pinned || panel.forced) && documentProperties) tabs.push({ id: 'properties', label: 'Lienzo', icon: 'Frame', content: documentProperties });
-  const panelVisible = !!doc && !immersive && !panel.hidden && tabs.length > 0 && (u.compact ? panel.forced : true);
+  // A selection opens Properties by itself only when it fits beside the canvas; on a narrow or compact panel it would
+  // cover what was just pressed (a mini app, a control), so there it opens when asked, pinned or not.
+  const roomy = panelFits(width, u.compact);
+  const panelVisible = !!doc && !immersive && !panel.hidden && tabs.length > 0 && (roomy ? true : panel.forced);
   const activeTab = tabs.some(t => t.id === panel.tab) ? panel.tab : tabs[0]?.id ?? 'properties';
   // ⌘\ hides what is showing; it brings the panel back for the selection or the tool, or for the Lienzo when there is neither.
   const sources = hasSelection || (toolOptions && !!styleNode) || extTools.length > 0;
-  const togglePanel = () => setPanel(p => panelVisible ? { ...p, hidden: true, forced: false } : { ...p, hidden: false, forced: !sources });
+  const togglePanel = () => setPanel(p => panelVisible ? { ...p, hidden: true, forced: false } : { ...p, hidden: false, forced: !sources || !roomy });
   // ---- ⌘K: everything the panel can do, in one list.
   const paletteItems = (query: string): PaletteItem[] => {
     const items: PaletteItem[] = [
@@ -581,7 +585,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const colour = selectedWhiteboard.length && !linkId ? { kind: 'whiteboard' as const, value: displayedStyle.color, set: (color: ToolStyle['color']) => changeStyle({ color }) } : undefined;
   const link = linkId ? doc?.links.find(l => l.id === linkId) : undefined;
   const linkColour = link ? { kind: 'link' as const, link, set: (tone: typeof link.tone) => { if (tone) void c.edit([{ type: 'link.update', id: link.id, patch: { tone } }], 'Change link colour'); else if (link.tone) { const { tone: _tone, ...rest } = link; void c.edit([{ type: 'link.delete', id: link.id }, { type: 'link.create', link: rest }], 'Clear link colour'); } } } : undefined;
-  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} keyLabel={keyLabel} onProperties={u.compact ? () => showPanel() : undefined} /> : undefined;
+  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} keyLabel={keyLabel} onProperties={!roomy ? () => showPanel() : undefined} /> : undefined;
   const title = doc ? rename ? <Field key={doc.id} hideLabel label="Lienzo title" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
     if (!value.trim() || value.trim().length > 300) throw new Error('Write a title of up to 300 characters.');
     await c.settle(); if (c.current.current?.document.id !== doc.id) return;

@@ -2,7 +2,7 @@
  * Lienzos, the home of the app (docs/redesign-2026-10.md, "Lienzos"): every Lienzo as a card with a live thumbnail of
  * its real layout, searchable and sortable. Choosing one opens it and closes the sheet.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Icon, TextInput, capabilities, useAgent } from './host';
 import type { CanvasDocument } from '../shared/model';
@@ -15,10 +15,14 @@ import { MateDrawing } from './Eggs';
 import { Card, ScreenBody, ScreenEmpty, ScreenHeader, SearchField, Stagger, useScreenRoot } from './Screen';
 import { filterLienzos, lienzoMeta, thumbnailModel, type LienzoSort, type LienzoSummary } from './screens';
 import { tokens } from './tokens';
+import { islandStyle } from './whiteboard-visuals';
+import { attachConfirm, attachZoomMenu } from './web';
 
 const S = tokens.face.screens;
 /** Documents read for thumbnails, by host scope and id, kept while the revision is the same. */
 const thumbCache = new Map<string, { revision: number; document: CanvasDocument }>();
+/** When a card's menu or confirmation last closed by a press outside it: that press does not also open a Lienzo. */
+let dismissedAt = 0;
 
 /** Reads the listed Lienzos one at a time for their thumbnails; the open one comes from the controller. */
 function useThumbnailDocuments(c: CanvasController, list: readonly LienzoSummary[], enabled: boolean) {
@@ -69,10 +73,13 @@ function AgentTag({ agentId }: { agentId: string }) {
 }
 
 type Mode = 'idle' | 'menu' | 'rename' | 'delete';
-function LienzoCard({ summary, document, c, open, current, width, index, onOpen }: { summary: LienzoSummary; document?: CanvasDocument; c: CanvasController; open: boolean; current: boolean; width: number; index: number; onOpen(): void }) {
+function LienzoCard({ summary, document, c, open, current, width, index, firstColumn, onOpen }: { summary: LienzoSummary; document?: CanvasDocument; c: CanvasController; open: boolean; current: boolean; width: number; index: number; firstColumn: boolean; onOpen(): void }) {
   const u = useUI(), [hover, setHover] = useState(false), [mode, setMode] = useState<Mode>('idle'), [draft, setDraft] = useState(summary.title), [error, setError] = useState('');
   const busy = c.busy || c.offline, thumbWidth = Math.max(0, width - 2), thumbHeight = u.compact ? 104 : S.thumb.height;
+  const trigger = useRef<View>(null), floating = useRef<View>(null), dismiss = () => { dismissedAt = Date.now(); setMode('idle'); };
   useEffect(() => { if (mode === 'rename') setDraft(summary.title); setError(''); }, [mode]);
+  // The menu and the delete confirmation float from the ⋯ button: a press outside or Escape closes them, nothing moves.
+  useEffect(() => { if (mode === 'menu') return attachZoomMenu(floating.current, trigger.current, dismiss); if (mode === 'delete') return attachConfirm(floating.current, trigger.current, dismiss); }, [mode]);
   const rename = async () => {
     const title = draft.trim(); if (!title || title.length > 300) { setError('Write a title of up to 300 characters.'); return; }
     if (title === summary.title) { setMode('idle'); return; }
@@ -89,11 +96,13 @@ function LienzoCard({ summary, document, c, open, current, width, index, onOpen 
     catch (e) { c.fail(e); }
   };
   const remove = async () => { setMode('idle'); await c.remove(summary.id); };
-  const actions = hover || mode !== 'idle' || u.compact;
-  return <Stagger index={index} style={{ width, zIndex: mode === 'menu' ? 10 : 0 }}>
+  const actions = hover || mode !== 'idle' || u.compact, P = tokens.popover, confirmWidth = Math.min(P.width.small, Math.max(width, 200));
+  // Beside the ⋯ button; a first-column card narrower than the popover lines it up with its own left edge instead.
+  const anchor = { ...(u.compact ? { bottom: 54 } : { top: 46 }), ...(firstColumn && width - 8 < confirmWidth ? { left: 0 } : { right: u.compact ? 6 : 8 }) };
+  return <Stagger index={index} style={{ width, zIndex: mode === 'menu' || mode === 'delete' ? 10 : 0 }}>
     <View onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}>
     {/* The actions sit beside the card, not inside its pressable, so pressing them never opens the Lienzo. */}
-    <Card nativeID={`lienzo-card-${summary.id}`} label={`Open ${summary.title}`} selected={open} padding={0} onPress={mode === 'idle' ? onOpen : undefined}>
+    <Card nativeID={`lienzo-card-${summary.id}`} label={`Open ${summary.title}`} selected={open} padding={0} onPress={mode === 'idle' ? () => { if (Date.now() - dismissedAt > 400) onOpen(); } : undefined}>
       <View style={{ height: thumbHeight, borderTopLeftRadius: S.card.radius - 1, borderTopRightRadius: S.card.radius - 1, backgroundColor: withAlpha(u.c.foreground, .025), borderBottomWidth: 1, borderColor: u.c.border, overflow: 'hidden' }}>
         <Thumbnail document={document} c={c} width={thumbWidth} height={thumbHeight} />
       </View>
@@ -105,19 +114,22 @@ function LienzoCard({ summary, document, c, open, current, width, index, onOpen 
         </View> : <Txt kind="title" numberOfLines={2}>{summary.title}</Txt>}
         <View style={{ flexDirection: u.compact ? 'column' : 'row', alignItems: u.compact ? 'flex-start' : 'center', gap: u.compact ? 4 : 6, paddingRight: u.compact ? 36 : 0 }}><Txt kind="small" muted numberOfLines={u.compact ? 2 : 1} style={{ flexShrink: 1 }}>{lienzoMeta(summary)}</Txt>{summary.example && <Chip label="Example" tone="aviso" />}</View>
         {!!summary.agentId && <AgentTag agentId={summary.agentId} />}
-        {mode === 'delete' && <View nativeID={`lienzo-delete-${summary.id}`} style={{ marginTop: 6, gap: 8, padding: 10, borderRadius: 8, backgroundColor: u.wash('riesgo') }}>
-          <Txt kind="small">Delete “{summary.title}” and its history? This cannot be undone.</Txt>
-          <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}><Button label="Cancel" small variant="ghost" onPress={() => setMode('idle')} /><Button label="Delete" small variant="danger" disabled={busy} onPress={() => { void remove(); }} /></View>
-        </View>}
       </View>
     </Card>
-      {actions && mode !== 'rename' && <View style={{ position: 'absolute', borderRadius: 8, borderColor: u.c.border, ...(u.compact ? { bottom: 6, right: 6, borderWidth: 0, backgroundColor: 'transparent' } : { top: 8, right: 8, borderWidth: 1, backgroundColor: u.c.surface1 }) }}>
-        <IconButton icon="Ellipsis" label={`More for ${summary.title}`} active={mode === 'menu'} onPress={() => setMode(m => m === 'menu' ? 'idle' : 'menu')} />
+      {actions && mode !== 'rename' && <View ref={trigger} style={{ position: 'absolute', borderRadius: 8, borderColor: u.c.border, ...(u.compact ? { bottom: 6, right: 6, borderWidth: 0, backgroundColor: 'transparent' } : { top: 8, right: 8, borderWidth: 1, backgroundColor: u.c.surface1 }) }}>
+        <IconButton icon="Ellipsis" label={`More for ${summary.title}`} active={mode === 'menu' || mode === 'delete'} onPress={() => setMode(m => m === 'idle' ? 'menu' : 'idle')} />
       </View>}
-      {mode === 'menu' && <View nativeID={`lienzo-card-menu-${summary.id}`} accessibilityRole="menu" style={{ position: 'absolute', ...(u.compact ? { bottom: 54, right: 6 } : { top: 46, right: 8 }), width: 168, padding: 4, borderRadius: 10, borderWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1, zIndex: 5, boxShadow: `0 12px 28px ${withAlpha('#000000', .18)}` } as object}>
+      {mode === 'menu' && <View ref={floating} nativeID={`lienzo-card-menu-${summary.id}`} accessibilityRole="menu" style={{ position: 'absolute', ...(u.compact ? { bottom: 54, right: 6 } : { top: 46, right: 8 }), width: 168, padding: 4, borderRadius: 10, borderWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1, zIndex: 5, boxShadow: `0 12px 28px ${withAlpha('#000000', .18)}` } as object}>
         {([['Rename', 'Pencil', () => setMode('rename')], ['Duplicate', 'CopyPlus', () => { void duplicate(); }], ['Delete…', 'Trash2', () => setMode('delete')]] as const).map(([label, icon, run]) =>
           <Pressable key={label} accessibilityRole="menuitem" accessibilityLabel={label} disabled={busy} onPress={e => { e.stopPropagation(); run(); }} style={({ pressed, ...state }) => ({ minHeight: 32, paddingHorizontal: 10, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 10, opacity: busy ? .45 : 1, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>
             <Icon name={icon} size={14} color={label === 'Delete…' ? u.c.statusDanger : u.c.foregroundMuted} /><Txt style={{ color: label === 'Delete…' ? u.c.statusDanger : u.c.foreground }}>{label}</Txt></Pressable>)}
+      </View>}
+      {mode === 'delete' && <View ref={floating} nativeID={`lienzo-delete-${summary.id}`} accessibilityRole="alert" style={[islandStyle(u, true), { position: 'absolute', ...anchor, width: confirmWidth, padding: P.padding, gap: P.gap, zIndex: 5 }]}>
+        <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+          <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: u.wash('riesgo') }}><Icon name="Trash2" size={14} color={u.c.statusDanger} /></View>
+          <Txt kind="small" style={{ flex: 1, paddingTop: 4 }}>Delete <Txt kind="small" style={{ fontWeight: '600' }}>“{summary.title}”</Txt> and its history? This cannot be undone.</Txt>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}><Button label="Cancel" small variant="ghost" onPress={() => setMode('idle')} /><Button label="Delete" small variant="danger" disabled={busy} onPress={() => { void remove(); }} /></View>
       </View>}
     </View>
   </Stagger>;
@@ -147,7 +159,7 @@ export function LienzosScreen({ c, width, onOpen, onNew, open }: { c: CanvasCont
       {!has && loading && <Txt muted>Loading Lienzos…</Txt>}
       {has && !list.length && <ScreenEmpty title={`Nothing matches “${query.trim()}”.`} detail="Try another word, or clear the search."><Button label="Clear the search" variant="ghost" onPress={() => setQuery('')} /></ScreenEmpty>}
       {!!list.length && <View onLayout={e => setGrid(Math.floor(e.nativeEvent.layout.width))} style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
-        {list.map((d, i) => <LienzoCard key={d.id} index={i} summary={d} document={documentOf(d.id)} c={c} width={cardWidth} open={d.id === c.view?.document.id} current={d.id === c.view?.document.id} onOpen={() => onOpen(d.id)} />)}
+        {list.map((d, i) => <LienzoCard key={d.id} index={i} summary={d} document={documentOf(d.id)} c={c} width={cardWidth} firstColumn={i % columns === 0} open={d.id === c.view?.document.id} current={d.id === c.view?.document.id} onOpen={() => onOpen(d.id)} />)}
       </View>}
     </ScreenBody>
   </View>;
