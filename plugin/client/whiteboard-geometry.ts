@@ -8,8 +8,10 @@ export function lineEnds(data: Pick<WbShapeData,'from'>, width: number, height: 
   const from = data.from ?? 'nw', a = { x: from.endsWith('e') ? width : 0, y: from.startsWith('s') ? height : 0 }, b = { x: width - a.x, y: height - a.y };
   if (width <= 8) a.x = b.x = width/2; if (height <= 8) a.y = b.y = height/2; return [a,b];
 }
-export function shapePath(data: WbShapeData, width: number, height: number): string {
+/** `radius`: a corner radius bound to a variable (rectangles only); absent, the shape's own corners. */
+export function shapePath(data: WbShapeData, width: number, height: number, radius?: number): string {
   const w = Math.max(1,width), h = Math.max(1,height);
+  if ((data.shape === 'rect' || data.shape === 'rounded') && radius !== undefined) { const r=f(Math.max(0,Math.min(radius,w/2,h/2))); if (r>0) return `M${r} 0H${f(w-r)}Q${w} 0 ${w} ${r}V${f(h-r)}Q${w} ${h} ${f(w-r)} ${h}H${r}Q0 ${h} 0 ${f(h-r)}V${r}Q0 0 ${r} 0Z`; if (data.shape === 'rounded') return `M0 0H${f(w)}V${f(h)}H0Z`; }
   if (data.shape === 'line') { const [a,b]=lineEnds(data,w,h);return `M${f(a.x)} ${f(a.y)}L${f(b.x)} ${f(b.y)}`; }
   if (data.shape === 'ellipse') return `M0 ${f(h/2)}A${f(w/2)} ${f(h/2)} 0 1 0 ${f(w)} ${f(h/2)}A${f(w/2)} ${f(h/2)} 0 1 0 0 ${f(h/2)}Z`;
   if (data.shape === 'rounded') {const r=Math.min(16,w/2,h/2);return `M${r} 0H${f(w-r)}Q${w} 0 ${w} ${r}V${f(h-r)}Q${w} ${h} ${f(w-r)} ${h}H${r}Q0 ${h} 0 ${f(h-r)}V${r}Q0 0 ${r} 0Z`;}

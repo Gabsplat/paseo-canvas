@@ -1,4 +1,4 @@
-import { islandStyle } from './whiteboard-visuals';
+import { boundText, islandStyle } from './whiteboard-visuals';
 import { WhiteboardContent } from './WhiteboardContent';
 import { isWhiteboardRenderer } from '../shared/whiteboard';
 import React, { useRef, useState } from 'react';
@@ -23,7 +23,7 @@ import { recordInteraction } from './useLearning';
 const WINDOW_RENDERERS = ['preview-frame', 'image-ref', 'html'], W = { radius: 10, border: 1.5, borderAlpha: .55, borderHoverAlpha: .8, bar: 28, barCompact: 36 };
 export const visual = (type?: BlockType) => getClientRenderer(type?.renderer)?.visual ?? tokens.renderers[type ? type.renderer ?? 'generic' : 'unknown'];
 const str = (value: unknown) => typeof value === 'string' ? value : value === undefined ? '' : JSON.stringify(value);
-const G = tokens.graph;
+const G = tokens.graph, B = tokens.font.style.body, S = tokens.font.style.small;
 export function statusTone(status: string): Tone {
   const word = status.trim().toLowerCase();
   return (['exito', 'aviso', 'riesgo', 'acento'] as const).find(tone => (G.status[tone] as readonly string[]).includes(word)) ?? 'neutro';
@@ -122,7 +122,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   if (isWhiteboardRenderer(renderer)) return <WhiteboardContent block={block} kind={renderer} width={block.size?.width ?? 160} height={block.size?.height ?? 104} outline={outline} onSelect={event => onSelect(block.id,event)} onMeasure={onMeasure} />;
   if (!type) body = <View style={{ gap: 8 }}><Txt>This block’s type is not in your catalog any more. Its content is kept; the agent can still read it.</Txt><Button label="Extensions" small variant="ghost" onPress={onPacks} /></View>;
   else if (getClientRenderer(renderer)) body = <RegisteredRenderer block={block} id={renderer!} controller={c} readOnly={disabled} />;
-  else if (['note', 'text', 'callout', 'step'].includes(renderer ?? '') && typeof block.data.text === 'string') body = <Txt selectable numberOfLines={outline || sized ? undefined : 8}>{block.data.text}</Txt>;
+  else if (['note', 'text', 'callout', 'step'].includes(renderer ?? '') && typeof block.data.text === 'string') { const shown = boundText(block, block.data.text, B.size, B.lineHeight); body = <Txt selectable numberOfLines={outline || sized ? undefined : 8} style={shown.fontSize !== B.size ? { fontSize: shown.fontSize, lineHeight: shown.lineHeight } : undefined}>{shown.text}</Txt>; }
   else if (renderer === 'code' && typeof block.data.code === 'string') {
     const lines = block.data.code.split('\n'); qualifier = ['', 'text', 'plain', 'txt'].includes(str(block.data.language).trim().toLowerCase()) ? '' : str(block.data.language);
     body = <View style={{ gap: 4, backgroundColor: u.c.surface2, borderRadius: 6, padding: 8 }}><View style={{ position: 'absolute', right: 0, top: 0, zIndex: 1 }}><IconButton label="Copy code" icon="Copy" onPress={() => { void copyText(str(block.data.code)).then(() => toast.show('Code copied')).catch(() => toast.error('Select the code to copy it.')); }} /></View><ScrollView horizontal><Txt kind="code" selectable>{(outline || sized ? lines : lines.slice(0, 12)).join('\n')}</Txt></ScrollView>{!outline && !sized && lines.length > 12 && <Txt kind="label" muted>… {lines.length - 12} more lines</Txt>}</View>;
@@ -178,7 +178,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   if (renderer === 'node') {
     // The compact card of the graph canvas: an eyebrow, a status, a name. The long text waits in a side note that
     // never changes the card's size, so selecting a node does not reflow the graph around it.
-    const kind = str(block.data.kind).trim(), status = str(block.data.status).trim(), summary = str(block.data.summary).trim(), details = str(block.data.details).trim(), tone = statusTone(status);
+    const kind = str(block.data.kind).trim(), status = str(block.data.status).trim(), shown = boundText(block, str(block.data.summary).trim(), S.size, S.lineHeight), summary = shown.text, details = str(block.data.details).trim(), tone = statusTone(status);
     const note = selected && !outline && !dragging && c.selection.length === 1 && !!details;
     return <Animated.View onLayout={e => onMeasure?.(e.nativeEvent.layout.height)} style={{ opacity, height: sized ? height : undefined }}>
       {(selected || focus) && <View pointerEvents="none" style={{ position: 'absolute', top: -3, bottom: -3, left: -3, right: -3, borderRadius: G.node.radius + 3, backgroundColor: selected ? u.halo : withAlpha(u.c.foregroundMuted, .3) }} />}
@@ -186,7 +186,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
         style={{ flex: sized ? 1 : undefined, minHeight: G.node.minHeight, overflow: 'hidden', backgroundColor: u.c.surface1, borderRadius: G.node.radius, borderWidth: selected ? 2 : 1, borderColor: writeFailure ? u.c.statusDanger : selected || dragging ? u.c.accent : hovered ? withAlpha(u.c.foregroundMuted, .5) : u.c.border, paddingVertical: G.node.paddingV - (selected ? 1 : 0), paddingHorizontal: G.node.paddingH - (selected ? 1 : 0), gap: G.node.gap, ...grab }}>
         {(!!kind || !!status || hasCommunication(block.communication)) && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 16 }}><Txt kind="label" muted numberOfLines={1} style={{ flex: 1 }}>{kind}</Txt>{hasCommunication(block.communication) && <Icon name="Compass" size={12} color={u.c.accent} />}{!!status && <View style={{ maxWidth: 96, minHeight: 16, paddingHorizontal: 6, borderRadius: tokens.radius.pill, backgroundColor: u.wash(tone), justifyContent: 'center' }}><Txt kind="label" numberOfLines={1} style={{ color: tone === 'neutro' ? u.c.foregroundMuted : u.tone(tone), textTransform: 'none', letterSpacing: 0, fontWeight: '600' }}>{status}</Txt></View>}</View>}
         {titleEditor ?? <Txt kind="heading" numberOfLines={outline ? undefined : G.node.titleLines}>{block.title || 'Untitled'}</Txt>}
-        {!!summary && <Txt kind="small" muted numberOfLines={outline || sized ? undefined : c.view ? nodeDensity(c.view.document, block).summaryLines : G.node.summaryLines}>{summary}</Txt>}
+        {!!summary && <Txt kind="small" muted numberOfLines={outline || sized ? undefined : c.view ? nodeDensity(c.view.document, block).summaryLines : G.node.summaryLines} style={shown.fontSize !== S.size ? { fontSize: shown.fontSize, lineHeight: shown.lineHeight } : undefined}>{summary}</Txt>}
         {outline && !!details && <Txt selectable style={{ marginTop: 4 }}>{details}</Txt>}
         {outline && connections}{state}
       </Pressable>

@@ -88,7 +88,7 @@ function Mini({ icon, label, onPress, disabled, active, danger }: { icon: string
 }
 const rowInput = (u: UI) => ({ height: u.compact ? 44 : P.row, paddingVertical: 0 });
 /** A number typed in a small box. Keeps what is typed until it is a number; reports numbers only. */
-function NumberBox({ value, onChange, label, disabled, width = 64, unit }: { value: number; onChange(n: number): void; label: string; disabled?: boolean; width?: number; unit?: string }) {
+export function NumberBox({ value, onChange, label, disabled, width = 64, unit }: { value: number; onChange(n: number): void; label: string; disabled?: boolean; width?: number; unit?: string }) {
   const u = useUI(), [text, setText] = useState(String(value)), focused = useRef(false);
   useEffect(() => { if (!focused.current) setText(String(value)); }, [value]);
   return <View style={{ gap: 2, width }}><Txt kind="label" muted numberOfLines={1}>{label}{unit ? ` (${unit})` : ''}</Txt>

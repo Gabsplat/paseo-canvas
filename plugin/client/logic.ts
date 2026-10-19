@@ -1,6 +1,7 @@
 import { isWhiteboardRenderer, whiteboardMinSize } from '../shared/whiteboard';
 import { getRendererVisual } from "./renderer-visuals";
 import { getRendererSpec } from "../shared/renderers";
+import { boundOf } from '../shared/bindings';
 import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasOperation, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
 import { tokens } from './tokens';
 export type Entity = CanvasBlock | CanvasGroup;
@@ -292,6 +293,22 @@ export function anchorCard(doc: CanvasDocument, block?: CanvasBlock | null, cata
   const id = drawAnchor(block), card = id ? doc.blocks.find(b => b.id === id) : undefined;
   return card && block && card.id !== block.id && (card.parentGroupId ?? null) === (block.parentGroupId ?? null) ? card : undefined;
 }
+/** A size bound to a variable (shared/bindings.ts), on a block projected by client/presentation.ts. */
+export const boundSize = (block: CanvasBlock, axis: 'width' | 'height'): number | undefined => { const v = boundOf(block)?.[axis === 'width' ? 'size.width' : 'size.height']; return typeof v === 'number' ? v : undefined; };
+/** The visual part of a binding: a nudge, a turn and a fade. None of them moves links or Frames. */
+export function boundLook(block: CanvasBlock): { transform: ({ translateX: number } | { translateY: number } | { rotate: string })[]; opacity: number } {
+  const v = boundOf(block), n = (key: 'offset.x' | 'offset.y' | 'rotation' | 'opacity') => typeof v?.[key] === 'number' ? v[key] as number : undefined;
+  const dx = n('offset.x'), dy = n('offset.y'), turn = n('rotation'), opacity = n('opacity');
+  return { transform: [...(dx ? [{ translateX: dx }] : []), ...(dy ? [{ translateY: dy }] : []), ...(turn ? [{ rotate: `${turn}deg` }] : [])], opacity: opacity ?? 1 };
+}
+/** The label of the variable a block's size follows, when one does: its resize handles give way to "Bound to …". */
+export function sizeBoundTo(doc: Pick<CanvasDocument, 'variables' | 'groups'>, block: CanvasBlock): string | null {
+  const width = boundSize(block, 'width') !== undefined, height = boundSize(block, 'height') !== undefined;
+  const name = width ? block.bindings?.['size.width']?.variable : height ? block.bindings?.['size.height']?.variable : undefined;
+  if (!name) return null;
+  return [...doc.variables ?? [], ...doc.groups.flatMap(g => g.variables ?? [])].find(v => v.name === name)?.label || name;
+}
+const fixedWidth = (block?: CanvasBlock) => !!block && (!!block.size || boundSize(block, 'width') !== undefined);
 /** `viewportWidth` only decides where rows wrap; without it the layout is the same on every screen. */
 export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number> = {}, catalog?: CanvasCatalog | null, viewportWidth?: number): CanvasLayout {
   const index = graphIndex(doc, catalog), { groups } = index, blocks = new Map(doc.blocks.map(b => [b.id, b]));
@@ -322,14 +339,14 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
     };
     if (mode === 'stack') {
       const maxWidth = Math.max(container ? tokens.size.blockWidth.standard : 0, ...flowing.map(r => r.width)); let y = origin.y;
-      flowing.forEach((r) => { r.x = origin.x; r.y = y; if (!blocks.get(children[childRects.indexOf(r)])?.size) r.width = maxWidth; y += r.height + spacing; }); pin();
+      flowing.forEach((r) => { r.x = origin.x; r.y = y; if (!fixedWidth(blocks.get(children[childRects.indexOf(r)]))) r.width = maxWidth; y += r.height + spacing; }); pin();
     } else if (mode === 'flow') { let x = origin.x; flowing.forEach(r => { r.x = x; r.y = origin.y; x += r.width + spacing; }); pin(); }
     else if (mode === 'rows') { packRows(flowing, origin.x, origin.y, wrap, packGap); pin(); }
     else if (mode === 'grid') {
       const cols = Math.min(tokens.layout.grid.columnsMax, layout?.columns ?? tokens.layout.grid.columns), cell = Math.max(tokens.size.blockWidth.standard, ...flowing.filter(r => r.width <= tokens.size.blockWidth.standard || hasGroups).map(r => r.width));
       let y = origin.y, rowH = 0, column = 0;
       flowing.forEach(r => {
-        const sized = !!blocks.get(children[childRects.indexOf(r)])?.size, span = r.width > cell ? sized ? Math.min(cols, Math.ceil((r.width + spacing) / (cell + spacing))) : cols : 1;
+        const sized = fixedWidth(blocks.get(children[childRects.indexOf(r)])), span = r.width > cell ? sized ? Math.min(cols, Math.ceil((r.width + spacing) / (cell + spacing))) : cols : 1;
         if (column + span > cols) { y += rowH + spacing; column = 0; rowH = 0; }
         r.x = origin.x + column * (cell + spacing); r.y = y;
         if (span > 1 && !sized) r.width = Math.max(r.width, cols * cell + (cols - 1) * spacing);
@@ -367,20 +384,23 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
       const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = getRendererVisual(renderer)?.width === 'wide' || renderer === 'preview-frame';
       if (isWhiteboardRenderer(renderer)) {
         const scale = typeof block.data.scale === 'string' && block.data.scale in tokens.whiteboard.text ? block.data.scale as 's'|'m'|'l'|'xl' : 'm';
-        const textStyle = tokens.whiteboard.text[scale];
-        const text = typeof block.data.text === 'string' ? block.data.text : '';
+        // Bound text and size (shared/bindings.ts) measure like stored ones.
+        const shown = boundOf(block), boundFont = typeof shown?.['text.size'] === 'number' ? shown['text.size'] : undefined, base = tokens.whiteboard.text[scale];
+        const textStyle = boundFont ? { fontSize: boundFont, lineHeight: Math.round(boundFont * base.lineHeight / base.fontSize) } : base;
+        const text = typeof shown?.['text.template'] === 'string' ? shown['text.template'] : typeof block.data.text === 'string' ? block.data.text : '';
         const longest = Math.max(1, ...text.split('\n').map(line => line.length));
         const autoWidth = Math.max(24, Math.min(480, Math.ceil(longest * textStyle.fontSize * .56 + 2)));
         const textWidth = typeof block.data.width === 'number' ? block.data.width : autoWidth;
         const textHeight = Math.max(textStyle.lineHeight, text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length * textStyle.fontSize * .56 / textWidth)), 0) * textStyle.lineHeight);
         const vb = Array.isArray(block.data.viewBox) ? block.data.viewBox as number[] : [0,0,1,1];
         const ratio = Number(vb[2]) / Number(vb[3]) || 1;
-        const width = renderer === 'wb-text' ? textWidth : block.size?.width ?? (renderer === 'wb-svg' ? Math.max(24, ratio >= 1 ? 96 : 96 * ratio) : 160);
-        const height = renderer === 'wb-text' ? heights[id] ?? textHeight : block.size?.height ?? (renderer === 'wb-svg' ? Math.max(24, ratio >= 1 ? 96 / ratio : 96) : 104);
+        const width = renderer === 'wb-text' ? textWidth : boundSize(block, 'width') ?? block.size?.width ?? (renderer === 'wb-svg' ? Math.max(24, ratio >= 1 ? 96 : 96 * ratio) : 160);
+        const height = renderer === 'wb-text' ? heights[id] ?? textHeight : boundSize(block, 'height') ?? block.size?.height ?? (renderer === 'wb-svg' ? Math.max(24, ratio >= 1 ? 96 / ratio : 96) : 104);
         const r = { x: 0, y: 0, width, height, depth, hidden }; rects.set(id, r); return r;
       }
       const preferred = getRendererSpec(renderer)?.defaultSize;
-      const r = { x: 0, y: 0, width: block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? nodeDensity(doc, block).width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: block.size ? sizedHeight(block.size.height, heights[minimumKey(id)]) : heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
+      const boundHeight = boundSize(block, 'height');
+      const r = { x: 0, y: 0, width: boundSize(block, 'width') ?? block.size?.width ?? preferred?.width ?? (getRendererVisual(renderer) ? tokens.size.blockWidth[getRendererVisual(renderer)!.width] : undefined) ?? (node ? nodeDensity(doc, block).width : wide ? tokens.size.blockWidth.wide : tokens.size.blockWidth.standard), height: boundHeight !== undefined ? sizedHeight(boundHeight, heights[minimumKey(id)]) : block.size ? sizedHeight(block.size.height, heights[minimumKey(id)]) : heights[id] ?? preferred?.height ?? (node ? G.node.estimatedHeight : wide ? 448 : 176), depth, hidden };
       rects.set(id, r); return r;
     }
     const g = groups.get(id)!, children = [...g.blockIds, ...g.groupIds].filter(child => index.entities.has(child));

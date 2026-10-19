@@ -3,6 +3,7 @@ import { variablesSchema, runtimeStateSchema } from "./learning";
 import { z } from "zod";
 import { DOCS_LIMITS, extensionDocsIssue } from "./markdown";
 import { actionListSchema } from "./actions";
+import { bindingsSchema } from "./bindings";
 
 export const idSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/).refine(id => !["__proto__", "constructor", "prototype"].includes(id));
 export const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -35,6 +36,8 @@ export const blockSchema = z.object({
   id: idSchema, typeId: idSchema, title: z.string().max(300),
   data: jsonObjectSchema, position: positionSchema.optional(), size: blockSizeSchema.nullable().optional(),
   parentGroupId: idSchema.nullable().optional(), communication: communicationSchema.optional(),
+  // Properties that follow a variable at render time (shared/bindings.ts). A patch replaces the whole map; null removes it.
+  bindings: bindingsSchema.nullable().optional(),
 }).strict();
 // A Sheet is a chapter the agent adds while explaining: a top-level group that carries this mark. Numbers are unique
 // within a document and never reused; new Sheets sit to the right of the last one on one horizontal strip.
@@ -98,7 +101,9 @@ export const templateSchema = z.object({
 // The canvas never sends anything to the agent, so there is no "agent" permission: a new extension that asks for it is
 // refused, and a stored or imported one that carried it loads without it (extensionListSchema).
 // "view" (added to API 1): read and move the canvas camera (lienzo.view), and lienzo.open also frames what it opens.
-export const extensionPermissionSchema = z.enum(["edit", "network", "view"]);
+// "variables" (added to API 1): set the runtime values of variables (lienzo.variables.set). Never a revision; "edit"
+// allows it too, since it can change the declarations themselves.
+export const extensionPermissionSchema = z.enum(["edit", "network", "view", "variables"]);
 // Only tools remain: the canvas is the one way to look at a document. Stored entries of the retired kind "view" are
 // dropped on read (extensionListSchema), so catalogs and packs written before keep loading.
 // `docs` (optional, added to API 1): the extension's own Help page, short Markdown or a few titled sections. It is
@@ -110,7 +115,7 @@ export const extensionDocsSchema = z.union([
 export const extensionSchema = z.object({
   id: idSchema, kind: z.literal("tool"), api: z.literal(1),
   name: z.string().min(1).max(80), description: z.string().max(600).default(""), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(),
-  html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(3).default([]),
+  html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(4).default([]),
   docs: extensionDocsSchema.optional(),
   // `actions` (optional, added to API 1): what the extension offers an agent through canvas_extension_run. Each is
   // declared here and registered by the page's `<script data-lienzo="actions">` with lienzo.action (shared/actions.ts).

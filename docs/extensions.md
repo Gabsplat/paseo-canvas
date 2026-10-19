@@ -19,9 +19,10 @@ nothing from the plugin, so a plugin update cannot break it.
   the former kind `view` is retired: catalogs and files stored with views still load without them, a file that
   carries one imports without it, and a view can no longer be saved.
 - `api`: always `1` today.
-- `permissions`: any of `edit`, `network`, `view` (added to API 1: read and move the canvas camera). Reading the
-  document, changing the selection, keys, the highlight and storage need none. A Lienzo older than `view` refuses a
-  file that asks for it. There is no
+- `permissions`: any of `edit`, `network`, `view` (added to API 1: read and move the canvas camera) and `variables`
+  (added to API 1: set runtime values of variables; `edit` allows it too). Reading the document and the variables,
+  changing the selection, keys, the highlight and storage need none. A Lienzo older than `view` or `variables` refuses
+  a file that asks for it. There is no
   permission to reach the agent: the canvas never sends anything to it. A new extension that asks for `agent` is
   refused; a stored or imported one that carried it loads without it.
 - `html`: up to 300 000 characters. No build step. Without `network` the page may only use inline code and `data:` URLs.
@@ -127,6 +128,27 @@ closing the tool removes it. It is never saved and creates no revision. No permi
 clears it) and resolves it back. One value per extension and per Lienzo, at most 4 KiB of JSON, kept by the server
 beside the document (like mini-app runtime state: no revision, no history, not in `canvas_read`, not shown to the
 agent). A Lienzo holds storage for at most 64 extensions. No permission.
+
+### Variables
+
+`lienzo.variables` (added to API 1; feature-detect it) reads and moves the variables declared on the Lienzo and its
+Frames, the same values Controls sliders move:
+
+- `lienzo.variables.get()` resolves `[{ name, label, type, value, initial, min, max, step?, unit?, options?, scope,
+  scopeTitle }]`: every declaration, the Lienzo's first (`scope: "$document"`), then each Frame's (`scope` is the Frame
+  id). `value` is the current runtime value, `initial` the declared start. Types are `number`, `boolean` (0 or 1) and
+  `choice` (an option index).
+- `lienzo.variables.onChange(fn)` returns an unsubscribe; `fn(list)` runs with the same list now and whenever a value or
+  a declaration changes, at most every 50 ms. No permission.
+- `lienzo.variables.set(name, value, { scope })` needs `variables` (or `edit`). It moves the runtime value: clamped to
+  the declared range, rounded for on/off and choices, `null` back to the start. It never creates a revision, a History
+  entry or an undo step, exactly like moving a slider; the agent reads where it was left with `canvas_runtime`. Without
+  `scope` it writes where the single selected block (or Frame) sees that name, else the Lienzo's, else the only Frame
+  that declares it; a name declared in several Frames needs `scope`. Resolves `{ name, scope, value }`.
+
+Blocks bound to a variable (`block.bindings`, see [mcp.md](mcp.md#bindings)) follow at once, so a tool can drive sizes,
+colours and text on the canvas: a metronome that pulses a shape, a scrubber for a timeline, a keyboard that nudges a
+value. The headless runtime of actions has no `lienzo.variables`.
 
 ### Comments
 
@@ -309,7 +331,7 @@ the page like any missing function. A future API 2 would live beside
 it. Nothing ships with Lienzo. The find-and-replace tool in `tests/fixtures/find-replace.ts` is written against API 1
 only and is the contract example; `tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract
 broke. The guide the agent gets ends with the complete example of Help → Make your own (`shared/wiki/tutorial.ts`), the
-same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`); so were the `view` permission, `context.view`, `lienzo.view`, `lienzo.keys`, `lienzo.highlight` and `lienzo.storage`, and `lienzo.open` framing what it opens with `view`. (The kind `view` was retired
+same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`); so were the `view` and `variables` permissions, `context.view`, `lienzo.view`, `lienzo.keys`, `lienzo.highlight`, `lienzo.storage`, `lienzo.comments` and `lienzo.variables`, and `lienzo.open` framing what it opens with `view`. (The kind `view` was retired
 with the one-canvas redesign; the frame API itself did not change.)
 
 ## Not in API 1

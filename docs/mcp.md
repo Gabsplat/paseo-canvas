@@ -58,6 +58,46 @@ renderer's own state, after flushing pending runtime writes; the payload is drop
 shaders their values and time, a reset its kind; a quiz hint and a saved form record theirs too. Quiz answers and
 form fields stay in block data. Later renderer writes keep the last interaction.
 
+## Bindings
+
+A block may carry `bindings`: a map from a bindable property to `{ variable, map?, expr?, hue?, steps?, template? }`
+(`shared/bindings.ts`). The renderer draws the property from the variable's runtime value; the document stores only the
+rule, so moving the variable (a slider, `canvas_runtime set`, an extension) never creates a revision. `variable`
+resolves through the block's scope chain like a shader uniform: nearest Frame, then the Lienzo.
+
+| Path | Blocks | Value |
+| --- | --- | --- |
+| `size.width`, `size.height` | all but `wb-text` | px, 8–4096; layout uses it, so links and Frames follow |
+| `offset.x`, `offset.y` | all | px, ±4096; draws shifted, stored position, links and Frames stay |
+| `rotation` | all | degrees around the centre |
+| `opacity` | all | 0–1 |
+| `stroke.color`, `fill.color` | `wb-shape` | a colour, from `hue` or `steps` (a bound fill paints even with fill `none`) |
+| `stroke.width`, `corner.radius` | `wb-shape` | px, 0–48 and 0–512 (radius: rectangles) |
+| `text.size` | `wb-text`, `wb-shape`, `node`, `note` | px, 6–240 |
+| `text.template` | `wb-text`, `wb-shape`, `node` (summary), `note` | text: `template` with `{v}`, or `{v:0}`–`{v:4}` for decimals |
+
+The value `v` first goes through `map: { from:[a,b], to:[c,d], clamp? }` (linear; clamped to `to` unless
+`clamp:false`) or `expr` (a formula), else stays as it is; numbers are then held inside the property's limits.
+`expr` is parsed, never evaluated as code: numbers, `v`, `pi`, `+ - * / %`, parentheses and `min`, `max`, `clamp`,
+`round`, `floor`, `ceil`, `abs`, `sqrt`, `sin`, `cos`; at most 160 characters, 80 tokens and 16 levels of nesting. A
+result that is not a finite number (`v / 0`) draws the stored value. Colours take `hue: { from:[a,b], to:[h0,h1] }`
+(degrees, lit for the theme) or `steps: [{ at, color }]` (ascending `at`; the colour of the last step at or below the
+value, the first below all; `color` is a whiteboard colour name or `#rrggbb`). `map` and `expr`, and `hue` and `steps`,
+exclude each other; `hue`/`steps` are only for colours and `template` only for text. At most 12 bindings per block.
+
+```json
+{ "type": "block.update", "id": "box", "patch": { "bindings": {
+  "size.width": { "variable": "speed", "map": { "from": [0, 10], "to": [40, 400] } },
+  "fill.color": { "variable": "speed", "steps": [{ "at": 0, "color": "verde" }, { "at": 7, "color": "rojo" }] } } } }
+```
+
+`block.update` replaces the whole map; `bindings: null` removes it. Validation refuses an unknown path (the error lists
+the bindable ones), a path the block's renderer does not have, and a binding written in the transaction whose variable
+the block cannot see (declare it with `document.update`/`group.update` first or in the same transaction). Renaming a
+variable in Properties updates the bindings that resolve it, in the same transaction; deleting one leaves its bindings
+inert (Properties marks them) and later edits of that block still pass. `canvas_read` returns bindings with the
+block; the drawn values are not stored anywhere.
+
 ## Block type hints
 
 Block type properties (`propertySchema`) accept three optional hints for the Properties panel, in built-in types and in

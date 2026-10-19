@@ -16,7 +16,8 @@ const pack = (extensions: unknown[]) => ({ format: "paseo-canvas-pack", version:
 test("the view permission is declared, validated, imported ungranted and granted like the others", async t => {
   assert.deepEqual(extensionSchema.parse(tool("p", ["edit", "network", "view"])).permissions, ["edit", "network", "view"]);
   assert.throws(() => extensionSchema.parse(tool("p", ["camera"])));
-  assert.throws(() => extensionSchema.parse(tool("p", ["view", "edit", "network", "view"])), "four entries are more than there are permissions");
+  assert.deepEqual(extensionSchema.parse(tool("p", ["edit", "network", "view", "variables"])).permissions, ["edit", "network", "view", "variables"]);
+  assert.throws(() => extensionSchema.parse(tool("p", ["view", "edit", "network", "variables", "view"])), "five entries are more than there are permissions");
   const { service } = await setup(t);
   await assert.rejects(service.catalogMutate({ expectedRevision: 0, action: { type: "extension.put", extension: extensionSchema.parse(tool("doble", ["view", "view"])) } }), /repeats/);
   const imported = await service.importPack({ expectedRevision: 0, pack: pack([tool("ajeno.slides", ["view"])]), replace: false, dryRun: false });
@@ -25,7 +26,7 @@ test("the view permission is declared, validated, imported ungranted and granted
   assert.equal(granted.extensions.find(e => e.id === "ajeno.slides")!.granted, true);
   assert.deepEqual(packSchema.parse(pack([tool("ajeno.x", ["view"])])).extensions[0].permissions, ["view"]);
   const schema = JSON.parse(await readFile(join(import.meta.dirname, "../marketplace/schema/extension-file.schema.json"), "utf8"));
-  assert.match(JSON.stringify(schema), /"enum":\["edit","network","view"\]/, "the catalog's file schema knows view");
+  assert.match(JSON.stringify(schema), /"enum":\["edit","network","view","variables"\]/, "the catalog's file schema knows view and variables");
 });
 
 test("lienzo.storage: per extension and per document, capped, persisted, with no revision or history", async t => {
