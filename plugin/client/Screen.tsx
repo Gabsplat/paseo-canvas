@@ -24,9 +24,9 @@ export function sheetShadow(u: ReturnType<typeof useUI>) {
  * The sheet's frame for a panel of this size: centred, up to 960 × 680, 24 from the edges; full screen when compact.
  * A sheet that would reach into the window controls' corner (`inset`) starts below them instead.
  */
-export function sheetFrame(panel: { width: number; height: number }, compact: boolean, inset: WindowInset = { left: 0, top: 0 }) {
+export function sheetFrame(panel: { width: number; height: number }, compact: boolean, inset: WindowInset = { left: 0, top: 0 }, size: { width: number; height: number } = { width: S.maxWidth, height: S.maxHeight }) {
   const frame = compact ? { left: 0, top: 0, width: panel.width, height: panel.height } : (() => {
-    const width = Math.max(0, Math.min(S.maxWidth, panel.width - 2 * S.margin)), height = Math.max(0, Math.min(S.maxHeight, panel.height - 2 * S.margin));
+    const width = Math.max(0, Math.min(size.width, panel.width - 2 * S.margin)), height = Math.max(0, Math.min(size.height, panel.height - 2 * S.margin));
     return { left: (panel.width - width) / 2, top: (panel.height - height) / 2, width, height };
   })();
   if (frame.left >= inset.left || frame.top >= inset.top) return frame;
@@ -37,9 +37,10 @@ export function sheetFrame(panel: { width: number; height: number }, compact: bo
 export type RailItem = { id: string; label: string; icon: string; detail?: string };
 /**
  * A sheet that fits its content (docs/design.md §37.4): as tall as what it shows, up to the usual frame. `center`
- * keeps it in the middle of the panel; `top` holds its top edge still, for screens with a rail whose sections change.
+ * keeps it in the middle of the panel; `top` holds its top edge still. `window` never fits: a fixed frame like a
+ * preferences window (Settings), the same size whatever section shows, its content scrolling inside.
  */
-export type ScreenFit = 'center' | 'top';
+export type ScreenFit = 'center' | 'top' | 'window';
 const FitContext = createContext(false);
 /** The root style of a screen's content: fill the sheet, or hug the content when the sheet fits it. */
 export function useScreenRoot(): ViewStyle { return useContext(FitContext) ? { flexShrink: 1, minHeight: 0 } : { flex: 1, minHeight: 0 }; }
@@ -54,7 +55,7 @@ export function Screen({ open, onClose, panel, nativeID, label, rail, active, on
     return onEscapeKey(() => { close.current(); return true; });
   }, [open]);
   if (!open) return null;
-  const frame = sheetFrame(panel, u.compact, u.inset), dark = isDark(u.c.surface0), railShown = !!rail?.length && !u.compact, fits = !!fit && !u.compact;
+  const frame = sheetFrame(panel, u.compact, u.inset, fit === 'window' ? S.window : undefined), dark = isDark(u.c.surface0), railShown = !!rail?.length && !u.compact, fits = !!fit && fit !== 'window' && !u.compact;
   return <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0, zIndex: 200 }}>
     <Animated.View pointerEvents="none" style={{ position: 'absolute', inset: 0, opacity: shown, backgroundColor: withAlpha(dark ? '#000000' : u.c.foreground, S.dim) }} />
     <Pressable accessibilityLabel={`Close ${label}`} onPress={onClose} style={{ position: 'absolute', inset: 0, ...({ cursor: 'default' } as object) }} />
@@ -96,13 +97,17 @@ export const labelStyle = { textTransform: 'uppercase', letterSpacing: S.label.s
 export function SectionLabel({ children, style, right }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; right?: React.ReactNode }) {
   return <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 20 }, style]}><Txt kind="label" muted style={[labelStyle, { flex: 1 }]}>{children}</Txt>{right}</View>;
 }
-/** The top of a screen's content: one serif display title, one muted line saying what the screen is for, actions on the right. */
-export function ScreenHeader({ title, subtitle, actions, children }: { title: string; subtitle: string; actions?: React.ReactNode; children?: React.ReactNode }) {
-  const u = useUI(), pad = u.compact ? 16 : S.padding;
+/**
+ * The top of a screen's content: one serif display title, one muted line saying what the screen is for, actions on the
+ * right. `pinned` (Settings) is the quieter header of a preferences window: smaller title, a hairline under it, and the
+ * body scrolls beneath it.
+ */
+export function ScreenHeader({ title, subtitle, actions, children, pinned = false }: { title: string; subtitle: string; actions?: React.ReactNode; children?: React.ReactNode; pinned?: boolean }) {
+  const u = useUI(), pad = u.compact ? 16 : S.padding, P = S.window.header, quiet = pinned && !u.compact;
   // The title row keeps clear of the close button in the corner; the subtitle and the controls under it use the full width.
-  return <View style={{ paddingHorizontal: pad, paddingTop: u.compact ? 14 : 28, paddingBottom: 16, gap: 4 }}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginRight: 44, minHeight: 36 }}>
-      <Txt kind="display" accessibilityRole="header" numberOfLines={1} style={{ flex: 1, fontSize: u.compact ? 24 : S.title.size, lineHeight: u.compact ? 30 : S.title.lineHeight, letterSpacing: S.title.letterSpacing }}>{title}</Txt>
+  return <View style={{ paddingHorizontal: pad, paddingTop: u.compact ? 14 : quiet ? P.top : 28, paddingBottom: quiet ? P.bottom : 16, gap: quiet ? 2 : 4, ...(quiet ? { borderBottomWidth: 1, borderColor: u.c.border } : {}) }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginRight: 44, minHeight: quiet ? 30 : 36 }}>
+      <Txt kind="display" accessibilityRole="header" numberOfLines={1} style={{ flex: 1, fontSize: u.compact ? 24 : quiet ? P.title : S.title.size, lineHeight: u.compact ? 30 : quiet ? P.lineHeight : S.title.lineHeight, letterSpacing: S.title.letterSpacing }}>{title}</Txt>
       {actions && !u.compact && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>{actions}</View>}
     </View>
     <Txt muted numberOfLines={2}>{subtitle}</Txt>
@@ -111,9 +116,9 @@ export function ScreenHeader({ title, subtitle, actions, children }: { title: st
   </View>;
 }
 /** The scrolling body of a screen, with the screen's padding. */
-export function ScreenBody({ children, gap = S.gap }: { children: React.ReactNode; gap?: number }) {
+export function ScreenBody({ children, gap = S.gap, pinned = false }: { children: React.ReactNode; gap?: number; pinned?: boolean }) {
   const u = useUI(), pad = u.compact ? 16 : S.padding, fits = useContext(FitContext);
-  return <ScrollView style={fits ? { flexGrow: 0, flexShrink: 1 } : { flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: pad, gap }}>{children}</ScrollView>;
+  return <ScrollView style={fits ? { flexGrow: 0, flexShrink: 1 } : { flex: 1 }} showsVerticalScrollIndicator={pinned && !u.compact} contentContainerStyle={{ paddingHorizontal: pad, paddingTop: pinned && !u.compact ? S.window.header.bodyTop : 0, paddingBottom: pad, gap }}>{children}</ScrollView>;
 }
 /** A 12 px card on surface0. Pressable when `onPress` is given: the border lifts to foreground@20 % and it rises 1 px. */
 export function Card({ children, onPress, label, selected, style, nativeID, padding = S.card.padding, onHoverChange }: { children: React.ReactNode; onPress?(): void; label?: string; selected?: boolean; style?: StyleProp<ViewStyle>; nativeID?: string; padding?: number; onHoverChange?(hovered: boolean): void }) {

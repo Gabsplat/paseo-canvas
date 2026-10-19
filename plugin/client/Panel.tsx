@@ -670,8 +670,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <Screen open={screen?.kind === 'extensions'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-extensions" label="Extensions" fit="top">
       <ExtensionsContent c={c} width={frame.width} onHelp={openHelp} />
     </Screen>
-    <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" fit="top" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
-      {screen?.kind === 'settings' && <SettingsContent key={screen.section} section={screen.section} c={c} width={frame.width - railWidth} list={resolved.list} defs={shortcutRegistry.all()} overrides={overrides} chips={chips}
+    <Screen open={screen?.kind === 'settings'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-settings" label="Settings" fit="window" rail={settingsRail()} active={screen?.kind === 'settings' ? screen.section : undefined} onRail={id => setScreen({ kind: 'settings', section: id as SettingsSection })}>
+      {screen?.kind === 'settings' && <SettingsContent key={screen.section} section={screen.section} c={c} width={sheetFrame(panelBox, u.compact, u.inset, tokens.face.screens.window).width - railWidth} list={resolved.list} defs={shortcutRegistry.all()} overrides={overrides} chips={chips}
         appearance={getAppearance()} onAppearance={chooseTheme} themeKey={keyLabel('view.theme')} saveShortcuts={next => savePrefs({ shortcuts: next })} pinned={pinnedRows} savePinned={ids => savePrefs({ pinned: ids })} onGuide={() => { setScreen(null); setGuideOpen(true); }} />}
     </Screen>
     <Screen open={screen?.kind === 'help'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-help" label="Help">

@@ -209,8 +209,8 @@ export function SettingsContent({ section, c, width, list, defs, overrides, chip
   const head = { appearance: ['Appearance', 'Light, dark, or the same as around Lienzo.'], shortcuts: ['Shortcuts', 'Every key Lienzo answers to, yours and your extensions’.'], toolbar: ['Toolbar', 'What sits at the end of the bottom toolbar.'], copilot: ['Copilot', 'How your agent draws while it works.'],
     agents: ['Agents', 'Connect the agents you work with over MCP.'], extensions: ['Extensions', 'Small tools for the + catalog and the Properties panel.'], about: ['About', AboutUpdates ? 'Version, updates, and where your Lienzos are kept.' : 'Version, and where your Lienzos are kept.'] }[section];
   return <View nativeID={`lienzo-settings-${section}-screen`} style={root}>
-    <ScreenHeader title={head[0]} subtitle={head[1]} />
-    <ScreenBody>
+    <ScreenHeader title={head[0]} subtitle={head[1]} pinned />
+    <ScreenBody pinned>
       {section === 'appearance' && <AppearanceSection value={appearance} onChange={onAppearance} width={inner} shortcut={themeKey} />}
       {section === 'shortcuts' && <ShortcutsSection list={list} defs={defs} overrides={overrides} chips={chips} save={saveShortcuts} width={inner} />}
       {section === 'toolbar' && <ToolbarSection pinned={pinned} save={savePinned} />}

@@ -1303,7 +1303,10 @@ scene shows its last frame and waits for Next. Shown once per host (§11.3), and
 
 ### 35.4 Settings
 
-Only sections that exist. **Appearance** (first, where Settings opens) — three cards side by side (stacked when the
+A fixed frame, like a preferences window: 880 × 640 (less on a small panel, 24 from the edges), the same size and
+place for every section, so switching never makes it jump (`screens.window`). The rail runs the full height on the left;
+each section's header (24 px serif title, one muted line, a hairline under it) stays at the top and the body scrolls
+beneath it. Compact panels keep the full-screen sheet with chips. Only sections that exist. **Appearance** (first, where Settings opens) — three cards side by side (stacked when the
 sheet is narrow): System, Light, Dark. Each draws a small Lienzo in its theme (paper, two cards, an accent link, a
 toolbar island); System is split down the middle, Papel left and Tinta right, and says what it follows ("Follows
 Paseo's theme." / "Follows your computer."). The chosen card has a 2 px accent border and a soft accent ring, and a
