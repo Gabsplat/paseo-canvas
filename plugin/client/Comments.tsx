@@ -174,9 +174,9 @@ export function CommentLayer({ state, view, groups, titleOf, hidden = false, cle
 }
 
 function where(anchor: CommentAnchor, thread: CommentThread | undefined, titleOf: (id: string) => string) {
-  if (anchor.kind !== 'point') return `On “${titleOf(anchor.id)}”`;
-  if (thread?.orphanedFrom) return `Was on “${thread.orphanedFrom.title}”, since deleted`;
-  return 'On the canvas';
+  const place = anchor.kind !== 'point' ? `On “${titleOf(anchor.id)}”` : thread?.orphanedFrom ? `Was on “${thread.orphanedFrom.title}”, since deleted` : 'On the canvas';
+  // A thread that came in a .lienzo file: its authors wrote it on another computer.
+  return thread?.imported ? `${place} · Imported` : place;
 }
 
 /** A thread: header with its actions, the messages, and a reply box. The same view in the popover and in the list. */

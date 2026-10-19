@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { CanvasError } from "../shared/errors";
-import { MEDIA_LIMITS, mediaRef, parseMediaRef, prepareImage } from "../shared/media";
+import { MEDIA_LIMITS, mediaRef, parseMediaRef, prepareImage, type MediaExtension } from "../shared/media";
 import { atomicWrite } from "./store";
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -22,10 +22,18 @@ export class MediaStore {
     let image;
     try { image = prepareImage(new Uint8Array(Buffer.from(base64, "base64"))); }
     catch (error) { throw new CanvasError((error as { code?: string }).code === "TOO_LARGE" ? "TOO_LARGE" : "VALIDATION", (error as Error).message); }
+    return this.putPrepared(image);
+  }
+  /** Keeps bytes prepareImage already checked and cleaned (a .lienzo import prepares every image before writing any). */
+  async putPrepared(image: { extension: MediaExtension; mime: string; bytes: Uint8Array }): Promise<{ url: string; mime: string; bytes: number; existed: boolean }> {
     const hash = createHash("sha256").update(image.bytes).digest("hex"), url = mediaRef(hash, image.extension), file = join(this.directory, `${hash}.${image.extension}`);
     const existed = await stat(file).then(s => s.isFile() && s.size === image.bytes.length, () => false);
     if (!existed) { await mkdir(this.directory, { recursive: true, mode: 0o700 }); await atomicWrite(file, image.bytes); }
     return { url, mime: image.mime, bytes: image.bytes.length, existed };
+  }
+  /** Removes a file this process just wrote for an import that then failed. Never used for images a Lienzo shows. */
+  async discard(url: string): Promise<void> {
+    const ref = parseMediaRef(url); if (ref) await rm(join(this.directory, `${ref.hash}.${ref.extension}`), { force: true });
   }
 
   async read(url: string): Promise<{ mime: string; data: string; bytes: number }> {

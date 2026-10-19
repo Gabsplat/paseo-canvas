@@ -51,6 +51,7 @@ import { WikiContent } from './WikiScreen';
 import { HOME_PAGE, allWikiPages, pageForSelection, searchWiki } from '../shared/wiki';
 import { SettingsContent, settingsRail, type SettingsSection } from './SettingsScreen';
 import { CommentLayer, CommentsList, useComments } from './Comments';
+import { ExportSheet, ImportSheet, isLienzoName, onOpenLienzo, pickLienzoFile, readLienzoFile, type LienzoFlow } from './LienzoFile';
 
 type ViewMode = 'canvas' | 'outline';
 type InspectorSection = 'document' | 'communication' | 'history';
@@ -146,6 +147,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   useEffect(() => shortcutRegistry.subscribe(() => setRegistryTick(t => t + 1)), []);
   const [saveSlow, setSaveSlow] = useState(false);
   const [ventana, setVentana] = useState<VentanaKind | null>(null);
+  // A .lienzo file being exported or reviewed for import (LienzoFile.tsx).
+  const [fileFlow, setFileFlow] = useState<LienzoFlow | null>(null);
   // Hide all UI (⌘.) hides the floating controls. Failures and the canvas zoom stay visible.
   const [immersive, setImmersive] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false), guideClaim = useRef(false), guideMounted = useRef(true);
@@ -329,7 +332,22 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     } finally { setImagesBusy(false); }
   }
   const images = useRef<{ add: typeof addImages; accepts(): boolean }>({ add: addImages, accepts: () => false }); images.current = { add: addImages, accepts: () => !!doc && !disabled && !imagesBusy && !ventana && !screen && !guideOpen && !paletteOpen };
-  useEffect(() => attachFileDrop(root.current, { enabled: () => images.current.accepts(), over: setFileOver, drop: (files, page) => { void images.current.add(files, page); } }), []);
+  // ---- .lienzo files: exported from a Lienzo, imported from the picker, a drop, or the desktop app opening one.
+  const exportLienzo = (id = doc?.id) => { if (!id) return; setOverflow(false); setPaletteOpen(false); setFileFlow({ kind: 'export', documentId: id }); };
+  const importLienzo = async () => { setOverflow(false); setPaletteOpen(false); try { const flow = await pickLienzoFile(); if (flow) setFileFlow(flow); } catch (error) { toast.error(friendlyError(error)); } };
+  useEffect(() => onOpenLienzo(flow => { setPaletteOpen(false); setFileFlow(flow); }), []);
+  async function imported(id: string, title: string) { setFileFlow(null); setScreen(null); await c.openImported(id).catch(c.fail); toast.show(`Imported “${title}”`, { variant: 'success' }); }
+  // A drop takes a .lienzo file anywhere a Lienzo could open (the canvas, the Lienzos screen, the empty panel); images only on a canvas.
+  const drops = useRef<{ lienzo(): boolean; drop(files: ImageFile[], page: Point): void }>({ lienzo: () => false, drop: () => {} });
+  drops.current = {
+    lienzo: () => !fileFlow && !paletteOpen && !guideOpen && !ventana && !svgOpen && (!screen || screen.kind === 'lienzos'),
+    drop: (files, page) => {
+      const file = files.find(f => isLienzoName(f.name));
+      if (file) { if (drops.current.lienzo()) void readLienzoFile(file).then(setFileFlow); return; }
+      if (images.current.accepts()) void images.current.add(files, page); else toast.error('Drop a .lienzo file here to import it, or open a Lienzo to add images.');
+    },
+  };
+  useEffect(() => attachFileDrop(root.current, { enabled: () => images.current.accepts() || drops.current.lienzo(), over: setFileOver, drop: (files, page) => drops.current.drop(files, page) }), []);
   useEffect(() => attachFilePaste(files => { if (!images.current.accepts() || !imageFiles(files).length) return false; void images.current.add(files); return true; }), []);
   /** W: a Window. A web page becomes a live preview; an image, video or audio link becomes a player (AddSheets.tsx). */
   async function insertLink(link: ReturnType<typeof linkBlock>): Promise<boolean> {
@@ -540,6 +558,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (c.view?.latestAgent?.ids.length) items.push({ id: 'agent.latest', group: 'Sheets', title: "Go to the agent's latest", subtitle: c.view.latestAgent.label, icon: 'Sparkles', verb: 'Go', run: () => { copilot.goToLatest(); } });
     items.push({ id: 'agent.follow', group: 'Sheets', title: copilot.follow ? 'Stop following the agent' : 'Follow the agent', subtitle: 'The camera goes wherever the agent draws', icon: 'Magnet', run: () => copilot.toggleFollow() });
     items.push({ id: 'lienzo.new', group: 'Lienzos', title: 'New Lienzo', subtitle: GLOSSARY.lienzo, icon: 'Plus', disabled, run: () => { void newCanvas(); } });
+    items.push({ id: 'lienzo.export', group: 'Lienzos', title: 'Export this Lienzo…', subtitle: 'A .lienzo file to share', icon: 'FileOutput', keywords: 'share file save download export send', disabled: !doc, run: () => exportLienzo() });
+    items.push({ id: 'lienzo.import', group: 'Lienzos', title: 'Import a Lienzo…', subtitle: 'Open a .lienzo file as a new Lienzo', icon: 'FileInput', keywords: 'open file upload share import', disabled: c.offline, run: () => { void importLienzo(); } });
     items.push({ id: 'lienzo.all', group: 'Lienzos', title: 'All Lienzos', subtitle: 'Your Lienzos, with thumbnails', icon: 'LayoutGrid', keywords: 'home documents files open', run: openDocuments });
     for (const d of c.documents) if (d.id !== doc?.id) items.push({ id: 'lienzo.' + d.id, group: 'Lienzos', title: d.title, subtitle: relativeTime(d.updatedAt), icon: 'Frame', verb: 'Open', disabled: c.busy, run: () => { void c.open(d.id); } });
     items.push(
@@ -599,7 +619,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (tool !== 'select') { canvas.current?.cancelGesture(); chooseTool('select'); return true; }
     setOverflow(false); setLinkId(null); void c.select([]); return true;
   };
-  const modalOpen = guideOpen || paletteOpen || !!screen || agentsOpen || (overflow && u.compact) || !!ventana || svgOpen;
+  const modalOpen = guideOpen || paletteOpen || !!screen || agentsOpen || (overflow && u.compact) || !!ventana || svgOpen || !!fileFlow;
   const keyState = { document: !!doc, canvas: mode === 'canvas', selection: !!c.selection.length || !!linkId };
   const reservedKey = (key: string) => { const combo = eventCombo({ key, shift: false, command: false }); return !!combo && resolved.byCombo.has(combo); };
   // The handlers are read through a ref so the listener is attached once and always sees this render's state.
@@ -644,6 +664,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <MenuRow icon="Plus" label="New Lienzo" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
       <MenuRow icon="Frame" label="Lienzos" onPress={() => { setOverflow(false); openDocuments(); }} />
       <MenuRow icon="Pencil" label="Rename" hint="F2" disabled={!doc || disabled} onPress={() => { setOverflow(false); setRename(true); }} />
+      <MenuRow icon="FileOutput" label="Export this Lienzo…" disabled={!doc} onPress={() => exportLienzo()} />
+      <MenuRow icon="FileInput" label="Import a Lienzo…" disabled={c.offline} onPress={() => { void importLienzo(); }} />
       <MenuDivider />
       <MenuRow icon="Undo2" label="Undo" hint={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} />
       <MenuRow icon="Redo2" label="Redo" hint={keyLabel('edit.redo')} disabled={disabled || !c.view?.canRedo} onPress={() => { void changeRevision('redo'); }} />
@@ -684,7 +706,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const pinnedRows = pinnedEntries.map(e => ({ id: e.id, name: e.name, icon: e.icon, description: e.description }));
   const screens = <>
     <Screen open={screen?.kind === 'lienzos'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-lienzos" label="Lienzos" fit="top">
-      <LienzosScreen c={c} width={frame.width} open={screen?.kind === 'lienzos'} onNew={() => { void newCanvas(); }} onOpen={id => { setScreen(null); if (id !== doc?.id) void c.open(id); }} />
+      <LienzosScreen c={c} width={frame.width} open={screen?.kind === 'lienzos'} onNew={() => { void newCanvas(); }} onExport={id => exportLienzo(id)} onImport={() => { void importLienzo(); }} onOpen={id => { setScreen(null); if (id !== doc?.id) void c.open(id); }} />
     </Screen>
     <Screen open={screen?.kind === 'history'} onClose={closeScreen} panel={panelBox} nativeID="lienzo-screen-history" label="History" fit="center">
       <HistoryScreen c={c} open={screen?.kind === 'history'} onUndo={() => { void changeRevision('undo'); }} onRedo={() => { void changeRevision('redo'); }}
@@ -708,7 +730,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     </View>}
     <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState art={<MateDrawing size={112} />} title="Pour yourself a mate." description="Then start a Lienzo, or ask your agent to draw what it is explaining.">
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}</View>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}<Button label="Import…" icon="FileInput" variant="ghost" disabled={c.offline} onPress={() => { void importLienzo(); }} /></View>
       </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0}
         overlay={view => <CommentLayer state={comments} view={view} groups={new Set(doc.groups.map(g => g.id))} titleOf={titleOf} hidden={immersive}
           clear={u.compact ? { top: 8, bottom: 8, right: 8 } : { top: tokens.island.inset + F.top.height + 8, bottom: F.toolbar.bottom + F.toolbar.height + 8, right: panelVisible ? F.rightPanel.width + F.rightPanel.inset + 8 : 8 }} />} />}
@@ -765,13 +787,16 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     {/* Above every island: files from the computer are about to land on the canvas. */}
     {fileOver && <View pointerEvents="none" nativeID="lienzo-file-drop" style={{ position: 'absolute', inset: tokens.media.upload.dropInset, borderRadius: tokens.media.upload.dropRadius, borderWidth: 2, borderStyle: 'dashed', borderColor: u.c.accent, backgroundColor: withAlpha(u.c.accent, .06), alignItems: 'center', justifyContent: 'center', zIndex: 40 }}>
       <View style={[islandStyle(u, true), { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }]}>
-        <View style={{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: u.wash('acento') }}><Icon name="ImagePlus" size={18} color={u.c.accent} /></View>
-        <View style={{ gap: 2 }}><Txt kind="bodyStrong">Drop to add the images here</Txt><Txt kind="small" muted>PNG, JPEG, WebP, GIF or SVG, up to {MEDIA_LIMITS.bytes / 1024 / 1024} MB each</Txt></View>
+        <View style={{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: u.wash('acento') }}><Icon name={images.current.accepts() ? 'ImagePlus' : 'FileInput'} size={18} color={u.c.accent} /></View>
+        {images.current.accepts() ? <View style={{ gap: 2 }}><Txt kind="bodyStrong">Drop to add the images here</Txt><Txt kind="small" muted>PNG, JPEG, WebP, GIF or SVG, up to {MEDIA_LIMITS.bytes / 1024 / 1024} MB each. A .lienzo file opens as a new Lienzo.</Txt></View>
+          : <View style={{ gap: 2 }}><Txt kind="bodyStrong">Drop a .lienzo file to import it</Txt><Txt kind="small" muted>You review it first. It opens as a new Lienzo; nothing is overwritten.</Txt></View>}
       </View>
     </View>}
     <TooltipLayer />
     <LinkSheet intent={ventana} onClose={() => setVentana(null)} panel={panelBox} disabled={disabled} onAdd={insertLink} onFiles={files => addImages(files)} />
     <SvgSheet open={svgOpen} onClose={() => setSvgOpen(false)} panel={panelBox} onInsert={insertSvg} />
+    <ExportSheet c={c} documentId={fileFlow?.kind === 'export' ? fileFlow.documentId : null} panel={panelBox} onClose={() => setFileFlow(null)} onSaved={message => toast.show(message, { variant: 'success' })} />
+    <ImportSheet c={c} file={fileFlow?.kind === 'import' ? fileFlow : null} panel={panelBox} onClose={() => setFileFlow(null)} onImported={(id, review) => { void imported(id, review.importTitle); }} />
     <Modal title="Notices" open={showAllWarnings} onOpenChange={setShowAllWarnings}><Modal.Content>{reload && <Banner title="This agent has no Lienzo tools" icon="Info" color={u.c.statusWarning} message="It is connected, but it was created without the tools, so it cannot read or edit the Lienzo. Turn the tools on in the agent dialog and create a new agent, or use “Set up an existing agent”."><Button label="Got it" small variant="ghost" onPress={() => { setReload(false); setShowAllWarnings(false); }} /></Banner>}</Modal.Content></Modal>
     <Modal title="Menu" open={overflow && u.compact} onOpenChange={setOverflow}><Modal.Content><View>{menuRows}</View></Modal.Content></Modal>
     {settings.saveError && <View style={{ position: 'absolute', top: tokens.island.bannerTop, left: 12, right: 12, padding: 8, backgroundColor: u.c.surface1 }}><Txt kind="small" muted>Could not remember that you saw the guide.</Txt><Button label="Retry" small variant="ghost" onPress={() => { guideClaim.current = false; void settings.reload(); }} /></View>}

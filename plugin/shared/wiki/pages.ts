@@ -39,6 +39,22 @@ export const corePages: readonly WikiPage[] = [
     byHand: ["Select one thing; the Properties panel opens on the right (⌘\\ hides or shows it).", "Edit a field; it saves 600 ms after the last key. Adding, removing, moving and ticking save at once.", "Open More options for the less common fields.", "Press a row of a list to show its tools: move up or down, remove, and for files indent, highlight or mute.", "Double-click a selected card to rename it on the canvas: Enter saves, Escape keeps the old title."],
     tips: ["If a change is refused, the panel says why under the field and keeps your draft, with Retry.", "Raw data (JSON), at the end, is exactly what the agent reads and writes. You never need it, but it is there."],
     related: ["interactive.variables", "drawing.select"], keywords: "properties panel edit fields form inspector json raw more options" },
+  { id: "start.share", section: "start", title: "Share a Lienzo", icon: "FileOutput", art: "install",
+    summary: "Send one Lienzo as a .lienzo file; open one someone sent you.",
+    purpose: "A .lienzo file holds one Lienzo as it is now: its blocks, Frames, Sheets and links, the images it shows, and the custom block types and extensions it uses. History is never in it. Comments and what people did with interactive blocks (control values, quiz answers, mini app state, what extensions kept) go in only if you tick them. Importing always makes a new Lienzo, so nothing you have is replaced; you see what the file brings before anything is saved.",
+    byHand: [
+      "To export: open the menu and choose Export this Lienzo…, or use … on a card in Lienzos, or ⌘K “Export this Lienzo”.",
+      "Tick Comments or What people did with interactive blocks if you want them in the file, then press Export.",
+      "To import: press Import… in Lienzos, drop a .lienzo file on Lienzos or on the canvas, or open the file with the desktop app.",
+      "Read the review: what the Lienzo holds, which block types and extensions are new here, and anything that differs. Then press Import as a new Lienzo.",
+    ],
+    tips: [
+      "If you already have a Lienzo with the same title, the new one is called “… (imported)”.",
+      "An extension that came in a file can only read and select until you allow it in Extensions.",
+      "If this computer has a block type or extension with the same name but different content, yours is kept and the review says so.",
+      "A .lienzo file can be up to 50 MB, images included.",
+    ],
+    related: ["start.lienzo", "ext.permissions", "agents.comments"], keywords: "share export import file send open lienzo download save backup copy" },
 
   // ---- Drawing
   { id: "drawing.select", section: "drawing", title: "Select", icon: "MousePointer2", art: "select", shortcut: "tool.select",

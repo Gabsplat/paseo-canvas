@@ -24,3 +24,5 @@ export const AgentSheet: ClientHost['AgentSheet'] = null;
 export const AgentSettings: ClientHost['AgentSettings'] = null;
 // Paseo updates the plugin itself; the panel shows no app updates.
 export const AboutUpdates: ClientHost['AboutUpdates'] = null;
+// Paseo has no file dialogs of its own here: a .lienzo file is downloaded by the browser and opened with a picker.
+export const files: ClientHost['files'] = null;

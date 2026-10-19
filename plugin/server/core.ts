@@ -7,6 +7,7 @@ import { CanvasService } from "./service";
 import { ToolRouter, toolNames, type CallerScope } from "./tools";
 import { CopilotService } from "./copilot";
 import { MediaStore } from "./media";
+import { exportLienzo, importLienzo } from "./lienzo-file";
 import { AgentGateway, type HandlerContext, type ServerHost } from "./host";
 
 /** The plugin's version (plugin/package.json). */
@@ -70,6 +71,8 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.readAbout, () => ({ version: options.version ?? LIENZO_VERSION, dataFile: store.file, host: host.kind }));
   host.handle(rpc.putMedia, input => media.put(input.data));
   host.handle(rpc.readMedia, input => media.read(input.url));
+  host.handle(rpc.exportLienzo, input => exportLienzo(store, media, input, { name: "Lienzo", version: options.version ?? LIENZO_VERSION }));
+  host.handle(rpc.importLienzo, input => importLienzo(store, media, input));
   host.handle(rpc.readSharing, input => service.sharing(input));
   host.handle(rpc.configureSharing, input => service.configureSharing(input));
   host.handle(rpc.createSheet, input => service.createSheet(input));

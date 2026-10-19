@@ -273,6 +273,8 @@ RPC method names use the installed SDK's lowercase-only syntax.
 | `readCopilot`, `setCopilot` | `canvas.copilot.read`, `canvas.copilot.set` | `{workspaceId,agentId}` (+ `patch`, optional `title`) return the agent's copilot view |
 | `listCopilot` | `canvas.copilot.list` | `{agentIds}` returns `{enabled,drawing,hasTools}` per agent, for composer pills |
 | `createSheet`, `listSheets` | `canvas.sheet.create`, `canvas.sheet.list` | Create a Sheet (user source) with revision, or list Sheets in order |
+| `exportLienzo` | `canvas.lienzo.export` | `{workspaceId,documentId,comments?,runtime?}` returns `{fileName,mime,text,bytes,images,missingImages}`: a `.lienzo` file's text (see [Lienzo files](#lienzo-files)) |
+| `importLienzo` | `canvas.lienzo.import` | `{workspaceId,text,dryRun?}` returns the review (counts, images, comments, runtime, block types and extensions with `new`/`installed`/`conflict`, warnings; `preview` content on a dry run), `committed` and the new `documentId` |
 
 `DocumentView.latestAgent` is the agent's most recent transaction from history, or `null`:
 `{transactionId, revision, at, agentId?, label, kind, ids, removed}`. `ids` are the changed
@@ -285,6 +287,48 @@ remain in the document DTO for a simple frontend while `selectionVersion` and `r
 advance independently on selection and runtime changes. `setSelection` does not add content history.
 The legacy `selection.set` batch operation remains supported and counts as a content transaction;
 new UI code should use the dedicated RPC.
+
+## Lienzo files
+
+One Lienzo shared as a file: `<title>.lienzo`, UTF-8 JSON, MIME `application/vnd.lienzo+json`, at most 50 MB
+(`LIENZO_FILE` in `plugin/shared/lienzo-file.ts`, where `lienzoFileSchema` validates it). Both hosts serve the same two
+RPCs from the server core (`plugin/server/lienzo-file.ts`); there is no MCP tool for it.
+
+```json
+{ "format": "lienzo", "version": 1, "exportedAt": "2026-10-19T12:00:00.000Z", "app": { "name": "Lienzo", "version": "0.1.0" },
+  "document": { "title": "…", "blocks": [], "groups": [], "links": [], "communication": { "instructions": "" }, "selectedIds": [] },
+  "comments": [ /* optional: comment threads as stored */ ],
+  "runtime": { "blocks": {}, "scopes": {}, "extensionStorage": {} },
+  "media": { "<sha256>.png": { "type": "image/png", "data": "<base64>" } },
+  "catalog": { "blockTypes": [ /* custom types the document uses */ ], "extensions": [ /* with optional "pack": {id,name,description} */ ] } }
+```
+
+- **Export** writes the document content as it is now: no id, workspace, revision, timestamps, history, connection or
+  selection. Entity ids stay (they are scoped to the document). `media` holds every `lienzo-media:` reference the
+  document uses, read from the media store; an image missing on this computer is left out and counted in
+  `missingImages`. `catalog.blockTypes` holds the non-shipped types the blocks use; `catalog.extensions` the extensions
+  that keep `lienzo.storage` on this document, with the extension file (pack) they came from. `comments` and `runtime`
+  (block runtime, variable values, extension storage) are written only when asked for. Over 50 MB is `TOO_LARGE`.
+- **Import** checks everything before writing: JSON, `format`, `version` (a newer version says to update Lienzo),
+  the strict schema at every level (an unknown field is refused), prototype keys, each image (base64, its SHA-256 equal
+  to its name, the sniffed kind equal to its extension, the media limits, SVG through the static sanitizer). A cleaned
+  SVG may get a new name; references are rewritten to it. A reference whose image is not in the file stays and is a
+  warning.
+- It always creates a **new** document (new id, revision 0, no history, no connection). A title another Lienzo of the
+  workspace has gets ` (imported)`, then ` (imported 2)`.
+- **Block types**: a missing one is installed as a local type. One installed with the same id and different content is
+  kept as it is (it may be in use elsewhere) and the review warns; renaming the incoming one would break its blocks'
+  `typeId`, so it is not namespaced. Blocks whose type neither this computer nor the file has refuse the import
+  (`UNKNOWN_TYPE`).
+- **Extensions** are installed in an extension file (pack) and **not granted**: the file they came from when its id
+  is free here and namespaces them, else a `lienzo-file_…` file named "From “title”". An installed one with the same
+  id is kept (`installed` or `conflict`).
+- **Comments** keep their authors and text, get new thread and message ids, and carry `imported: true` (the list says
+  "· Imported"). A pin on an entity that is not there becomes a free point. **Runtime** is imported only when present,
+  cleaned to the blocks and declarations that exist, with storage only for extensions this computer has.
+- `dryRun` answers the review from the current state and writes nothing. Otherwise images are written first (content
+  addressed, so one already kept is not written again), then the document, types and extension files in one store
+  transaction; if it fails, the images this import wrote are removed.
 
 ## MCP usage
 

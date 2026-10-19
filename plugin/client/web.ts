@@ -197,6 +197,12 @@ export function downloadJson(value: unknown, filename: string): boolean {
   const url = host.URL.createObjectURL(blob), a = host.document.createElement('a'); a.href = url; a.download = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
   host.document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => host.URL.revokeObjectURL(url), 1000); return true; } catch { return false; }
 }
+/** Any text file through the browser (a .lienzo file). The name keeps its words; only what file systems refuse goes. */
+export function downloadText(text: string, filename: string, mime: string): boolean {
+  try { const host = browser(); if (!host.document) return false;
+  const url = host.URL.createObjectURL(new host.Blob([text], { type: mime })), a = host.document.createElement('a'); a.href = url; a.download = filename.replace(/[\\/:*?"<>|]/g, '_');
+  host.document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => host.URL.revokeObjectURL(url), 1000); return true; } catch { return false; }
+}
 export function pickJsonFile(maxBytes = 1048576): Promise<string | null> {
   const host = browser(); if (!host.document) return Promise.resolve(null);
   return new Promise((resolve, reject) => {
@@ -330,6 +336,13 @@ export function onEscapeKey(handler: () => boolean, capture = false): () => void
   const listener = (event: BrowserKeyEvent) => { if (event.key === 'Escape' && handler()) { event.preventDefault(); event.stopPropagation(); } };
   doc.addEventListener('keydown', listener, capture);
   return () => doc.removeEventListener('keydown', listener, capture);
+}
+/** Enter outside text fields and controls that take it themselves (a dialog's primary action). Native ignores it. */
+export function onEnterKey(handler: () => boolean): () => void {
+  const doc = browser().document; if (!doc) return () => {};
+  const listener = (event: BrowserKeyEvent) => { if (event.key === 'Enter' && !event.repeat && !isTextTarget(event.target) && !event.target?.closest?.('button,a,[role="button"],[role="checkbox"],[role="menuitem"]') && handler()) { event.preventDefault(); event.stopPropagation(); } };
+  doc.addEventListener('keydown', listener);
+  return () => doc.removeEventListener('keydown', listener);
 }
 /** ⌘ on Apple platforms, Ctrl elsewhere. Native clients ask React Native. */
 export function isMacPlatform(): boolean {

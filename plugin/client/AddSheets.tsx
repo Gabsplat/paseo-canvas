@@ -22,9 +22,9 @@ const A = tokens.face.addSheet, S = tokens.face.screens;
 type UI = ReturnType<typeof useUI>;
 
 /** The shell: dimmed canvas, a compact sheet near the top (a bottom sheet when compact), header, body and footer. */
-export function AddSheet({ open, onClose, nativeID, icon, title, subtitle, panel, children, footer }: {
+export function AddSheet({ open, onClose, nativeID, icon, title, subtitle, panel, children, footer, sheetWidth = A.width }: {
   open: boolean; onClose(): void; nativeID: string; icon: string; title: string; subtitle: string; panel: { width: number; height: number };
-  children: React.ReactNode; footer: React.ReactNode;
+  children: React.ReactNode; footer: React.ReactNode; sheetWidth?: number;
 }) {
   const u = useUI(), motion = useReducedMotion(), shown = useRef(new Animated.Value(0)).current, close = useRef(onClose), box = useRef<View>(null); close.current = onClose;
   useEffect(() => {
@@ -34,7 +34,7 @@ export function AddSheet({ open, onClose, nativeID, icon, title, subtitle, panel
     return onEscapeKey(() => { close.current(); return true; }, true);
   }, [open]);
   if (!open) return null;
-  const dark = isDark(u.c.surface0), width = u.compact ? panel.width : Math.min(A.width, panel.width - 32);
+  const dark = isDark(u.c.surface0), width = u.compact ? panel.width : Math.min(sheetWidth, panel.width - 32);
   const place = u.compact ? { left: 0, right: 0, bottom: 0, maxHeight: panel.height - 24 } : { left: (panel.width - width) / 2, top: Math.max(24, Math.round(panel.height * A.top)), width, maxHeight: panel.height - 48 };
   return <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0, zIndex: 210 }}>
     <Animated.View pointerEvents="none" style={{ position: 'absolute', inset: 0, opacity: shown, backgroundColor: withAlpha(dark ? '#000000' : u.c.foreground, S.dim * .75) }} />
@@ -82,7 +82,7 @@ function Footer({ hint, label, disabled, busy, onCancel, onSubmit }: { hint: str
 }
 
 /** A notice in the preview: a calm note, or a warning that says plainly what will happen. */
-function Notice({ tone, children, nativeID }: { tone: 'note' | 'warning' | 'error'; children: React.ReactNode; nativeID?: string }) {
+export function Notice({ tone, children, nativeID }: { tone: 'note' | 'warning' | 'error'; children: React.ReactNode; nativeID?: string }) {
   const u = useUI(), color = tone === 'warning' ? u.c.statusWarning : tone === 'error' ? u.c.statusDanger : u.c.foregroundMuted;
   return <View nativeID={nativeID} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, backgroundColor: tone === 'note' ? u.c.surface2 : u.wash(tone === 'warning' ? 'aviso' : 'riesgo') }}>
     <View style={{ paddingTop: 1 }}><Icon name={tone === 'note' ? 'Info' : tone === 'warning' ? 'TriangleAlert' : 'CircleAlert'} size={14} color={color} /></View>
