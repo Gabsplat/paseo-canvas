@@ -10,7 +10,7 @@ import { islandStyle } from './whiteboard-visuals';
 /** The tools in the bottom toolbar. Frame and Window act once (they add one) instead of staying in hand. */
 export type ToolId = 'select' | 'hand' | 'pencil' | 'shape' | 'text' | 'arrow' | 'eraser' | 'marco' | 'ventana';
 export const GLOSSARY = {
-  lienzo: 'Lienzo — this canvas and each document in it (Spanish for canvas).',
+  lienzo: 'Lienzo — this canvas and each document in it.',
   marco: 'A frame that holds things together.',
   hoja: 'A chapter the agent adds while explaining.',
   lente: 'A way to colour the same canvas.',

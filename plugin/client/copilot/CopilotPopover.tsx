@@ -47,7 +47,7 @@ export function CopilotPanel(p: CopilotPanelProps) {
     <Icon name="Frame" size={16} color={c.foreground} />
     <View style={{ flex: 1 }}>
       <Txt kind="bodyStrong">Lienzo copilot</Txt>
-      <Txt kind="small" muted numberOfLines={1}>{view?.copilot.enabled ? statusText[status] : 'Lienzo (Spanish for canvas): the agent draws as it explains'}</Txt>
+      <Txt kind="small" muted numberOfLines={1}>{view?.copilot.enabled ? statusText[status] : 'The agent draws as it explains'}</Txt>
     </View>
     {view?.hasTools && <Toggle label="Copilot on" value={!!view.copilot.enabled} disabled={p.busy} colors={c} onChange={p.onToggle} />}
   </View>;
