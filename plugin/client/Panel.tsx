@@ -168,15 +168,16 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   };
   const resolved = shortcutRegistry.resolve(overrides);
   // What an open extension sees of the canvas and may do to it beside the document: the camera, a highlight (never saved).
-  const viewSubs = useRef(new Set<() => void>()), docRef = useRef(doc); docRef.current = doc;
+  const framedRef = useRef<() => void>(() => {}), viewSubs = useRef(new Set<() => void>()), docRef = useRef(doc); docRef.current = doc;
   const [highlight, setHighlight] = useState<(CanvasHighlight & { owner: string }) | null>(null);
   const stage = useMemo<ExtensionStage>(() => ({
     view: () => { const camera = canvas.current?.camera(), d = docRef.current; if (!camera || !d) return null; return extensionView(camera, geometry.current.rects, [...d.groups, ...d.blocks].map(e => e.id), d.groups.filter(g => g.sheet && !g.parentGroupId).sort((a, b) => a.sheet!.number - b.sheet!.number).map(g => g.id)); },
-    fit: (ids, options) => canvas.current?.frameIds(ids, options) ?? false,
+    fit: (ids, options) => { const framed = canvas.current?.frameIds(ids, options) ?? false; if (framed) framedRef.current(); return framed; },
     subscribe: listener => { viewSubs.current.add(listener); return () => { viewSubs.current.delete(listener); }; },
     highlight: (owner, next) => setHighlight(current => next?.ids.length ? { ...next, owner } : current?.owner === owner ? null : current),
   }), []);
   const copilot = useCopilotCanvas({ c, fly: ids => canvas.current?.flyToIds(ids), geometry, center: () => canvas.current?.viewportCenter(), active: !(u.compact && ['select', 'svg'].includes(tool)) && !!c.view });
+  framedRef.current = copilot.framed;
   const keyLabel = (id: string) => { const combo = resolved.list.find(s => s.id === id)?.assigned[0]; return combo ? formatCombo(combo, mac) : undefined; };
   const chips = (combo: string) => comboParts(combo, mac);
   useEffect(() => { if (c.arrival) toast.show(`New Lienzo: “${c.arrival.title}”`, { variant: 'info' }); }, [c.arrival?.id]);
