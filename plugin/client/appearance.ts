@@ -10,8 +10,8 @@ import { tokens } from './tokens';
 export type Appearance = 'system' | 'light' | 'dark';
 export const APPEARANCES: readonly { id: Appearance; label: string; detail: string; icon: string }[] = [
   { id: 'system', label: 'System', detail: 'Follows the app around Lienzo.', icon: 'Monitor' },
-  { id: 'light', label: 'Light', detail: 'Papel: warm paper, dark ink.', icon: 'Sun' },
-  { id: 'dark', label: 'Dark', detail: 'Tinta: dark paper, light ink.', icon: 'Moon' },
+  { id: 'light', label: 'Light', detail: 'Warm paper, dark ink.', icon: 'Sun' },
+  { id: 'dark', label: 'Dark', detail: 'Dark paper, light ink.', icon: 'Moon' },
 ];
 export const isAppearance = (value: unknown): value is Appearance => value === 'system' || value === 'light' || value === 'dark';
 /** The next one round the cycle, for the shortcut. */
