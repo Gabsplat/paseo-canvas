@@ -153,7 +153,7 @@ export function readExtensionFile(text: string): { pack: CanvasPack } | { error:
   if ((pack.blockTypes?.length ?? 0) || (pack.templates?.length ?? 0) || (pack.documents?.length ?? 0)) return { error: EXTENSION_MESSAGES.legacy };
   return { pack: { ...pack, blockTypes: [], templates: [], documents: [] } };
 }
-export const PERMISSION_WORDS: Record<string, string> = { edit: 'Changes the canvas', network: 'Loads from the internet', view: 'Moves the view' };
+export const PERMISSION_WORDS: Record<string, string> = { edit: 'Changes the canvas', network: 'Loads from the internet', view: 'Moves the view', variables: 'Moves variables' };
 /** How a permission is shown on a card: words, tone and icon. */
 export const permissionChip = (p: string) => ({ label: PERMISSION_WORDS[p] ?? p, tone: p === 'network' ? 'aviso' as const : 'acento' as const, icon: p === 'network' ? 'Globe' : p === 'view' ? 'Compass' : 'PenLine' });
 

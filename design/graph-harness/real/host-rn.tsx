@@ -2,7 +2,7 @@
 // motion of the real components, not the host's icon set.
 import React from 'react';
 import { Modal as RNModal, Pressable, ScrollView as RNScrollView, Text, TextInput as RNTextInput, useWindowDimensions, View } from 'react-native';
-const glyph: Record<string, string> = { ChevronDown: '⌄', ChevronRight: '›', Plus: '+', Minus: '−', Maximize: '⤢', Pin: '•', PinOff: '◦', Compass: '◎', PanelRight: '▯', Ellipsis: '…', Check: '✓' };
+const glyph: Record<string, string> = { ChevronDown: '⌄', ChevronRight: '›', Plus: '+', Minus: '−', Maximize: '⤢', Pin: '•', PinOff: '◦', Compass: '◎', PanelRight: '▯', Ellipsis: '…', Check: '✓', X: '✕', Sparkles: '✦', ArrowUp: '↑', MessageSquare: '❝', MessageSquarePlus: '❞', Eye: '◉', EyeOff: '◌', RotateCcw: '↺', Trash2: '⌫', ChevronLeft: '‹', CheckCheck: '✓' };
 let modalColors = { surface1: '#f8f6f2', foreground: '#252722' };
 export const setMockModalColors = (colors: typeof modalColors) => { modalColors = colors; };
 export function Icon({ name, size = 14, color }: { name: string; size?: number; color?: string }) {

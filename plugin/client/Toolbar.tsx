@@ -8,13 +8,14 @@ import { Txt, useTooltip, useUI, type TooltipContent } from './ui';
 import { islandStyle } from './whiteboard-visuals';
 
 /** The tools in the bottom toolbar. Frame and Window act once (they add one) instead of staying in hand. */
-export type ToolId = 'select' | 'hand' | 'pencil' | 'shape' | 'text' | 'arrow' | 'eraser' | 'marco' | 'ventana';
+export type ToolId = 'select' | 'hand' | 'pencil' | 'shape' | 'text' | 'arrow' | 'eraser' | 'marco' | 'ventana' | 'comment';
 export const GLOSSARY = {
-  lienzo: 'Lienzo — this canvas and each document in it (Spanish for canvas).',
+  lienzo: 'Lienzo — this canvas and each document in it.',
   marco: 'A frame that holds things together.',
   hoja: 'A chapter the agent adds while explaining.',
   lente: 'A way to colour the same canvas.',
   ventana: 'A window onto a web page, a video or a mini app.',
+  comment: 'A note pinned on a card, a Frame or a spot. Your agent reads them when you ask.',
 } as const;
 type ToolDef = { id: ToolId; label: string; icon: string; shortcut: string; detail?: string };
 export const TOOLS: readonly ToolDef[] = [
@@ -27,8 +28,9 @@ export const TOOLS: readonly ToolDef[] = [
   { id: 'eraser', label: 'Eraser', icon: 'Eraser', shortcut: 'tool.eraser' },
   { id: 'marco', label: 'Frame', icon: 'SquareDashed', shortcut: 'tool.marco', detail: GLOSSARY.marco },
   { id: 'ventana', label: 'Window', icon: 'AppWindow', shortcut: 'tool.ventana', detail: GLOSSARY.ventana },
+  { id: 'comment', label: 'Comment', icon: 'MessageSquarePlus', shortcut: 'tool.comment', detail: GLOSSARY.comment },
 ];
-const GROUPS: readonly (readonly ToolId[])[] = [['select', 'hand'], ['pencil', 'shape', 'text', 'arrow', 'eraser'], ['marco', 'ventana']];
+const GROUPS: readonly (readonly ToolId[])[] = [['select', 'hand'], ['pencil', 'shape', 'text', 'arrow', 'eraser'], ['marco', 'ventana'], ['comment']];
 /** The shape flyout: rectangle and ellipse have their own keys. */
 export const SHAPE_CHOICES: readonly { shape: WbShape; label: string; icon: string; shortcut?: string }[] = [
   { shape: 'rect', label: 'Rectangle', icon: 'Square', shortcut: 'tool.rectangle' }, { shape: 'ellipse', label: 'Ellipse', icon: 'Circle', shortcut: 'tool.ellipse' },
@@ -62,14 +64,14 @@ function ToolButton({ icon, active, disabled, tip, onPress, touch, badge, chevro
 const Divider = () => { const u = useUI(); return <View style={{ width: F.divider.width, height: F.divider.height, marginHorizontal: F.divider.marginH, backgroundColor: u.c.border }} />; };
 
 /**
- * The bottom toolbar: Select, Hand | Pencil, Shape (with its flyout), Text, Arrow, Eraser | Frame, Window |
+ * The bottom toolbar: Select, Hand | Pencil, Shape (with its flyout), Text, Arrow, Eraser | Frame, Window | Comment |
  * pinned tools | +. A double press on the tool in hand keeps it (the lock dot); Esc or V lets go.
  */
 export function Toolbar({ active, shape, locked, disabled, onTool, onShape, onLock, pinned, onAdd, addOpen, keyLabel, scroll = false, addRef }: ToolbarProps) {
   const u = useUI(), [flyout, setFlyout] = useState(false), last = useRef<{ id: string; time: number } | null>(null), touch = scroll || u.compact;
   const press = (id: ToolId) => {
     const now = Date.now(), twice = last.current?.id === id && now - last.current.time < 300; last.current = { id, time: now };
-    if (twice && active === id && !['marco', 'ventana'].includes(id)) { onLock(!locked); return; }
+    if (twice && active === id && !['marco', 'ventana', 'comment'].includes(id)) { onLock(!locked); return; }
     if (id === 'shape' && active === 'shape') { setFlyout(open => !open); return; }
     setFlyout(false); onTool(id);
   };

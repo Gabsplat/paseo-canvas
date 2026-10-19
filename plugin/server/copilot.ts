@@ -80,7 +80,7 @@ export class CopilotService {
       agentId, copilot: settings,
       hasTools: Object.values(state.owners).some(owner => owner.agentId === agentId),
       drawing: this.activity.drawing(agentId), lastToolAt: this.activity.lastToolAt(agentId),
-      document: usable ? { id: usable.document.id, title: usable.document.title } : null,
+      document: usable ? { id: usable.document.id, title: usable.document.title, openComments: usable.comments?.threads.filter(thread => thread.status === "open").length ?? 0 } : null,
       latest: latest && usable ? { ...latest, documentId: usable.document.id, titles } : null,
     };
   }

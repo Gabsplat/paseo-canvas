@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { EXTENSION_API, EXTENSION_FORBIDDEN_OPERATIONS, EXTENSION_LIMITS, EXTENSION_TONES, extensionDocument, isExtensionKey, routeExtensionKey, type ExtensionTone, type ExtensionView } from '../shared/extensions';
+import { EXTENSION_API, EXTENSION_FORBIDDEN_OPERATIONS, EXTENSION_LIMITS, EXTENSION_TONES, extensionDocument, extensionVariables, extensionVariableTarget, isExtensionKey, routeExtensionKey, type ExtensionTone, type ExtensionView } from '../shared/extensions';
 import type { CanvasOperation, CatalogExtension, ExtensionPermission } from '../shared/model';
+import type { CommentAnchor, CommentsView } from '../shared/comments';
 import { isDark } from './color';
 import { layoutCanvas } from './logic';
 import { Button, IconButton, Txt, useUI } from './ui';
@@ -9,7 +10,7 @@ import { capabilities } from './host';
 import type { CanvasController } from './useCanvas';
 import { listenExtensionKeys, WebExtension, type ExtensionCall } from './web';
 
-const PERMISSION: Record<ExtensionPermission, string> = { edit: 'change the canvas', network: 'load things from the internet', view: 'move the view of the canvas' };
+const PERMISSION: Record<ExtensionPermission, string> = { edit: 'change the canvas', network: 'load things from the internet', view: 'move the view of the canvas', variables: 'move the values of variables' };
 export const extensionIcon = (extension: CatalogExtension) => extension.icon ?? 'Puzzle';
 const list = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 
@@ -40,6 +41,17 @@ function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { 
   useEffect(() => { if (!sees) return; const stop = stage!.subscribe(viewChanged); return () => { stop(); if (timer.current) clearTimeout(timer.current); timer.current = null; }; }, [sees, stage]);
   useEffect(() => { if (sees) viewChanged(); }, [doc.revision, sees]);
   useEffect(() => () => stage?.highlight(extension.id, null), [stage, extension.id]);
+  // Variables, to a page that asked with lienzo.variables.onChange: now, and at most every 50 ms while values or
+  // declarations change. Runtime values never write a revision.
+  const [watching, setWatching] = useState(false), varTimer = useRef<ReturnType<typeof setTimeout> | null>(null), varsSent = useRef('');
+  const sendVariables = useRef<() => void>(() => {});
+  sendVariables.current = () => { const now = c.view?.document; if (!now) return; const variables = extensionVariables(now, c.learning.getSnapshot()), key = JSON.stringify(variables); if (key === varsSent.current) return; varsSent.current = key; channel.current?.({ type: 'variables', variables }); };
+  useEffect(() => {
+    if (!watching) return; varsSent.current = ''; sendVariables.current();
+    const stop = c.learning.subscribe(() => { if (!varTimer.current) varTimer.current = setTimeout(() => { varTimer.current = null; sendVariables.current(); }, EXTENSION_LIMITS.variablesMs); });
+    return () => { stop(); if (varTimer.current) clearTimeout(varTimer.current); varTimer.current = null; };
+  }, [watching, c.learning]);
+  useEffect(() => { if (watching) sendVariables.current(); }, [doc.revision, watching]);
   // Keys the page bound reach it from anywhere in Lienzo while this tool is open, before the canvas' shortcuts.
   useEffect(() => { if (!keys.length) return; const bound = new Set(keys); return listenExtensionKeys((event, typing) => routeExtensionKey(event, bound, typing), key => channel.current?.({ type: 'key', key })); }, [keys.join()]);
   const source = useMemo(() => extensionDocument(extension, extension.granted), [extension.html, extension.granted, extension.permissions.join()]);
@@ -75,6 +87,29 @@ function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { 
       if (set && value !== null && new TextEncoder().encode(JSON.stringify(value)).length > EXTENSION_LIMITS.storage) throw new Error(`lienzo.storage holds at most ${EXTENSION_LIMITS.storage / 1024} KiB of JSON.`);
       return (await c.api.extensionStorage({ workspaceId: c.workspaceId, documentId: doc.id, extensionId: extension.id, action: set ? 'set' : 'get', value: value as never })).value;
     }
+    if (method === 'variables.get') return extensionVariables(doc, c.learning.getSnapshot());
+    if (method === 'variables.watch') { setWatching(args.on === true); return null; }
+    if (method === 'variables.set') {
+      if (!allowed.includes('variables') && !allowed.includes('edit')) need('variables');
+      const latest = c.current.current?.document ?? doc, target = extensionVariableTarget(latest, args.name, args.value, args.scope, c.selection);
+      if ('error' in target) throw new Error(target.error);
+      c.learning.setScopeVariable(target.scope, args.name as string, target.value);
+      return { name: args.name, scope: target.scope, value: extensionVariables(latest, c.learning.getSnapshot()).find(v => v.scope === target.scope && v.name === args.name)?.value ?? null };
+    }
+    if (method.startsWith('comments.')) {
+      // The person's notes on the canvas. Reading is free; writing needs "edit" and is signed by the person, via this extension.
+      if (c.offline) throw new Error(`No connection to ${capabilities.name}.`);
+      const scope = { workspaceId: c.workspaceId, documentId: doc.id }, text = typeof args.text === 'string' ? args.text : '', threadId = typeof args.threadId === 'string' ? args.threadId : '';
+      const shape = (view: CommentsView) => view.threads.map(t => ({ id: t.id, status: t.status, anchor: t.anchor.kind === 'point' ? { kind: 'point', x: t.anchor.x, y: t.anchor.y } : { kind: t.anchor.kind, id: t.anchor.id }, messages: t.messages.map(m => ({ author: m.author.kind, name: m.author.kind === 'agent' ? m.author.label : 'You', text: m.text, at: m.createdAt })) }));
+      if (method === 'comments.list') { const status = args.status === 'resolved' || args.status === 'all' ? args.status : 'open'; return shape(await c.api.comments(scope)).filter(t => status === 'all' || t.status === status); }
+      need('edit'); const via = extension.name.slice(0, 80);
+      if (method === 'comments.create') { const a = args.anchor as { kind?: unknown; id?: unknown; x?: unknown; y?: unknown } | undefined;
+        const anchor: CommentAnchor | null = a?.kind === 'point' && typeof a.x === 'number' && typeof a.y === 'number' ? { kind: 'point' as const, x: a.x, y: a.y } : (a?.kind === 'block' || a?.kind === 'group') && known(a.id) ? { kind: a.kind as 'block' | 'group', id: a.id, dx: 0, dy: 0 } : null;
+        if (!anchor) throw new Error('lienzo.comments.create(anchor, text): anchor is { kind: "block" | "group", id } of something on the canvas, or { kind: "point", x, y }.');
+        return { id: (await c.api.commentCreate({ ...scope, anchor, text, via })).threadId }; }
+      if (method === 'comments.reply') { await c.api.commentReply({ ...scope, threadId, text, via }); return { id: threadId }; }
+      if (method === 'comments.resolve') { await c.api.commentResolve({ ...scope, threadId }); return { id: threadId }; }
+    }
     if (method === 'close') { onClose?.(); return null; }
     if (method === 'edit') {
       need('edit'); const operations = args.operations;
@@ -87,7 +122,7 @@ function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { 
     throw new Error(`lienzo.${method} does not exist in API ${EXTENSION_API}.`);
   };
   if (u.layout.platform !== 'web') return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}><Txt kind="small" muted>Extensions run in the web and desktop apps.</Txt></View>;
-  return <WebExtension id={extension.id} source={source} title={extension.name} surface={u.c.surface0} context={context} revision={`${doc.id}:${doc.revision}:${c.selection.join()}:${u.c.surface0}:${allowed.join()}`} onCall={onCall} channel={channel} onReady={() => { setKeys([]); sendView.current(); }} />;
+  return <WebExtension id={extension.id} source={source} title={extension.name} surface={u.c.surface0} context={context} revision={`${doc.id}:${doc.revision}:${c.selection.join()}:${u.c.surface0}:${allowed.join()}`} onCall={onCall} channel={channel} onReady={() => { setKeys([]); setWatching(false); sendView.current(); }} />;
 }
 /** An imported extension asks before it does more than read: what it wants, in words, and one press to allow it. */
 function Grant({ extension, controller: c }: { extension: CatalogExtension; controller: CanvasController }) {

@@ -1,4 +1,5 @@
-import type { CanvasExtension } from "./model";
+import type { CanvasDocument, CanvasExtension } from "./model";
+import { DOCUMENT_SCOPE, isDiscreteVariable, resolveScope, type RuntimeState, type ScopeVariable } from "./learning";
 import { EXAMPLE_ACTIONS, EXAMPLE_HTML } from "./wiki/tutorial";
 
 /**
@@ -8,7 +9,7 @@ import { EXAMPLE_ACTIONS, EXAMPLE_HTML } from "./wiki/tutorial";
  * sends anything to the agent).
  */
 export const EXTENSION_API = 1;
-export const EXTENSION_LIMITS = { operations: 200, selection: 1200, storage: 4096, storedExtensions: 64, keys: 40, padding: 400, viewMs: 100 } as const;
+export const EXTENSION_LIMITS = { operations: 200, selection: 1200, storage: 4096, storedExtensions: 64, keys: 40, padding: 400, viewMs: 100, variablesMs: 50 } as const;
 /** Colours of lienzo.highlight, in the canvas' own tones. */
 export const EXTENSION_TONES = ["accent", "success", "warning", "violet"] as const;
 export type ExtensionTone = typeof EXTENSION_TONES[number];
@@ -42,6 +43,42 @@ export function extensionView(camera: { scale: number; bounds: Box }, rects: Rea
   const sheetId = sheets.find(id => { const r = rects.get(id); return !!r && !r.hidden && cx >= r.x && cx <= r.x + r.width && cy >= r.y && cy <= r.y + r.height; }) ?? null;
   return { scale: Math.round(camera.scale * 1000) / 1000, bounds: { x: round(b.x), y: round(b.y), width: round(b.width), height: round(b.height) }, sheetId, visibleIds };
 }
+/** One variable as lienzo.variables tells it: where it is declared and the value it has now (runtime, else declared). */
+export type ExtensionVariable = { name: string; label: string; type: "number" | "boolean" | "choice"; value: number; initial: number; min: number; max: number; step?: number; unit?: string; options?: string[]; scope: string; scopeTitle: string };
+/** Every declared variable of the document: the Lienzo's first, then each Frame's in document order. */
+export function extensionVariables(document: Pick<CanvasDocument, "variables" | "groups">, runtime: RuntimeState): ExtensionVariable[] {
+  const one = (v: ScopeVariable, scope: string, scopeTitle: string): ExtensionVariable => {
+    const now = runtime.scopes[scope]?.[v.name];
+    return { name: v.name, label: v.label || v.name, type: v.type ?? "number", value: now === undefined ? v.value : Math.max(v.min, Math.min(v.max, now)), initial: v.value, min: v.min, max: v.max,
+      ...(v.step !== undefined ? { step: v.step } : {}), ...(v.unit ? { unit: v.unit } : {}), ...(v.options ? { options: [...v.options] } : {}), scope, scopeTitle };
+  };
+  return [...(document.variables ?? []).map(v => one(v, DOCUMENT_SCOPE, "Lienzo")), ...document.groups.flatMap(g => (g.variables ?? []).map(v => one(v, g.id, g.title || "Untitled")))];
+}
+/**
+ * Where lienzo.variables.set(name, value, { scope }) writes, and the value it may write, or a reason in words. Without a
+ * scope: the one the single selected block or Frame sees the name in, else the Lienzo's, else the only Frame declaring it.
+ */
+export function extensionVariableTarget(document: CanvasDocument, name: unknown, value: unknown, scope: unknown, selection: readonly string[]): { scope: string; value: number | null } | { error: string } {
+  if (typeof name !== "string" || !name) return { error: "lienzo.variables.set(name, value) needs the name of a variable." };
+  const declarations = (id: string) => id === DOCUMENT_SCOPE ? document.variables : document.groups.find(g => g.id === id)?.variables;
+  let target: string | undefined;
+  if (scope !== undefined && scope !== null) {
+    if (typeof scope !== "string" || !declarations(scope)?.some(v => v.name === name)) return { error: `No variable ${name} is declared in ${String(scope)}.` };
+    target = scope;
+  } else {
+    const one = selection.length === 1 ? selection[0] : undefined, empty = { blocks: {}, scopes: {} };
+    if (one && document.blocks.some(b => b.id === one)) target = resolveScope(document, one, empty)[name]?.scopeId;
+    else if (one) { let id: string | null | undefined = one; const seen = new Set<string>(); while (id && !seen.has(id) && !target) { seen.add(id); const g = document.groups.find(x => x.id === id); if (g?.variables?.some(v => v.name === name)) target = g.id; id = g?.parentGroupId; } }
+    if (!target && document.variables?.some(v => v.name === name)) target = DOCUMENT_SCOPE;
+    if (!target) { const frames = document.groups.filter(g => g.variables?.some(v => v.name === name)); if (frames.length > 1) return { error: `${name} is declared in ${frames.length} Frames; pass { scope: frameId }.` }; target = frames[0]?.id; }
+    if (!target) return { error: `No variable ${name} is declared on this Lienzo.` };
+  }
+  const variable = declarations(target)!.find(v => v.name === name)!;
+  if (value === null) return { scope: target, value: null };
+  if (typeof value !== "number" || !Number.isFinite(value)) return { error: `lienzo.variables.set: the value of ${name} must be a finite number (or null to reset it).` };
+  const next = isDiscreteVariable(variable) ? Math.round(value) : value;
+  return { scope: target, value: Math.max(variable.min, Math.min(variable.max, next)) };
+}
 /** Operations an extension may not send: what is selected and what the assistant is told belong to the person. */
 export const EXTENSION_FORBIDDEN_OPERATIONS = ["selection.set", "communication.set"] as const;
 
@@ -50,13 +87,14 @@ export const EXTENSION_FORBIDDEN_OPERATIONS = ["selection.set", "communication.s
  * shipped as text into a document this plugin does not otherwise control.
  */
 export const EXTENSION_RUNTIME = String.raw`(function(){
-var listeners=[],ctx=null,calls={},seq=0,actions=Object.create(null),views=[],lastView=null,keys=Object.create(null),KEY=new RegExp(${JSON.stringify(EXTENSION_KEY_PATTERN)});
+var listeners=[],ctx=null,calls={},seq=0,actions=Object.create(null),views=[],lastView=null,varFns=[],lastVars=null,keys=Object.create(null),KEY=new RegExp(${JSON.stringify(EXTENSION_KEY_PATTERN)});
 function post(m){m.lienzo=1;parent.postMessage(m,'*')}
 function call(method,args){return new Promise(function(ok,no){var id=++seq;calls[id]={ok:ok,no:no};post({type:'call',id:id,method:method,args:args||{}})})}
 window.addEventListener('message',function(e){var d=e.data;if(e.source!==parent||!d||d.lienzo!==1)return;
  if(d.type==='context'){ctx=d.context;if(lastView)ctx.view=lastView;listeners.slice().forEach(function(f){try{f(ctx)}catch(err){console.error(err)}})}
  else if(d.type==='view'){lastView=d.view;if(ctx)ctx.view=d.view;views.slice().forEach(function(f){try{f(d.view)}catch(err){console.error(err)}})}
  else if(d.type==='key')press(d.key);
+ else if(d.type==='variables'){lastVars=d.variables;varFns.slice().forEach(function(f){try{f(d.variables)}catch(err){console.error(err)}})}
  else if(d.type==='result'){var c=calls[d.id];if(!c)return;delete calls[d.id];if(d.ok)c.ok(d.value);else c.no(new Error(d.error||'Error'))}});
 var lienzo=window.lienzo={api:1,
  get context(){return ctx},
@@ -75,6 +113,13 @@ lienzo.view={get:function(){return call('view.get',{})},fit:function(ids,o){o=o|
 lienzo.highlight=function(ids,o){o=o||{};return call('highlight',{ids:[].concat(ids||[]),dim:!!o.dim,tone:o.tone||'accent'})};
 lienzo.highlight.clear=function(){return call('highlight',{ids:[]})};
 lienzo.storage={get:function(){return call('storage.get',{})},set:function(v){return call('storage.set',{value:v===undefined?null:v})}};
+/* Variables (added to API 1): read them, follow their values, and set a runtime value (permission "variables" or "edit"). */
+lienzo.variables={get:function(){return call('variables.get',{})},
+ set:function(n,v,o){o=o||{};return call('variables.set',{name:String(n),value:v===null||v===undefined?null:Number(v),scope:o.scope==null?null:String(o.scope)})},
+ onChange:function(f){if(typeof f!=='function')throw new TypeError('lienzo.variables.onChange(fn) needs a function.');varFns.push(f);if(varFns.length===1)call('variables.watch',{on:true}).catch(function(){});else if(lastVars)f(lastVars);
+  return function(){var had=varFns.length;varFns=varFns.filter(function(x){return x!==f});if(had&&!varFns.length){lastVars=null;call('variables.watch',{on:false}).catch(function(){})}}}};
+lienzo.comments={list:function(o){o=o||{};return call('comments.list',{status:o.status||'open'})},create:function(anchor,text){return call('comments.create',{anchor:anchor,text:text})},
+ reply:function(id,text){return call('comments.reply',{threadId:String(id),text:text})},resolve:function(id){return call('comments.resolve',{threadId:String(id)})}};
 function keyName(e){if(e.ctrlKey||e.metaKey||e.altKey)return null;var k=e.key,b=k===' '||k==='Spacebar'?'Space':/^(Arrow(Left|Right|Up|Down)|Page(Up|Down)|Home|End|Enter|Escape)$/.test(k)?k:/^[a-z]$/i.test(k)?k.toLowerCase():/^Digit[0-9]$/.test(e.code||'')?e.code.slice(5):/^[0-9]$/.test(k)?k:null;return b&&(e.shiftKey?'Shift+'+b:b)}
 function norm(n){n=String(n);var m=/^(shift\+)?(.+)$/i.exec(n),b=m[2];b=/^[a-z]$/i.test(b)?b.toLowerCase():/^space$/i.test(b)?'Space':b;n=(m[1]?'Shift+':'')+b;if(!KEY.test(n))throw new TypeError('lienzo.keys.bind: '+n+' is not a key a tool can take (arrows, Space, PageUp, PageDown, Home, End, Enter, Escape, a-z, 0-9, alone or with Shift+).');return n}
 function press(n){var fs=keys[n];if(!fs)return false;fs.slice().forEach(function(f){try{f(n)}catch(err){console.error(err)}});return true}
@@ -149,7 +194,8 @@ export const EXTENSION_GUIDE = `An extension adds a tool to Lienzo without chang
 - lienzo.select(ids) sets the shared selection (the same one the canvas and every tool use). lienzo.open(id) selects that thing; it moves the camera there too only with permission "view". lienzo.close() closes a tool panel.
 - lienzo.edit(operations, label) -> Promise<{ revision }>. Needs permission "edit". operations are the same transactional operations as canvas_apply (block.create/update/delete, group.*, link.*, entity.move, entity.duplicate, document.update), so undo and revision conflicts work; selection.set and communication.set are refused.
 - Permission "network" lets the page load things from the internet; without it only inline code and data: URLs work.
-- Added to API 1; feature-detect them (if (lienzo.view) ...). Permission "view": lienzo.view.get() -> Promise<{ scale, bounds: { x, y, width, height } (world rect on screen), sheetId (Sheet under the centre of the view, or null), visibleIds }>; lienzo.view.fit(ids, { padding?: px, animate?: true }) -> Promise<boolean> flies the camera to frame them (clear of the panel; false if none is on the canvas; any pan, zoom or drag by the person stops it); lienzo.view.onChange(fn) -> unsubscribe, fn(view) at most every 100 ms; context.view is the same object. Camera moves never create revisions or history. No permission: lienzo.keys.bind(keys, fn(key)) -> unbind, while the tool is open these keys pressed anywhere in Lienzo (not while typing in a field) go to fn and not to the canvas: ArrowLeft/Right/Up/Down, Space, PageUp, PageDown, Home, End, Enter, Escape, a-z, 0-9, each alone or "Shift+x"; never with Cmd/Ctrl/Alt; Escape keeps closing and deselecting unless bound. lienzo.highlight(ids, { dim?, tone?: "accent"|"success"|"warning"|"violet" }) outlines things on the canvas (dim fades every other card) and lienzo.highlight.clear() removes it: never saved, gone when the tool closes. lienzo.storage.get() / .set(value) -> Promise: one JSON value per extension and per Lienzo, at most 4 KiB, kept on the server with no revision or history; null clears it. The frame allows fullscreen (document.documentElement.requestFullscreen() after a press).
+- Added to API 1; feature-detect them (if (lienzo.view) ...). Permission "view": lienzo.view.get() -> Promise<{ scale, bounds: { x, y, width, height } (world rect on screen), sheetId (Sheet under the centre of the view, or null), visibleIds }>; lienzo.view.fit(ids, { padding?: px, animate?: true }) -> Promise<boolean> flies the camera to frame them (clear of the panel; false if none is on the canvas; any pan, zoom or drag by the person stops it); lienzo.view.onChange(fn) -> unsubscribe, fn(view) at most every 100 ms; context.view is the same object. Camera moves never create revisions or history. No permission: lienzo.keys.bind(keys, fn(key)) -> unbind, while the tool is open these keys pressed anywhere in Lienzo (not while typing in a field) go to fn and not to the canvas: ArrowLeft/Right/Up/Down, Space, PageUp, PageDown, Home, End, Enter, Escape, a-z, 0-9, each alone or "Shift+x"; never with Cmd/Ctrl/Alt; Escape keeps closing and deselecting unless bound. lienzo.highlight(ids, { dim?, tone?: "accent"|"success"|"warning"|"violet" }) outlines things on the canvas (dim fades every other card) and lienzo.highlight.clear() removes it: never saved, gone when the tool closes. lienzo.storage.get() / .set(value) -> Promise: one JSON value per extension and per Lienzo, at most 4 KiB, kept on the server with no revision or history; null clears it. The frame allows fullscreen (document.documentElement.requestFullscreen() after a press). lienzo.comments (the person's notes pinned on the canvas; no revision, no undo): .list({ status?: "open"|"resolved"|"all" }) -> Promise<[{ id, status, anchor: { kind: "block"|"group", id } | { kind: "point", x, y }, messages: [{ author: 'person'|'agent', name, text, at }] }]> needs no permission; .create(anchor, text) -> Promise<{ id }>, .reply(id, text) and .resolve(id) need "edit" and are signed by the person, via the extension's name. Panel only: headless actions have no lienzo.comments.
+- Variables (added to API 1; if (lienzo.variables) ...): lienzo.variables.get() -> Promise<[{ name, label, type: "number"|"boolean"|"choice", value (now), initial, min, max, step?, unit?, options?, scope ("$document" or a Frame id), scopeTitle }]>, every variable declared on the Lienzo and its Frames; lienzo.variables.onChange(fn) -> unsubscribe, fn(list) now and whenever a value or a declaration changes (at most every 50 ms). lienzo.variables.set(name, value, { scope? }) -> Promise<{ name, scope, value }> needs permission "variables" (or "edit"): it moves the runtime value like a Controls slider, clamped to the range and whole for on/off and choices; null resets it. Never a revision, history or undo. Without scope it writes where the selected block sees the name, else the Lienzo's, else the only Frame declaring it. Blocks bound to a variable (block.bindings) follow at once, so an extension can drive sizes, colours and text on the canvas.
 - lienzo.kit.stage({ layout(context) -> [{ id, x, y, w, h }], draw(g, view), onMove?(ids, dx, dy), onOpen?(id), onHover?(id) }) gives a tool that draws things the canvas' own behaviour on a 2D canvas it creates: wheel pans, command-wheel zooms, press selects, shift adds, drag on nothing box-selects, drag on a thing moves the selection (only if onMove is given), double press opens, Escape clears. draw runs in world units with view = { scale, selected: { [id]: true }, hover, drag, theme, context, items }. lienzo.kit.card(g, item, view, { title, subtitle, color }) draws a thing with the standard selection and hover look. Prefer the kit whenever a tool shows things: it is what keeps interactions consistent.
 - Actions (optional): what the extension offers an agent, run with canvas_extension_run { extension, action, input, documentId? }. Declare each in the manifest, actions: [{ name, description, input (JSON Schema subset: type object|array|string|number|integer|boolean, properties, required, items, enum, minimum, maximum, minLength, maxLength, minItems, maxItems, additionalProperties; objects are closed by default), returns? }], and register its handler in a script of the page marked <script data-lienzo="actions">: lienzo.action(name, function (input, context) { ... return result; }). That script is plain JavaScript that must not touch the page (no DOM): it runs in the frame, where the page's buttons call lienzo.run(name, input) so the work is written once, and headless on the server in a QuickJS sandbox for the agent. Headless, lienzo has context (document and selection; no theme or layout; lienzo.headless is true), edit (all edits of one run become one undoable transaction labelled "<name> (agent): <label>"; needs "edit", which an imported extension holds only once the person allows it), select, action and run; no timers, network or page; 2 s, 64 MB, 200 operations, a 16 KB JSON result. A failing run changes nothing.
 Keep ids stable; saving the same id replaces the extension. Give it a clear English name and a one-line description of the job it does. Optional docs: the extension's own Help page, shown to the person in Help → Extensions: short Markdown (headings, paragraphs, lists, code, links, bold, italic; no HTML, http(s) or mailto links only, up to 20000 characters) or up to 12 sections [{ title, body }]. Write one that says what it is for and how to use it. The person's Help has a "Make your own" walkthrough (canvas_catalog help { page: "make.overview" }). The complete example from it, a tool that rewrites the selected titles in one undoable edit, saved with permissions ["edit"], its docs and actions ${JSON.stringify(EXAMPLE_ACTIONS)}:

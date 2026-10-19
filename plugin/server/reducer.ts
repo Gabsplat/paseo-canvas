@@ -7,6 +7,8 @@ import {
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
 import { isLocalImage } from "../shared/media";
+import { bindableFor } from "../shared/bindings";
+import { resolveScope } from "../shared/learning";
 
 export const newId = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "")}`;
 export const clone = <T>(value: T): T => structuredClone(value);
@@ -62,6 +64,7 @@ export function validateBlockPresentation(block: CanvasBlock, type?: BlockType):
   // Removed pack types retain raw blocks. The wire envelope still applies, but their renderer/minima are unknown.
   if (!type) return;
   const renderer = type?.renderer;
+  for (const path of Object.keys(block.bindings ?? {})) if (!bindableFor(path, renderer)) throw new CanvasError('VALIDATION', `Block ${block.id} bindings.${path}: a ${type.name} block (${renderer ?? type.id}) cannot bind ${path}. Every block binds size.width and size.height (not free text), offset.x, offset.y, rotation and opacity; wb-shape also stroke.color, fill.color, stroke.width, corner.radius; wb-text, wb-shape, node and note also text.size and text.template.`);
   if (isWhiteboardRenderer(renderer)) {
     if (!block.position || !Number.isFinite(block.position.x) || !Number.isFinite(block.position.y) || Math.abs(block.position.x) > 100000 || Math.abs(block.position.y) > 100000) throw new CanvasError('VALIDATION', 'Los objetos de pizarra necesitan position finita entre -100000 y 100000.');
     if (renderer === 'wb-text' && block.size) throw new CanvasError('VALIDATION', 'El texto libre usa data.width; no admite block.size.');
@@ -287,6 +290,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const type = catalog.blockTypes.find(type => type.id === block.typeId);
         if (!type) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}. Read canvas_catalog first.`, { available: catalog.blockTypes.map(type => type.id) });
         block.data = rendererData(type, { ...clone(type.defaults), ...block.data }, block.data);
+        if (!block.bindings || !Object.keys(block.bindings).length) delete block.bindings;
         normalizeBlock(block, type);
         next.blocks.push(block);
         attach(next, block.id, block.parentGroupId ?? null);
@@ -298,6 +302,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         const { data, parentGroupId, ...patch } = operation.patch;
         if (patch.typeId && !catalog.blockTypes.some(type => type.id === patch.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${patch.typeId}.`);
         Object.assign(block, patch);
+        if (patch.bindings !== undefined && (!block.bindings || !Object.keys(block.bindings).length)) delete block.bindings;
         if (data) block.data = rendererData(catalog.blockTypes.find(type => type.id === block.typeId), mergePatch(block.data, data) as CanvasBlock['data'], data);
         const type = catalog.blockTypes.find(type => type.id === block.typeId);
         if (type) normalizeBlock(block, type);
@@ -380,7 +385,23 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
     for (const block of next.blocks) known.add(block.id);
   }
   removeOrphanedStrokeLayers(next, known, catalog);
+  checkNewBindings(document, next);
   return next;
+}
+/**
+ * A binding written in this transaction must name a variable its block can see (declared on one of its Frames or on the
+ * Lienzo, possibly in the same transaction). A binding left inert by deleting its variable later stays as it is.
+ */
+function checkNewBindings(before: CanvasDocument, next: CanvasDocument): void {
+  const empty = { blocks: {}, scopes: {} };
+  for (const block of next.blocks) {
+    if (!block.bindings) continue;
+    const old = before.blocks.find(b => b.id === block.id)?.bindings ?? {}, scope = resolveScope(next, block.id, empty);
+    for (const [path, binding] of Object.entries(block.bindings)) {
+      if (old[path]?.variable === binding.variable || Object.hasOwn(scope, binding.variable)) continue;
+      throw new CanvasError('VALIDATION', `Block ${block.id} bindings.${path}: no variable ${binding.variable} on its Frames or the Lienzo. Declare it first with document.update or group.update variables (the same transaction works).`);
+    }
+  }
 }
 
 export function effectiveInstructions(document: CanvasDocument, id: string) {

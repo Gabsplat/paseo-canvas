@@ -1,6 +1,7 @@
 import { runtimeJsonSchema, runtimeStateSchema, runtimeBlockStateSchema, variableNameSchema } from "./learning";
 import { defineRpc } from "./contract";
 import { MEDIA_LIMITS } from "./media";
+import { commentAnchorSchema, commentTextSchema, commentsViewSchema, COMMENT_LIMITS } from "./comments";
 import { z } from "zod";
 import {
   idSchema, revisionInputSchema, revisionSchema, createInputSchema, mutateInputSchema,
@@ -26,7 +27,7 @@ export const connectAgent = defineRpc({
   name: "canvas.connect", input: revisionInputSchema.extend({ connection: connectionSchema.nullable() }),
   output: z.object({ view: documentViewSchema, requiresReload: z.boolean() }),
 });
-export const watchDocument = defineRpc({ name: "canvas.watch", input: readInputSchema.extend({ knownRevision: revisionSchema, knownRuntimeVersion: revisionSchema }), output: z.object({ revision: revisionSchema, runtimeVersion: revisionSchema, view: documentViewSchema.optional() }) });
+export const watchDocument = defineRpc({ name: "canvas.watch", input: readInputSchema.extend({ knownRevision: revisionSchema, knownRuntimeVersion: revisionSchema, knownCommentsVersion: revisionSchema.optional() }), output: z.object({ revision: revisionSchema, runtimeVersion: revisionSchema, commentsVersion: revisionSchema.optional(), view: documentViewSchema.optional() }) });
 export const setSelection = defineRpc({ name: "canvas.selection.set", input: readInputSchema.extend({ expectedSelectionVersion: revisionSchema, ids: z.array(idSchema).max(1200) }), output: documentViewSchema });
 export const importPack = defineRpc({ name: "canvas.pack.import", input: z.object({ expectedRevision: revisionSchema, pack: z.unknown(), replace: z.boolean().default(false), dryRun: z.boolean().default(false) }).strict(), output: z.object({ catalog: catalogSchema, diff: z.object({ added: z.array(z.string()), replaced: z.array(z.string()), unchanged: z.array(z.string()) }), committed: z.boolean() }) });
 export const readHistory = defineRpc({ name: "canvas.history", input: readInputSchema, output: z.object({ revision: revisionSchema, transactions: z.array(z.object({ id: idSchema, revision: revisionSchema, actor: z.enum(["user", "agent", "system"]), agentId: z.string().optional(), label: z.string(), at: z.iso.datetime(), changed: z.array(z.string()), removed: z.array(idSchema), kind: z.enum(["edit", "undo", "redo"]) })) }) });
@@ -63,7 +64,8 @@ export const copilotViewSchema = z.object({
   hasTools: z.boolean(),
   // A Lienzo tool call is in flight, or ended less than 3 s ago.
   drawing: z.boolean(), lastToolAt: z.iso.datetime().nullable(),
-  document: z.object({ id: idSchema, title: z.string() }).nullable(),
+  // openComments: open comment threads on it, a reminder for the person in the popover; never sent to the agent.
+  document: z.object({ id: idSchema, title: z.string(), openComments: z.number().int().nonnegative().optional() }).nullable(),
   latest: copilotLatestSchema.nullable(),
 });
 export const readCopilot = defineRpc({ name: "canvas.copilot.read", input: agentScopeSchema, output: copilotViewSchema });
@@ -88,3 +90,17 @@ export const listSheets = defineRpc({ name: "canvas.sheet.list", input: readInpu
 
 // Settings → About: the version and the file that holds every Lienzo on this host. Nothing secret.
 export const readAbout = defineRpc({ name: "canvas.about", input: z.object({}).strict(), output: z.object({ version: z.string(), dataFile: z.string(), host: z.string() }) });
+
+// Comments (shared/comments.ts): the person's notes pinned on the canvas. No expectedRevision and no history: a comment
+// never conflicts with a drawing edit. Every call answers the document's whole set and its commentsVersion; the watch
+// above carries commentsVersion, so a client reads them again only when they changed.
+const threadInputSchema = readInputSchema.extend({ threadId: idSchema });
+export const listComments = defineRpc({ name: "canvas.comments.list", input: readInputSchema, output: commentsViewSchema });
+export const createComment = defineRpc({ name: "canvas.comments.create", input: readInputSchema.extend({ anchor: commentAnchorSchema, text: commentTextSchema, via: z.string().min(1).max(COMMENT_LIMITS.label).optional() }), output: commentsViewSchema });
+export const replyComment = defineRpc({ name: "canvas.comments.reply", input: threadInputSchema.extend({ text: commentTextSchema, via: z.string().min(1).max(COMMENT_LIMITS.label).optional() }), output: commentsViewSchema });
+export const resolveComment = defineRpc({ name: "canvas.comments.resolve", input: threadInputSchema, output: commentsViewSchema });
+export const reopenComment = defineRpc({ name: "canvas.comments.reopen", input: threadInputSchema, output: commentsViewSchema });
+export const deleteComment = defineRpc({ name: "canvas.comments.delete", input: threadInputSchema, output: commentsViewSchema });
+// Where pins on blocks and groups were last drawn (world units), so a thread keeps its place if its entity is deleted.
+// A hint: it changes no counter and is never shown while the entity exists.
+export const locateComments = defineRpc({ name: "canvas.comments.locate", input: readInputSchema.extend({ points: z.array(z.object({ threadId: idSchema, x: z.number().finite(), y: z.number().finite() }).strict()).max(COMMENT_LIMITS.threads) }), output: z.object({ updated: z.number().int() }) });

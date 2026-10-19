@@ -58,6 +58,46 @@ renderer's own state, after flushing pending runtime writes; the payload is drop
 shaders their values and time, a reset its kind; a quiz hint and a saved form record theirs too. Quiz answers and
 form fields stay in block data. Later renderer writes keep the last interaction.
 
+## Bindings
+
+A block may carry `bindings`: a map from a bindable property to `{ variable, map?, expr?, hue?, steps?, template? }`
+(`shared/bindings.ts`). The renderer draws the property from the variable's runtime value; the document stores only the
+rule, so moving the variable (a slider, `canvas_runtime set`, an extension) never creates a revision. `variable`
+resolves through the block's scope chain like a shader uniform: nearest Frame, then the Lienzo.
+
+| Path | Blocks | Value |
+| --- | --- | --- |
+| `size.width`, `size.height` | all but `wb-text` | px, 8–4096; layout uses it, so links and Frames follow |
+| `offset.x`, `offset.y` | all | px, ±4096; draws shifted, stored position, links and Frames stay |
+| `rotation` | all | degrees around the centre |
+| `opacity` | all | 0–1 |
+| `stroke.color`, `fill.color` | `wb-shape` | a colour, from `hue` or `steps` (a bound fill paints even with fill `none`) |
+| `stroke.width`, `corner.radius` | `wb-shape` | px, 0–48 and 0–512 (radius: rectangles) |
+| `text.size` | `wb-text`, `wb-shape`, `node`, `note` | px, 6–240 |
+| `text.template` | `wb-text`, `wb-shape`, `node` (summary), `note` | text: `template` with `{v}`, or `{v:0}`–`{v:4}` for decimals |
+
+The value `v` first goes through `map: { from:[a,b], to:[c,d], clamp? }` (linear; clamped to `to` unless
+`clamp:false`) or `expr` (a formula), else stays as it is; numbers are then held inside the property's limits.
+`expr` is parsed, never evaluated as code: numbers, `v`, `pi`, `+ - * / %`, parentheses and `min`, `max`, `clamp`,
+`round`, `floor`, `ceil`, `abs`, `sqrt`, `sin`, `cos`; at most 160 characters, 80 tokens and 16 levels of nesting. A
+result that is not a finite number (`v / 0`) draws the stored value. Colours take `hue: { from:[a,b], to:[h0,h1] }`
+(degrees, lit for the theme) or `steps: [{ at, color }]` (ascending `at`; the colour of the last step at or below the
+value, the first below all; `color` is a whiteboard colour name or `#rrggbb`). `map` and `expr`, and `hue` and `steps`,
+exclude each other; `hue`/`steps` are only for colours and `template` only for text. At most 12 bindings per block.
+
+```json
+{ "type": "block.update", "id": "box", "patch": { "bindings": {
+  "size.width": { "variable": "speed", "map": { "from": [0, 10], "to": [40, 400] } },
+  "fill.color": { "variable": "speed", "steps": [{ "at": 0, "color": "verde" }, { "at": 7, "color": "rojo" }] } } } }
+```
+
+`block.update` replaces the whole map; `bindings: null` removes it. Validation refuses an unknown path (the error lists
+the bindable ones), a path the block's renderer does not have, and a binding written in the transaction whose variable
+the block cannot see (declare it with `document.update`/`group.update` first or in the same transaction). Renaming a
+variable in Properties updates the bindings that resolve it, in the same transaction; deleting one leaves its bindings
+inert (Properties marks them) and later edits of that block still pass. `canvas_read` returns bindings with the
+block; the drawn values are not stored anywhere.
+
 ## Block type hints
 
 Block type properties (`propertySchema`) accept three optional hints for the Properties panel, in built-in types and in
@@ -166,8 +206,8 @@ verification are coordinator-owned and were not performed by this engineering ta
 
 MCP server name is `paseo-canvas`; plugin ID is `canvas`. The final MCP names are
 `canvas_list`, `canvas_sheet`, `canvas_create`, `canvas_read`, `canvas_apply`, `canvas_group`,
-`canvas_catalog`, `canvas_extension_run`, `canvas_selection`, `canvas_history`, `canvas_undo`, `canvas_redo`,
-`canvas_runtime`. Every response also carries the caller's `copilot` (see Copilot below).
+`canvas_catalog`, `canvas_extension_run`, `canvas_selection`, `canvas_comments`, `canvas_history`, `canvas_undo`,
+`canvas_redo`, `canvas_runtime`. Every response also carries the caller's `copilot` (see Copilot below).
 
 Storage is `$PASEO_HOME/canvas/`, falling back to `~/.paseo/canvas/`. `state.json` is the single
 atomic aggregate containing documents, up to 50 retained history entries per document, selection,
@@ -288,6 +328,45 @@ includes `selectedIds`. `canvas_runtime read` returns the same per-block state w
 
 State files written while the canvas still queued the person's actions carry `events` and `outboundBatches` on each
 document. They load with both dropped and are written back without them.
+
+## Comments
+
+Comments are the person's notes pinned on the canvas (`shared/comments.ts`). A thread is `{id, anchor, status:
+open|resolved, createdAt, updatedAt, resolvedAt?, orphanedFrom?, messages}`; a message is `{id, author, text,
+createdAt}` with `author` `{kind:"person", via?}` or `{kind:"agent", agentId, label}`. The anchor is a block or a group
+(`{kind, id, dx, dy, at?}`: the pin sits at the entity's top-right corner plus `dx`/`dy`, so it follows the entity;
+`at` is the last world point it was drawn at) or a free point (`{kind:"point", x, y}`, world units). Limits: 2000
+characters per message, 50 messages per thread, 200 threads and 1 MiB of comments per Lienzo.
+
+They are stored in the document's record (`comments: {version, threads}`, absent in older state files) but are not
+drawing content: a comment never bumps the document revision, never breaks an `expectedRevision`, is not a History
+transaction and cannot be undone. `commentsVersion` is their own counter: it is in every document view, and
+`canvas.watch` takes `knownCommentsVersion` and returns a view when it moved, so the panel reads them again
+(`canvas.comments.list`). Deleting an anchored entity (an edit, an undo or the agent) turns its threads into free
+points at `at` (or the entity's explicit position) and sets `orphanedFrom: {kind, id, title}`; nothing is lost. A
+reply reopens a resolved thread.
+
+Panel RPCs (no revision): `canvas.comments.list`, `.create {anchor, text}`, `.reply {threadId, text}`, `.resolve`,
+`.reopen`, `.delete {threadId}`, each answering `{documentId, commentsVersion, threads, threadId?}`; and
+`canvas.comments.locate {points: [{threadId, x, y}]}`, the panel's note of where it draws pins on entities (a hint
+for orphaning; it changes no counter). `canvas.copilot.read` carries `document.openComments` for the person's
+popover; tool responses never carry a count.
+
+`canvas_comments` (one tool, by `action`):
+
+- `list {documentId?, status?: open|resolved|all}` (default `open`). Without `documentId`: the caller's copilot
+  Lienzo, else the reachable one the person selected in most recently. Returns `{documentId, title, threads: [{threadId,
+  status, anchor: {kind, id, title, type?, sheet?} | {kind:"point", x, y, wasOn?}, messages: [{author: "person" |
+  "you" | "agent: <label>", text, at}]}], counts}`.
+- `create {documentId, anchor, text}`, `reply {threadId, text}`, `resolve {threadId}`. The agent's messages are signed
+  `{kind:"agent", agentId, label}`; the label is the conversation title (or provider) the host reports, else the MCP
+  client name, else "Agent". The panel shows them as "<label> · by your agent".
+
+`canvas_selection` adds `openComments` to a selected entity with open threads and to the result when the Lienzo has
+any, with a one-line hint. The guide (canvas_list) says when to use comments: read the open ones when the person
+mentions them or before revising a Sheet, answer in the conversation, reply in a thread only briefly, resolve what was
+handled, and leave a comment only for a decision or an open question worth keeping beside the drawing, never to
+narrate. The system-prompt part says nothing about comments (it stays under 1500 characters).
 
 ## Connection and reload
 

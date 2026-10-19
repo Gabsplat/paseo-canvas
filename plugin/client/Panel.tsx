@@ -50,6 +50,7 @@ import { ExtensionsContent } from './ExtensionsScreen';
 import { WikiContent } from './WikiScreen';
 import { HOME_PAGE, allWikiPages, pageForSelection, searchWiki } from '../shared/wiki';
 import { SettingsContent, settingsRail, type SettingsSection } from './SettingsScreen';
+import { CommentLayer, CommentsList, useComments } from './Comments';
 
 type ViewMode = 'canvas' | 'outline';
 type InspectorSection = 'document' | 'communication' | 'history';
@@ -128,7 +129,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const c = useMemo<CanvasController>(() => ({ ...raw,
     failure: raw.failure ? { ...raw.failure, message: friendlyError(raw.failure.message) } : null,
   }), [raw]);
-  const doc = c.view?.document;
+  const doc = c.view?.document, comments = useComments(c);
   const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [toolbarBox, setToolbarBox] = useState({ x: 0, width: 0 });
   const [extTools, setExtTools] = useState<string[]>([]), [screen, setScreen] = useState<ScreenState | null>(null);
   const [showAllWarnings, setShowAllWarnings] = useState(false);
@@ -349,18 +350,33 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   // "Clear my strokes": only the learner's own drawings, in one undoable transaction. The agent's and the author's stay.
   const myLayers = strokeLayers(doc?.blocks ?? [], b => c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer === 'wb-draw').filter(layer => layer.author === 'learner');
   const clearMyStrokes = () => { const ids = learnerLayerIds(myLayers); if (ids.length && !c.busy && !c.offline) void c.edit(ids.map(id => ({ type: 'block.delete' as const, id })), 'Clear my strokes'); };
-  const mode: ViewMode = u.compact && ['select', 'svg'].includes(tool) ? 'outline' : 'canvas';
+  const mode: ViewMode = u.compact && ['select', 'svg'].includes(tool) && !comments.placing && comments.open?.kind !== 'draft' ? 'outline' : 'canvas';
   function chooseTool(next: CanvasTool) {
     if (!doc) { openDocuments(); return; }
     if (disabled && !['select', 'hand'].includes(next)) return;
     if (next === 'svg') { setAddOpen(false); setLibraryOpen(true); return; }
-    canvas.current?.cancelGesture(); setTool(next); setToolLocked(false); setLibraryOpen(false);
+    canvas.current?.cancelGesture(); setTool(next); setToolLocked(false); setLibraryOpen(false); comments.setPlacing(false);
     // The tool in hand brings its options to the front of the right panel.
     setPanel(p => ({ ...p, hidden: false, tab: ['text', 'shape', 'draw', 'eraser'].includes(next) ? 'tool' : p.tab }));
   }
-  const toolId: ToolId | null = tool === 'select' ? 'select' : tool === 'hand' ? 'hand' : tool === 'draw' ? 'pencil' : tool === 'text' ? 'text' : tool === 'eraser' ? 'eraser' : tool === 'shape' ? toolStyle.shape === 'line' && toolStyle.heads !== 'none' ? 'arrow' : 'shape' : null;
+  const toolId: ToolId | null = comments.placing ? 'comment' : tool === 'select' ? 'select' : tool === 'hand' ? 'hand' : tool === 'draw' ? 'pencil' : tool === 'text' ? 'text' : tool === 'eraser' ? 'eraser' : tool === 'shape' ? toolStyle.shape === 'line' && toolStyle.heads !== 'none' ? 'arrow' : 'shape' : null;
   function pickShape(shape: WbShape) { if (!doc) { openDocuments(); return; } setShapePick(shape); setToolStyle(previous => ({ ...previous, shape, heads: 'none' })); chooseTool('shape'); }
+  /** C: the next press on the canvas pins a comment there (on a card, a Frame or an empty spot). Press again to stop. */
+  function toggleCommenting() {
+    if (!doc) { openDocuments(); return; }
+    if (disabled && !comments.placing) return;
+    canvas.current?.cancelGesture(); setTool('select'); setToolLocked(false); setLibraryOpen(false); setAddOpen(false); comments.setOpen(null); comments.setPlacing(p => !p);
+  }
+  const titleOf = (id: string) => [...(doc?.blocks ?? []), ...(doc?.groups ?? [])].find(e => e.id === id)?.title || 'Untitled';
+  /** From the list: fly to the pin and open its thread. */
+  function goToComment(thread: { id: string; anchor: { kind: string } & ({ kind: 'point'; x: number; y: number } | { kind: 'block' | 'group'; id: string }) }) {
+    const anchor = thread.anchor;
+    if (anchor.kind === 'point') canvas.current?.centerOn({ x: anchor.x, y: anchor.y }); else if (geometry.current.rects.get(anchor.id) && !canvas.current?.frameIds([anchor.id], { padding: 180 })) canvas.current?.flyToIds([anchor.id]);
+    comments.setOpen({ kind: 'thread', id: thread.id });
+  }
+  const showComments = () => { if (!doc) return; setImmersive(false); comments.setListOpen(true); setPanel(p => ({ ...p, hidden: false, forced: true, tab: 'comments' })); };
   function chooseToolId(id: ToolId) {
+    if (id === 'comment') { toggleCommenting(); return; }
     if (id === 'marco') { createGroup(); return; }
     if (id === 'ventana') { openVentana('page'); return; }
     if (id === 'shape') { pickShape(shapePick); return; }
@@ -467,7 +483,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <PanelSection title="This Lienzo" defaultOpen><DocumentActions controller={c} section="document" rects={rectsNow} release={release} /></PanelSection>
     <PanelSection title="Variables" summary={doc.variables?.length ? String(doc.variables.length) : undefined}><VariablesEditor controller={c} scopeId={DOCUMENT_SCOPE} disabled={disabled} /></PanelSection>
   </View> : null;
-  const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Frame', ventana: 'Window' }[toolId] : 'Tool';
+  const toolName = toolId ? { select: 'Select', hand: 'Hand', pencil: 'Pencil', shape: 'Shape', text: 'Text', arrow: 'Arrow', eraser: 'Eraser', marco: 'Frame', ventana: 'Window', comment: 'Comment' }[toolId] : 'Tool';
   const tabs: PanelTab[] = [];
   // The "?" of Properties opens the Help page of what is selected.
   const selectionHelp = (() => {
@@ -480,6 +496,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   if (hasSelection) tabs.push({ id: 'properties', label: 'Properties', icon: 'SlidersHorizontal', content: selectionProperties, help: () => openHelp(selectionHelp) });
   if (toolOptions && styleNode) tabs.push({ id: 'tool', label: toolName + ' options', icon: tool === 'draw' ? 'Pencil' : tool === 'text' ? 'Type' : tool === 'eraser' ? 'Eraser' : 'Shapes', content: <View nativeID="lienzo-tool-options" style={{ padding: F.rightPanel.padding }}>{styleNode}</View> });
   for (const id of extTools) { const extension = extensionTools.find(e => e.id === id); if (extension && doc) tabs.push({ id: 'ext:' + id, label: extension.name, icon: extensionIcon(extension), help: () => openHelp(pageForSelection({ kind: 'extension', id: extension.id })), scroll: false, content: <ExtensionTool key={id} extension={extension} controller={c} stage={stage} onOpen={id => { void c.select([id]); }} onClose={() => setExtTools(open => open.filter(x => x !== extension.id))} height={Math.min(440, Math.max(240, panelHeight - F.top.height - 2 * tokens.island.inset - F.rightPanel.bottomClearance - F.rightPanel.tabs - 20))} /> }); }
+  if (doc && comments.listOpen) tabs.push({ id: 'comments', label: 'Comments', icon: 'MessageSquare', help: () => openHelp('agents.comments'), content: <CommentsList state={comments} titleOf={titleOf} inline={mode === 'outline'} onGo={goToComment} /> });
   if (!tabs.length && (panel.pinned || panel.forced) && documentProperties) tabs.push({ id: 'properties', label: 'Lienzo', icon: 'Frame', content: documentProperties });
   // A selection opens Properties by itself only when it fits beside the canvas; on a narrow or compact panel it would
   // cover what was just pressed (a mini app, a control), so there it opens when asked, pinned or not.
@@ -487,7 +504,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const panelVisible = !!doc && !immersive && !panel.hidden && tabs.length > 0 && (roomy ? true : panel.forced);
   const activeTab = tabs.some(t => t.id === panel.tab) ? panel.tab : tabs[0]?.id ?? 'properties';
   // ⌘\ hides what is showing; it brings the panel back for the selection or the tool, or for the Lienzo when there is neither.
-  const sources = hasSelection || (toolOptions && !!styleNode) || extTools.length > 0;
+  const sources = hasSelection || (toolOptions && !!styleNode) || extTools.length > 0 || comments.listOpen;
   const togglePanel = () => setPanel(p => panelVisible ? { ...p, hidden: true, forced: false } : { ...p, hidden: false, forced: !sources || !roomy });
   // ---- ⌘K: everything the panel can do, in one list.
   const paletteItems = (query: string): PaletteItem[] => {
@@ -495,6 +512,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       { id: 'tool.select', group: 'Tools', title: 'Select', icon: 'MousePointer2', shortcut: resolved.list.find(s => s.id === 'tool.select')?.assigned[0], run: () => chooseToolId('select') },
       { id: 'tool.hand', group: 'Tools', title: 'Hand', icon: 'Hand', keywords: 'pan move', shortcut: resolved.list.find(s => s.id === 'tool.hand')?.assigned[0], run: () => chooseToolId('hand') },
       ...entries.map((e): PaletteItem => ({ id: e.id, group: e.section === 'Extensions' ? 'Extensions' : 'Tools', title: e.name, subtitle: e.description, icon: e.icon, keywords: e.keywords, disabled: e.disabled, verb: e.section === 'Extensions' ? 'Open' : 'Use', shortcut: e.shortcut ? resolved.list.find(s => s.id === ({ pencil: 'tool.pencil', 'shape.rect': 'tool.rectangle', 'shape.ellipse': 'tool.ellipse', arrow: 'tool.arrow', text: 'tool.text', eraser: 'tool.eraser', marco: 'tool.marco', ventana: 'tool.ventana' } as Record<string, string>)[e.id])?.assigned[0] : undefined, run: e.run })),
+      { id: 'tool.comment', group: 'Tools', title: 'Comment', subtitle: 'Pin a note on a card, a Frame or a spot', icon: 'MessageSquarePlus', keywords: 'comment note pin review feedback', verb: 'Use', disabled: !doc || disabled, shortcut: resolved.list.find(s => s.id === 'tool.comment')?.assigned[0], run: toggleCommenting },
+      { id: 'comments.list', group: 'Actions', title: 'Comments', subtitle: comments.openCount ? `${comments.openCount} open` : 'Open and resolved notes on this Lienzo', icon: 'MessageSquare', keywords: 'comments notes threads review', disabled: !doc, run: showComments },
+      { id: 'comments.pins', group: 'Actions', title: comments.pins ? 'Hide comment pins' : 'Show comment pins', icon: comments.pins ? 'EyeOff' : 'Eye', keywords: 'comments pins hide show', disabled: !doc, run: () => comments.setPins(v => !v) },
       { id: 'ext.manage', group: 'Extensions', title: 'Manage extensions…', subtitle: 'Add, export, or write your own', icon: 'Puzzle', keywords: 'extensions tools install file', run: openExtensions },
     ];
     const key = (id: string) => resolved.list.find(s => s.id === id)?.assigned[0];
@@ -543,8 +563,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   // ---- Keys. Registered shortcuts go through the registry; the few contextual ones (Enter, Tab, arrows) stay here.
   const runShortcut = (id: string): boolean => {
     if (id.startsWith('pinned.')) { const entry = pinnedEntries[Number(id.slice(7)) - 1]; if (!entry || entry.disabled) return false; entry.run(); return true; }
-    const tools: Record<string, () => void> = { 'tool.select': () => chooseToolId('select'), 'tool.hand': () => chooseToolId('hand'), 'tool.pencil': () => chooseToolId('pencil'), 'tool.rectangle': () => pickShape('rect'), 'tool.ellipse': () => pickShape('ellipse'), 'tool.text': () => chooseToolId('text'), 'tool.arrow': () => chooseToolId('arrow'), 'tool.eraser': () => chooseToolId('eraser'), 'tool.marco': createGroup, 'tool.ventana': () => openVentana('page') };
-    if (tools[id]) { if (disabled && !['tool.select', 'tool.hand'].includes(id)) return false; tools[id](); return true; }
+    const tools: Record<string, () => void> = { 'tool.comment': toggleCommenting, 'tool.select': () => chooseToolId('select'), 'tool.hand': () => chooseToolId('hand'), 'tool.pencil': () => chooseToolId('pencil'), 'tool.rectangle': () => pickShape('rect'), 'tool.ellipse': () => pickShape('ellipse'), 'tool.text': () => chooseToolId('text'), 'tool.arrow': () => chooseToolId('arrow'), 'tool.eraser': () => chooseToolId('eraser'), 'tool.marco': createGroup, 'tool.ventana': () => openVentana('page') };
+    if (tools[id]) { if (disabled && !['tool.select', 'tool.hand'].includes(id) && !(id === 'tool.comment' && comments.placing)) return false; tools[id](); return true; }
     switch (id) {
       case 'palette.open': setAddOpen(false); setPaletteOpen(true); return true;
       case 'help.shortcuts': openSettings('shortcuts'); return true;
@@ -570,6 +590,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     }
   };
   const escape = () => {
+    if (comments.open) { comments.setOpen(null); return true; }
+    if (comments.placing) { comments.setPlacing(false); return true; }
     if (addOpen) { setAddOpen(false); return true; }
     if (libraryOpen) { setLibraryOpen(false); return true; }
     if (immersive) { setImmersive(false); return true; }
@@ -630,6 +652,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       <MenuRow icon="Maximize2" label="Hide all UI" hint={keyLabel('ui.hide')} disabled={!doc} onPress={() => { setOverflow(false); setImmersive(true); }} />
       <MenuRow icon="Plug" label="Agent" disabled={!doc} trailing={<Presence id={c.view?.connection?.agentId ?? null} open={() => { setOverflow(false); setAgentsOpen(true); }} />} onPress={() => { setOverflow(false); setAgentsOpen(true); }} />
       <MenuRow icon="Compass" label="Instructions for the agent" disabled={!doc} onPress={() => { setOverflow(false); inspectorOpen('communication'); }} />
+      <MenuRow icon="MessageSquare" label="Comments" hint={comments.openCount ? `${comments.openCount} open` : undefined} disabled={!doc} onPress={() => { setOverflow(false); showComments(); }} />
       <MenuDivider />
       <MenuRow icon="Puzzle" label="Extensions" onPress={openExtensions} />
       <MenuRow icon="Settings" label="Settings" onPress={() => openSettings()} />
@@ -686,7 +709,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState art={<MateDrawing size={112} />} title="Pour yourself a mate." description="Then start a Lienzo, or ask your agent to draw what it is explaining.">
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}</View>
-      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0} />}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0}
+        overlay={view => <CommentLayer state={comments} view={view} groups={new Set(doc.groups.map(g => g.id))} titleOf={titleOf} hidden={immersive}
+          clear={u.compact ? { top: 8, bottom: 8, right: 8 } : { top: tokens.island.inset + F.top.height + 8, bottom: F.toolbar.bottom + F.toolbar.height + 8, right: panelVisible ? F.rightPanel.width + F.rightPanel.inset + 8 : 8 }} />} />}
     </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {imagesBusy && <View pointerEvents="none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 31 }}><View nativeID="lienzo-images-busy" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><LoadingEgg /><Txt kind="small">Adding images…</Txt></View></View>}
@@ -700,6 +725,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       </View></View>}
       {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, right: tokens.island.inset }}><View nativeID="lienzo-top-right" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
         <IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} detail="Tools, actions, Sheets and Lienzos." size={36} onPress={() => { setAddOpen(false); setPaletteOpen(true); }} />
+        <View><IconButton icon="MessageSquare" label="Comments" detail={comments.openCount ? `${comments.openCount} open on this Lienzo. Press C to add one.` : 'Notes pinned on this Lienzo. Press C to add one.'} size={36} disabled={!doc} active={panelVisible && activeTab === 'comments'} onPress={() => { if (panelVisible && activeTab === 'comments') { comments.setListOpen(false); } else showComments(); }} />
+          {comments.openCount > 0 && <View pointerEvents="none" nativeID="lienzo-comments-count" style={{ position: 'absolute', right: 3, top: 3, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 8, backgroundColor: u.c.accent, alignItems: 'center', justifyContent: 'center' }}><Txt style={{ fontSize: 9, lineHeight: 11, fontWeight: '700', color: u.c.accentForeground }}>{comments.openCount > 99 ? '99+' : comments.openCount}</Txt></View>}</View>
         <IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} detail="The panel on the right. Pin it to keep it open." size={36} disabled={!doc} active={panelVisible} onPress={togglePanel} />
       </View></View>}
       {empty && <View pointerEvents="box-none" style={{ position: 'absolute', top: Math.max(F.top.height + 40, panelHeight * .24), left: 24, right: 24, alignItems: 'center', gap: 14 }}>

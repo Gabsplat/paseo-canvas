@@ -10,7 +10,7 @@ The pages of Help in the app (menu → Help, ⌘K, or the ? in the Properties pa
 
 A canvas next to your agent, where it draws what it explains.
 
-Lienzo (Spanish for canvas) is a canvas that lives next to your agent. The agent draws what it explains as cards, links and Frames while you talk to it in your own chat. You can draw on it too, rearrange it, and point at things to ask about them. Each document is also called a Lienzo; they are kept on this computer and listed in Lienzos.
+Lienzo is a canvas that lives next to your agent. The agent draws what it explains as cards, links and Frames while you talk to it in your own chat. You can draw on it too, rearrange it, and point at things to ask about them. Each document is also called a Lienzo; they are kept on this computer and listed in Lienzos.
 
 #### By hand
 
@@ -455,12 +455,39 @@ A variable is a value the blocks of a Frame (or the whole Lienzo) share: Control
 2. Press Number, On / off or Choice to add one.
 3. Open its row: set Lowest, Highest, Step, Unit and Starts at for a number, Starts on for a switch, or the list of choices.
 4. When a control has moved it, the row says Now at … with Back to start.
-5. Renaming or deleting a variable updates the Controls that show it.
+5. Renaming or deleting a variable updates the Controls that show it, and renaming it updates what is bound to it.
 
 #### Ask your agent
 
 - “Add a variable for gravity from 0 to 20 m/s² on this Frame and show it in the controls.”
 - “Make the speed variable a choice between slow, normal and fast.”
+
+### Bind to a variable
+
+Make a shape, a text or a card follow a slider: its size, colour, text and more.
+
+A binding ties one property of a block to a variable. Move the variable (a Controls slider, the agent, an extension) and the block follows at once: a rectangle grows, a fill turns from green to red, a label reads “Speed: 7”. Only the rule is saved; moving the value saves nothing and adds nothing to History.
+
+#### By hand
+
+1. Select the block and open Bindings in Properties.
+2. Press the chain-link beside a property (Width, Height, Fill colour, Text…; More properties has shift, rotation, opacity, outline width, corner radius and text size).
+3. Pick a variable this block can reach, or press New variable.
+4. Say how it maps: When Speed goes from 0 to 10, width goes from 40 to 400. Colours take a hue along the range or a colour per threshold; text takes a line with {v} where the value goes.
+5. Formula instead (under the mapping) takes a short formula of v, such as v * 20 + 40.
+6. A bound size shows Bound to Speed where the resize handles were. Unbind gives the handles back.
+
+#### Ask your agent
+
+- “Add a Speed slider and a rectangle whose width and colour follow it.”
+- “Make this label say “Speed: …” with the value of the slider.”
+- “Turn the card red when the temperature goes over 30.”
+
+#### Tips
+
+- Links and Frames follow a bound width or height; a shift or a rotation only moves the drawing.
+- Renaming the variable keeps the binding; deleting it leaves the binding inert, marked in Properties, until you pick another variable or unbind it.
+- Extensions can move variables too (lienzo.variables), so a tool can drive what is bound.
 
 ### Animated flow
 
@@ -721,6 +748,32 @@ The canvas never talks to the agent: your chat does. Select a card, a Frame or a
 - “Look at this and explain it more simply.”
 - “What is wrong with the cards I selected?”
 - “Expand this Frame into its own Sheet.”
+
+### Comments
+
+Pin a note on a card, a Frame or a spot; your agent reads it when you ask.
+
+A comment is a note you leave on the canvas, the way you would in a shared doc: a question about a card, something to fix in a Frame, an idea for an empty spot. It stays pinned there and follows the card when it moves. Comments are not part of the drawing: they never change it, never conflict with the agent's edits and are not in History or Undo. The canvas never sends them to your agent; when you are ready, say "look at the comments" in your chat and the agent reads the open ones, answers you there, and may reply briefly in a thread or resolve it.
+
+Shortcut: C
+
+#### By hand
+
+1. Press C (or Comment in the toolbar), then press a card, a Frame or an empty spot.
+2. Write the note; Enter sends it, Shift+Enter starts a new line, Esc closes.
+3. Press a pin to read the thread and reply. ✓ resolves it; ⋯ deletes it.
+4. The Comments button at the top right lists them, open or resolved; press one to go there. The eye hides the pins.
+
+#### Ask your agent
+
+- “Look at the comments on this Lienzo.”
+- “Answer the open comments on Sheet 2 and resolve the ones you fixed.”
+
+#### Tips
+
+- Resolved threads hide their pin; find them again under Resolved.
+- If the card under a comment is deleted, the comment stays where it was and says what it was on.
+- The agent signs its replies; they show its name and "by your agent".
 
 ### Instructions for the agent
 

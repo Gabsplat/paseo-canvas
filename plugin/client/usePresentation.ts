@@ -6,7 +6,7 @@ import { canvasPresentation, type CanvasPresentation } from './presentation';
 
 // A runtime frame is shared by sibling cards: compute visibility once per snapshot.
 const cache = new WeakMap<CanvasDocument, WeakMap<RuntimeState, WeakMap<CanvasCatalog, CanvasPresentation>>>();
-const projections = new WeakMap<CanvasDocument, { signature: string; document: CanvasDocument }>();
+const projections = new WeakMap<CanvasDocument, { signature: string; document: CanvasDocument; bound: CanvasPresentation['bound'] }>();
 export function usePresentation(controller: CanvasController): CanvasPresentation | undefined {
   const runtime = useSyncExternalStore(controller.learning.subscribe, controller.learning.getSnapshot, controller.learning.getSnapshot);
   const document = controller.view?.document, catalog = controller.catalog;
@@ -19,9 +19,10 @@ export function usePresentation(controller: CanvasController): CanvasPresentatio
   if (!result) {
     result = canvasPresentation(document, catalog, runtime);
     // Scope sliders publish every frame. Unchanged visibility must not invalidate graph layout.
-    const signature = JSON.stringify([...result.hiddenBy.keys()].sort()), previous = projections.get(document);
-    if (previous?.signature === signature) result.document = previous.document;
-    else projections.set(document, { signature, document: result.document });
+    // Bound values change the drawing only where a bound block shows something new.
+    const signature = JSON.stringify([[...result.hiddenBy.keys()].sort(), [...result.bound]]), previous = projections.get(document);
+    if (previous?.signature === signature) { result.document = previous.document; result.bound = previous.bound; }
+    else projections.set(document, { signature, document: result.document, bound: result.bound });
     catalogs.set(catalog, result);
   }
   return result;

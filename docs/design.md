@@ -1392,10 +1392,10 @@ Required fields carry `*` only while empty. A field's `help` is one muted line u
 editor writes together with another (a tree's closed folders) do not show on their own.
 
 **Sections start collapsed.** Properties opens as its header (the kind, muted, and the title, e.g. "GLSL shader /
-Color plano") over a column of section rows: Style, Content, Frame, Layout, Variables, Instructions for the agent,
+Color plano") over a column of section rows: Style, Content, Bindings, Frame, Layout, Variables, Instructions for the agent,
 Connect, Actions, each a 12 px chevron (right when closed, turned down when open) and its name, muted when closed and
 in the foreground when open. A closed section may say what it holds on the right: the number of variables or links,
-"Written" for instructions. What the person opens or closes is remembered by section name for the session, so the next
+"Written" for instructions, "2 bound" for bindings. What the person opens or closes is remembered by section name for the session, so the next
 selection shows the same ones open (`sectionMemory` in `property-model.ts`). A flow that asks for a section opens it
 for that selection only, without changing what is remembered: Edit text when the card cannot take it (Content, or
 Frame), Instructions for the agent from the menu, and a block whose data has a problem (a required field blank, data
@@ -1534,7 +1534,127 @@ the bottom. History stays centred. Settings, Extensions (Installed · Discover) 
 while the section, the tab or the search changes their height. A longer content scrolls inside the frame as before; compact stays full screen; the
 guide keeps its fixed stage.
 
-## 38. Images from the computer (October 2026)
+
+## 38. Comments (October 2026)
+
+Verified with `design/whiteboard-harness/comments.cjs` (RN-web, plain headless Chromium: dark and light at 1280, a
+narrow 760 window, compact 420); captures in `design/qa-comments-2026-10/`. Tokens `face.comments`.
+
+Comments are the person's notes pinned on the canvas, read by the agent with `canvas_comments` when the person asks
+in their own chat. They sit beside the drawing, never in it: no revision, no History, no Undo. Nothing on the canvas
+sends them anywhere.
+
+### 38.1 Pins
+
+- **Shape.** A 26 px speech bubble: a circle whose bottom-left corner is square (radius 3) and points at what it is
+  about. A 2 px ring in `surface1` separates it from any card, plus the island's soft two-step shadow. Pins are drawn
+  in screen space over the cards and under the selection toolbar, at a fixed size at every zoom.
+- **Who.** The first author decides the pin: the person is ink (`foreground`) with a small head-and-shoulders figure
+  cut out in `surface1`; the agent is the accent with its spark (`Sparkles`, the glyph History already uses for the
+  agent). Same avatars, at 22 px, in the thread and 20 px in the list.
+- **Where.** On a card or a Frame the tip sits 6 px outside the top-right corner (up and right), clear of the corner
+  resize handle, the link handle and the card's content; several threads on one entity stand side by side 22 px apart,
+  overlapping like an avatar stack. On an empty spot the tip is the spot. A pin follows its entity; if the entity is
+  deleted, the thread stays where its pin was last drawn and says "Was on “…”, since deleted".
+- **States.** A reply count badge (15 px, `surface1`, hairline) at the top-right when a thread has replies. Hover lifts
+  it 5 % and shows a one-line preview (author, time, two lines of text) beside it; the open thread's pin is 10 % larger
+  with an accent ring. Resolved pins are hidden; while the list shows Resolved they come back at 55 % with a check.
+- **Never a drag.** Pins and the popover live in their own layer (`lienzo-tools-comments`), a sibling of the pan
+  surface, so pressing or dragging them never moves a card, pans, or draws with the tool in hand.
+
+### 38.2 The Comment tool
+
+`C` (registry `tool.comment`, free before) or the Comment button, alone in the last toolbar group (`MessageSquarePlus`).
+While it is on, the canvas shows a crosshair, a small island at the top ("Press a card, a Frame or an empty spot",
+naming the target under the pointer) and a dashed accent outline around what a press would pin to: the smallest card
+under the pointer, else the innermost Frame, else the spot. A press opens a new-comment popover there with a provisional
+"+" pin; nothing is saved until it is sent. Esc or `C` again lets go. On a compact panel the tool also brings the canvas
+out of the list view so a spot can be chosen.
+
+### 38.3 The thread
+
+One popover, 320 wide (radius 12, `surface1`, the popover elevation), beside the pin: on the right when it fits, else on
+the left, clamped clear of the top islands, the bottom toolbar and the right panel.
+
+- **Header** (44 high, hairline below): "Comment" in `heading` (or "New comment"), a green "Resolved" chip when it is,
+  and one muted line saying where it is ("On “Servidor”", "On the canvas"). Actions on the right: ⋯ (Delete thread,
+  with an inline confirmation that names the number of messages), ✓ Resolve (closes the popover) or ↺ Reopen, ✕ Close.
+- **Messages** (12 padding, 12 apart, scrolling past 300): avatar, then the name in `bodyStrong` ("You", or the agent's
+  label), "by your agent" in the accent for the agent, "via <extension>" when an extension wrote it, the relative time
+  muted, and the text in `body`, selectable.
+- **Reply box**: a rounded field on `surface0` that grows from one line to 120 px, with a round 28 px send button that
+  fills with the accent once there is text. Enter sends, Shift+Enter is a new line, Esc closes. One muted line under it
+  says so; past 1800 characters a counter appears (danger past 2000). A reply to a resolved thread reopens it. Pressing
+  outside closes the popover unless a new comment has text in it.
+
+### 38.4 The list
+
+The Comments button in the top-right island (`MessageSquare`, with an accent count of open threads) opens a
+"Comments" tab in the right panel; it is also in the menu and ⌘K (Comments, Hide comment pins, Comment). Open/Resolved
+segments with counts, and an eye that hides or shows the pins. Rows (64 min, newest activity first): avatar, author and
+time, two lines of the first message, then where it is and the reply count, in the accent when the agent answered.
+Pressing a row frames its card clear of the panel (or centres the spot) and opens the thread. On a compact panel the row
+opens the thread inline in the sheet, with a back arrow. Empty states: "No open comments" with how to add one and that
+the agent reads them when asked; "Nothing resolved yet".
+
+### 38.5 Copilot popover
+
+The Lienzo chip's popover in Paseo says "N open comments on this Lienzo. Ask your agent to look at them when you are
+ready." above Open, only when there are some. It is a reminder for the person; the agent's tool responses carry no
+count.
+
+## 39. Bound to a variable (October 2026)
+
+A binding makes a property follow a variable (`shared/bindings.ts`, docs/mcp.md "Bindings"). The design rule: **the
+rule is content, the value is live**. Editing a binding is an ordinary labelled transaction; moving the variable is
+runtime only and never touches History, so a slider dragged for ten seconds leaves no trail.
+
+### 39.1 Properties → Bindings
+
+- A section of its own, under Style or Content, open by default only when the block has bindings. It never reaches
+  into another section's fields, so it lives beside the collapsed-by-default Properties work without touching it.
+- One row per bindable property: label left, the stored value muted in mono (or its swatch for a colour), and a
+  24 px chain-link button (`Link2`) at the right edge. Width, Height, the two colours and Text are up front; shift,
+  rotation, opacity, outline width, corner radius and text size wait under **More properties** until one is bound.
+- A bound row swaps the stored value for a **variable pill** (22 px, radius 11, a 6 px dot in the variable's series
+  colour from §18.3 and its label in 600 weight, on a 14 % wash of that colour) followed by what it gives now (`212 px`,
+  `81°`, `92 %`, a swatch, or the quoted text), and the chain-link turns accent. The same colour marks the variable in
+  the Variables section, so the eye can follow one value across the panel.
+- An inert binding (its variable was deleted) shows the pill in `statusWarning` with a warning triangle and the word
+  *inert*; its form explains why and offers another variable or Unbind. Nothing is removed silently.
+
+### 39.2 The bind form
+
+Pressing the chain-link opens the form in place under its row (the row gains a border and `surface1`), like Picker:
+it never floats over the panel's scroll and never clips.
+
+1. **Follows**: the variables the block can see, nearest scope first, each with its series dot, label, scope · name and
+   current value; a name declared nearer hides the same name further out. Empty: one line on where variables live and
+   **New variable**, which declares one on the Lienzo and binds it in one transaction.
+2. **Mapping**, written as a sentence: *When Speed goes from [0] to [10] / width goes from [40] to [400]*, with
+   **Stay inside that range** (clamp, on by default). Colours: *Hue along a range* (two ranges and a 12-step hue ramp
+   preview) or *By thresholds* (rows of *From [n]* and the eight whiteboard swatches). Text: one field with `{v}`.
+3. **Formula instead** (a Disclosure, closed unless used): a mono field for `v * 20 + 40`; the help line under it turns
+   `statusDanger` with the parser's own message while it is wrong, and the values at both ends of the range show once
+   it is right.
+4. A `surface2` strip says **Now Speed 5 → 220 px** live, then Unbind (ghost) and Done.
+
+A new binding starts with something visible: the variable's whole range onto half to one and a half times the stored
+size, 0–360° for rotation, 20–100 % opacity, hue 200° → 0° (cool to warm) for colours, `Speed: {v}` for text.
+
+### 39.3 On the canvas
+
+- Bound values are drawn every frame the variable moves. Size feeds layout, so links leave from the bound edge and
+  Frames grow; shift and rotation are drawn only, links and Frames keep the stored place (said in the row's help).
+- Hues are lit for the theme: saturation 68 %, lightness 46 % on Papel and 64 % on Tinta, so a bound fill keeps
+  the contrast of the whiteboard palette. A label on a solid bound fill takes paper or ink by the fill's luminance.
+- A selected box whose size is bound shows **Bound to Speed** (a 20 px accent pill with the chain-link, 6 px under the
+  box, kept at screen size) instead of resize handles: dragging a handle would fight the variable. Unbind gives the
+  handles back. Moving the box still works.
+
+Tokens: `face.bindings` (icon, button, pill, popover, hint, hue).
+
+## 40. Images from the computer (October 2026)
 
 A picture can come from the computer three ways: dropped on the canvas, pasted (⌘V with an image on the clipboard,
 outside text fields), or from the Image sheet, whose preview area is also a drop zone with a "Choose file…" button.

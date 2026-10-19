@@ -23,7 +23,7 @@ const tool = (id: string, label: string, key: string): ShortcutDef => ({ id: `to
 export const DEFAULT_SHORTCUTS: readonly ShortcutDef[] = [
   tool('select', 'Select', 'v'), tool('hand', 'Hand', 'h'), tool('pencil', 'Pencil', 'p'), tool('rectangle', 'Rectangle', 'r'),
   tool('ellipse', 'Ellipse', 'o'), tool('text', 'Text', 't'), tool('arrow', 'Arrow', 'a'), tool('eraser', 'Eraser', 'e'),
-  tool('marco', 'Frame', 'm'), tool('ventana', 'Window', 'w'),
+  tool('marco', 'Frame', 'm'), tool('ventana', 'Window', 'w'), tool('comment', 'Comment', 'c'),
   { id: 'lens.cycle', label: 'Next Lens', group: 'Tools', keys: ['l'], when: 'canvas' },
   { id: 'tool.space', label: 'Hand while held', group: 'Tools', keys: ['space'], when: 'canvas', fixed: true },
   ...Array.from({ length: 9 }, (_, i): ShortcutDef => ({ id: `pinned.${i + 1}`, label: `Pinned tool ${i + 1}`, group: 'Tools', keys: [String(i + 1)], when: 'document' })),

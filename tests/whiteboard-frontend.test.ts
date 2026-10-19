@@ -24,13 +24,16 @@ function harness() {
     if (kind === 'resize' && selector.includes('lienzo-interactive-resize-')) return this;
     if (kind === 'link' && selector.includes('lienzo-link-handle-')) return this;
     if (kind === 'active' && selector.includes('data-lienzo-interacting')) return this;
+    // A Play button inside a shader's transport region; the shader card's own grab area, a button outside any region.
+    if (kind === 'control' && selector.includes('[role="button"]')) return { closest: (s: string) => s.includes('lienzo-interactive-') ? { id: 'lienzo-interactive-shader-card-transport' } : null };
+    if (kind === 'grab' && selector.includes('[role="button"]')) return { closest: () => null };
     return null;
   } });
   const event = (x: number, y: number, kind = 'text', button = 0) => ({ target: target(kind), clientX: x, clientY: y, pointerId: 1, button, shiftKey: false, ctrlKey: false, metaKey: false, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } });
   return { node, doc, event, close() { if (before) Object.defineProperty(globalThis, 'document', before); else Reflect.deleteProperty(globalThis, 'document'); } };
 }
 test('all-area entity drag preserves clicks, passes original grab point and starts only after threshold', () => {
-  for (const kind of ['text', 'button', 'svg', 'renderer', 'image']) {
+  for (const kind of ['text', 'button', 'svg', 'renderer', 'image', 'grab']) {
     const h = harness(), calls: any[] = [];
     const stop = attachEntityDrag(h.node, { enabled: () => true, start: (...args: any[]) => calls.push(['start', ...args]), move: (p: any) => calls.push(['move', p]), end: (cancelled: boolean) => calls.push(['end', cancelled]) });
     try {
@@ -41,10 +44,10 @@ test('all-area entity drag preserves clicks, passes original grab point and star
     } finally { stop(); h.close(); }
   }
 });
-test('inputs, ranges, active deep content, resize and link handles keep left gestures', () => {
+test('inputs, ranges, active deep content, controls in interactive regions, resize and link handles keep left gestures', () => {
   const h = harness(); let starts = 0;
   const stop = attachEntityDrag(h.node, { enabled: () => true, start: () => starts++, move() {}, end() {} });
-  try { for (const kind of ['input', 'range', 'active', 'resize', 'link']) { h.node.fire('pointerdown', h.event(10, 20, kind)); h.doc.fire('pointermove', h.event(40, 60, kind)); h.doc.fire('pointerup', h.event(40, 60, kind)); } assert.equal(starts, 0); } finally { stop(); h.close(); }
+  try { for (const kind of ['input', 'range', 'active', 'control', 'resize', 'link']) { h.node.fire('pointerdown', h.event(10, 20, kind)); h.doc.fire('pointermove', h.event(40, 60, kind)); h.doc.fire('pointerup', h.event(40, 60, kind)); } assert.equal(starts, 0); } finally { stop(); h.close(); }
 });
 test('Escape and unmount cancel active drag once, and disabled state never starts it', () => {
   const h = harness(), ends: boolean[] = []; let enabled = false;
@@ -222,15 +225,15 @@ test('the toolbar orders its tools as the brief, and a fast press on an inactive
   const props = (active: string, extra: any = {}) => ({ active, shape: 'rect', locked: false, disabled: false, onTool: (t: string) => picked.push(t), onShape() {}, onLock: (v: boolean) => locks.push(v), pinned: [], onAdd() {}, addOpen: false, keyLabel: (id: string) => ({ 'tool.pencil': 'P', 'tool.select': 'V' } as any)[id], ...extra });
   const tools = (tree: any[]) => tree.filter(n => n.type === 'Pressable' && String(n.props.nativeID).startsWith('lienzo-tool-'));
   let tree = h.render(props('select'));
-  assert.deepEqual(tools(tree).map(n => n.props.nativeID.slice(12)), ['select', 'hand', 'pencil', 'shape', 'text', 'arrow', 'eraser', 'marco', 'ventana', 'add']);
-  assert.deepEqual(tools(tree).map(n => n.props.accessibilityLabel), ['Select', 'Hand', 'Pencil', 'Shape', 'Text', 'Arrow', 'Eraser', 'Frame', 'Window', 'More tools']);
+  assert.deepEqual(tools(tree).map(n => n.props.nativeID.slice(12)), ['select', 'hand', 'pencil', 'shape', 'text', 'arrow', 'eraser', 'marco', 'ventana', 'comment', 'add']);
+  assert.deepEqual(tools(tree).map(n => n.props.accessibilityLabel), ['Select', 'Hand', 'Pencil', 'Shape', 'Text', 'Arrow', 'Eraser', 'Frame', 'Window', 'Comment', 'More tools']);
   assert.match(tools(tree)[7].props.accessibilityHint, /A frame that holds things together/); assert.match(tools(tree)[8].props.accessibilityHint, /A window onto a web page/);
   const press = (active: string, id: string) => { const t = tools(h.render(props(active))).find(n => n.props.nativeID === 'lienzo-tool-' + id); t.props.onPress({ stopPropagation() {} }); h.tick(); };
   press('select', 'text'); press('select', 'text'); assert.deepEqual(picked, ['text', 'text']); assert.deepEqual(locks, []);
   press('text', 'text'); assert.deepEqual(locks, [true], 'a double press on the tool in hand keeps it');
   press('select', 'marco'); press('select', 'marco'); assert.deepEqual(picked.slice(-2), ['marco', 'marco']); assert.deepEqual(locks, [true], 'Frame acts once and never locks');
   const blocked = tools(h.render(props('select', { disabled: true }))).map(n => [n.props.nativeID.slice(12), n.props.disabled]);
-  assert.deepEqual(blocked, [['select', false], ['hand', false], ['pencil', true], ['shape', true], ['text', true], ['arrow', true], ['eraser', true], ['marco', true], ['ventana', true], ['add', false]]);
+  assert.deepEqual(blocked, [['select', false], ['hand', false], ['pencil', true], ['shape', true], ['text', true], ['arrow', true], ['eraser', true], ['marco', true], ['ventana', true], ['comment', true], ['add', false]]);
 });
 test('pressing Shape again opens its flyout, and pinned tools follow with their 1–9 badges', () => {
   const h = toolbarHarness(), shapes: string[] = [], ran: string[] = [];

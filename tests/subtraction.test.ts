@@ -44,7 +44,7 @@ function runtime(controller: any) {
     '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {}, attachFileDrop: () => () => {}, attachFilePaste: () => () => {} }, './motion': {},
     './panel-actions': panelActions, '../shared/learning': learning, '../shared/extensions': { extensionView: () => null },
     './DocumentActions': { DocumentActions: control('DocumentActions') },
-    './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') }, './PropertyEditors': { BlockContent: control('BlockContent'), VariablesEditor: control('VariablesEditor') },
+    './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') }, './PropertyEditors': { BlockContent: control('BlockContent'), VariablesEditor: control('VariablesEditor') }, './Bindings': { BindingsEditor: control('BindingsEditor') },
     './Canvas': { Canvas: control('Canvas') }, '../shared/model': { blockTypeSchema }, './Blocks': { visual: () => ({ icon: 'StickyNote', tone: 'neutro' }), requestTitleEdit: () => false, Delivery: control('Delivery'), ConnectionRows: control('ConnectionRows') },
     './Links': { linkTone: () => 'neutro' }, './color': { withAlpha: (color: string) => color, isDark: () => false },
     './AgentModal': { AgentModal: control('AgentModal') }, './Onboarding': { Onboarding: control('Onboarding') },
@@ -63,6 +63,7 @@ function runtime(controller: any) {
     './shortcuts': shortcuts, './palette': palette,
     './appearance': { APPEARANCES: [], adoptAppearance() {}, chooseAppearance() {}, getAppearance: () => 'system', useAppearance: () => 'system', themeFor: (_appearance: string, theme: unknown) => theme },
     './property-model': propertyModel, './media-store': mediaStore, '../shared/media': sharedMedia,
+    './Comments': { CommentLayer: control('CommentLayer'), CommentsList: control('CommentsList'), useComments: () => ({ threads: [], placing: false, open: null, listOpen: false, pins: true, openCount: 0, resolvedCount: 0, setPlacing() {}, setOpen() {}, setListOpen() {}, setPins() {} }) },
   };
   const load = (name: string) => {
     const source = readFileSync(new URL(`../plugin/client/${name}.tsx`, import.meta.url), 'utf8');

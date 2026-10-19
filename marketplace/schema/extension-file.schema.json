@@ -46,7 +46,7 @@
           "description": { "type": "string", "minLength": 1, "maxLength": 600 },
           "icon": { "type": "string", "pattern": "^[A-Za-z0-9]{1,40}$", "description": "A Lucide icon name, like CaseSensitive." },
           "html": { "type": "string", "minLength": 1, "maxLength": 300000 },
-          "permissions": { "type": "array", "uniqueItems": true, "maxItems": 3, "items": { "enum": ["edit", "network", "view"] } },
+          "permissions": { "type": "array", "uniqueItems": true, "maxItems": 4, "items": { "enum": ["edit", "network", "view", "variables"] } },
           "actions": {
             "description": "What the extension offers an agent (canvas_extension_run). Each handler is registered with lienzo.action(name, fn) in a <script data-lienzo=\"actions\"> of html.",
             "type": "array", "minItems": 1, "maxItems": 20,

@@ -74,6 +74,15 @@ export function createCanvasCore(host: ServerHost, options: CanvasCoreOptions): 
   host.handle(rpc.configureSharing, input => service.configureSharing(input));
   host.handle(rpc.createSheet, input => service.createSheet(input));
   host.handle(rpc.listSheets, input => service.sheets(input));
+  // Comments from the panel are the person's; an extension writing for them is named in `via`.
+  const person = (via?: string) => ({ kind: "person" as const, ...(via ? { via } : {}) });
+  host.handle(rpc.listComments, input => service.comments(input));
+  host.handle(rpc.createComment, ({ via, ...input }) => service.createComment(input, person(via)));
+  host.handle(rpc.replyComment, ({ via, ...input }) => service.replyComment(input, person(via)));
+  host.handle(rpc.resolveComment, input => service.setCommentStatus(input, "resolved"));
+  host.handle(rpc.reopenComment, input => service.setCommentStatus(input, "open"));
+  host.handle(rpc.deleteComment, input => service.deleteComment(input));
+  host.handle(rpc.locateComments, input => service.locateComments(input));
   host.handle(rpc.readCopilot, input => copilot.read(input));
   host.handle(rpc.listCopilot, input => copilot.list(input));
   host.handle(rpc.setCopilot, async (input, { api }) => {

@@ -47,7 +47,7 @@ export function CopilotPanel(p: CopilotPanelProps) {
     <Icon name="Frame" size={16} color={c.foreground} />
     <View style={{ flex: 1 }}>
       <Txt kind="bodyStrong">Lienzo copilot</Txt>
-      <Txt kind="small" muted numberOfLines={1}>{view?.copilot.enabled ? statusText[status] : 'Lienzo (Spanish for canvas): the agent draws as it explains'}</Txt>
+      <Txt kind="small" muted numberOfLines={1}>{view?.copilot.enabled ? statusText[status] : 'The agent draws as it explains'}</Txt>
     </View>
     {view?.hasTools && <Toggle label="Copilot on" value={!!view.copilot.enabled} disabled={p.busy} colors={c} onChange={p.onToggle} />}
   </View>;
@@ -80,6 +80,7 @@ export function CopilotPanel(p: CopilotPanelProps) {
         <Txt kind="label" muted>Attach a recent Lienzo</Txt>
         {recent.map(document => <MenuRow key={document.id} icon="Frame" label={document.title} hint={document.example ? 'Example' : undefined} disabled={p.busy} onPress={() => p.onAttach(document.id)} />)}
       </View>}
+      {!!view.document?.openComments && <Txt kind="small" muted>{commentsReminder(view.document.openComments)}</Txt>}
       <Button label={view.document ? `Open ${view.document.title}` : 'Open Lienzo'} icon="PanelRight" onPress={p.onOpen} />
     </View>;
   }
@@ -90,6 +91,8 @@ export function CopilotPanel(p: CopilotPanelProps) {
   </View>;
 }
 
+/** A reminder for the person only: open comments on this conversation's Lienzo. The agent is never told. */
+export const commentsReminder = (count: number) => `${count} open comment${count === 1 ? '' : 's'} on this Lienzo. Ask your agent to look at ${count === 1 ? 'it' : 'them'} when you are ready.`;
 function RuleField({ rule, onSave }: { rule: string; onSave(rule: string): void }) {
   const [draft, setDraft] = useState(rule);
   useEffect(() => { setDraft(rule); }, [rule]);

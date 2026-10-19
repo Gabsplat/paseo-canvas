@@ -101,7 +101,7 @@ test('one pill per live agent from the agent subscription; status upserts update
   observer.snapshot({ entries: [{ agent: { id: 'a', workspaceId: 'w', status: 'running', title: 'Auth' } }, { agent: { id: 'b', workspaceId: 'w', status: 'idle' } }, { agent: { id: 'gone', workspaceId: 'w', archivedAt: '2026-10-01T00:00:00.000Z' } }] });
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(added.map(pill => [pill.id, pill.agentId, pill.workspaceId, pill.button.label, pill.button.behavior.kind]), [['lienzo-copilot', 'a', 'w', 'Lienzo', 'popover'], ['lienzo-copilot', 'b', 'w', 'Lienzo', 'popover']]);
-  assert.match(added[0].button.title, /Spanish for canvas/);
+  assert.match(added[0].button.title, /Lienzo copilot/);
   assert.deepEqual(rpcCalls.find(call => call.name === 'canvas.copilot.list')?.input, { agentIds: ['a', 'b'] });
   assert.equal(added[0].updates.length, 1, 'the dot turned to drawing'); assert.equal(added[1].updates.length, 0);
   observer.update({ type: 'agent_update', payload: { kind: 'upsert', agent: { id: 'a', workspaceId: 'w', status: 'idle' } } });

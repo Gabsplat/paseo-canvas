@@ -34,7 +34,7 @@ export const marketplaceEntrySchema = z.object({
   id: idSchema, name: z.string().min(1).max(200), description: z.string().max(2000),
   /** The extensions inside, as the review will show them. */
   // Not strict: a field added to the index later is ignored by this version instead of making the whole list unreadable.
-  extensions: z.array(z.object({ id: idSchema, name: z.string().min(1).max(80), description: z.string().max(600), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(), permissions: z.array(extensionPermissionSchema).max(3), docs: z.boolean(),
+  extensions: z.array(z.object({ id: idSchema, name: z.string().min(1).max(80), description: z.string().max(600), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(), permissions: z.array(extensionPermissionSchema).max(4), docs: z.boolean(),
     /** The names of the actions it offers agents. */
     actions: z.array(actionNameSchema).max(20).optional() })).min(1).max(50),
   path: repoPath, sha256: z.string().regex(/^[0-9a-f]{64}$/), bytes: z.number().int().positive().max(MARKETPLACE_LIMITS.file),

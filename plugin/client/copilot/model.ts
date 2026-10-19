@@ -7,7 +7,7 @@ export type CopilotLatest = { documentId: string; transactionId: string; at: str
 export type DocumentSummary = { id: string; title: string; updatedAt: string; example?: boolean };
 
 export const PILL_LABEL = 'Lienzo';
-export const PILL_TITLE = 'Lienzo copilot — the agent draws what it explains on a canvas (Lienzo is Spanish for canvas)';
+export const PILL_TITLE = 'Lienzo copilot — the agent draws what it explains on a canvas';
 export const POPOVER_SIZE = { width: 320, maxHeight: 360 } as const;
 
 export function pillStatus(entry: PillEntry | undefined): PillStatus {
