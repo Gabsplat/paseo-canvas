@@ -8,7 +8,7 @@ import { View } from 'react-native';
 import { Icon, openExternalUrl } from './host';
 import { cachedIndex, downloadEntry, loadIndex, marketplaceUrls, MarketplaceError, MARKETPLACE, type LoadedIndex, type MarketplaceDeps, type MarketplaceEntry } from '../shared/marketplace';
 import type { CanvasCatalog } from '../shared/model';
-import { entryStatus, filterEntries, type PublishPlan } from './screens';
+import { entryStatus, filterEntries, permissionChip, type PublishPlan } from './screens';
 import { Card, ScreenEmpty, SearchField, SectionLabel, Stagger } from './Screen';
 import { Button, Chip, Txt, useUI } from './ui';
 import { browserCache, fetchPublicText, sha256Hex } from './web';
@@ -27,7 +27,7 @@ function EntryCard({ entry, status, width, index, busy, onInstall }: { entry: Ma
       </View>
     </View>
     <Txt muted numberOfLines={3} style={{ flexGrow: 1 }}>{entry.description || first.description || 'No description.'}</Txt>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{permissions.length ? permissions.map(p => <Chip key={p} label={p === 'network' ? 'Loads from the internet' : 'Changes the canvas'} tone={p === 'network' ? 'aviso' : 'acento'} icon={p === 'network' ? 'Globe' : 'PenLine'} />) : <Chip label="Reads and selects only" icon="Eye" />}</View>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{permissions.length ? permissions.map(p => <Chip key={p} {...permissionChip(p)} />) : <Chip label="Reads and selects only" icon="Eye" />}</View>
     <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
       <Button label="Source" icon="ExternalLink" small variant="ghost" style={{ marginLeft: -8 }} onPress={() => { void openExternalUrl(marketplaceUrls().folder(entry.id)); }} />
       <View style={{ flex: 1 }} />

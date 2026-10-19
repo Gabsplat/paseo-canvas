@@ -19,7 +19,9 @@ nothing from the plugin, so a plugin update cannot break it.
   the former kind `view` is retired: catalogs and files stored with views still load without them, a file that
   carries one imports without it, and a view can no longer be saved.
 - `api`: always `1` today.
-- `permissions`: any of `edit`, `network`. Reading the document and changing the selection need none. There is no
+- `permissions`: any of `edit`, `network`, `view` (added to API 1: read and move the canvas camera). Reading the
+  document, changing the selection, keys, the highlight and storage need none. A Lienzo older than `view` refuses a
+  file that asks for it. There is no
   permission to reach the agent: the canvas never sends anything to it. A new extension that asks for `agent` is
   refused; a stored or imported one that carried it loads without it.
 - `html`: up to 300 000 characters. No build step. Without `network` the page may only use inline code and `data:` URLs.
@@ -45,12 +47,19 @@ A walkthrough for writing one with your agent, with a complete example, is in
 | `lienzo.onContext(fn)` | — | Calls `fn(context)` now and on every change. Returns a function that stops listening. |
 | `lienzo.context` | — | The last context, or `null` before the first one. |
 | `lienzo.select(ids)` | — | Sets the shared selection. Unknown IDs are dropped. |
-| `lienzo.open(id)` | — | Goes to the canvas on that thing. |
+| `lienzo.open(id)` | — | Selects that thing. With `view` it also frames it (like `view.fit([id])`); without, the camera does not move. |
 | `lienzo.close()` | — | Closes a tool panel. |
 | `lienzo.edit(operations, label)` | `edit` | One transaction of canvas operations. Resolves `{ revision }`, rejects with the reason. Undoable. `selection.set` and `communication.set` are refused. At most 200 operations. |
 | `lienzo.action(name, fn)` | — | Registers the handler of a declared action, `fn(input, context)`; it returns the result or a promise of it. See "Actions". |
 | `lienzo.run(name, input)` | — | Runs a registered action here, in the page: resolves its result. The page's buttons use it, so the work is written once. |
 | `lienzo.headless` | — | `false` in the frame, `true` when an action runs for an agent. |
+| `lienzo.view.get()` | `view` | Resolves `{ scale, bounds, sheetId, visibleIds }`. See "The view". |
+| `lienzo.view.fit(ids, { padding?, animate? })` | `view` | Flies the camera to frame those things. Resolves `true`, or `false` when none of them is on the canvas. |
+| `lienzo.view.onChange(fn)` | `view` | Calls `fn(view)` when the camera or the layout changes, at most every 100 ms. Returns a function that stops listening. |
+| `lienzo.keys.bind(keys, fn)` | — | While the tool is open, those keys go to `fn(key)` instead of the canvas. Returns `unbind()`. See "Keys". |
+| `lienzo.highlight(ids, { dim?, tone? })` | — | Outlines those things on the canvas; `dim` fades every other card. Resolves `{ ids }`. Never saved. |
+| `lienzo.highlight.clear()` | — | Removes this extension's highlight. |
+| `lienzo.storage.get()` / `lienzo.storage.set(value)` | — | One JSON value for this extension on this Lienzo. See "Storage". |
 | `lienzo.kit.stage(options)` | — | A 2D surface that behaves like the canvas. See below. |
 | `lienzo.kit.card(g, item, view, options)` | — | Draws a thing with the standard selection, hover and drag look. |
 
@@ -64,10 +73,65 @@ A walkthrough for writing one with your agent, with a complete example, is in
     groups: [{ id, title, description, blockIds, groupIds, parentGroupId }],
     links:  [{ id, from, to, kind, label }] },
   layout: { [id]: { x, y, width, height } },   // where each thing is on the canvas
-  selection: [ids] }
+  selection: [ids],
+  view? }                                      // only with "view": see "The view"
 ```
 
 `extension.permissions` is what the extension actually holds, which for an imported one is empty until granted.
+
+`layout` is in absolute world coordinates (the canvas' own units, the same ones `view.bounds` uses), not relative to
+a parent. It has every block and every group, Frames and Sheets included, for the whole document whatever is on
+screen; the only things left out are those folded inside a collapsed group.
+
+### The view
+
+Added to API 1 with the `view` permission, for tools that present or tour a Lienzo. Feature-detect it:
+`if (lienzo.view)`, and check `context.extension.permissions` (calls reject without the permission).
+
+```
+view = { scale,                                 // camera zoom, 1 = 100 %
+         bounds: { x, y, width, height },       // the world rectangle the canvas shows (the whole canvas area)
+         sheetId,                               // the Sheet under the centre of the view, or null
+         visibleIds }                           // groups and blocks whose rectangle overlaps bounds, document order
+```
+
+- `view.fit(ids, { padding, animate })` uses the canvas' own fit-and-fly animation; `padding` is screen pixels
+  (0–400, default the canvas' fit inset), `animate: false` jumps. It frames them in the part of the canvas not covered
+  by the floating panel. Any pan, zoom or drag by the person stops a fit in flight and wins.
+- `view.onChange(fn)` and `context.view` are updated at most every 100 ms, on camera moves and layout changes.
+  A camera change alone updates `context.view` and calls `onChange`, not `onContext`.
+- Moving the camera never creates a revision or a history entry, and nothing about it is saved.
+
+### Keys
+
+`lienzo.keys.bind(keys, fn)` → `unbind()`. Needs no permission. While the tool's panel is open, a bound key pressed
+anywhere in Lienzo, inside the tool's own page or on the canvas, calls `fn(key)` and does not reach the canvas'
+shortcuts. Keys typed into a field (input, textarea, select, contenteditable) are never taken.
+
+- Allowed: `ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`, `Space`, `PageUp`, `PageDown`, `Home`, `End`, `Enter`,
+  `Escape`, `a`–`z`, `0`–`9`, each alone or as `Shift+…` (`"Shift+ArrowRight"`, `"Shift+n"`). Letters are lower case.
+  Anything else throws `TypeError`. ⌘, Ctrl and Alt combinations stay Lienzo's and are never routed.
+- `Escape` keeps closing and deselecting as usual unless the tool binds it.
+- Closing the tool (or reloading its page) drops every binding.
+
+### Highlight
+
+`lienzo.highlight(ids, { dim, tone })` draws an outline and glow (the one the canvas uses for what the agent just
+drew) around those things, in `tone` `accent` (default), `success`, `warning` or `violet`. With `dim: true` every card
+outside them is faded. One highlight per extension; a new call replaces it, `[]` or `highlight.clear()` removes it, and
+closing the tool removes it. It is never saved and creates no revision. No permission: it only changes what is shown.
+
+### Storage
+
+`lienzo.storage.get()` resolves the stored value or `null`; `lienzo.storage.set(value)` stores any JSON value (`null`
+clears it) and resolves it back. One value per extension and per Lienzo, at most 4 KiB of JSON, kept by the server
+beside the document (like mini-app runtime state: no revision, no history, not in `canvas_read`, not shown to the
+agent). A Lienzo holds storage for at most 64 extensions. No permission.
+
+### Fullscreen
+
+The frame is created with `allow="fullscreen"`, so `document.fullscreenEnabled` is true where the host page allows it
+and the page may call `document.documentElement.requestFullscreen()` from a press. The sandbox is otherwise unchanged.
 
 ### The kit
 
@@ -234,7 +298,7 @@ the page like any missing function. A future API 2 would live beside
 it. Nothing ships with Lienzo. The find-and-replace tool in `tests/fixtures/find-replace.ts` is written against API 1
 only and is the contract example; `tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract
 broke. The guide the agent gets ends with the complete example of Help → Make your own (`shared/wiki/tutorial.ts`), the
-same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`). (The kind `view` was retired
+same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`); so were the `view` permission, `context.view`, `lienzo.view`, `lienzo.keys`, `lienzo.highlight` and `lienzo.storage`, and `lienzo.open` framing what it opens with `view`. (The kind `view` was retired
 with the one-canvas redesign; the frame API itself did not change.)
 
 ## Not in API 1

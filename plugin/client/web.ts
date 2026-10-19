@@ -133,16 +133,18 @@ export type ExtensionCall = { method: string; args: Record<string, unknown> };
  * a request/response channel on top: the page calls a method, `onCall` answers or throws, and the page gets the result.
  * `revision` says when the context is worth sending again, so a large document is not serialised on every render.
  */
-export function WebExtension({ id, source, title, surface, context, revision, onCall }: { id: string; source: string; title: string; surface: string; context: unknown; revision: string; onCall(call: ExtensionCall): Promise<unknown> }) {
-  const frame = useRef<{ contentWindow?: { postMessage(message: unknown, target: string): void } | null } | null>(null), ready = useRef(false), latest = useRef({ context, onCall }); latest.current = { context, onCall };
+export function WebExtension({ id, source, title, surface, context, revision, onCall, onReady, channel }: { id: string; source: string; title: string; surface: string; context: unknown; revision: string; onCall(call: ExtensionCall): Promise<unknown>; onReady?(): void; channel?: { current: ((message: Record<string, unknown>) => void) | null } }) {
+  const frame = useRef<{ contentWindow?: { postMessage(message: unknown, target: string): void } | null } | null>(null), ready = useRef(false), latest = useRef({ context, onCall, onReady }); latest.current = { context, onCall, onReady };
   const post = (message: Record<string, unknown>) => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, ...message }, '*'); } catch {} };
+  // Messages besides the context and results (the view, a key), once the page is listening.
+  if (channel) channel.current = message => { if (ready.current) post(message); };
   useEffect(() => {
     const host = globalThis as unknown as { addEventListener?(type: string, listener: (event: { source: unknown; data: unknown }) => void): void; removeEventListener?(type: string, listener: (event: { source: unknown; data: unknown }) => void): void };
     if (Platform.OS !== 'web' || !host.addEventListener) return;
     const listen = (event: { source: unknown; data: unknown }) => {
       const data = event.data as { lienzo?: unknown; type?: unknown; id?: unknown; method?: unknown; args?: unknown } | null;
       if (!frame.current?.contentWindow || event.source !== frame.current.contentWindow || !data || data.lienzo !== 1) return;
-      if (data.type === 'ready') { ready.current = true; post({ type: 'context', context: latest.current.context }); }
+      if (data.type === 'ready') { ready.current = true; latest.current.onReady?.(); post({ type: 'context', context: latest.current.context }); }
       else if (data.type === 'call' && typeof data.id === 'number' && typeof data.method === 'string') { const callId = data.id;
         Promise.resolve().then(() => latest.current.onCall({ method: data.method as string, args: data.args && typeof data.args === 'object' ? data.args as Record<string, unknown> : {} }))
           .then(value => post({ type: 'result', id: callId, ok: true, value: value ?? null }), error => post({ type: 'result', id: callId, ok: false, error: error instanceof Error ? error.message : String(error) })); }
@@ -152,7 +154,21 @@ export function WebExtension({ id, source, title, surface, context, revision, on
   useEffect(() => { if (ready.current) post({ type: 'context', context: latest.current.context }); }, [revision]);
   if (Platform.OS !== 'web') return null;
   return React.createElement('div', { id: `lienzo-extension-${id}`, 'data-lienzo-interacting': 'true', style: { position: 'relative', height: '100%', width: '100%', overflow: 'hidden', backgroundColor: surface } },
-    React.createElement('iframe', { key: source, ref: frame, srcDoc: source, title, sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock', referrerPolicy: 'no-referrer', style: { width: '100%', height: '100%', border: 0, display: 'block' } }));
+    React.createElement('iframe', { key: source, ref: frame, srcDoc: source, title, sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock', referrerPolicy: 'no-referrer', allow: 'fullscreen', style: { width: '100%', height: '100%', border: 0, display: 'block' } }));
+}
+/**
+ * Keys an open extension took with lienzo.keys.bind, from anywhere in the page: heard first (window, capture) so the
+ * canvas' shortcuts never see them, and left alone while the person types in a field.
+ */
+export function listenExtensionKeys(route: (event: { key: string; code?: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean }, typing: boolean) => string | null, onKey: (name: string) => void): () => void {
+  const host = globalThis as unknown as { addEventListener?(type: string, listener: (event: BrowserKeyEvent) => void, capture: boolean): void; removeEventListener?(type: string, listener: (event: BrowserKeyEvent) => void, capture: boolean): void };
+  if (Platform.OS !== 'web' || !host.addEventListener) return () => {};
+  const listener = (event: BrowserKeyEvent) => {
+    const target = event.target as { tagName?: string; isContentEditable?: boolean } | null, typing = !!target && (!!target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName ?? ''));
+    const name = route(event as never, typing); if (!name) return;
+    event.preventDefault(); (event as { stopImmediatePropagation?(): void }).stopImmediatePropagation?.(); event.stopPropagation(); onKey(name);
+  };
+  host.addEventListener('keydown', listener, true); return () => host.removeEventListener?.('keydown', listener, true);
 }
 /** Uses browser controls, with no playback loop in React. No media implementation is loaded on native. */
 export function WebMedia({ url, title, kind, height, surface, onError }: { url: string; title: string; kind: 'video' | 'audio'; height: number | '100%'; surface: string; onError: () => void }) {

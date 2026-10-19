@@ -13,6 +13,7 @@ import { catalogView, extensionsHash, packDiff, packIssues, parsePack, validateE
 import { clone, newId, reduce, validateDocument, normalizeBlock, effectiveInstructions } from "./reducer";
 import { nextSheetPlacement, sheetSummaries } from "./sheets";
 import { runExtensionAction } from "./actions";
+import { EXTENSION_LIMITS } from "../shared/extensions";
 
 const timestamp = () => new Date().toISOString();
 type State = Parameters<Parameters<CanvasStore["transaction"]>[0]>[0];
@@ -225,6 +226,21 @@ export class CanvasService {
       if (Buffer.byteLength(JSON.stringify(record.runtime)) > RUNTIME_DOCUMENT_BYTES) throw new CanvasError('TOO_LARGE', 'Document runtime exceeds 256 KiB.');
       if (before !== JSON.stringify(record.runtime)) touchRuntime(record);
       return this.runtimeSubset(record, input.blocks.map(b => b.id), input.scopes.map(s => s.id));
+    });
+  }
+  /** lienzo.storage: an installed extension's own JSON value on one document. Not a revision, not in history or the view. */
+  async extensionStorage(raw: RpcInput<typeof rpc.extensionStorage>) {
+    safeJson(raw);
+    const input = rpc.extensionStorageInputSchema.parse(raw), id = input.extensionId, state = await this.store.read();
+    documentRecord(state, input.documentId, input.workspaceId);
+    if (!catalogView(state.catalog).extensions.some(e => e.id === id)) throw new CanvasError('NOT_FOUND', `No extension ${id} is installed.`);
+    if (input.action === 'set' && input.value !== null && Buffer.byteLength(JSON.stringify(input.value)) > EXTENSION_LIMITS.storage) throw new CanvasError('TOO_LARGE', `Extension storage exceeds ${EXTENSION_LIMITS.storage / 1024} KiB.`);
+    return this.store.extensionStorage(input.documentId, input.workspaceId, storage => {
+      if (input.action === 'set') {
+        if (input.value === null) delete storage[id];
+        else { if (!Object.hasOwn(storage, id) && Object.keys(storage).length >= EXTENSION_LIMITS.storedExtensions) throw new CanvasError('TOO_LARGE', `At most ${EXTENSION_LIMITS.storedExtensions} extensions keep storage on one Lienzo.`); storage[id] = clone(input.value); }
+      }
+      return { value: Object.hasOwn(storage, id) ? storage[id] : null };
     });
   }
   /**

@@ -37,6 +37,7 @@ omabox run -- node "$PWD/dist/panel-qa/compact.cjs"
 omabox run -- node "$PWD/dist/panel-qa/many.cjs"
 omabox run -- node "$PWD/dist/panel-qa/face.cjs"          # the stage 1 face; add `papel` for light
 omabox run -- node "$PWD/dist/panel-qa/extensions.cjs"
+omabox run -- node "$PWD/dist/panel-qa/extension-view.cjs"  # lienzo.view/keys/highlight/storage; CDP, HTTP, OUT env override ports and output
 omabox run -- node "$PWD/dist/panel-qa/windows.cjs"       # mini app setState stored on its block
 omabox run -- node "$PWD/dist/panel-qa/compact-ui.cjs" oscuro 900  # narrow: Properties waits to be asked; Lienzo delete popover
 omabox run -- node "$PWD/dist/panel-qa/copilot.cjs"

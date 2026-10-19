@@ -21,6 +21,8 @@ const others=new Map<string,CanvasDocument>();
 const summaryOf=(d:CanvasDocument)=>({...documentSummarySchema.parse({id:d.id,workspaceId:d.workspaceId,title:d.title,description:d.description,example:d.example,revision:d.revision,updatedAt:d.updatedAt}),blockCount:d.blocks.length,groupCount:d.groups.filter((g:any)=>!g.sheet).length,hojaCount:d.groups.filter((g:any)=>g.sheet).length,agentId:agents.get(d.id)??null});
 const agents=new Map<string,string>();
 let created=0;const gone=new Set<string>();
+// lienzo.storage stand-in: per document and extension, in memory (the server keeps it beside the document).
+const extensionStorage=new Map<string,unknown>();
 /** Makes another Lienzo the open one, as reading it in the real server would let the panel do. */
 const kept=new Map<string,{selectionVersion:number;undo:CanvasDocument[];redo:CanvasDocument[]}>();
 function focus(id:string){if(id===doc.id)return;const next=others.get(id);if(!next)throw Error('NOT_FOUND');kept.set(doc.id,{selectionVersion,undo:[...undo],redo:[...redo]});others.delete(next.id);others.set(doc.id,doc);doc=next;const k=kept.get(id);selectionVersion=k?.selectionVersion??0;undo.splice(0,undo.length,...(k?.undo??[]));redo.splice(0,redo.length,...(k?.redo??[]));}
@@ -73,6 +75,7 @@ async function invoke(contract:any, raw:any) {
    for(const entry of input.scopes){const values:any={...(scopes[entry.id]??{})};for(const [key,value] of Object.entries(entry.values)){if(value===null)delete values[key];else values[key]=value;}scopes[entry.id]=values;}
    runtime={blocks,scopes};runtimeVersion++;output={runtime,runtimeVersion};
  }
+ else if(name==='canvas.extension.storage'){const key=doc.id+'\u0000'+input.extensionId;if(input.action==='set'){if(input.value===null)extensionStorage.delete(key);else extensionStorage.set(key,structuredClone(input.value));}output={value:extensionStorage.has(key)?structuredClone(extensionStorage.get(key)):null};}
  else throw Error('QA host does not implement '+name);
  return contract.output.parse(output);
 }

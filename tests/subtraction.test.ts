@@ -39,7 +39,7 @@ function runtime(controller: any) {
     './host': { ...host, useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }), AgentSheet: null, capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
     './useCanvas': { useCanvas: () => controller }, './tokens': { tokens }, './logic': logic,
     '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {} }, './motion': {},
-    './panel-actions': panelActions, '../shared/learning': learning,
+    './panel-actions': panelActions, '../shared/learning': learning, '../shared/extensions': { extensionView: () => null },
     './DocumentActions': { DocumentActions: control('DocumentActions') },
     './SelectionOverlay': { SelectionGeometry: {} }, './NumberPropertyField': { NumberPropertyField: control('NumberPropertyField') }, './PropertyEditors': { BlockContent: control('BlockContent'), VariablesEditor: control('VariablesEditor') },
     './Canvas': { Canvas: control('Canvas') }, '../shared/model': { blockTypeSchema }, './Blocks': { visual: () => ({ icon: 'StickyNote', tone: 'neutro' }), requestTitleEdit: () => false, Delivery: control('Delivery'), ConnectionRows: control('ConnectionRows') },

@@ -16,7 +16,7 @@ export const GLOW_MS = 3000;
 type Geometry = { rects: Map<string, Rect>; center: Point };
 export type CopilotCanvas = {
   hojas: Sheet[]; current: number; follow: boolean; glowIds: string[]; unseen: boolean; menuOpen: boolean;
-  setMenuOpen(open: boolean): void; toggleFollow(): void; goToLatest(): boolean; goToHoja(index: number): boolean; step(direction: 1 | -1): boolean; userMoved(): void;
+  setMenuOpen(open: boolean): void; toggleFollow(): void; framed(): void; goToLatest(): boolean; goToHoja(index: number): boolean; step(direction: 1 | -1): boolean; userMoved(): void;
 };
 /**
  * The canvas side of the copilot. While following, every new transaction of the agent flies the camera to what it
@@ -59,6 +59,8 @@ export function useCopilotCanvas({ c, fly, geometry, center, active }: { c: Canv
     toggleFollow: () => { const next = !follow; setFollow(next); if (next && unseen && latest) { land(latest.ids); setUnseen(false); } },
     goToLatest: () => { if (!latest?.ids.length) return false; setFollow(true); setUnseen(false); return land(latest.ids); },
     goToHoja, step: direction => { if (!hojas.length) return false; const at = moved.current || current < 0 ? look() : current; return goToHoja(at < 0 ? (direction > 0 ? 0 : hojas.length - 1) : Math.max(0, Math.min(hojas.length - 1, at + direction))); },
+    // An extension framed something: stop following and read the Sheet once the camera lands.
+    framed: () => { if (follow) setFollow(false); moved.current = true; setTimeout(look, 900); },
     userMoved: () => { if (follow) setFollow(false); moved.current = true; setTimeout(look, 0); },
   };
 }

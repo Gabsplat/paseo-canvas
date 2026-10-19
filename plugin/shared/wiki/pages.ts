@@ -316,7 +316,7 @@ export const corePages: readonly WikiPage[] = [
     related: ["ext.publish", "ext.permissions"], keywords: "marketplace store catalog browse community gallery" },
   { id: "ext.permissions", section: "extensions", title: "Permissions", icon: "ShieldCheck", art: "permissions",
     summary: "What an extension may do, and how to allow it.",
-    purpose: "Every extension runs in its own sandboxed frame, with no access to Paseo, the plugin, your files or other sites. Reading the Lienzo and selecting are always allowed. Changing the canvas (edit) and loading from the internet (network) are asked for. Extensions from a file or from Discover hold nothing until you press Allow.",
+    purpose: "Every extension runs in its own sandboxed frame, with no access to Paseo, the plugin, your files or other sites. Reading the Lienzo and selecting are always allowed. Changing the canvas (edit), loading from the internet (network) and moving the view of the canvas (view) are asked for. Moving the view never changes the Lienzo or its history. Extensions from a file or from Discover hold nothing until you press Allow.",
     byHand: ["Open Extensions.", "A waiting card says what it asks for; press Allow to grant it.", "Remove an extension to take everything back."],
     related: ["make.permissions"], keywords: "security sandbox allow grant trust" },
   { id: "ext.export", section: "extensions", title: "Export and share", icon: "FileOutput", art: "install",

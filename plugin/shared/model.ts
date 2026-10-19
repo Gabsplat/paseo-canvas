@@ -97,7 +97,8 @@ export const templateSchema = z.object({
 // frame and reaches the canvas only through the versioned `lienzo` API (docs/extensions.md). It never imports plugin code.
 // The canvas never sends anything to the agent, so there is no "agent" permission: a new extension that asks for it is
 // refused, and a stored or imported one that carried it loads without it (extensionListSchema).
-export const extensionPermissionSchema = z.enum(["edit", "network"]);
+// "view" (added to API 1): read and move the canvas camera (lienzo.view), and lienzo.open also frames what it opens.
+export const extensionPermissionSchema = z.enum(["edit", "network", "view"]);
 // Only tools remain: the canvas is the one way to look at a document. Stored entries of the retired kind "view" are
 // dropped on read (extensionListSchema), so catalogs and packs written before keep loading.
 // `docs` (optional, added to API 1): the extension's own Help page, short Markdown or a few titled sections. It is
@@ -109,7 +110,7 @@ export const extensionDocsSchema = z.union([
 export const extensionSchema = z.object({
   id: idSchema, kind: z.literal("tool"), api: z.literal(1),
   name: z.string().min(1).max(80), description: z.string().max(600).default(""), icon: z.string().regex(/^[A-Za-z0-9]{1,40}$/).optional(),
-  html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(2).default([]),
+  html: z.string().min(1).max(300_000), permissions: z.array(extensionPermissionSchema).max(3).default([]),
   docs: extensionDocsSchema.optional(),
   // `actions` (optional, added to API 1): what the extension offers an agent through canvas_extension_run. Each is
   // declared here and registered by the page's `<script data-lienzo="actions">` with lienzo.action (shared/actions.ts).

@@ -86,7 +86,7 @@ function validateExtension(where, e, fileId) {
   if (e.icon !== undefined && (typeof e.icon !== "string" || !ICON.test(e.icon))) fail(where, "icon is a Lucide icon name, letters and digits");
   if (!isText(e.html, 1, LIMITS.html)) fail(where, `html is 1-${LIMITS.html} characters`);
   const permissions = e.permissions ?? [];
-  if (!Array.isArray(permissions) || permissions.length > 2 || new Set(permissions).size !== permissions.length || permissions.some(p => p !== "edit" && p !== "network")) fail(where, 'permissions is a list of "edit" and "network", without repeats');
+  if (!Array.isArray(permissions) || permissions.length > 3 || new Set(permissions).size !== permissions.length || permissions.some(p => p !== "edit" && p !== "network" && p !== "view")) fail(where, 'permissions is a list of "edit", "network" and "view", without repeats');
   if (e.docs !== undefined) { const issue = docsIssue(e.docs); if (issue) fail(where, issue); }
   if (e.actions !== undefined) validateActions(where, e.actions, e.html);
 }

@@ -16,7 +16,7 @@ export function useCanvas(workspaceId: string) {
     undo: useRpc(rpc.undoDocument), redo: useRpc(rpc.redoDocument), watch: useRpc(rpc.watchDocument), selection: useRpc(rpc.setSelection),
     catalog: useRpc(rpc.readCatalog), catalogMutate: useRpc(rpc.mutateCatalog), validate: useRpc(rpc.validatePack), import: useRpc(rpc.importPack),
     about: useRpc(rpc.readAbout), remove: useRpc(rpc.deleteDocument), connect: useRpc(rpc.connectAgent), setup: useRpc(rpc.agentSetup),
-    runtimeSet: useRpc(rpc.setRuntime), history: useRpc(rpc.readHistory),
+    runtimeSet: useRpc(rpc.setRuntime), history: useRpc(rpc.readHistory), extensionStorage: useRpc(rpc.extensionStorage),
   };
   const apiRef = useRef(api); apiRef.current = api;
   const [view, setView] = useState<DocumentView | null>(null), current = useRef(view);

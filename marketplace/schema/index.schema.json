@@ -68,13 +68,14 @@
                   "pattern": "^[A-Za-z0-9]{1,40}$"
                 },
                 "permissions": {
-                  "maxItems": 2,
+                  "maxItems": 3,
                   "type": "array",
                   "items": {
                     "type": "string",
                     "enum": [
                       "edit",
-                      "network"
+                      "network",
+                      "view"
                     ]
                   }
                 },
