@@ -339,8 +339,10 @@ Shortcut: M
 
 1. Press M to add an empty Frame, then drag things into it.
 2. Or select things and press ⌘G to wrap them in a Frame.
-3. Give it a title and a purpose in the Properties panel.
-4. Select a Frame and press ⌘⇧G to unwrap it: its contents stay.
+3. Move a Frame by its header (the title bar). Dragging inside it moves what you pressed, or draws a selection box on an empty spot; the Frame stays.
+4. Give it a title and a purpose in the Properties panel.
+5. Lock position (Properties → Frame, or the lock in the selection bar) keeps the Frame in place; what is inside still moves.
+6. Select a Frame and press ⌘⇧G to unwrap it: its contents stay.
 
 #### Ask your agent
 

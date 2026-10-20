@@ -452,6 +452,8 @@ export type EntityPointerHandlers = {
   start(id: string, point: CanvasPointer): void;
   move(point: CanvasPointer): void;
   end(cancelled: boolean, velocity: { vx: number; vy: number }): void;
+  /** Whether a press may move `id` (logic.ts pressRole): a Frame answers by whether the press is on its header. Absent: always. */
+  role?(id: string, onHeader: boolean): 'move' | 'select' | 'canvas';
   /** A double-click. `id` is the entity under it, null on the bare canvas; `point` is where, in page pixels. */
   edit?(id: string | null, point: CanvasPointer): void;
 };
@@ -466,6 +468,8 @@ export function attachEntityDrag(element: unknown, handlers: EntityPointerHandle
   const down = (e: Event) => {
     if (e.button !== 0 || !handlers.enabled() || isEditingTarget(e.target) || isCardControl(e.target) || pointerElement(e.target)?.closest?.('[id^="lienzo-interactive-resize-"],[id^="lienzo-link-handle-"]')) return;
     const id = entity(e); if (!id) return;
+    // A Frame's body is canvas: the press is left to the selection box (or the hand) underneath.
+    if (handlers.role && handlers.role(id, pointerElement(e.target)?.closest?.('[id^="lienzo-frame-header-"]')?.id === 'lienzo-frame-header-' + id) !== 'move') return;
     const p = point(e); pending = { id, start: p, last: p, time: Date.now(), active: false }; velocity = { vx: 0, vy: 0 };
   };
   const move = (e: Event) => {

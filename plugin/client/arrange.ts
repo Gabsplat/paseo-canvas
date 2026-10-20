@@ -3,7 +3,7 @@
  * the arrow-key nudge and its burst. Panel.tsx and Canvas.tsx turn the results into one transaction each.
  */
 import type { CanvasCatalog, CanvasDocument, CanvasOperation } from '../shared/model';
-import { moveOperations, topSelection, type Point, type Rect } from './logic';
+import { movable, moveOperations, topSelection, type Point, type Rect } from './logic';
 
 export type AlignKind = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
 export type DistributeKind = 'horizontal' | 'vertical';
@@ -41,9 +41,9 @@ export function distributeDeltas(boxes: readonly Box[], kind: DistributeKind): M
   for (const b of sorted) { const move = Math.round(at - start(b)); if (move) out.set(b.id, h ? { x: move, y: 0 } : { x: 0, y: move }); at += size(b) + gap; }
   return out;
 }
-/** The boxes of the outermost selected entities that are on the canvas. */
+/** The boxes of the outermost selected entities that are on the canvas and free to move (a locked Frame is left out). */
 export function selectionBoxes(doc: CanvasDocument, rects: ReadonlyMap<string, Rect>, ids: readonly string[]): Box[] {
-  return topSelection(doc, [...ids]).map(e => ({ e, r: rects.get(e.id) })).filter(({ r }) => r && !r.hidden).map(({ e, r }) => ({ id: e.id, x: r!.x, y: r!.y, width: r!.width, height: r!.height }));
+  return topSelection(doc, movable(doc, ids)).map(e => ({ e, r: rects.get(e.id) })).filter(({ r }) => r && !r.hidden).map(({ e, r }) => ({ id: e.id, x: r!.x, y: r!.y, width: r!.width, height: r!.height }));
 }
 /** One transaction that moves each entity by its own delta, with no grid: what align, distribute and flip write. */
 export function arrangeOperations(doc: CanvasDocument, rects: Map<string, Rect>, deltas: ReadonlyMap<string, Point>, catalog?: CanvasCatalog | null): CanvasOperation[] {

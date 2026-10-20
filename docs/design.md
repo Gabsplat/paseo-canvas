@@ -471,6 +471,24 @@ optional instruction marker. Graph groups use a dashed region border; prose grou
 Collapsed groups preserve membership and connections; links attach to their visible frame. Group
 controls live in the selection toolbar. There are no group resize grips or manual pixel fields.
 
+**A Frame moves only by its header** (Sheets too). With the select tool:
+
+| Press starts on | Click | Drag |
+| --- | --- | --- |
+| Header (title bar, outside the chevron and the Properties button) | select the Frame | move the Frame; Alt copies it, Shift keeps one axis |
+| Anything inside (card, shape outline, drawing stroke, text, nested Frame's header) | select it | move it, never the Frame |
+| Inside a hollow shape | select the shape | selection box |
+| Empty body | clear the selection | selection box, as on the bare canvas (the hand tool pans) |
+
+Children sit above their Frame, so they always win the press. The header shows the open hand of a card;
+the body shows the canvas's own cursor and nothing else. A selected Frame still nudges with the arrow
+keys and duplicates with ⌘D.
+
+**Lock position** (`group.locked`, set from the Frame section of Properties or the lock button of the
+selection bar; agents may set it with a group update). A locked Frame does not move by its header, the
+arrow keys, align, distribute or flip; its header still selects it, shows no hand and carries a 12 px
+`Lock` glyph after the title ("Position locked"). What is inside still moves and edits. No shortcut.
+
 
 ## 8. Direct manipulation: editing in place, `+` handles, quick-create
 
