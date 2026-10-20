@@ -114,10 +114,12 @@ test('creation hook commits one real shape transaction and aborts Escape/documen
   assert.equal(h.transactions.length,1);assert.equal(h.doc().blocks[0].typeId,'wb-shape');assert.deepEqual(h.doc().blocks[0].position,{x:100,y:100});assert.deepEqual(h.doc().blocks[0].size,{width:180,height:120});assert.equal(h.tool(),'select');
   for(const reason of ['cancel','document','offline','busy']){const q=toolHarness();q.wb.begin(pointer(10,10));q.wb.move(pointer(60,60));if(reason==='document')q.c.view={document:{...q.doc(),id:'another'}};if(reason==='offline')q.c.offline=true;if(reason==='busy')q.c.busy=true;await q.wb.finish(pointer(60,60),reason==='cancel');assert.equal(q.transactions.length,0);assert.equal(q.wb.store.current,null);}
 });
-test('draw sessions append complete strokes, scale old points correctly and eraser deletes crossed strokes in one transaction',async()=>{
+test('every pen stroke is its own drawing and the eraser deletes the strokes it crosses in one transaction',async()=>{
   const h=toolHarness('draw');for(const y of [10,60]){h.wb.begin(pointer(10,y));for(let x=20;x<=120;x+=10)h.wb.move(pointer(x,y));await h.wb.finish(pointer(120,y),false);}
-  assert.equal(h.transactions.length,2);assert.equal(h.doc().blocks.length,1);const block=h.doc().blocks[0];assert.equal(block.data.strokes.length,2);assert.equal(block.data.strokes[0].points.length,4);assert.deepEqual(block.size,{width:110,height:50});
-  h.setTool('eraser');h.wb.begin(pointer(55,10));await h.wb.finish(pointer(55,10),false);assert.equal(h.transactions.length,3);assert.equal(h.doc().blocks[0].data.strokes.length,1);
+  assert.equal(h.transactions.length,2,'One transaction, one undo step, per stroke.');assert.equal(h.doc().blocks.length,2,'Two strokes, two drawings: nothing merges.');
+  for(const block of h.doc().blocks){assert.equal(block.data.strokes.length,1);assert.equal(block.data.strokes[0].points.length,4);assert.deepEqual(block.size,{width:110,height:8});}
+  assert.deepEqual(h.doc().blocks.map((b:any)=>b.position.y),[10,60]);
+  h.setTool('eraser');h.wb.begin(pointer(55,10));await h.wb.finish(pointer(55,10),false);assert.equal(h.transactions.length,3);assert.deepEqual(h.doc().blocks.map((b:any)=>b.position.y),[60]);
   h.wb.begin(pointer(55,60));await h.wb.finish(pointer(55,60),false);assert.equal(h.transactions.length,4);assert.equal(h.doc().blocks.length,0);
 });
 test('SVG library insertion uses validated catalog data, visible center and parent-relative position',async()=>{
@@ -379,4 +381,32 @@ test('zoom menu delegates inside clicks, dismisses outside/Escape, and supports 
     h.doc.fire('keydown',key('ArrowDown'));assert.equal(focused,'Alejar');h.doc.fire('keydown',key('End'));assert.equal(focused,'Fit all');
     h.doc.fire('keydown',key('Escape'));assert.equal(closed,1);assert.equal(triggerFocus,1);h.doc.fire('pointerdown',{target:{}});assert.equal(closed,2);
   }finally{stop();h.close();}
+});
+test('hollow shapes: the inside follows the outline, and the smallest shape containing a press is the one it selects or edits', () => {
+  const { shapeContains, shapeInteriorAt } = require('../plugin/client/whiteboard-geometry');
+  assert.equal(shapeContains('rect', 100, 60, { x: 50, y: 30 }), true); assert.equal(shapeContains('rect', 100, 60, { x: 101, y: 30 }), false);
+  assert.equal(shapeContains('ellipse', 100, 60, { x: 50, y: 30 }), true); assert.equal(shapeContains('ellipse', 100, 60, { x: 4, y: 4 }), false, 'An ellipse\'s corners are outside it.');
+  assert.equal(shapeContains('diamond', 100, 100, { x: 50, y: 50 }), true); assert.equal(shapeContains('diamond', 100, 100, { x: 10, y: 10 }), false);
+  assert.equal(shapeContains('triangle', 100, 100, { x: 50, y: 90 }), true); assert.equal(shapeContains('triangle', 100, 100, { x: 5, y: 20 }), false);
+  assert.equal(shapeContains('line', 100, 100, { x: 50, y: 50 }), false, 'A line has no inside.');
+  const shapes = [{ id: 'frame', shape: 'rect', rect: { x: 0, y: 0, width: 800, height: 600 } }, { id: 'box', shape: 'rect', rect: { x: 100, y: 100, width: 200, height: 120 } }, { id: 'round', shape: 'ellipse', rect: { x: 500, y: 100, width: 200, height: 200 } }];
+  assert.equal(shapeInteriorAt(shapes, { x: 150, y: 150 }), 'box', 'A box drawn inside a bigger one stays reachable.');
+  assert.equal(shapeInteriorAt(shapes, { x: 400, y: 400 }), 'frame'); assert.equal(shapeInteriorAt(shapes, { x: 505, y: 105 }), 'frame', 'Outside the ellipse, inside the frame.');
+  assert.equal(shapeInteriorAt(shapes, { x: 900, y: 50 }), null);
+});
+test('the eraser hits a stroke along its path within its radius, not by its bounding box, and at the drawing\'s scale', () => {
+  const diagonal = { extent: { width: 10, height: 10 }, strokes: [{ points: [0, 0, 10, 10], color: 'tinta', weight: 'm' }, { points: [0, 10, 3, 10], color: 'tinta', weight: 'm' }] };
+  assert.deepEqual(erasedStrokes(diagonal, { x: 90, y: 10 }, { width: 100, height: 100 }, 8), [], 'Inside the box but far from both strokes.');
+  assert.deepEqual(erasedStrokes(diagonal, { x: 56, y: 50 }, { width: 100, height: 100 }, 8), [0], 'Within the radius of the drawn (scaled) path.');
+  assert.deepEqual(erasedStrokes(diagonal, { x: 60, y: 120 }, { width: 100, height: 100 }, 8, { x: -20, y: 80 }), [1], 'A fast drag between two pointer events still crosses the short stroke.');
+});
+test('a double-click reports the entity under it, or the bare canvas with its point, never a control over the canvas', () => {
+  const h = harness(), edits: any[] = [];
+  const stop = attachEntityDrag(h.node, { enabled: () => true, start() {}, move() {}, end() {}, edit: (id: string | null, p: any) => edits.push([id, p.x, p.y]) });
+  try {
+    h.node.fire('dblclick', h.event(10, 20));
+    const bare = { closest: () => null }, control = { closest: (s: string) => s.includes('[role="button"]') ? control : null };
+    h.node.fire('dblclick', { ...h.event(30, 40), target: bare }); h.node.fire('dblclick', { ...h.event(50, 60), target: control });
+    assert.deepEqual(edits, [['card', 10, 20], [null, 30, 40]]);
+  } finally { stop(); h.close(); }
 });
