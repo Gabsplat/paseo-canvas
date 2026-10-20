@@ -96,7 +96,7 @@ test('canvas and list cards do not dispatch a hidden node or reveal it in access
 test('Properties replaces hidden target fields, and shows gate controls rather than its raw outcome editor', () => {
   const f = fixture(), h = headless(f.present(), f.document, f.catalog, ['result']);
   Object.assign(h.modules, { './ui': { ...(h.modules['./ui'] as object), CheckRow: 'CheckRow', Field: 'Field', Segments: 'Segments', useTooltip: () => ({ ref: {}, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} }) },
-    './logic': require('../plugin/client/logic'), './panel-actions': require('../plugin/client/panel-actions'), '../shared/learning': require('../plugin/shared/learning'), '../shared/whiteboard': require('../plugin/shared/whiteboard'),
+    './arrange': require('../plugin/client/arrange'), './logic': require('../plugin/client/logic'), './panel-actions': require('../plugin/client/panel-actions'), '../shared/learning': require('../plugin/shared/learning'), '../shared/whiteboard': require('../plugin/shared/whiteboard'),
     './NumberPropertyField': { NumberPropertyField: 'NumberPropertyField' }, './PropertyEditors': { BlockContent: 'BlockContent', VariablesEditor: 'VariablesEditor' }, './Bindings': { BindingsEditor: 'BindingsEditor' }, './interaction': { needsContentInteraction: () => false }, './Links': { linkTone: () => 'neutro' }, './RightPanel': { PanelSection: 'PanelSection' }, './web': { activateRendererReset: () => false } });
   (h.modules['./ui'] as any).useUI = () => ({ compact: false, layout: { platform: 'web' }, font: () => ({}), c: { surface1: '#fff', border: '#888', accent: '#268' }, wash: () => '', tone: () => '' });
   const { SelectionProperties } = h.load('SelectionActions');

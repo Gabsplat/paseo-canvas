@@ -22,6 +22,7 @@ import { HiddenResult } from './HiddenResult';
 import { withAlpha } from './color';
 import { PanelSection } from './RightPanel';
 import { attentionSection, sectionMemory, sectionScope } from './property-model';
+import { ARRANGE_COMMANDS } from './arrange';
 
 const toneNames = { neutro: 'Neutral', acento: 'Accent', violeta: 'Violet', turquesa: 'Teal', aviso: 'Amber', peligro: 'Red' } as const;
 const MARCO = 'Frame — holds things together on the canvas.';
@@ -40,13 +41,15 @@ function BarButton({ label, icon, onPress, disabled, shortcut, detail, active, d
  * The small bar over the selection: colour, Frame, duplicate, delete. Detail lives in the right panel.
  * A selected link gets its own: colour, kind, reverse, delete.
  */
-export function SelectionBar({ controller: c, disabled, linkId, colour, duplicate, remove, wrap, unwrap, keyLabel, onProperties }: {
+export function SelectionBar({ controller: c, disabled, linkId, colour, duplicate, remove, wrap, unwrap, keyLabel, onProperties, arrange }: {
   controller: CanvasController; disabled: boolean; linkId?: string | null; colour?: Colour; duplicate(): void; remove(): void; wrap(): void; unwrap(): void; keyLabel(id: string): string | undefined; onProperties?(): void;
+  /** Align, distribute and flip, by shortcut id (arrange.ts ARRANGE_COMMANDS); shown for two things or more. */
+  arrange?(id: string): void;
 }) {
-  const u = useUI(), doc = c.view!.document, [swatches, setSwatches] = useState(false);
+  const u = useUI(), doc = c.view!.document, [swatches, setSwatches] = useState(false), [aligning, setAligning] = useState(false);
   const selected = [...doc.groups, ...doc.blocks].filter(e => c.selection.includes(e.id)), link = linkId ? doc.links.find(l => l.id === linkId) : undefined;
   const single = selected.length === 1 ? selected[0] : undefined, group = single && 'groupIds' in single ? single : undefined;
-  useEffect(() => { setSwatches(false); }, [c.selection.join('|'), linkId]);
+  useEffect(() => { setSwatches(false); setAligning(false); }, [c.selection.join('|'), linkId]);
   if (!selected.length && !link) return null;
   const current = colour?.kind === 'whiteboard' ? wbColor(colour.value, u) : colour?.kind === 'link' ? u.tone(linkTone(colour.link)) : undefined;
   const choices = colour?.kind === 'whiteboard' ? WB_COLORS.map(color => ({ id: color, name: tokens.whiteboard.colors.find(x => x.id === color)!.label, value: wbColor(color, u), on: colour.value === color, pick: () => colour.set(color) }))
@@ -61,10 +64,17 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, duplicat
         {group ? <BarButton nativeID="lienzo-selection-unwrap" label="Unwrap Frame" icon="Ungroup" shortcut={keyLabel('edit.unwrap')} detail="Keeps what is inside; removes the frame." disabled={disabled} onPress={unwrap} />
           : <BarButton nativeID="lienzo-selection-marco" label="Wrap in a Frame" icon="SquareDashed" shortcut={keyLabel('edit.wrap')} detail={MARCO} disabled={disabled} onPress={wrap} />}
         <BarButton nativeID="lienzo-selection-duplicate" label="Duplicate" icon="CopyPlus" shortcut={keyLabel('edit.duplicate')} disabled={disabled} onPress={duplicate} />
+        {arrange && selected.length > 1 && <BarButton nativeID="lienzo-selection-align" label="Align and distribute" icon="AlignStartVertical" active={aligning} disabled={disabled} onPress={() => { setSwatches(false); setAligning(v => !v); }} />}
       </>}
       <BarButton nativeID="lienzo-selection-delete" label="Delete" icon="Trash2" danger shortcut={keyLabel('edit.delete')} disabled={disabled} onPress={remove} />
       {onProperties && <BarButton label="Properties" icon="SlidersHorizontal" shortcut={keyLabel('panel.right')} onPress={onProperties} />}
     </View>
+    {aligning && arrange && <View nativeID="lienzo-selection-arrange" accessibilityRole="toolbar" accessibilityLabel="Align and distribute" style={[islandStyle(u, true), { position: 'absolute', top: (u.compact ? 52 : tokens.face.selectionBar.button + 10) + 6, flexDirection: 'row', alignItems: 'center', gap: 2, padding: 4 }]}>
+      {ARRANGE_COMMANDS.map(([id, label, icon], i) => <React.Fragment key={id}>
+        {(i === 6 || i === 8) && <View style={{ width: 1, height: 18, marginHorizontal: 3, backgroundColor: u.c.border }} />}
+        <BarButton nativeID={'lienzo-' + id.replace('.', '-')} label={label} icon={icon} shortcut={keyLabel(id)} disabled={disabled || id.includes('distribute') && selected.length < 3} onPress={() => arrange(id)} />
+      </React.Fragment>)}
+    </View>}
     {swatches && choices.length > 0 && <View nativeID="lienzo-selection-swatches" accessibilityRole="radiogroup" accessibilityLabel="Colour" style={[islandStyle(u, true), { position: 'absolute', top: (u.compact ? 52 : tokens.face.selectionBar.button + 10) + 6, flexDirection: 'row', flexWrap: 'wrap', gap: 4, padding: 6, maxWidth: 260, zIndex: 12 }]}>
       {choices.map(choice => <Pressable key={choice.id} accessibilityRole="radio" accessibilityLabel={choice.name} accessibilityState={{ checked: choice.on, disabled }} disabled={disabled} onPress={e => { e.stopPropagation(); choice.pick(); setSwatches(false); }}
         style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: choice.on ? 2 : 0, borderColor: u.c.accent }}><View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: choice.value, borderWidth: 1, borderColor: u.c.border }} /></Pressable>)}

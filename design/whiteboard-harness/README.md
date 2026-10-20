@@ -52,6 +52,7 @@ omabox run -- node "$PWD/dist/panel-qa/comments.cjs" papel 1280   # pins, a thre
 omabox run -- node "$PWD/dist/panel-qa/shaderplay.cjs" oscuro   # Play/Pause by real presses (with a slip), resume after leaving the view, no writes from drawing (swiftshader)
 omabox run -- node "$PWD/dist/panel-qa/bindings.cjs" papel   # §39: a Speed slider drives a bound rectangle and text, writes nothing; the bind form
 omabox run -- node "$PWD/dist/panel-qa/lienzo-file.cjs" http://127.0.0.1:7422/ dark   # §41 against the desktop preview: export dialog, download, drop, review, import (CDP, OUT, DOWNLOADS)
+omabox run -- node "$PWD/dist/panel-qa/power.cjs" papel   # §42: Alt-drag duplicate with links, Shift-drag axis, ⌘D, ⌘C/⌘V, align left/right, ? → Shortcuts (CDP, HTTP, OUT)
 ```
 
 The scenarios also run against a plain headless Chromium (no omabox), which is how the screens were verified:

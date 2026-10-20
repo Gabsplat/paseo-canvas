@@ -6,13 +6,13 @@
  * Combinations are lowercase strings joined by `+`, modifiers first in a fixed order: `mod` (⌘ on a Mac, Ctrl
  * elsewhere), `alt`, `shift`, then the key: `mod+shift+z`, `shift+1`, `[`, `?`, `delete`, `space`.
  */
-export type ShortcutGroup = 'Tools' | 'Navigation' | 'Editing' | 'Extensions';
+export type ShortcutGroup = 'Tools' | 'Navigation' | 'Editing' | 'Arrange' | 'Pointer' | 'Extensions';
 export type ShortcutWhen = 'always' | 'document' | 'canvas' | 'selection';
 export type ShortcutDef = {
   id: string; label: string; group: ShortcutGroup; keys: readonly string[]; when?: ShortcutWhen;
   /** Who contributed it: `lienzo`, or an extension id. */
   source?: string;
-  /** Shown but not reassignable (Space held for the hand). */
+  /** Shown but not reassignable (Space held for the hand, the arrows, what a modifier does to a drag). */
   fixed?: boolean;
 };
 export type Overrides = Readonly<Record<string, string>>;
@@ -38,7 +38,7 @@ export const DEFAULT_SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'panel.right', label: 'Properties panel', group: 'Navigation', keys: ['mod+\\'], when: 'document' },
   { id: 'ui.hide', label: 'Hide all UI', group: 'Navigation', keys: ['mod+.'], when: 'document' },
   { id: 'view.theme', label: 'Switch light and dark', group: 'Navigation', keys: ['mod+shift+l'], when: 'always' },
-  { id: 'help.shortcuts', label: 'Keyboard shortcuts', group: 'Navigation', keys: ['?'], when: 'always' },
+  { id: 'help.shortcuts', label: 'Keyboard shortcuts', group: 'Navigation', keys: ['?', 'mod+/'], when: 'always' },
   { id: 'edit.undo', label: 'Undo', group: 'Editing', keys: ['mod+z'], when: 'document' },
   { id: 'edit.redo', label: 'Redo', group: 'Editing', keys: ['mod+shift+z'], when: 'document' },
   { id: 'edit.duplicate', label: 'Duplicate', group: 'Editing', keys: ['mod+d'], when: 'selection' },
@@ -47,8 +47,27 @@ export const DEFAULT_SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'edit.delete', label: 'Delete', group: 'Editing', keys: ['delete', 'backspace'], when: 'selection' },
   { id: 'edit.escape', label: 'Deselect, cancel or close', group: 'Editing', keys: ['escape'], when: 'always', fixed: true },
   { id: 'edit.selectAll', label: 'Select all', group: 'Editing', keys: ['mod+a'], when: 'document' },
+  { id: 'edit.copy', label: 'Copy', group: 'Editing', keys: ['mod+c'], when: 'selection' },
+  { id: 'edit.cut', label: 'Cut', group: 'Editing', keys: ['mod+x'], when: 'selection' },
+  { id: 'edit.paste', label: 'Paste at the pointer', group: 'Editing', keys: ['mod+v'], when: 'document' },
+  { id: 'edit.pasteInPlace', label: 'Paste in place', group: 'Editing', keys: ['mod+shift+v'], when: 'document' },
+  { id: 'edit.nudge', label: 'Nudge 1 unit (with Shift, 10)', group: 'Editing', keys: ['left', 'right', 'up', 'down'], when: 'selection', fixed: true },
+  // tldraw's keys: Alt with the side of the WASD cross, H and V for the centres; with Shift, distribute.
+  { id: 'arrange.alignLeft', label: 'Align left', group: 'Arrange', keys: ['alt+a'], when: 'selection' },
+  { id: 'arrange.alignCenter', label: 'Align centres horizontally', group: 'Arrange', keys: ['alt+h'], when: 'selection' },
+  { id: 'arrange.alignRight', label: 'Align right', group: 'Arrange', keys: ['alt+d'], when: 'selection' },
+  { id: 'arrange.alignTop', label: 'Align top', group: 'Arrange', keys: ['alt+w'], when: 'selection' },
+  { id: 'arrange.alignMiddle', label: 'Align middles vertically', group: 'Arrange', keys: ['alt+v'], when: 'selection' },
+  { id: 'arrange.alignBottom', label: 'Align bottom', group: 'Arrange', keys: ['alt+s'], when: 'selection' },
+  { id: 'arrange.distributeH', label: 'Distribute horizontally', group: 'Arrange', keys: ['alt+shift+h'], when: 'selection' },
+  { id: 'arrange.distributeV', label: 'Distribute vertically', group: 'Arrange', keys: ['alt+shift+v'], when: 'selection' },
+  { id: 'arrange.flipH', label: 'Flip horizontally', group: 'Arrange', keys: ['shift+h'], when: 'selection' },
+  { id: 'arrange.flipV', label: 'Flip vertically', group: 'Arrange', keys: ['shift+v'], when: 'selection' },
+  // What a modifier does to a press of the pointer: listed so they can be found, not keys to reassign.
+  ...([['duplicate', 'Duplicate while dragging', 'alt+drag'], ['axis', 'Drag along one axis', 'shift+drag'], ['proportions', 'Resize keeping proportions', 'shift+resize'], ['centre', 'Resize from the centre', 'alt+resize'],
+    ['square', 'Draw a square or circle', 'shift+draw'], ['fromCentre', 'Draw from the centre', 'alt+draw']] as const).map(([id, label, key]): ShortcutDef => ({ id: `pointer.${id}`, label, group: 'Pointer', keys: [key], when: 'canvas', fixed: true })),
 ];
-export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Tools', 'Navigation', 'Editing', 'Extensions'];
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Tools', 'Navigation', 'Editing', 'Arrange', 'Pointer', 'Extensions'];
 
 const MODIFIERS = ['mod', 'alt', 'shift'] as const;
 const NAMED: Record<string, string> = { ' ': 'space', spacebar: 'space', esc: 'escape', del: 'delete', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right' };
@@ -73,7 +92,9 @@ export function eventCombo(e: KeyInput): string | null {
   if (['shift', 'control', 'meta', 'alt', 'os', 'capslock', 'dead', 'unidentified'].includes(lower)) return null;
   const digit = /^Digit(\d)$/.exec(e.code ?? '')?.[1] ?? /^Numpad(\d)$/.exec(e.code ?? '')?.[1];
   const letter = /^Key([A-Z])$/.exec(e.code ?? '')?.[1]?.toLowerCase();
-  let key = digit ?? (lower.length === 1 && /[a-z]/.test(lower) ? lower : undefined) ?? (e.command && letter ? letter : undefined) ?? (NAMED[lower] ?? lower);
+  // With ⌘/Ctrl or Alt the typed character may be another (Option+A types å on a Mac): the physical letter counts.
+  let key = digit ?? (lower.length === 1 && /[a-z]/.test(lower) ? lower : undefined) ?? ((e.command || e.alt) && letter ? letter : undefined) ?? (NAMED[lower] ?? lower);
+  if (e.code === 'Slash' && e.command) key = '/';
   if (e.code === 'Backslash' && e.command) key = '\\';
   if (e.code === 'Period' && e.command) key = '.';
   const symbol = key.length === 1 && !/[a-z0-9]/.test(key);

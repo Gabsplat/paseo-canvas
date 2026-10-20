@@ -636,7 +636,8 @@ export function freezeOperations(doc: CanvasDocument, rects: Map<string, Rect>, 
  * The first selected top-level entity anchors grid snapping; the whole selection shares its delta.
  * `grid: false` rounds instead of snapping, for a delta that was already aligned to a guide.
  */
-export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, ids: string[], delta: Point, target?: string | null, options: { catalog?: CanvasCatalog | null; grid?: boolean } = {}): CanvasOperation[] {
+/** `deltas`: a delta per moved entity (align, distribute, flip), instead of one `delta` for all of them. */
+export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, ids: string[], delta: Point, target?: string | null, options: { catalog?: CanvasCatalog | null; grid?: boolean; deltas?: ReadonlyMap<string, Point> } = {}): CanvasOperation[] {
   const index = graphIndex(doc, options.catalog);
   const moves = topSelection(doc, ids).map(e => ({ e, to: target === undefined ? e.parentGroupId ?? null : target }))
     .filter(({ e, to }) => rects.has(e.id) && (!to || index.groups.has(to) && !index.chain(to).includes(e.id)));
@@ -646,10 +647,11 @@ export function moveOperations(doc: CanvasDocument, rects: Map<string, Rect>, id
     const local = { x: r.x + delta.x - (origin?.x ?? 0), y: r.y + delta.y - (origin?.y ?? 0) };
     delta = { x: delta.x + snap(local.x) - local.x, y: delta.y + snap(local.y) - local.y };
   }
-  const moving = new Set(moves.map(m => m.e.id)), parents = [...new Set(moves.flatMap(m => [m.to, m.e.parentGroupId ?? null]))], result: CanvasOperation[] = [];
+  const moving = new Set(moves.map(m => m.e.id)), parents = [...new Set(moves.flatMap(m => [m.to, m.e.parentGroupId ?? null]))], result: CanvasOperation[] = [], base = delta;
   for (const parent of parents) if (manual(index.mode(parent))) result.push(...freezeOperations(doc, rects, parent, moving).filter(op => op.type !== 'group.update'));
   const frozen = result.length;
   for (const { e, to } of moves) {
+    const delta = options.deltas?.get(e.id) ?? base;
     // An anchored drawing travels with its card. Moved on its own, only its offset from the card changes.
     const card = 'typeId' in e ? anchorCard(doc, e, options.catalog) : undefined, cardRect = card && rects.get(card.id);
     if (card && cardRect) { if (!moving.has(card.id)) { const own = rects.get(e.id)!; result.push({ type: 'entity.move', id: e.id, parentGroupId: e.parentGroupId ?? null, position: { x: Math.round(own.x + delta.x - cardRect.x), y: Math.round(own.y + delta.y - cardRect.y) } }); } continue; }

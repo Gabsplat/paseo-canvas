@@ -98,7 +98,7 @@ Shortcut: V
 1. Press V, or the arrow in the toolbar.
 2. Click a card to select it; Shift-click adds or removes one.
 3. Drag on empty canvas to select everything in a box.
-4. Drag a selected card to move it; the arrow keys nudge it (with Shift, further).
+4. Drag a selected card to move it; the arrow keys nudge it 1 unit (with Shift, 10). Shift while dragging keeps it on one axis; Alt (Option) while dragging leaves the original and drops a copy.
 5. Press Enter or F2 to edit the title of the one selected; Tab moves to the next card.
 
 #### Tips
@@ -666,13 +666,54 @@ Every key, and how to change it.
 
 Almost everything has a key. The list below is the one in use now, with your changes. Change any of them in Settings → Shortcuts: press the key chip, then the new keys.
 
-Shortcut: ?
+Shortcut: ? or ⌘/
 
 #### By hand
 
 1. Press ? to open Settings → Shortcuts.
 2. Press a key chip and then the new keys; Escape cancels.
 3. Keys another shortcut held move to the new one, and the other shows a warning.
+
+### Duplicate, copy and paste
+
+Copies of cards, Frames and drawings, with the links among them.
+
+Duplicate puts copies a step down and to the right; Alt-drag (Option-drag on a Mac) drops them wherever you let go. Copy and paste work within a Lienzo, between Lienzos and between windows: what you copy goes on the clipboard and pastes as new things, with new names inside, never tied to the originals. Links between copied things are copied too.
+
+Shortcut: ⌘D
+
+#### By hand
+
+1. Select what to copy. ⌘D duplicates it in place, a little offset.
+2. Or hold Alt (Option) and drag it: the original stays, the copy lands where you let go. Let go of Alt before you drop and it simply moves.
+3. ⌘C copies, ⌘X cuts. Open another Lienzo if you like, then ⌘V pastes under the pointer, or in the middle of the view.
+4. ⌘⇧V pastes exactly where the things were copied from.
+
+#### Tips
+
+- The copies become the selection, so you can drag them straight away or press ⌘D again for a row.
+- Each of these is one step to undo.
+- A drawing copied without the card it was drawn on becomes a free drawing.
+
+### Align, distribute and nudge
+
+Line things up, space them evenly, flip them, move them by a unit.
+
+With two things or more selected, align their left edges, centres, right edges, tops, middles or bottoms; with three or more, give them equal gaps across or down. Flip mirrors drawings and lines, and the places of several things inside the selection. The arrow keys move the selection 1 unit, 10 with Shift; a run of presses is one step to undo.
+
+Shortcut: ⌥A
+
+#### By hand
+
+1. Select the things, then press the align button in the bar above them and pick one, or use ⌘K and type “align”.
+2. Keys, as in tldraw: ⌥A left, ⌥H centres, ⌥D right, ⌥W top, ⌥V middles, ⌥S bottom; ⌥⇧H and ⌥⇧V distribute.
+3. ⇧H flips horizontally, ⇧V vertically.
+4. Hold Shift while drawing a rectangle or ellipse for a square or circle; hold Alt to draw it from its centre. Alt while resizing a drawn shape resizes it from its centre; Shift keeps its proportions.
+
+#### Tips
+
+- Things inside a Frame that arranges itself (a stack, a grid) keep the Frame's order; align them on the canvas or in a free Frame.
+- Every key here can be changed in Settings → Shortcuts.
 
 ### Command palette
 
