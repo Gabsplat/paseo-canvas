@@ -41,6 +41,20 @@ export function safeUrl(input: unknown): string | null {
   if (typeof input !== 'string' || !/^https?:\/\//i.test(input)) return null;
   try { const u = new URL(input); return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password ? u.href : null; } catch { return null; }
 }
+/**
+ * What a press on an entity does with the select tool (docs/design.md §6.4). A block moves itself. A Frame (or Sheet)
+ * moves only from its header and only while unlocked; a locked header still selects. Its body is the canvas: a click
+ * there clears the selection, a drag draws a selection box. Children sit above their Frame, so they win before this.
+ */
+export type PressRole = 'move' | 'select' | 'canvas';
+export function pressRole(doc: Pick<CanvasDocument, 'groups'>, id: string, onHeader: boolean): PressRole {
+  const group = doc.groups.find(g => g.id === id); if (!group) return 'move';
+  return !onHeader ? 'canvas' : group.locked ? 'select' : 'move';
+}
+/** The ones a drag, a nudge or an align may move: locked Frames stay where they are (their children still move alone). */
+export function movable(doc: Pick<CanvasDocument, 'groups'>, ids: readonly string[]): string[] {
+  const locked = new Set(doc.groups.filter(g => g.locked).map(g => g.id)); return ids.filter(id => !locked.has(id));
+}
 export function topSelection(doc: CanvasDocument, ids = doc.selectedIds): Entity[] {
   const all = [...doc.groups, ...doc.blocks];
   return all.filter(e => ids.includes(e.id) && !ancestors(doc, e).some(a => ids.includes(a.id)));

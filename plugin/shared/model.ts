@@ -50,6 +50,8 @@ export const groupSchema = z.object({
   templateId: idSchema.optional(),
   parentGroupId: idSchema.nullable().optional(), position: positionSchema.optional(),
   collapsed: z.boolean().optional(), layout: layoutSchema.optional(),
+  // Lock position: the Frame does not move by hand (header drag, arrow keys, align). Its children stay editable.
+  locked: z.boolean().optional(),
   communication: communicationSchema.optional(), variables: variablesSchema.optional(),
   sheet: sheetSchema.optional(),
 }).strict();
@@ -58,7 +60,7 @@ export const groupPatchSchema = z.object({
   title: z.string().max(300).optional(), description: z.string().max(4000).optional(),
   blockIds: z.array(idSchema).max(1000).optional(), groupIds: z.array(idSchema).max(200).optional(),
   templateId: idSchema.optional(), parentGroupId: idSchema.nullable().optional(),
-  position: positionSchema.optional(), collapsed: z.boolean().optional(),
+  position: positionSchema.optional(), collapsed: z.boolean().optional(), locked: z.boolean().optional(),
   layout: layoutSchema.optional(), communication: communicationSchema.optional(), variables: variablesSchema.optional(),
 }).strict();
 export const documentContentSchema = z.object({

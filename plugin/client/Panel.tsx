@@ -12,7 +12,7 @@ import { VariablesEditor } from './PropertyEditors';
 import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
 import { requestTitleEdit, visual } from './Blocks';
-import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
+import { connectOperations, groupOperations, layoutDocument, movable, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
 import { attachClipboard, attachFileDrop, attachFilePaste, isMacPlatform, keyboard, readClipboardText, runCopyCommand, trackPointer, type PanelKey } from './web';
 import { ARRANGE_COMMANDS, alignDeltas, arrangeOperations, distributeDeltas, flipOperations, nudgeBurst, nudgeDelta, selectionBoxes, type AlignKind, type DistributeKind, type FlipAxis } from './arrange';
 import { clipBounds, clipText, copyClip, duplicateOperations, parseClip, pasteOperations, placeAt, rememberClip, rememberedClip, type Clip } from './clipboard';
@@ -740,7 +740,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       }
       const delta = e.command || e.alt ? null : nudgeDelta(e.key, e.shift);
       // A held arrow key repeats: each press shows at once; the burst is written once (arrange.ts nudgeBurst).
-      if (delta && c.selection.length) { const ids = [...c.selection]; canvas.current?.nudge(ids, nudges.add(ids, delta)); return true; }
+      if (delta && c.selection.length) { const ids = movable(doc, c.selection); if (ids.length) canvas.current?.nudge(ids, nudges.add(ids, delta)); return true; }
       if (!e.command && mode === 'canvas') {
         if (e.key === '0') { canvas.current?.zoomTo(1); return true; }
         if (e.key === '+' || e.key === '=') { canvas.current?.zoomStep(1); return true; }
