@@ -6,6 +6,8 @@ export const WB_COLORS = ['tinta', 'gris', 'azul', 'turquesa', 'verde', 'naranja
 export const WB_SCALE = ['s', 'm', 'l', 'xl'] as const;
 export const WB_SHAPES = ['rect', 'rounded', 'ellipse', 'diamond', 'triangle', 'hexagon', 'cylinder', 'line'] as const;
 export const WB_RENDERERS = ['wb-text', 'wb-shape', 'wb-svg', 'wb-draw'] as const;
+/** Free text's own font size (a corner handle scales it), in canvas px. Absent: the S/M/L/XL step sets it. */
+export const WB_TEXT_FONT = { min: 8, max: 400 } as const;
 export const WB_LIMITS = { text: 4000, shapeText: 1000, caption: 200, strokes: 32, pointsPerStroke: 512, totalPoints: 4000, inputPointsPerStroke: 8192, extent: 4096, tolerance: .75, simplifyComparisons: 65536 } as const;
 export type WbColor = typeof WB_COLORS[number];
 export type WbScale = typeof WB_SCALE[number];
@@ -17,6 +19,7 @@ export const wbTextDataSchema = z.object({
   text: z.string().max(WB_LIMITS.text), color, scale,
   font: z.enum(['sans', 'serif', 'mono']).default('sans'), align: z.enum(['left', 'center', 'right']).default('left'),
   width: z.number().finite().min(24).max(4096).optional(),
+  fontSize: z.number().finite().min(WB_TEXT_FONT.min).max(WB_TEXT_FONT.max).optional(),
 }).strict();
 export const wbShapeDataSchema = z.object({
   shape: z.enum(WB_SHAPES).default('rect'), color, fill: z.enum(['none', 'wash', 'solid']).default('none'),

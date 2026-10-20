@@ -431,7 +431,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const displayedStyle: ToolStyle = selectedStyle ? (() => {
     const data = selectedStyle.data, renderer = rendererOf(selectedStyle.typeId);
     if (renderer === 'wb-draw') { const stroke = (data as WbDrawData).strokes[0]; return { ...toolStyle, color: stroke.color, scale: stroke.weight }; }
-    return { ...toolStyle, ...Object.fromEntries(Object.keys(DEFAULT_TOOL_STYLE).filter(key => data[key] !== undefined).map(key => [key, data[key]])), ...(data.weight ? { scale: data.weight as ToolStyle['scale'] } : {}), fillColor: data.fillColor as ToolStyle['fillColor'] };
+    return { ...toolStyle, ...Object.fromEntries(Object.keys(DEFAULT_TOOL_STYLE).filter(key => data[key] !== undefined).map(key => [key, data[key]])), ...(data.weight ? { scale: data.weight as ToolStyle['scale'] } : {}), fillColor: data.fillColor as ToolStyle['fillColor'], ...(renderer === 'wb-text' && typeof data.fontSize === 'number' ? { fontSize: data.fontSize } : {}) };
   })() : toolStyle;
   // "Split strokes": older drawings (and an agent's illustration) hold several strokes; each becomes its own drawing.
   const splittable = selectedWhiteboard.filter(block => rendererOf(block.typeId) === 'wb-draw' && Array.isArray(block.data.strokes) && block.data.strokes.length > 1);
@@ -483,7 +483,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   useEffect(() => { setTool('select'); setToolLocked(false); setAddOpen(false); setLibraryOpen(false); setSvgOpen(false); setLibraryError(''); setInteractionId(null); setRename(false); setVentana(null); }, [doc?.id]);
   function changeStyle(patch: Partial<ToolStyle>) {
     if (disabled) return;
-    setToolStyle(previous => ({ ...previous, ...patch }));
+    setToolStyle(previous => { const next = { ...previous, ...patch }; delete next.fontSize; return next; });
     const documentId = doc?.id, ids = selectedWhiteboard.map(block => block.id);
     if (!documentId || !ids.length) return;
     if (ids.length > 200) { toast.error('Change the style of up to 200 things at a time.'); return; }
@@ -501,6 +501,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
           const allowed = renderer === 'wb-text' ? ['color', 'scale', 'font', 'align'] : renderer === 'wb-svg' ? ['color'] : ['color', 'shape', 'fill', 'fillColor', 'stroke'];
           let changed = false;
           for (const key of allowed) { const value = patch[key as keyof ToolStyle]; if (value !== undefined) { data[key] = value; changed = true; } }
+          // A size step replaces a size scaled by hand (null removes it in the merge).
+          if (renderer === 'wb-text' && patch.scale !== undefined && data.fontSize !== undefined) data.fontSize = null;
           if (renderer === 'wb-shape') {
             if (patch.scale !== undefined) { data.weight = patch.scale; changed = true; }
             if (data.shape === 'line' && patch.heads !== undefined) { data.heads = patch.heads; changed = true; }

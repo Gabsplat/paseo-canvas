@@ -4,6 +4,7 @@ import { getRendererSpec } from "../shared/renderers";
 import { boundOf } from '../shared/bindings';
 import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasOperation, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
 import { tokens } from './tokens';
+import { wbTextType, fitText, estimateLine } from './whiteboard-geometry';
 export type Entity = CanvasBlock | CanvasGroup;
 export type Point = { x: number; y: number };
 export type Rect = Point & { width: number; height: number; depth: number; hidden: boolean };
@@ -83,6 +84,8 @@ export type Segment = { from: Point; to: Point };
 export const descriptionKey = (groupId: string) => `${groupId}#description`;
 /** A sized card's measured floor (a shader's controls): its height never goes below it, so nothing is clipped. */
 export const minimumKey = (blockId: string) => `${blockId}#minimum`;
+/** Free text's measured auto width, kept with the measured heights. */
+export const textWidthKey = (blockId: string) => `${blockId}#width`;
 export const sizedHeight = (stored: number, minimum?: number) => Math.max(stored, Number.isFinite(minimum) ? Math.ceil(minimum!) : 0);
 export type Box = Pick<Rect, 'x' | 'y' | 'width' | 'height'>;
 // Stored positions carry no size, so whoever wrote them (a person, an agent, a template) could not know how large the
@@ -397,15 +400,14 @@ export function layoutCanvas(doc: CanvasDocument, heights: Record<string, number
     if (block) {
       const renderer = catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer, node = isNodeBlock(block, catalog), wide = getRendererVisual(renderer)?.width === 'wide' || renderer === 'preview-frame';
       if (isWhiteboardRenderer(renderer)) {
-        const scale = typeof block.data.scale === 'string' && block.data.scale in tokens.whiteboard.text ? block.data.scale as 's'|'m'|'l'|'xl' : 'm';
-        // Bound text and size (shared/bindings.ts) measure like stored ones.
-        const shown = boundOf(block), boundFont = typeof shown?.['text.size'] === 'number' ? shown['text.size'] : undefined, base = tokens.whiteboard.text[scale];
+        // Bound text and size (shared/bindings.ts) measure like stored ones. Free text keeps the box the canvas measured
+        // (the same one its editor grows to); before that, an estimate of the same auto-size rule.
+        const shown = boundOf(block), boundFont = typeof shown?.['text.size'] === 'number' ? shown['text.size'] : undefined, base = wbTextType(block.data);
         const textStyle = boundFont ? { fontSize: boundFont, lineHeight: Math.round(boundFont * base.lineHeight / base.fontSize) } : base;
         const text = typeof shown?.['text.template'] === 'string' ? shown['text.template'] : typeof block.data.text === 'string' ? block.data.text : '';
-        const longest = Math.max(1, ...text.split('\n').map(line => line.length));
-        const autoWidth = Math.max(24, Math.min(480, Math.ceil(longest * textStyle.fontSize * .56 + 2)));
-        const textWidth = typeof block.data.width === 'number' ? block.data.width : autoWidth;
-        const textHeight = Math.max(textStyle.lineHeight, text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length * textStyle.fontSize * .56 / textWidth)), 0) * textStyle.lineHeight);
+        const T = tokens.whiteboard.text, fixed = typeof block.data.width === 'number' ? block.data.width : undefined;
+        const guess = renderer === 'wb-text' ? fitText(text, textStyle, estimateLine(textStyle.fontSize), { width: fixed, maxWidth: T.autoMaxWidth, minWidth: T.minWidth }) : { width: 0, height: 0 };
+        const textWidth = fixed ?? heights[textWidthKey(id)] ?? guess.width, textHeight = guess.height;
         const vb = Array.isArray(block.data.viewBox) ? block.data.viewBox as number[] : [0,0,1,1];
         const ratio = Number(vb[2]) / Number(vb[3]) || 1;
         const width = renderer === 'wb-text' ? textWidth : boundSize(block, 'width') ?? block.size?.width ?? (renderer === 'wb-svg' ? Math.max(24, ratio >= 1 ? 96 : 96 * ratio) : 160);

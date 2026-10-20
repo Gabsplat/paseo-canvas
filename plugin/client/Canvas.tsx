@@ -3,7 +3,7 @@ import { Animated, PanResponder, Pressable, View, type GestureResponderEvent, ty
 import { Icon, ScrollView } from './host';
 import type { CanvasBlock, CanvasDocument, CanvasGroup } from '../shared/model';
 import type { CanvasController } from './useCanvas';
-import { alignmentGuides, boundLook, boundSize, sizeBoundTo, anchorCard, boundsOf, connectOperations, descriptionKey, minimumKey, dropTarget, movable, pressRole, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
+import { alignmentGuides, boundLook, boundSize, sizeBoundTo, anchorCard, boundsOf, connectOperations, descriptionKey, minimumKey, textWidthKey, dropTarget, movable, pressRole, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows, requestTitleEdit } from './Blocks';
@@ -13,7 +13,7 @@ import { getClientRenderer } from './renderers';
 import { LinkLayer, type LinkLayerHandle, type LinkDraft } from './Links';
 import { MagnetCue } from './MagnetCue';
 import { Chip, Tooltip, Txt, useUI } from './ui';
-import { attachEntityDrag, attachMiddlePan, attachPressCursor, attachWheel, holdCursor, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
+import { attachEntityDrag, attachResizeHandles, attachMiddlePan, attachPressCursor, attachWheel, holdCursor, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
 import { Appear, NATIVE, easeOut, frame, glide, reducedMotion, settle, useReducedMotion } from './motion';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type CanvasToolProps, type SvgInsertOptions } from './whiteboard-tools';
 import { isWhiteboardRenderer, whiteboardMinSize, type WbRenderer, type WbShapeData } from '../shared/whiteboard';
@@ -27,7 +27,7 @@ import { WhiteboardEditor, WhiteboardPreview } from './WhiteboardOverlay';
 import { LinkLabelEditor, SelectionOverlay, type LinkLabelSession } from './SelectionOverlay';
 import { ZoomControl } from './ZoomControl';
 import { ContentInteractionProvider, needsContentInteraction } from './interaction';
-import { resizeWhiteboardBox, resizeLineBox, lineEnds, shapeInteriorAt, type ResizeHandle } from './whiteboard-geometry';
+import { resizeWhiteboardBox, resizeLineBox, lineEnds, shapeInteriorAt, scaleTextBox, wbTextType, type ResizeHandle } from './whiteboard-geometry';
 import { axisLock } from './arrange';
 import { duplicateOperations } from './clipboard';
 import { islandStyle } from './whiteboard-visuals';
@@ -131,7 +131,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   // `ids` stay raised and styled as lifted until they have settled; `live` is true only while the hand is down.
   const [drag, setDrag] = useState<{ ids: Set<string>; into: string | null; live: boolean; copy?: string[] } | null>(null);
   const [resizeId, setResizeId] = useState<string | null>(null);
-  const resize = useRef<{ id: string; documentId: string; start: Box; pointer: Point; next: { width: number; height: number }; proportional: boolean; held: boolean; handle: ResizeHandle; nextPosition: Point; from?: string; parents: string[] } | null>(null);
+  const resize = useRef<{ id: string; documentId: string; start: Box; pointer: Point; next: { width: number; height: number }; proportional: boolean; held: boolean; handle: ResizeHandle; nextPosition: Point; from?: string; parents: string[]; text?: { fontSize?: number; wrap?: number } } | null>(null);
   useReducedMotion();
   const motionSources = useMemo(() => c.catalog ? prepareLinkMotion(c.view!.document, c.catalog, getClientRenderer) : undefined, [c.view!.document, c.catalog]);
   const linkMotion = useCallback((epochMs: number) => motionSources?.(c.learning.getSnapshot(), epochMs, presentation?.hiddenBy ?? new Map()) ?? { tokens: [], playing: false }, [motionSources, c.learning, presentation?.hiddenBy]);
@@ -471,6 +471,16 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       press: (id, p) => { if (latest.current.doc.blocks.some(b => b.id === id) && !latest.current.c.selection.includes(id)) fns.current.select(id, { nativeEvent: { pageX: p.x, pageY: p.y, shiftKey: p.shift, metaKey: p.command }, stopPropagation() {} } as unknown as GestureResponderEvent); },
     });
   }, [web, mode, doc.id]);
+  // Whiteboard handles on web: pointer events, so Alt (from the centre) and Shift reach the held handle.
+  useEffect(() => {
+    if (!web || mode !== 'canvas') return;
+    const event = (p: CanvasPointer) => ({ nativeEvent: { pageX: p.x, pageY: p.y, shiftKey: p.shift, altKey: !!p.alt }, stopPropagation() {} }) as unknown as GestureResponderEvent;
+    const state = { moveX: 0, moveY: 0, dx: 0, dy: 0 } as PanResponderGestureState;
+    return attachResizeHandles(viewport.current, {
+      start: (id, handle, p) => { if (!canDragRef.current || resize.current) return false; resizeFns.current.resizeStart(id, event(p), state, handle as ResizeHandle); return (resize.current as { id: string } | null)?.id === id; },
+      move: p => resizeFns.current.resizeMove(event(p), state), end: cancelled => resizeFns.current.resizeEnd(cancelled),
+    });
+  }, [web, mode, doc.id]);
   // One responder per frame for its whole life. It sits on a wrapper around the card, never on a Pressable: a Pressable
   // owns its own responder handlers and would swallow these.
   const responders = useRef(new Map<string, GestureResponderHandlers>());
@@ -519,8 +529,13 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       else {
         // Alt: from the centre, twice the pull, so the middle stays put.
         const centre = !!(event.nativeEvent as unknown as { altKey?: boolean }).altKey, pull = centre ? { x: delta.x * 2, y: delta.y * 2 } : delta;
-        const box = resizeWhiteboardBox(state.start, pull, state.handle, whiteboardMinSize(kind, block.data), kind === 'wb-svg' || state.proportional && kind !== 'wb-text'), x = centre ? state.start.x + (state.start.width - box.width) / 2 : box.x, y = centre ? state.start.y + (state.start.height - box.height) / 2 : box.y;
-        state.next = { width: box.width, height: kind === 'wb-text' ? state.start.height : box.height }; state.nextPosition = { x, y: kind === 'wb-text' ? state.start.y : y };
+        const corner = kind === 'wb-text' && state.handle.length === 2;
+        const box = resizeWhiteboardBox(state.start, pull, state.handle, whiteboardMinSize(kind, block.data), kind === 'wb-svg' || corner || state.proportional && kind !== 'wb-text'), x = centre ? state.start.x + (state.start.width - box.width) / 2 : box.x, y = centre ? state.start.y + (state.start.height - box.height) / 2 : box.y;
+        if (corner) {
+          // A corner scales free text (tldraw): font, box and any wrap width by one factor; the opposite corner stays.
+          const scaled = scaleTextBox(state.start, box, state.handle, wbTextType(block.data), { wrap: typeof block.data.width === 'number' ? block.data.width : undefined, maxWidth: tokens.whiteboard.text.autoMaxWidth }, centre);
+          state.next = { width: scaled.width, height: scaled.height }; state.nextPosition = { x: scaled.x, y: scaled.y }; state.text = { fontSize: scaled.fontSize, wrap: scaled.wrap };
+        } else { state.next = { width: box.width, height: kind === 'wb-text' ? state.start.height : box.height }; state.nextPosition = { x, y: kind === 'wb-text' ? state.start.y : y }; }
       }
       const a = animOf(state.id, NATIVE); a.x.setValue(state.nextPosition.x - state.start.x); a.y.setValue(state.nextPosition.y - state.start.y);
     } else state.next = resizeBlockSize(state.start, delta, resizeFloor(block, c.catalog), state.proportional);
@@ -544,7 +559,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       if (resize.current !== state) return;
       const settled = saved ? layoutCanvas(saved, heights, c.catalog, latest.current.size.width || undefined).rects : latest.current.rects;
       resize.current = null; setResizeId(null);
-      const r = settled.get(state.id); if (r) { settle(a.w, r.width); settle(a.h, r.height); settle(a.x, 0, { native: a.native }); settle(a.y, 0, { native: a.native }); }
+      // Scaled text lands at the size its preview had; its type remounts and measures the same box.
+      const r = settled.get(state.id), sized = saved && state.text?.fontSize !== undefined ? state.next : r; if (r && sized) { settle(a.w, sized.width); settle(a.h, sized.height); settle(a.x, 0, { native: a.native }); settle(a.y, 0, { native: a.native }); }
       for (const id of state.parents) { const parent = anims.current.get(id), r = settled.get(id); if (parent && r) { glide(parent.w, r.width, { ms: M.layout.frameMs }); glide(parent.h, r.height, { ms: M.layout.frameMs }); } }
       follow(700);
     };
@@ -553,8 +569,10 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     if (isWhiteboardRenderer(kind)) {
       const card = anchorCard(doc, block, c.catalog), parent = card ? latest.current.rects.get(card.id) : block.parentGroupId ? latest.current.rects.get(block.parentGroupId) : null;
       const position = { x: state.nextPosition.x - (parent?.x ?? 0), y: state.nextPosition.y - (parent?.y ?? 0) };
-      const patch: Partial<Omit<CanvasBlock, 'id'>> = kind === 'wb-text' ? { position, data: { width: state.next.width } } : { position, size: state.next, ...(state.from ? { data: { from: state.from } } : {}) };
-      void c.edit([{ type: 'block.update', id: state.id, patch }], kind === 'wb-text' ? 'Resize text' : 'Resize shape').then(next => finish(next?.document)); return;
+      const scaled = kind === 'wb-text' && state.text?.fontSize !== undefined ? state.text : null;
+      if (scaled) setHeights(old => ({ ...old, [state.id]: state.next.height, [textWidthKey(state.id)]: state.next.width }));
+      const patch: Partial<Omit<CanvasBlock, 'id'>> = scaled ? { position, data: { fontSize: scaled.fontSize!, ...(scaled.wrap !== undefined ? { width: Math.round(scaled.wrap) } : {}) } } : kind === 'wb-text' ? { position, data: { width: state.next.width } } : { position, size: state.next, ...(state.from ? { data: { from: state.from } } : {}) };
+      void c.edit([{ type: 'block.update', id: state.id, patch }], scaled ? 'Scale text' : kind === 'wb-text' ? 'Resize text' : 'Resize shape').then(next => finish(next?.document)); return;
     }
     const final = resizeBlockSize(state.next, { x: 0, y: 0 }, resizeFloor(block, c.catalog), state.proportional, true);
     settle(a.w, final.width); settle(a.h, final.height);
@@ -666,6 +684,12 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     if (resize.current?.id === id || latest.current.doc.blocks.find(b => b.id === id)?.size) return;
     setHeights(old => Math.abs((old[id] ?? 0) - height) < 1 ? old : { ...old, [id]: height });
   }, []);
+  // Free text measures its own box. Not while a handle is held (the preview would feed back into the drag); the saved
+  // text remounts its type when its size or wrap changes, so the result is measured afresh.
+  const measureText = useCallback((id: string, height: number, width: number) => {
+    if (resize.current?.id === id) return; const key = textWidthKey(id);
+    setHeights(old => Math.abs((old[id] ?? 0) - height) < .5 && Math.abs((old[key] ?? 0) - width) < .5 ? old : { ...old, [id]: height, [key]: width });
+  }, []);
   // Cards are memoised, so what they call must keep its identity while always reaching the current closure.
   const calls = useRef({ select, onInspect, onPacks, reorder }); calls.current = { select, onInspect, onPacks, reorder };
   const stable = useMemo(() => ({ onSelect: (id: string, event?: GestureResponderEvent, long?: boolean) => calls.current.select(id, event, long), onInspect: () => calls.current.onInspect(), onPacks: () => calls.current.onPacks(), onReorder: (id: string, d: number) => calls.current.reorder(id, d) }), []);
@@ -717,15 +741,19 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   function whiteboardItems(kinds: WbRenderer[]) {
     return doc.blocks.filter(b => !rects.get(b.id)?.hidden && kinds.includes(wbKind(b) as WbRenderer)).map(b => {
       const r = rects.get(b.id)!, a = animOf(b.id, NATIVE), kind = wbKind(b) as WbRenderer, card = kind === 'wb-draw' ? anchorCard(doc, b, c.catalog) : undefined, ride = card ? animOf(card.id, NATIVE) : null, selected = c.selection.includes(b.id), lifted = !!drag?.ids.has(b.id), line = kind === 'wb-shape' && b.data.shape === 'line';
-      const handles: ResizeHandle[] = kind === 'wb-text' ? ['w','e'] : line ? ['start','end'] : ['nw','n','ne','e','se','s','sw','w'];
+      const handles: ResizeHandle[] = kind === 'wb-text' ? ['nw','ne','e','se','sw','w'] : line ? ['start','end'] : ['nw','n','ne','e','se','s','sw','w'];
       const ends = line ? lineEnds(b.data as unknown as Parameters<typeof lineEnds>[0], r.width, r.height) : null;
-      const look = boundLook(b), boundTo = selected ? sizeBoundTo(doc, b) : null;
+      const look = boundLook(b), boundTo = selected ? sizeBoundTo(doc, b) : null, editing = wb.editor?.blockId === b.id;
+      // While its label is typed a shape grows to fit it (tldraw); the editor reports the height it needs.
+      const grown = editing && kind === 'wb-shape' && wb.grow && wb.grow > r.height ? wb.grow : undefined;
+      // A held text handle: a corner scales the text, a side sets its wrap width. Its height then follows the text.
+      const textMode = kind === 'wb-text' && resizeId === b.id && resize.current ? resize.current.handle.length === 2 ? 'scale' as const : 'wrap' as const : undefined;
       const hpos = (handle: ResizeHandle) => ends && (handle === 'start' || handle === 'end') ? { x: ends[handle === 'start' ? 0 : 1].x / r.width, y: ends[handle === 'start' ? 0 : 1].y / r.height } : { x: handle.includes('w') ? 0 : handle.includes('e') ? 1 : .5, y: handle.includes('n') ? 0 : handle.includes('s') ? 1 : .5 };
-      return <Animated.View key={b.id} nativeID={`lienzo-entity-${b.id}`} pointerEvents="box-none" {...(!web && canDrag ? dragHandlers(b.id) : {})} style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: a.target ? a.w : r.width, height: kind === 'wb-text' && resizeId !== b.id ? r.height : a.target ? a.h : r.height, zIndex: kind === 'wb-text' ? 4 : kind === 'wb-draw' ? 5 : 0, ...(web ? { cursor: cursor(lifted) } as object : null), opacity: (lifted ? .85 : 1) * look.opacity, transform: [{ translateX: a.x }, { translateY: a.y }, ...(ride ? [{ translateX: ride.x }, { translateY: ride.y }] : []), ...look.transform] }}>
-        <LiveWhiteboardContent w={a.w} h={a.h} block={b} kind={kind} width={r.width} height={r.height} scale={cam.current.scale} editing={wb.editor?.blockId === b.id} selected={selected} fading={kind === 'wb-draw' ? wb.fading : undefined} onSelect={event => select(b.id,event)} onHover={inside => hovering(b.id,inside)} onMeasure={height => measure(b.id,height)} />
-        {(selected || hover === b.id) && <View pointerEvents="none" style={{position:'absolute',inset:-4,borderWidth:selected?1.5:1,borderColor:selected?u.c.accent:withAlpha(u.c.foregroundMuted,.35)}}/>}
+      return <Animated.View key={b.id} nativeID={`lienzo-entity-${b.id}`} pointerEvents="box-none" {...(!web && canDrag ? dragHandlers(b.id) : {})} style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: a.target ? a.w : r.width, height: grown ?? (kind === 'wb-text' ? resizeId === b.id ? undefined : r.height : a.target ? a.h : r.height), zIndex: kind === 'wb-text' ? 4 : kind === 'wb-draw' ? 5 : 0, ...(web ? { cursor: cursor(lifted) } as object : null), opacity: (lifted ? .85 : 1) * look.opacity, transform: [{ translateX: a.x }, { translateY: a.y }, ...(ride ? [{ translateX: ride.x }, { translateY: ride.y }] : []), ...look.transform] }}>
+        <LiveWhiteboardContent w={a.w} h={a.h} block={b} kind={kind} width={r.width} height={grown ?? r.height} scale={cam.current.scale} editing={editing} selected={selected} fading={kind === 'wb-draw' ? wb.fading : undefined} textMode={textMode} onSelect={event => select(b.id,event)} onHover={inside => hovering(b.id,inside)} onMeasure={(height, width) => kind === 'wb-text' && width !== undefined ? measureText(b.id, height, width) : measure(b.id, height)} />
+        {(selected || hover === b.id) && !editing && <View pointerEvents="none" style={{position:'absolute',inset:-4,borderWidth:selected?1.5:1,borderColor:selected?u.c.accent:withAlpha(u.c.foregroundMuted,.35)}}/>}
         {boundTo && c.selection.length === 1 && <BoundHint label={boundTo} scale={camS} />}
-        {selected && canDrag && c.selection.length === 1 && cam.current.scale >= .25 && !boundTo && handles.map(handle => { const p = hpos(handle); return <View key={handle} nativeID={`lienzo-interactive-resize-${b.id}-${handle}`} {...resizeHandlers(b.id,handle)} style={{position:'absolute',left:`${p.x*100}%`,top:`${p.y*100}%`,width:20,height:20,marginLeft:-10,marginTop:-10,zIndex:8,alignItems:'center',justifyContent:'center',...(web?{cursor:cursorForHandle(cursors,handle)} as object:null),transform:[{scale:Animated.divide(1,camS)}]}}><View pointerEvents="none" style={{width:line?10:8,height:line?10:8,borderRadius:line?5:2,backgroundColor:u.c.surface1,borderColor:u.c.accent,borderWidth:1.5}}/></View>; })}
+        {selected && canDrag && c.selection.length === 1 && cam.current.scale >= .25 && !boundTo && !editing && handles.map(handle => { const p = hpos(handle); return <View key={handle} nativeID={`lienzo-interactive-resize-${b.id}-${handle}`} {...(web ? null : resizeHandlers(b.id,handle))} style={{position:'absolute',left:`${p.x*100}%`,top:`${p.y*100}%`,width:20,height:20,marginLeft:-10,marginTop:-10,zIndex:8,alignItems:'center',justifyContent:'center',...(web?{cursor:cursorForHandle(cursors,handle)} as object:null),transform:[{scale:Animated.divide(1,camS)}]}}><View pointerEvents="none" style={{width:line?10:8,height:line?10:8,borderRadius:line?5:2,backgroundColor:u.c.surface1,borderColor:u.c.accent,borderWidth:1.5}}/></View>; })}
       </Animated.View>;
     });
   }
@@ -778,7 +806,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       {lensLayer}
       {whiteboardItems(['wb-text'])}{whiteboardItems(['wb-draw'])}
       <WhiteboardPreview store={wb.store} origin={bound} />
-      {wb.editor && <WhiteboardEditor key={`${wb.editor.documentId}:${wb.editor.block.id}`} session={wb.editor} origin={bound} error={wb.editorError} saving={wb.saving} onSave={wb.saveText} onCancel={wb.cancel} />}
+      {wb.editor && <WhiteboardEditor key={`${wb.editor.documentId}:${wb.editor.block.id}`} session={wb.editor} origin={bound} error={wb.editorError} saving={wb.saving} onSave={wb.saveText} onCancel={wb.cancel} onGrow={wb.setGrow} />}
       <View ref={marks} pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: bound.width, height: bound.height, zIndex: 4 }} />
       {guideLine(guideV, true)}{guideLine(guideH, false)}
       {pinFor && handleRect && <Pressable accessibilityRole="button" accessibilityLabel={`${tokens.canvas.pin.label}: “${title(pinFor)}” goes back to the automatic order`} hitSlop={8} onHoverIn={() => hovering(pinFor, true)} onHoverOut={() => hovering(pinFor, false)} onPress={event => { event.stopPropagation(); onRelease?.([pinFor]); }} style={({ pressed, ...state }) => ({ position: 'absolute', left: handleRect.x - bound.x + tokens.canvas.pin.offset, top: handleRect.y - bound.y + tokens.canvas.pin.offset, width: tokens.canvas.pin.size, height: tokens.canvas.pin.size, borderRadius: tokens.canvas.pin.size / 2, zIndex: 5, alignItems: 'center', justifyContent: 'center', backgroundColor: u.c.surface1, borderWidth: 1, borderColor: pressed || (state as { hovered?: boolean }).hovered ? u.c.accent : u.c.border, transform: [{ scale: pressed ? M.press.scale : 1 }] })}><Tooltip label={tokens.canvas.pin.label} detail="Back to the automatic order of its Frame." style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}><Icon name={tokens.canvas.pin.icon} size={tokens.canvas.pin.iconSize} color={u.c.foregroundMuted} /></Tooltip></Pressable>}

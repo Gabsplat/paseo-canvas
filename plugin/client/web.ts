@@ -457,6 +457,33 @@ export type EntityPointerHandlers = {
   /** A double-click. `id` is the entity under it, null on the bare canvas; `point` is where, in page pixels. */
   edit?(id: string | null, point: CanvasPointer): void;
 };
+/**
+ * Whiteboard resize handles (`lienzo-interactive-resize-<id>-<handle>`) by pointer events, not the responder system:
+ * react-native-web drops any press or move with Alt held and reports altKey false, so Alt (from the centre) never
+ * reached a held handle. Shift and Alt pressed or let go mid-drag apply at once.
+ */
+export function attachResizeHandles(element: unknown, handlers: { start(id: string, handle: string, point: CanvasPointer): boolean; move(point: CanvasPointer): void; end(cancelled: boolean): void }): () => void {
+  const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
+  type Event = BrowserKeyEvent & { button?: number; pointerId?: number };
+  let current: CanvasPointer | null = null;
+  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, alt: !!e.altKey, pointerId: e.pointerId ?? 0 });
+  const down = (e: Event) => {
+    const target = e.button === 0 ? pointerElement(e.target)?.closest?.('[id^="lienzo-interactive-resize-"]') : null; if (!target?.id) return;
+    const rest = target.id.slice('lienzo-interactive-resize-'.length), cut = rest.lastIndexOf('-'), p = point(e);
+    if (cut < 1 || !handlers.start(rest.slice(0, cut), rest.slice(cut + 1), p)) return;
+    current = p; try { node.setPointerCapture?.(p.pointerId); } catch {} e.preventDefault(); e.stopPropagation();
+  };
+  const move = (e: Event) => { if (!current || current.pointerId !== (e.pointerId ?? 0)) return; current = point(e); handlers.move(current); e.preventDefault(); e.stopPropagation(); };
+  const finish = (cancelled: boolean) => { const p = current; current = null; if (!p) return; try { node.releasePointerCapture?.(p.pointerId); } catch {} handlers.end(cancelled); if (!cancelled) swallowClick(); };
+  const up = (e: Event) => { if (!current || current.pointerId !== (e.pointerId ?? 0)) return; finish(false); e.preventDefault(); e.stopPropagation(); };
+  const cancel = () => finish(true);
+  const key = (e: BrowserKeyEvent) => {
+    if (!current) return; if (e.key === 'Escape') { cancel(); e.preventDefault(); e.stopPropagation(); return; }
+    if (e.key === 'Shift' || e.key === 'Alt') { current = { ...current, shift: e.shiftKey, alt: !!e.altKey }; handlers.move(current); e.preventDefault(); }
+  };
+  node.addEventListener('pointerdown', down, true); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true); doc.addEventListener('keyup', key, true);
+  return () => { cancel(); node.removeEventListener('pointerdown', down, true); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); doc.removeEventListener('keyup', key, true); };
+}
 /** Capture only after movement, so ordinary clicks still reach all nested controls. */
 export function attachEntityDrag(element: unknown, handlers: EntityPointerHandlers, threshold = 4): () => void {
   const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};

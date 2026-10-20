@@ -1,5 +1,6 @@
-import type { WbShapeData, WbDrawData } from '../shared/whiteboard';
+import { WB_TEXT_FONT, type WbShapeData, type WbDrawData, type WbScale } from '../shared/whiteboard';
 import type { Point } from './logic';
+import { tokens } from './tokens';
 const f = (n: number) => Number(n.toFixed(2));
 export function strokePath(points: readonly number[]): string {
   return points.map((v,i) => i % 2 ? ` ${f(v)}` : `${i ? ' L' : 'M'}${f(v)}`).join('');
@@ -106,4 +107,59 @@ export function resizeLineBox(start:{x:number;y:number;width:number;height:numbe
   if(snapAngle){const dx=ends[at].x-ends[other].x,dy=ends[at].y-ends[other].y,length=Math.hypot(dx,dy),angle=Math.round(Math.atan2(dy,dx)/(Math.PI/12))*Math.PI/12;ends[at]={x:ends[other].x+length*Math.cos(angle),y:ends[other].y+length*Math.sin(angle)};}
   const x=Math.min(ends[0].x,ends[1].x),y=Math.min(ends[0].y,ends[1].y),width=Math.max(8,Math.abs(ends[1].x-ends[0].x)),height=Math.max(8,Math.abs(ends[1].y-ends[0].y));
   return{position:{x:width===8?x-4:x,y:height===8?y-4:y},size:{width:Math.min(4096,width),height:Math.min(4096,height)},from:`${ends[0].y>ends[1].y?'s':'n'}${ends[0].x>ends[1].x?'e':'w'}` as NonNullable<WbShapeData['from']>};
+}
+
+// ---- Free text: its type, its auto size and corner scaling -------------------------------------------------------
+export type TextType = { fontSize: number; lineHeight: number };
+/**
+ * Free text's type: its own `fontSize` (a corner handle scaled it) or its S/M/L/XL step (mono one px smaller).
+ * A scaled size keeps its step's line-height ratio, so twice the size is exactly twice the box.
+ */
+export function wbTextType(data: { scale?: unknown; fontSize?: unknown; font?: unknown }): TextType {
+  const step = tokens.whiteboard.text[(typeof data.scale === 'string' && data.scale in tokens.whiteboard.text ? data.scale : 'm') as WbScale];
+  if (typeof data.fontSize === 'number' && Number.isFinite(data.fontSize)) { const fontSize = clampFontSize(data.fontSize); return { fontSize, lineHeight: Math.round(fontSize * step.lineHeight / step.fontSize * 10) / 10 }; }
+  return { fontSize: step.fontSize + (data.font === 'mono' ? tokens.whiteboard.text.monoDelta : 0), lineHeight: step.lineHeight };
+}
+/** Within 8–400 px, to a tenth: a slow drag still moves the size smoothly without storing long decimals. */
+export const clampFontSize = (n: number) => Math.round(Math.min(WB_TEXT_FONT.max, Math.max(WB_TEXT_FONT.min, n)) * 10) / 10;
+/** Width of one line of text, in px. The canvas measures the real DOM; layout and tests pass an estimate. */
+export type MeasureLine = (line: string) => number;
+export const estimateLine = (fontSize: number): MeasureLine => line => line.length * fontSize * .56;
+/** How many lines `line` (no newline) takes in `width`, broken like CSS pre-wrap with break-word: at spaces, a long word by letters. */
+export function wrappedLines(line: string, width: number, measure: MeasureLine): number {
+  if (!line || measure(line.trimEnd()) <= width) return 1;
+  let lines = 1, current = '';
+  for (const word of line.split(/(?<= )/)) {
+    if (measure((current + word).trimEnd()) <= width) { current += word; continue; }
+    if (current) { lines++; current = ''; }
+    // A word wider than the line breaks by letters.
+    for (const ch of word) { if (current && measure(current + ch) > width && ch !== ' ') { lines++; current = ''; } current += ch; }
+  }
+  return lines;
+}
+/**
+ * Free text's box (tldraw's auto-size): with no `width` it is as wide as its longest line, at least `minWidth`, and
+ * wraps past `maxWidth`; a stored `width` wraps there. Height is lines × line height. The canvas uses this as the first
+ * guess and then the measured box, which the editor and the saved text share.
+ */
+export function fitText(text: string, type: TextType, measure: MeasureLine, options: { width?: number; maxWidth: number; minWidth: number }): { width: number; height: number; lines: number } {
+  const rows = text.split('\n'), natural = Math.max(0, ...rows.map(measure));
+  const width = options.width ?? Math.max(options.minWidth, Math.min(options.maxWidth, Math.ceil(natural)));
+  const lines = rows.reduce((sum, row) => sum + wrappedLines(row, width, measure), 0);
+  return { width, height: Math.max(1, lines) * type.lineHeight, lines: Math.max(1, lines) };
+}
+/**
+ * A corner drag on free text scales it: `box` is the proportional box the handle asks for (resizeWhiteboardBox), and
+ * the font and the box take the same factor, held so the font stays within 8–400. The corner opposite the handle stays
+ * put, or the centre with Alt (`centre`). Nothing rewraps: a stored wrap width scales too, and an auto-width text that
+ * would pass `maxWidth` (or already wraps there) keeps its scaled width as a wrap width. One px of slack absorbs
+ * rounding in the glyphs' widths at the new size.
+ */
+export function scaleTextBox(start: { x: number; y: number; width: number; height: number }, box: { width: number; height: number }, handle: ResizeHandle, type: TextType, text: { wrap?: number; maxWidth: number }, centre = false): { x: number; y: number; width: number; height: number; fontSize: number; wrap?: number; factor: number } {
+  const asked = start.width > 0 ? box.width / start.width : 1, fontSize = clampFontSize(type.fontSize * asked), factor = fontSize / type.fontSize;
+  const scaled = start.width * factor, fixes = text.wrap !== undefined || start.width >= text.maxWidth - 1 || scaled > text.maxWidth;
+  const width = fixes ? Math.min(4096, Math.max(24, Math.ceil(scaled) + 1)) : scaled, height = start.height * factor;
+  const x = centre ? start.x + (start.width - width) / 2 : handle.includes('w') ? start.x + start.width - width : start.x;
+  const y = centre ? start.y + (start.height - height) / 2 : handle.includes('n') ? start.y + start.height - height : start.y;
+  return { x: Math.round(x), y: Math.round(y), width, height, fontSize, factor, ...(fixes ? { wrap: width } : {}) };
 }
