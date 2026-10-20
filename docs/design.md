@@ -1724,3 +1724,29 @@ notice with only Close. After importing, the new Lienzo opens and a toast says "
 
 Tokens: `face.lienzoFile` (width, thumb, card, option, row, status tones).
 
+
+## 42. Power commands (October 2026)
+
+tldraw and Figma habits, with the keys they use, where Lienzo had none (code: `client/arrange.ts`,
+`client/clipboard.ts`; Help → Shortcuts → "Duplicate, copy and paste" and "Align, distribute and nudge").
+
+**Pointer.** Alt-drag (Option on a Mac) duplicates: the originals stay, marked by a dashed accent outline (1.5 px,
+accent at 70 %, a 5 % wash) at their place while the copies ride the hand. As in tldraw it follows Alt live: let go of
+Alt before dropping and it is a plain move. On drop the copies (with the links among them) are one transaction and
+become the selection; the originals jump home in the same frame the copies appear, nothing flies back. Shift-drag keeps
+the larger axis and lets guides pull only along it. Alt while resizing a drawn shape keeps its centre; Shift already
+kept proportions. Alt while drawing a rectangle or ellipse draws from the centre; Shift already made squares and circles.
+
+**Keys.** ⌘D now offsets the copies 16 units (two grid steps) and copies the links among them. ⌘C, ⌘X, ⌘V use the
+browser's own clipboard events, so the desktop Edit menu and selected text behave as before; a copy is JSON text marked
+`lienzo-clipboard` and pastes into any Lienzo or window with fresh ids, centred under the pointer (else the view);
+⌘⇧V pastes in place. Arrows nudge 1 unit, 10 with Shift, shown at once and written as one undo step when the keys rest.
+Align (⌥A ⌥H ⌥D, ⌥W ⌥V ⌥S) and distribute (⌥⇧H, ⌥⇧V) sit in ⌘K and in a new "Align and distribute" button of the
+selection bar (two or more things), which opens a row of ten icon buttons under the bar: six aligns, a hairline, two
+distributes (disabled under three things), a hairline, two flips (⇧H, ⇧V: drawings mirror their strokes, lines swap
+ends, several things mirror their places). ⌘/ joins ? for Settings → Shortcuts, which is the cheat sheet: it is already
+searchable and lets keys be changed, so no second overlay. Two groups were added there: Arrange, and Pointer, which lists
+the modifier gestures as fixed rows.
+
+Not added: layer order (z is document order; there is no operation to reorder without a server change), lock (no lock
+in the model), rotation (no rotation, so no 15° snap).

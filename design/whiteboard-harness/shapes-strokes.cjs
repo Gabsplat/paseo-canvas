@@ -47,7 +47,8 @@ const CDP=process.env.CDP||'9222',HTTP=process.env.HTTP||'8765',theme=process.ar
  await check('press and drag on the label moves the shape: no text selection, no editor; double-click on it edits',async()=>{
   s=await box('#lienzo-entity-'+id);const before=await ev(shape+'.position'),cx=s.x+s.w/2,cy=s.y+s.h/2;
   await drag(line(cx,cy,cx+90,cy+40,12));await wait(`${shape}.position.x!==${before.x}`);
-  const after=await ev(shape+'.position');assert.ok(Math.abs(after.x-before.x-90)<=2&&Math.abs(after.y-before.y-40)<=2,JSON.stringify([before,after]));
+  const after=await ev(shape+'.position');// A drop lands on the 8-unit grid, so the move is the drag give or take one grid step.
+  assert.ok(Math.abs(after.x-before.x-90)<=8&&Math.abs(after.y-before.y-40)<=8,JSON.stringify([before,after]));
   assert.equal(await ev('String(getSelection())'),'','no text was selected');assert.equal(await ev('!!document.querySelector("#lienzo-editor")'),false,'no editor opened');
   const userSelect=await ev(`(()=>{const n=[...document.querySelectorAll('#lienzo-entity-${id} div')].find(e=>e.children.length===0&&e.textContent==='Inside');return getComputedStyle(n).userSelect})()`);assert.equal(userSelect,'none');
   await settle();s=await box('#lienzo-entity-'+id);await dbl(s.x+s.w/2,s.y+s.h/2);await wait('!!document.querySelector("#lienzo-editor textarea")');

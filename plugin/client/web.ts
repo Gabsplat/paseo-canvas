@@ -403,7 +403,7 @@ export function isDragHandle(target: unknown): boolean {
   const handle = element?.closest?.('[id^="lienzo-grab-"]');
   return !!handle && (!element?.closest('button') || element.closest('button') === handle);
 }
-export type CanvasPointer = { x: number; y: number; shift: boolean; command: boolean; pointerId: number };
+export type CanvasPointer = { x: number; y: number; shift: boolean; command: boolean; pointerId: number; alt?: boolean };
 export type ToolPointerHandlers = {
   begin(point: CanvasPointer, entityId: string | null): boolean;
   move(point: CanvasPointer): void;
@@ -414,7 +414,7 @@ export function attachToolPointer(element: unknown, handlers: ToolPointerHandler
   const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
   type Event = BrowserKeyEvent & { button?: number; pointerId?: number };
   let current: CanvasPointer | null = null;
-  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, pointerId: e.pointerId ?? 0 });
+  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, alt: !!e.altKey, pointerId: e.pointerId ?? 0 });
   const down = (e: Event) => {
     if (e.button !== 0 || pointerElement(e.target)?.closest?.('[id^="lienzo-tools"],[id^="lienzo-interaction-exit-"]')) return;
     const id = pointerElement(e.target)?.closest?.('[id^="lienzo-entity-"]')?.id?.slice('lienzo-entity-'.length) ?? null, p = point(e);
@@ -461,7 +461,7 @@ export function attachEntityDrag(element: unknown, handlers: EntityPointerHandle
   type Event = BrowserKeyEvent & { button?: number; pointerId?: number; buttons?: number };
   let pending: { id: string; start: CanvasPointer; last: CanvasPointer; time: number; active: boolean } | null = null;
   let velocity = { vx: 0, vy: 0 };
-  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, pointerId: e.pointerId ?? 0 });
+  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, alt: !!e.altKey, pointerId: e.pointerId ?? 0 });
   const entity = (e: Event) => pointerElement(e.target)?.closest?.('[id^="lienzo-entity-"]')?.id?.slice('lienzo-entity-'.length);
   const down = (e: Event) => {
     if (e.button !== 0 || !handlers.enabled() || isEditingTarget(e.target) || isCardControl(e.target) || pointerElement(e.target)?.closest?.('[id^="lienzo-interactive-resize-"],[id^="lienzo-link-handle-"]')) return;
@@ -483,7 +483,9 @@ export function attachEntityDrag(element: unknown, handlers: EntityPointerHandle
   };
   const up = (e: Event) => { if (pending && (e.pointerId ?? 0) === pending.start.pointerId) { const active = pending.active; finish(false); if (active) { e.preventDefault(); e.stopPropagation(); } } };
   const cancel = () => finish(true);
-  const key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && pending) { cancel(); e.preventDefault(); e.stopPropagation(); } };
+  const key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && pending) { cancel(); e.preventDefault(); e.stopPropagation(); } else modifier(e); };
+  // Shift or Alt pressed or let go while the hand is still: the drag hears it at once (axis lock, duplicate).
+  const modifier = (e: BrowserKeyEvent) => { const state = pending; if (!state?.active || (e.key !== 'Shift' && e.key !== 'Alt')) return; state.last = { ...state.last, shift: e.shiftKey, alt: !!e.altKey }; handlers.move(state.last); };
   const edit = (e: Event) => {
     if (isEditingTarget(e.target)) return; const id = entity(e) ?? null;
     // Off every entity only the bare canvas counts: not the minimap, zoom, lens or another island over it.
@@ -492,8 +494,8 @@ export function attachEntityDrag(element: unknown, handlers: EntityPointerHandle
   };
   const press = (e: Event) => { if (!handlers.press || !handlers.enabled() || isEditingTarget(e.target) || pointerElement(e.target)?.closest?.('[role="button"],[role="checkbox"],[role="menuitem"],[role="radio"],button,a,[id^="lienzo-interactive-"],[id^="lienzo-link-handle-"],[id^="lienzo-using-"]')) return; const id = entity(e); if (id) handlers.press(id, point(e)); };
   node.addEventListener('click', press);
-  node.addEventListener('pointerdown', down, true); node.addEventListener('dblclick', edit); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true);
-  return () => { cancel(); node.removeEventListener('click', press); node.removeEventListener('pointerdown', down, true); node.removeEventListener('dblclick', edit); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
+  node.addEventListener('pointerdown', down, true); node.addEventListener('dblclick', edit); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true); doc.addEventListener('keyup', modifier, true);
+  return () => { cancel(); doc.removeEventListener('keyup', modifier, true); node.removeEventListener('click', press); node.removeEventListener('pointerdown', down, true); node.removeEventListener('dblclick', edit); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
 }
 export function focusInput(element: unknown) {
   const node = element as BrowserElement | null;
@@ -1046,4 +1048,38 @@ export async function sha256Hex(text: string): Promise<string | null> {
 export function browserCache(key: string): { read(): string | null; write(text: string): void } {
   const storage = () => (browser() as unknown as { localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void } }).localStorage;
   return { read: () => { try { return storage()?.getItem(key) ?? null; } catch { return null; } }, write: text => { try { storage()?.setItem(key, text); } catch { /* storage full or blocked */ } } };
+}
+
+// ---- Copy, cut and paste of canvas things (clipboard.ts). The browser's own clipboard events carry them, so ⌘C/⌘X/⌘V,
+// the desktop app's Edit menu and a rebound key all take one path; text fields and selected text keep theirs.
+type ClipboardEvent = BrowserKeyEvent & { clipboardData?: (FileTransfer & { getData?(type: string): string; setData?(type: string, text: string): void }) | null };
+const selectedText = () => { try { return String((globalThis as unknown as { getSelection?: () => { toString(): string } | null }).getSelection?.() ?? ''); } catch { return ''; } };
+export function attachClipboard(handlers: { copy(cut: boolean): string | null; paste(text: string, files: boolean): boolean }): () => void {
+  const doc = browser().document; if (!doc) return () => {};
+  const write = (cut: boolean) => (e: ClipboardEvent) => {
+    if (isTextTarget(e.target) || selectedText() || !e.clipboardData?.setData) return;
+    const text = handlers.copy(cut); if (text === null) return;
+    e.clipboardData.setData('text/plain', text); e.preventDefault();
+  };
+  const read = (e: ClipboardEvent) => { if (isTextTarget(e.target)) return; if (handlers.paste(e.clipboardData?.getData?.('text/plain') ?? '', transferFiles(e.clipboardData).length > 0)) e.preventDefault(); };
+  const copy = write(false), cut = write(true);
+  doc.addEventListener('copy', copy as (event: BrowserKeyEvent) => void); doc.addEventListener('cut', cut as (event: BrowserKeyEvent) => void); doc.addEventListener('paste', read as (event: BrowserKeyEvent) => void);
+  return () => { doc.removeEventListener('copy', copy as (event: BrowserKeyEvent) => void); doc.removeEventListener('cut', cut as (event: BrowserKeyEvent) => void); doc.removeEventListener('paste', read as (event: BrowserKeyEvent) => void); };
+}
+/** A rebound copy key: runs the browser's copy so the listener above writes; false where the page may not. */
+export function runCopyCommand(): boolean {
+  const doc = browser().document as unknown as { execCommand?(name: string): boolean } | undefined;
+  try { return !!doc?.execCommand?.('copy'); } catch { return false; }
+}
+/** The system clipboard's text, where the page may read it (a rebound paste key); null otherwise. */
+export async function readClipboardText(): Promise<string | null> {
+  const clipboard = (globalThis as unknown as { navigator?: { clipboard?: { readText?(): Promise<string> } } }).navigator?.clipboard;
+  try { return clipboard?.readText ? await clipboard.readText() : null; } catch { return null; }
+}
+/** Where the pointer last was on the page, for pasting under it; `onDown` hears every press first. */
+export function trackPointer(onDown?: () => void): { last(): { x: number; y: number } | null; stop(): void } {
+  const doc = browser().document; let at: { x: number; y: number } | null = null; if (!doc) return { last: () => null, stop() {} };
+  const move = (e: BrowserKeyEvent) => { at = { x: e.clientX, y: e.clientY }; }, down = (e: BrowserKeyEvent) => { move(e); onDown?.(); };
+  doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerdown', down, true);
+  return { last: () => at, stop: () => { doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerdown', down, true); } };
 }

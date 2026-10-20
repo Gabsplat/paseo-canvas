@@ -7,6 +7,8 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as logic from '../plugin/client/logic';
+import * as arrange from '../plugin/client/arrange';
+import * as clipboard from '../plugin/client/clipboard';
 import * as panelActions from '../plugin/client/panel-actions';
 import * as learning from '../plugin/shared/learning';
 import { tokens } from '../plugin/client/tokens';
@@ -60,7 +62,7 @@ function runtime(controller: any) {
     './Screen': { Screen: control('Screen'), sheetFrame: () => ({ left: 0, top: 0, width: 960, height: 680 }) }, './LienzosScreen': { LienzosScreen: control('LienzosScreen') }, './HistoryScreen': { HistoryScreen: control('HistoryScreen') },
     './ExtensionsScreen': { ExtensionsContent: control('ExtensionsContent') }, './WikiScreen': { WikiContent: control('WikiContent') }, '../shared/wiki': wiki, './SettingsScreen': { SettingsContent: control('SettingsContent'), settingsRail: () => [] },
     './Eggs': { EmptyMate: control('EmptyMate'), Kettle: control('Kettle'), LoadingEgg: control('LoadingEgg'), MateDrawing: control('MateDrawing') },
-    './shortcuts': shortcuts, './palette': palette,
+    './shortcuts': shortcuts, './palette': palette, './arrange': arrange, './clipboard': clipboard,
     './appearance': { APPEARANCES: [], adoptAppearance() {}, chooseAppearance() {}, getAppearance: () => 'system', useAppearance: () => 'system', themeFor: (_appearance: string, theme: unknown) => theme },
     './property-model': propertyModel, './media-store': mediaStore, '../shared/media': sharedMedia,
     './LienzoFile': { ExportSheet: control('ExportSheet'), ImportSheet: control('ImportSheet'), isLienzoName: (name: string) => /\.lienzo$/i.test(name), onOpenLienzo: () => () => {}, pickLienzoFile: async () => null, readLienzoFile: async () => null },

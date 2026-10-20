@@ -28,6 +28,8 @@ import { LinkLabelEditor, SelectionOverlay, type LinkLabelSession } from './Sele
 import { ZoomControl } from './ZoomControl';
 import { ContentInteractionProvider, needsContentInteraction } from './interaction';
 import { resizeWhiteboardBox, resizeLineBox, lineEnds, shapeInteriorAt, type ResizeHandle } from './whiteboard-geometry';
+import { axisLock } from './arrange';
+import { duplicateOperations } from './clipboard';
 import { islandStyle } from './whiteboard-visuals';
 import { attachToolPointer, attachCanvasKeys } from './web';
 export type { CanvasTool } from './whiteboard-tools';
@@ -36,6 +38,8 @@ export type { Camera } from './logic';
 export type CanvasApi = { fit(): void; zoomToSelection(): void; flyToIds(ids: string[]): void; zoomStep(direction: 1 | -1): void; zoomTo(scale: number): void; instant(): void; setTool(tool: CanvasTool): void; getTool(): CanvasTool; cancelGesture(): void; viewportCenter(): Point; insertSvg(svg: string, options?: SvgInsertOptions): Promise<boolean>; beginInteraction(id?: string): void; endInteraction(): void; editSelection(): void; editLinkLabel(): void; interactionId(): string | null; cycleLens(): void;
   /** The canvas point under a page point (a file let go there), or null when it is outside the canvas. */
   worldAt(page: Point): Point | null;
+  /** Shows the selection `delta` off its place without saving (a burst of arrow nudges); `{0,0}` puts it back. */
+  nudge(ids: string[], delta: Point): void;
   /** Zoom and the world rectangle on screen, for extensions; null before the canvas has a size. */
   camera(): { scale: number; bounds: { x: number; y: number; width: number; height: number } } | null;
   /** Frames these entities clear of the floating panel; false when none of them is on the canvas. A gesture interrupts it. */
@@ -67,7 +71,9 @@ function createAnim(native: boolean): Anim {
   w.addListener(({ value }) => { extent.width = value; }); h.addListener(({ value }) => { extent.height = value; });
   return { x, y, lift, enter, scale, w, h, off, extent, target: null, native, epoch: 0 };
 }
-type Gesture = { documentId: string; epoch: number; id: string; ids: string[]; tops: string[]; moving: string[]; origin: Map<string, Point>; grab: Point; pointer: Point; vp: Point; measured: boolean; home: string | null; target: string | null; delta: Point; aligned: { x: boolean; y: boolean }; others: Box[]; grown: Set<string> };
+type Gesture = { documentId: string; epoch: number; id: string; ids: string[]; tops: string[]; moving: string[]; origin: Map<string, Point>; grab: Point; pointer: Point; vp: Point; measured: boolean; home: string | null; target: string | null; delta: Point; aligned: { x: boolean; y: boolean }; others: Box[]; grown: Set<string>;
+  /** Shift held: the larger axis only. Alt held (now, as in tldraw): the drop makes copies and the originals stay. */
+  shift: boolean; copy: boolean };
 type BlockItemProps = {
   interacting: boolean; block: CanvasBlock; left: number; top: number; width: number; height?: Animated.Value; resizeHandlers?: GestureResponderHandlers; resizeCursor?: string; anim: Anim; selected: boolean; lifted: boolean; dim: boolean; ringed: boolean; detailsSide: 'right' | 'bottom'; cursor?: string;
   handlers: GestureResponderHandlers; controller: CanvasController; accent: string; shadow: string;
@@ -123,7 +129,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const chooseTool = (next: CanvasTool) => { toolRef.current = next; setLocalTool(next); toolCallback.current?.(next); };
   const presentation = usePresentation(c), u = useUI(), doc = presentation?.document ?? c.view!.document, web = u.layout.platform === 'web', [size, setSize] = useState({ width: 0, height: 0 }), [heights, setHeights] = useState<Record<string, number>>({}), [multi, setMulti] = useState(false), [hover, setHover] = useState<string | null>(null), [linkHover, setLinkHover] = useState<string | null>(null), [linkDraft, setLinkDraft] = useState<{ from: string; to: Point; target: string | null } | null>(null);
   // `ids` stay raised and styled as lifted until they have settled; `live` is true only while the hand is down.
-  const [drag, setDrag] = useState<{ ids: Set<string>; into: string | null; live: boolean } | null>(null);
+  const [drag, setDrag] = useState<{ ids: Set<string>; into: string | null; live: boolean; copy?: string[] } | null>(null);
   const [resizeId, setResizeId] = useState<string | null>(null);
   const resize = useRef<{ id: string; documentId: string; start: Box; pointer: Point; next: { width: number; height: number }; proportional: boolean; held: boolean; handle: ResizeHandle; nextPosition: Point; from?: string; parents: string[] } | null>(null);
   useReducedMotion();
@@ -302,6 +308,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const cancelAll = () => { wbRef.current.cancel(); dragEnd(0, 0, true); resizeEnd(true); clearLinkGesture(); setInteractionMode(null); };
   const beginInteraction = (id?: string) => { const target = id ?? latest.current.c.selection[0]; if (!target) return; const block = latest.current.doc.blocks.find(b => b.id === target); if (!block) return; const renderer = latest.current.c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer; if (isWhiteboardRenderer(renderer)) wbRef.current.edit(target); else if (needsContentInteraction(renderer)) setInteractionMode(target); else requestTitleEdit(target); };
   useImperativeHandle(api, () => ({ flyToIds: ids => fit(ids), frameIds, centerOn: point => { userCamera.current?.(); goTo(point, true); },
+    nudge: (ids, d) => { const { doc, c } = latest.current, all = new Set(travellers(doc, ids));
+      for (const id of all) { const a = anims.current.get(id); if (!a?.target || all.has(anchorCard(doc, doc.blocks.find(b => b.id === id), c.catalog)?.id ?? '')) continue; a.x.stopAnimation(); a.y.stopAnimation(); a.x.setValue(d.x); a.y.setValue(d.y); }
+      links.current?.follow(); },
     worldAt: page => { const origin = vp.current, size = latest.current.size; if (!origin || page.x < origin.x || page.y < origin.y || page.x > origin.x + size.width || page.y > origin.y + size.height) return null; return toWorld(page, origin); },
     camera: () => { const { size } = latest.current, k = cam.current; return size.width && size.height ? { scale: k.scale, bounds: { x: -k.offset.x / k.scale, y: -k.offset.y / k.scale, width: size.width / k.scale, height: size.height / k.scale } } : null; }, cycleLens: () => setLens(current => LENSES[(LENSES.indexOf(current) + 1) % LENSES.length]), fit: () => fit(), zoomToSelection: () => fit(latest.current.c.selection), zoomStep, zoomTo: scale => zoomTo(scale), instant: () => { instantUntil.current = Date.now() + 600; }, setTool: next => { cancelAll(); chooseTool(next); }, getTool: () => toolRef.current, cancelGesture: cancelAll, viewportCenter: center, insertSvg: (svg, options) => {
     if (options?.atPage) { const point = options.atPage, origin = vp.current ?? { x: 0, y: 0 }, size = latest.current.size;
@@ -338,7 +347,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   function applyDrag() {
     const g = gesture.current; if (!g) return;
     const { doc, layout } = latest.current, first = g.origin.get(g.id), primary = anims.current.get(g.id)?.target; if (!first || !primary) return;
-    const at = toWorld(g.pointer, g.vp), delta = { x: at.x - g.grab.x, y: at.y - g.grab.y };
+    const at = toWorld(g.pointer, g.vp); let delta = { x: at.x - g.grab.x, y: at.y - g.grab.y }; if (g.shift) delta = axisLock(delta);
     // The pointer decides where it lands. Until the viewport has been measured, the card's top edge stands in for it.
     const target = dropTarget(doc, layout, g.ids, g.measured ? at : { x: first.x + delta.x + primary.width / 2, y: first.y + delta.y + 18 }, g.target, M.drag.targetSlack / cam.current.scale);
     if (target !== g.target) {
@@ -347,7 +356,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       setDrag(old => old && { ...old, into: target !== g.home ? target : null });
     }
     const aligned = alignmentGuides({ x: first.x + delta.x, y: first.y + delta.y, width: primary.width, height: primary.height }, g.others, M.guides.threshold / cam.current.scale);
-    delta.x += aligned.dx; delta.y += aligned.dy; g.delta = delta; g.aligned = { x: aligned.guides.some(guide => guide.axis === 'x'), y: aligned.guides.some(guide => guide.axis === 'y') }; showGuides(aligned.guides);
+    // Locked to one axis, a guide may only pull along it; the other axis stays exactly where it was.
+    if (g.shift) { const lockedY = delta.y === 0; if (lockedY) { aligned.dy = 0; aligned.guides = aligned.guides.filter(guide => guide.axis === 'x'); } else { aligned.dx = 0; aligned.guides = aligned.guides.filter(guide => guide.axis === 'y'); } }
+    delta.x += aligned.dx; delta.y += aligned.dy; g.delta = delta; g.aligned = { x: aligned.guides.some(guide => guide.axis === 'x') || g.shift && delta.x === 0, y: aligned.guides.some(guide => guide.axis === 'y') || g.shift && delta.y === 0 }; showGuides(aligned.guides);
     for (const id of g.moving) { const a = anims.current.get(id), from = g.origin.get(id); if (a?.target && from) { a.x.setValue(from.x + delta.x - a.target.x); a.y.setValue(from.y + delta.y - a.target.y); } }
     // The frame it is over, and the frames around that one, make room while the hand is still down.
     const chain = target ? layout.index.chain(target).filter(Boolean) : [], pad = tokens.size.groupPadding;
@@ -370,10 +381,10 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     halt(); measureViewport();
     // Picked up from wherever it is drawn right now, so a card can be caught again while it is still settling.
     const epoch = ++gestureEpoch.current;
-    gesture.current = { documentId: doc.id, epoch, id, ids, tops: topSelection(doc, ids).map(e => e.id), moving, origin: new Map(moving.map(m => { const a = anims.current.get(m)!; a.epoch = epoch; a.x.stopAnimation(); a.y.stopAnimation(); return [m, { x: a.target!.x + a.off.x, y: a.target!.y + a.off.y }]; })), grab: toWorld(page, origin), pointer: page, vp: origin, measured: !!vp.current, home, target: undefined as unknown as string | null, delta: { x: 0, y: 0 }, aligned: { x: false, y: false }, others: [], grown: new Set() };
+    gesture.current = { documentId: doc.id, epoch, id, ids, tops: topSelection(doc, ids).map(e => e.id), moving, origin: new Map(moving.map(m => { const a = anims.current.get(m)!; a.epoch = epoch; a.x.stopAnimation(); a.y.stopAnimation(); return [m, { x: a.target!.x + a.off.x, y: a.target!.y + a.off.y }]; })), grab: toWorld(page, origin), pointer: page, vp: origin, measured: !!vp.current, home, target: undefined as unknown as string | null, delta: { x: 0, y: 0 }, aligned: { x: false, y: false }, others: [], grown: new Set(), ...modifiers(event) };
     for (const m of moving) { const a = anims.current.get(m)!; glide(a.lift, 1, { ms: M.drag.liftMs, native: a.native }); }
     if (raise.current) clearTimeout(raise.current);
-    setDrag({ ids: new Set(moving), into: null, live: true }); applyDrag();
+    setDrag({ ids: new Set(moving), into: null, live: true, ...(gesture.current.copy ? { copy: gesture.current.tops } : {}) }); applyDrag();
     let last = Date.now();
     const step = () => {
       const g = gesture.current; if (!g) { autoPan.current = null; return; }
@@ -383,7 +394,8 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     };
     if (autoPan.current === null) autoPan.current = frame(step);
   }
-  function dragMove(event: GestureResponderEvent, gs: PanResponderGestureState) { const g = gesture.current; if (!g) return; if (g.documentId !== latest.current.doc.id || latest.current.c.offline || latest.current.c.busy) { dragEnd(0, 0, true); return; } g.pointer = pointer(event, gs); applyDrag(); }
+  function dragMove(event: GestureResponderEvent, gs: PanResponderGestureState) { const g = gesture.current; if (!g) return; if (g.documentId !== latest.current.doc.id || latest.current.c.offline || latest.current.c.busy) { dragEnd(0, 0, true); return; } g.pointer = pointer(event, gs); const held = modifiers(event); g.shift = held.shift; if (held.copy !== g.copy) { g.copy = held.copy; setDrag(old => old && { ...old, copy: g.copy ? g.tops : undefined }); } applyDrag(); }
+  const modifiers = (event: GestureResponderEvent) => { const key = event.nativeEvent as unknown as { shiftKey?: boolean; altKey?: boolean }; return { shift: !!key.shiftKey, copy: !!key.altKey }; };
   function dragEnd(vx: number, vy: number, cancelled: boolean) {
     const g = gesture.current; if (!g) return; gesture.current = null; if (!cancelled) swallowClick();
     if (autoPan.current !== null) { cancelAnimationFrame(autoPan.current); autoPan.current = null; }
@@ -395,6 +407,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       const local = { x: first.x + delta.x - (frameOf?.x ?? 0), y: first.y + delta.y - (frameOf?.y ?? 0) }, final = { x: g.aligned.x ? Math.round(local.x) : snap(local.x), y: g.aligned.y ? Math.round(local.y) : snap(local.y) };
       delta = { x: delta.x + final.x - local.x, y: delta.y + final.y - local.y };
       const fromRect = { x: first.x + delta.x - rect.x, y: first.y + delta.y - rect.y };
+      if (g.copy) return dropCopies(g, fromRect);
       if (Math.abs(fromRect.x) + Math.abs(fromRect.y) >= 1 || g.target !== g.home) operations = moveOperations(doc, rects, g.ids, fromRect, g.target === g.home ? undefined : g.target, { catalog: c.catalog, grid: false });
     }
     // Let go: a spring takes it from the hand to its place with the speed it had, and it comes back down.
@@ -417,6 +430,18 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     });
   }
   const layoutEntity = (id: string) => latest.current.layout.index.entities.get(id);
+  /** Alt-drag let go: copies (with the links among them) land where the hand is, in one transaction; the originals stay. */
+  function dropCopies(g: Gesture, delta: Point) {
+    const { doc, rects, c } = latest.current, into = g.target === g.home ? null : g.target;
+    const made = duplicateOperations(doc, rects, g.ids, delta, { catalog: c.catalog, ...(g.target !== g.home ? { parentOf: () => into } : {}) });
+    const home = () => { for (const id of g.moving) { const a = anims.current.get(id); if (a?.epoch === g.epoch && !gesture.current?.origin.has(id)) { a.x.setValue(0); a.y.setValue(0); glide(a.lift, 0, { ms: M.drag.dropMs, native: a.native }); } } follow(200); };
+    for (const id of g.grown) { const a = anims.current.get(id); if (a?.target) { glide(a.w, a.target.width, { ms: M.layout.frameMs }); glide(a.h, a.target.height, { ms: M.layout.frameMs }); } }
+    setDrag(old => old && { ...old, into: null, live: false, copy: undefined }); raise.current = setTimeout(() => { raise.current = null; if (!gesture.current) setDrag(null); }, M.slow + 60);
+    if (!made?.operations.length || made.operations.length > 200) { if (made && made.operations.length > 200) c.fail(new Error('Duplicate at most 200 things at a time.')); for (const id of g.moving) { const a = anims.current.get(id); if (a?.target) { settle(a.x, 0, { native: a.native }); settle(a.y, 0, { native: a.native }); glide(a.lift, 0, { ms: M.drag.dropMs, native: a.native }); } } follow(700); return; }
+    // The originals hold the drop point until the copies exist, then go home in the same frame the copies appear.
+    instantUntil.current = Date.now() + 1500;
+    void c.edit(made.operations, made.tops.length === 1 ? 'Duplicate by dragging' : `Duplicate ${made.tops.length} things by dragging`).then(next => { home(); instantUntil.current = 0; if (next) void c.select(made.tops); });
+  }
   const fns = useRef({ dragStart, dragMove, dragEnd, select }); fns.current = { dragStart, dragMove, dragEnd, select };
   const held = useRef<{ id: string; event: GestureResponderEvent; state: PanResponderGestureState; long: boolean } | null>(null), holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearHold = () => { if (holdTimer.current) clearTimeout(holdTimer.current); holdTimer.current = null; held.current = null; };
@@ -425,7 +450,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const canDrag = !u.compact && !c.offline, canDragRef = useRef(canDrag); canDragRef.current = canDrag;
   useEffect(() => {
     if (!web || mode !== 'canvas') return;
-    const event = (p: CanvasPointer) => ({ nativeEvent: { pageX: p.x, pageY: p.y, shiftKey: p.shift }, stopPropagation() {} }) as unknown as GestureResponderEvent;
+    const event = (p: CanvasPointer) => ({ nativeEvent: { pageX: p.x, pageY: p.y, shiftKey: p.shift, altKey: !!p.alt }, stopPropagation() {} }) as unknown as GestureResponderEvent;
     const state = { moveX: 0, moveY: 0, dx: 0, dy: 0 } as PanResponderGestureState;
     return attachEntityDrag(viewport.current, {
       enabled: () => canDragRef.current && !latest.current.c.busy && toolRef.current === 'select' && !gesture.current && !resize.current && !linkGesture.current,
@@ -482,7 +507,12 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     const kind = c.catalog?.blockTypes.find(t => t.id === block.typeId)?.renderer;
     if (isWhiteboardRenderer(kind)) {
       if (kind === 'wb-shape' && block.data.shape === 'line' && (state.handle === 'start' || state.handle === 'end')) { const box = resizeLineBox(state.start, block.data as unknown as Parameters<typeof resizeLineBox>[1], delta, state.handle, state.proportional); state.next = box.size; state.nextPosition = box.position; state.from = box.from; }
-      else { const box = resizeWhiteboardBox(state.start, delta, state.handle, whiteboardMinSize(kind, block.data), kind === 'wb-svg' || state.proportional && kind !== 'wb-text'); state.next = { width: box.width, height: kind === 'wb-text' ? state.start.height : box.height }; state.nextPosition = { x: box.x, y: kind === 'wb-text' ? state.start.y : box.y }; }
+      else {
+        // Alt: from the centre, twice the pull, so the middle stays put.
+        const centre = !!(event.nativeEvent as unknown as { altKey?: boolean }).altKey, pull = centre ? { x: delta.x * 2, y: delta.y * 2 } : delta;
+        const box = resizeWhiteboardBox(state.start, pull, state.handle, whiteboardMinSize(kind, block.data), kind === 'wb-svg' || state.proportional && kind !== 'wb-text'), x = centre ? state.start.x + (state.start.width - box.width) / 2 : box.x, y = centre ? state.start.y + (state.start.height - box.height) / 2 : box.y;
+        state.next = { width: box.width, height: kind === 'wb-text' ? state.start.height : box.height }; state.nextPosition = { x, y: kind === 'wb-text' ? state.start.y : y };
+      }
       const a = animOf(state.id, NATIVE); a.x.setValue(state.nextPosition.x - state.start.x); a.y.setValue(state.nextPosition.y - state.start.y);
     } else state.next = resizeBlockSize(state.start, delta, resizeFloor(block, c.catalog), state.proportional);
     const a = animOf(state.id, NATIVE); a.w.setValue(state.next.width); a.h.setValue(state.next.height);
@@ -729,6 +759,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       {!drag && doc.groups.filter(g => g.layout?.mode === 'flow' && !g.collapsed && !rects.get(g.id)?.hidden).flatMap(g => [...g.blockIds, ...g.groupIds].filter(id => !index.entities.get(id)?.position).slice(0, -1).map(id => { const r = rects.get(id)!; return <View key={`${g.id}:${id}`} pointerEvents="none" style={{ position: 'absolute', left: r.x + r.width + 7 - bound.x, top: r.y + 20 - bound.y }}><Icon name="ChevronRight" size={14} color={u.c.foregroundMuted} /></View>; }))}
       {whiteboardItems(['wb-shape','wb-svg'])}
       <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
+      {drag?.copy?.map(id => { const r = rects.get(id); return r && !r.hidden ? <View key={'copy-ghost-' + id} nativeID={'lienzo-copy-ghost-' + id} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: r.width, height: r.height, borderRadius: 6, borderWidth: 1.5, borderStyle: 'dashed', borderColor: withAlpha(u.c.accent, .7), backgroundColor: withAlpha(u.c.accent, .05) }} /> : null; })}
       {doc.blocks.filter(b => !rects.get(b.id)!.hidden && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer)).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
         return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || boundSize(b, 'height') !== undefined || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) && !sizeBoundTo(doc, b) ? resizeHandlers(b.id) : undefined} resizeCursor={web ? cursors.resizeNWSE : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!shines(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
       {c.selection.length === 1 && (() => { const b = doc.blocks.find(x => x.id === c.selection[0]), r = b && rects.get(b.id), label = b && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer) ? sizeBoundTo(doc, b) : null; return r && !r.hidden && label ? <View pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: r.width, height: r.height, zIndex: 3 }}><BoundHint label={label} scale={camS} /></View> : null; })()}

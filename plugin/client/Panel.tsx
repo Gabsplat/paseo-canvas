@@ -13,7 +13,9 @@ import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
 import { requestTitleEdit, visual } from './Blocks';
 import { connectOperations, groupOperations, layoutDocument, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
-import { attachFileDrop, attachFilePaste, isMacPlatform, keyboard, type PanelKey } from './web';
+import { attachClipboard, attachFileDrop, attachFilePaste, isMacPlatform, keyboard, readClipboardText, runCopyCommand, trackPointer, type PanelKey } from './web';
+import { ARRANGE_COMMANDS, alignDeltas, arrangeOperations, distributeDeltas, flipOperations, nudgeBurst, nudgeDelta, selectionBoxes, type AlignKind, type DistributeKind, type FlipAxis } from './arrange';
+import { clipBounds, clipText, copyClip, duplicateOperations, parseClip, pasteOperations, placeAt, rememberClip, rememberedClip, type Clip } from './clipboard';
 import { imageFiles, imageTitle, provideMediaHost, storeImage, type ImageFile } from './media-store';
 import { MEDIA_LIMITS } from '../shared/media';
 import { Onboarding } from './Onboarding';
@@ -61,6 +63,9 @@ type VentanaKind = 'page' | 'image' | 'video' | 'audio';
 const F = tokens.face;
 /** What ⌘K ran last, per host and workspace, for as long as this client runs. */
 const recentByScope = new Map<string, string[]>();
+/** ⌘D puts the copies this far down and to the right, in canvas units (two steps of the 8-unit grid). */
+const DUPLICATE_STEP = 16;
+const NATIVE_CLIPBOARD = ['mod+c', 'mod+x', 'mod+v', 'mod+shift+v'];
 
 function EmptyState({ title, description, error, art, children }: { title: string; description?: string; error?: string; art?: React.ReactNode; children: React.ReactNode }) {
   const u = useUI();
@@ -277,15 +282,78 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (!doc || !c.selection.length || disabled) return; const id = newId('group'), operations = groupOperations(doc, rectsNow(), c.selection, id, c.catalog); if (!operations.length) return;
     void (async () => { const result = await c.edit(operations, `Wrap ${operations.length - 1} in a Frame`); if (result) await c.select([id]); })();
   }
-  function removeSelection() { if (doc && !disabled) { const items = topSelection(doc, c.selection); if (items.length > 200) { toast.error('Delete at most 200 things at a time.'); return; } if (items.length) void c.edit(items.map(e => ({ type: 'groupIds' in e ? 'group.delete' : 'block.delete', id: e.id } as CanvasOperation)), 'Delete selection').then(next => { if (next) noticeUndo('Deleted'); }); } }
+  function removeSelection(cut?: string) { if (doc && !disabled) { const items = topSelection(doc, c.selection); if (items.length > 200) { toast.error('Delete at most 200 things at a time.'); return; } if (items.length) void c.edit(items.map(e => ({ type: 'groupIds' in e ? 'group.delete' : 'block.delete', id: e.id } as CanvasOperation)), cut ? 'Cut selection' : 'Delete selection').then(next => { if (next) noticeUndo(cut ? 'Cut' : 'Deleted'); }); } }
   const removeLinkOrSelection = () => { if (linkId && !c.selection.length) { if (!disabled) void c.edit([{ type: 'link.delete', id: linkId }], 'Delete link').then(next => { if (next) { setLinkId(null); noticeUndo('Deleted'); } }); } else removeSelection(); };
+  /** ⌘D: copies a step down and to the right, with the links among them; the copies become the selection. */
   function duplicateSelection() {
-    if (!doc || disabled) return;
-    const items = topSelection(doc, c.selection), copies = items.map(item => ({ item, prefix: newId('copy') }));
-    if (!copies.length) return;
-    if (copies.length > 200) { toast.error('Duplicate at most 200 things at a time.'); return; }
-    void c.edit(copies.map(({ item, prefix }) => ({ type: 'entity.duplicate', id: item.id, idPrefix: prefix })), 'Duplicate selection').then(next => { if (next) void c.select(copies.map(({ item, prefix }) => prefix + '.' + item.id)); });
+    if (!doc || disabled) return; nudges.flush();
+    const made = duplicateOperations(doc, rectsNow(), c.selection, { x: DUPLICATE_STEP, y: DUPLICATE_STEP }, { catalog: c.catalog });
+    if (!made?.operations.length) return;
+    if (made.operations.length > 200) { toast.error('Duplicate at most 200 things at a time.'); return; }
+    void c.edit(made.operations, 'Duplicate selection').then(next => { if (next) void c.select(made.tops); });
   }
+  // ---- Copy, cut, paste (clipboard.ts). The browser's clipboard events carry them (web.ts attachClipboard).
+  const pointerAt = useRef<ReturnType<typeof trackPointer> | null>(null), pasteArm = useRef<{ inPlace: boolean; timer: ReturnType<typeof setTimeout> | null } | null>(null);
+  useEffect(() => { if (u.layout.platform !== 'web') return; const tracker = trackPointer(() => nudges.flush()); pointerAt.current = tracker; return () => { tracker.stop(); pointerAt.current = null; }; }, [u.layout.platform]);
+  /** The selection as a copy, remembered here and returned as clipboard text; null when nothing on the canvas is selected. */
+  function copySelection(cut: boolean): string | null {
+    if (!doc || !c.selection.length || modalOpen) return null; nudges.flush();
+    const clip = copyClip(doc, rectsNow(), c.selection); if (!clip) return null;
+    rememberClip(clip); const count = clip.tops.length;
+    if (cut) { if (disabled) return null; removeSelection('Cut'); } else toast.show(count === 1 ? 'Copied' : `Copied ${count} things`);
+    return clipText(clip);
+  }
+  /** Pastes a copy under the pointer (or in the middle of the view), or exactly where it was copied from. */
+  function pasteClip(clip: Clip, inPlace: boolean) {
+    if (!doc || disabled) return;
+    const bounds = clipBounds(clip), page = pointerAt.current?.last(), at = inPlace ? null : (page && canvas.current?.worldAt(page)) || canvas.current?.viewportCenter() || geometry.current.center;
+    const offset = at ? { x: Math.round(at.x - bounds.x - bounds.width / 2), y: Math.round(at.y - bounds.y - bounds.height / 2) } : { x: 0, y: 0 };
+    const made = pasteOperations(clip, { catalog: c.catalog, place: placeAt(new Map(), offset, () => null) });
+    if (!made.operations.length) { toast.error(made.skipped ? 'Nothing to paste: those block types are not in this catalog.' : 'Nothing to paste.'); return; }
+    if (made.operations.length > 200) { toast.error('Paste at most 200 things at a time.'); return; }
+    void c.edit(made.operations, made.tops.length === 1 ? 'Paste' : `Paste ${made.tops.length} things`).then(next => { if (!next) return; void c.select(made.tops); if (made.skipped) toast.show(`${made.skipped} of a type this catalog lacks left out.`, { variant: 'warning' }); });
+  }
+  /** ⌘V arms a paste; the browser's paste event brings the text. A key that is not ⌘V reads the clipboard itself. */
+  function armPaste(inPlace: boolean, native: boolean) {
+    if (pasteArm.current?.timer) clearTimeout(pasteArm.current.timer);
+    const arm = { inPlace, timer: null as ReturnType<typeof setTimeout> | null }; pasteArm.current = arm;
+    arm.timer = setTimeout(() => { if (pasteArm.current !== arm) return; pasteArm.current = null;
+      void readClipboardText().then(text => { const clip = parseClip(text) ?? (!text ? rememberedClip() : null); if (clip) pasteClip(clip, inPlace); }); }, native ? 120 : 0);
+  }
+  const cutNext = useRef(false), clipboardRef = useRef({ copy: copySelection, paste: (_text: string, _files: boolean): boolean => false });
+  clipboardRef.current = { copy: cut => { const asCut = cut || cutNext.current; cutNext.current = false; return copySelection(asCut); }, paste: (text, files) => {
+    const arm = pasteArm.current; if (arm?.timer) clearTimeout(arm.timer); pasteArm.current = null;
+    if (!doc || modalOpen) return false;
+    // Lienzo's own copy, from here or another window; with nothing on the clipboard, the copy made in this client.
+    const clip = parseClip(text) ?? (!text && !files ? rememberedClip() : null); if (!clip) return false;
+    pasteClip(clip, !!arm?.inPlace); return true;
+  } };
+  useEffect(() => attachClipboard({ copy: cut => clipboardRef.current.copy(cut), paste: (text, files) => clipboardRef.current.paste(text, files) }), []);
+  // ---- Arrange (arrange.ts): align, distribute, flip and the arrow-key nudge, each one transaction.
+  function arrange(label: string, deltas: ReadonlyMap<string, Point>) {
+    if (!doc || disabled) return; nudges.flush();
+    const operations = arrangeOperations(doc, rectsNow(), deltas, c.catalog); if (!operations.length) return;
+    canvas.current?.instant(); void c.edit(operations, label);
+  }
+  const alignSelection = (kind: AlignKind) => { if (doc) arrange(`Align ${kind}`, alignDeltas(selectionBoxes(doc, rectsNow(), c.selection), kind)); };
+  const distributeSelection = (kind: DistributeKind) => { if (doc) arrange(`Distribute ${kind}ly`, distributeDeltas(selectionBoxes(doc, rectsNow(), c.selection), kind)); };
+  function flipSelection(axis: FlipAxis) {
+    if (!doc || disabled) return; nudges.flush();
+    const operations = flipOperations(doc, rectsNow(), c.selection, axis, c.catalog);
+    if (!operations.length) { toast.show('Only drawings, lines and several things together can flip.'); return; }
+    canvas.current?.instant(); void c.edit(operations, axis === 'horizontal' ? 'Flip horizontally' : 'Flip vertically');
+  }
+  // A burst of arrow presses shows at once and is written once, when the keys rest: one entry to undo.
+  const commitNudge = useRef((_ids: string[], _delta: Point) => {});
+  commitNudge.current = (ids, delta) => {
+    const current = c.current.current?.document; if (!current || disabled) { canvas.current?.nudge(ids, { x: 0, y: 0 }); return; }
+    const operations = moveOperations(current, geometry.current.rects, ids, delta, undefined, { catalog: c.catalog, grid: false });
+    if (!operations.length) { canvas.current?.nudge(ids, { x: 0, y: 0 }); return; }
+    canvas.current?.instant(); void c.edit(operations, 'Nudge selection').then(next => { if (!next) canvas.current?.nudge(ids, { x: 0, y: 0 }); });
+  };
+  const nudges = useMemo(() => nudgeBurst((ids, delta) => commitNudge.current(ids, delta)), []);
+  useEffect(() => () => nudges.flush(), [nudges]);
+  useEffect(() => { nudges.flush(); }, [c.selection.join('|'), doc?.id]);
   function insert(type: BlockType, data = type.defaults, title = type.name): Promise<boolean> {
     if (!doc) { openDocuments(); return Promise.resolve(false); } if (disabled) return Promise.resolve(false);
     if (isWhiteboardRenderer(type.renderer)) { if (type.renderer === 'wb-svg') setSvgOpen(true); else chooseTool(type.renderer === 'wb-text' ? 'text' : type.renderer === 'wb-shape' ? 'shape' : 'draw'); return Promise.resolve(false); }
@@ -548,7 +616,11 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         { id: 'action.wrap', group: 'Actions', title: 'Wrap in a Frame', subtitle: GLOSSARY.marco, icon: 'SquareDashed', shortcut: key('edit.wrap'), disabled: disabled || !c.selection.length, run: groupSelection },
         { id: 'action.delete', group: 'Actions', title: 'Delete', subtitle: 'The selection', icon: 'Trash2', shortcut: key('edit.delete'), disabled, run: removeLinkOrSelection },
         { id: 'action.fitSelection', group: 'Actions', title: 'Fit selection', icon: 'Scan', shortcut: key('view.fitSelection'), run: () => canvas.current?.zoomToSelection() },
+        { id: 'action.copy', group: 'Actions', title: 'Copy', subtitle: 'The selection, with its links', icon: 'Copy', keywords: 'clipboard', shortcut: key('edit.copy'), run: () => { runShortcut('edit.copy'); } },
+        { id: 'action.cut', group: 'Actions', title: 'Cut', subtitle: 'Copy, then delete', icon: 'Scissors', keywords: 'clipboard', shortcut: key('edit.cut'), disabled, run: () => { runShortcut('edit.cut'); } },
+        ...ARRANGE_COMMANDS.map(([id, title, icon]): PaletteItem => ({ id: 'action.' + id, group: 'Actions', title, icon, keywords: 'arrange align distribute flip mirror', shortcut: key(id), disabled: disabled || (id.includes('distribute') ? c.selection.length < 3 : id.includes('align') && c.selection.length < 2), run: () => { runShortcut(id); } })),
       );
+      items.push({ id: 'action.paste', group: 'Actions', title: 'Paste', subtitle: 'What you copied, in the middle of the view', icon: 'ClipboardPaste', keywords: 'clipboard', shortcut: key('edit.paste'), disabled, run: () => { armPaste(false, false); } });
       if (c.selection.length === 2) items.push({ id: 'action.connect', group: 'Actions', title: 'Connect the two', icon: 'Spline', disabled, run: () => { connectSelection(); } });
       items.push(
         { id: 'action.undo', group: 'Actions', title: 'Undo', icon: 'Undo2', shortcut: key('edit.undo'), disabled: disabled || !c.view?.canUndo, run: () => { void changeRevision('undo'); } },
@@ -606,6 +678,23 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       case 'edit.wrap': groupSelection(); return true;
       case 'edit.unwrap': ungroupSelection(); return true;
       case 'edit.delete': removeLinkOrSelection(); return true;
+      case 'edit.copy': case 'edit.cut': {
+        // A rebound key (or ⌘K) runs the browser's copy so the copy event writes; where that is refused, the async clipboard.
+        if (!c.selection.length) return false; cutNext.current = id === 'edit.cut';
+        const ran = runCopyCommand(), handled = !cutNext.current && ran; cutNext.current = false; if (handled) return true;
+        const text = copySelection(id === 'edit.cut'); if (text) void (globalThis as { navigator?: { clipboard?: { writeText?(t: string): Promise<void> } } }).navigator?.clipboard?.writeText?.(text).catch(() => {}); return !!text;
+      }
+      case 'edit.paste': case 'edit.pasteInPlace': if (!doc || disabled) return false; armPaste(id === 'edit.pasteInPlace', false); return true;
+      case 'arrange.alignLeft': alignSelection('left'); return true;
+      case 'arrange.alignCenter': alignSelection('center'); return true;
+      case 'arrange.alignRight': alignSelection('right'); return true;
+      case 'arrange.alignTop': alignSelection('top'); return true;
+      case 'arrange.alignMiddle': alignSelection('middle'); return true;
+      case 'arrange.alignBottom': alignSelection('bottom'); return true;
+      case 'arrange.distributeH': distributeSelection('horizontal'); return true;
+      case 'arrange.distributeV': distributeSelection('vertical'); return true;
+      case 'arrange.flipH': flipSelection('horizontal'); return true;
+      case 'arrange.flipV': flipSelection('vertical'); return true;
       case 'edit.selectAll': if (!doc) return false; void c.select([...doc.groups.filter(g => !g.parentGroupId), ...doc.blocks.filter(b => !b.parentGroupId)].map(e => e.id)); return true;
       case 'hoja.previous': return copilot.step(-1);
       case 'hoja.next': return copilot.step(1);
@@ -635,7 +724,10 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       if (e.key === 'Escape' && overflow && !u.compact) { setOverflow(false); return true; }
       if (e.key === 'Escape') return escape();
       const combo = eventCombo(e), id = combo ? resolved.byCombo.get(combo) : undefined, def = id ? resolved.list.find(s => s.id === id) : undefined;
-      if (id && def && !def.fixed && applies(def.when, keyState)) { if (runShortcut(id)) return true; }
+      // ⌘C, ⌘X and ⌘V stay the browser's: its copy, cut and paste events (attachClipboard) do the work, so the desktop
+      // Edit menu and selected text behave the same. ⌘V only notes whether it was the in-place one.
+      if (id && combo && NATIVE_CLIPBOARD.includes(combo) && id.startsWith('edit.') && ['edit.copy', 'edit.cut', 'edit.paste', 'edit.pasteInPlace'].includes(id)) { if (id.startsWith('edit.paste') && doc && !disabled) armPaste(id === 'edit.pasteInPlace', true); return false; }
+      if (id && def && !def.fixed && applies(def.when, keyState)) { nudges.flush(); if (runShortcut(id)) return true; }
       if (!doc) return false;
       if ((e.key === 'Enter' || e.key === 'F2') && !e.command && c.selection.length === 1) { editSelectedText(); return true; }
       if (e.key === 'F2' && !c.selection.length && !disabled) { setRename(true); return true; }
@@ -646,9 +738,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         doc.groups.filter(g => !g.parentGroupId).forEach(visit); ids.push(...doc.blocks.filter(b => !b.parentGroupId).map(b => b.id)); if (!ids.length) return false;
         const current = ids.indexOf(c.selection[0]), next = (current + (e.shift ? -1 : 1) + ids.length) % ids.length; void c.select([ids[next]]); return true;
       }
-      const distance = e.shift ? 32 : 8, delta = e.key === 'ArrowLeft' ? { x: -distance, y: 0 } : e.key === 'ArrowRight' ? { x: distance, y: 0 } : e.key === 'ArrowUp' ? { x: 0, y: -distance } : e.key === 'ArrowDown' ? { x: 0, y: distance } : null;
-      // A held arrow key repeats: nudges land at once, they do not glide.
-      if (delta && c.selection.length) { const operations = moveOperations(doc, geometry.current.rects, c.selection, delta, undefined, { catalog: c.catalog }); if (operations.length) { canvas.current?.instant(); void c.edit(operations, 'Move selection'); } return true; }
+      const delta = e.command || e.alt ? null : nudgeDelta(e.key, e.shift);
+      // A held arrow key repeats: each press shows at once; the burst is written once (arrange.ts nudgeBurst).
+      if (delta && c.selection.length) { const ids = [...c.selection]; canvas.current?.nudge(ids, nudges.add(ids, delta)); return true; }
       if (!e.command && mode === 'canvas') {
         if (e.key === '0') { canvas.current?.zoomTo(1); return true; }
         if (e.key === '+' || e.key === '=') { canvas.current?.zoomStep(1); return true; }
@@ -691,7 +783,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const colour = selectedWhiteboard.length && !linkId ? { kind: 'whiteboard' as const, value: displayedStyle.color, set: (color: ToolStyle['color']) => changeStyle({ color }) } : undefined;
   const link = linkId ? doc?.links.find(l => l.id === linkId) : undefined;
   const linkColour = link ? { kind: 'link' as const, link, set: (tone: typeof link.tone) => { if (tone) void c.edit([{ type: 'link.update', id: link.id, patch: { tone } }], 'Change link colour'); else if (link.tone) { const { tone: _tone, ...rest } = link; void c.edit([{ type: 'link.delete', id: link.id }, { type: 'link.create', link: rest }], 'Clear link colour'); } } } : undefined;
-  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} split={splittable.length ? splitStrokes : undefined} keyLabel={keyLabel} onProperties={!roomy ? () => showPanel() : undefined} /> : undefined;
+  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} split={splittable.length ? splitStrokes : undefined} keyLabel={keyLabel} onProperties={!roomy ? () => showPanel() : undefined} arrange={id => { runShortcut(id); }} /> : undefined;
   const title = doc ? rename ? <Field key={doc.id} hideLabel label="Lienzo title" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
     if (!value.trim() || value.trim().length > 300) throw new Error('Write a title of up to 300 characters.');
     await c.settle(); if (c.current.current?.document.id !== doc.id) return;

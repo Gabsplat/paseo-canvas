@@ -41,9 +41,9 @@ test('an empty override clears a shortcut; fixed shortcuts cannot be reassigned'
 });
 test('extensions register through the same registry and lose conflicts', () => {
   const registry = new ShortcutRegistry(); let changes = 0; registry.subscribe(() => changes++);
-  const remove = registry.register([{ id: 'ext.stamp', label: 'Stamp', group: 'Extensions', keys: ['p'], source: 'stamp' }, { id: 'ext.free', label: 'Free', group: 'Extensions', keys: ['alt+s'], source: 'stamp' }]);
+  const remove = registry.register([{ id: 'ext.stamp', label: 'Stamp', group: 'Extensions', keys: ['p'], source: 'stamp' }, { id: 'ext.free', label: 'Free', group: 'Extensions', keys: ['alt+q'], source: 'stamp' }]);
   const { list, byCombo } = registry.resolve();
-  assert.equal(byCombo.get('p'), 'tool.pencil'); assert.equal(byCombo.get('alt+s'), 'ext.free');
+  assert.equal(byCombo.get('p'), 'tool.pencil'); assert.equal(byCombo.get('alt+q'), 'ext.free');
   assert.equal(list.find(s => s.id === 'ext.stamp')!.conflictWith, 'tool.pencil');
   assert.equal(registry.resolve({ 'ext.stamp': 'alt+p' }).byCombo.get('alt+p'), 'ext.stamp', 'the person can give it a free key');
   remove(); assert.equal(registry.all().some(s => s.id === 'ext.stamp'), false); assert.equal(changes, 2);
