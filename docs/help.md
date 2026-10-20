@@ -199,8 +199,9 @@ Shortcut: R
 
 1. Press R for a rectangle or O for an ellipse; the Shape button in the toolbar has the others.
 2. Drag to size it. Shift keeps it square or round.
-3. Type to give it a label.
-4. Change colour, fill and weight in the Properties panel.
+3. Type to give it a label; Enter starts a new line, Escape or ⌘↵ saves. The label wraps inside the shape and the shape grows taller if it needs to.
+4. Drag a handle to resize it: Shift keeps the proportion, ⌥ resizes from the middle.
+5. Change colour, fill and weight in the Properties panel.
 
 #### Ask your agent
 
@@ -266,12 +267,19 @@ Shortcut: T
 #### By hand
 
 1. Press T.
-2. Click where the text goes and type.
-3. Press Escape when you are done. Change size, font, colour and alignment in the Properties panel.
+2. Click where the text goes and type; drag a box first to set where it wraps. The text grows as you type, and Enter starts a new line.
+3. Press Escape, ⌘↵ or click elsewhere when you are done. Double-click it, or press Enter with it selected, to edit it again.
+4. Drag a corner handle to make the text bigger or smaller; drag the left or right handle to set where it wraps. Hold ⌥ to resize from the middle.
+5. Change size, font, colour and alignment in the Properties panel. A size set by dragging shows as its pixel size; S, M, L or XL replaces it.
 
 #### Ask your agent
 
 - “Add a heading "Checkout" above the payment cards.”
+- “Make the title text above the cards twice as big.”
+
+#### Tips
+
+- Text inside a shape is the shape's label: double-click the shape to write it. A long label makes the shape taller.
 
 ### Card
 

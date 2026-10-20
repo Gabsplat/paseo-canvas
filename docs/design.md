@@ -917,7 +917,7 @@ or outside a group.
 
 | Element | At rest | Notes |
 | --- | --- | --- |
-| Texto libre | Just the text in its colour role. `scale` s/m/l/xl = 14/20, 18/26, 28/36, 44/52; `sans`, `serif` or `mono`, weight 400. | Auto-width up to 480 then wraps; a stored `width` wraps there. Height always measured. Empty text is never stored. |
+| Texto libre | Just the text in its colour role. `scale` s/m/l/xl = 14/20, 18/26, 28/36, 44/52; or its own `fontSize` 8–400 (a corner handle scaled it; line height keeps the step's ratio); `sans`, `serif` or `mono`, weight 400. | Auto-width (as wide as the longest line) up to 480 then wraps; a stored `width` wraps there. Width and height are the measured box. Empty text is never stored. |
 | Forma | Outline in `weight` 1.5/2.5/4/7, fill none / colour@0.14 / colour@1 (then its text is `surface0`). Centred label 15/21 weight 500. | Rectángulo, Redondeado (radius 16), Elipse, Rombo, Triángulo, Hexágono, Cilindro, Línea; Flecha is a line with an open V head. Round joins and caps. |
 | Imagen SVG | The sanitised image, aspect preserved, `currentColor` painted in the colour role. Optional caption `small` muted 4 below. | Painted as an image, never as inline DOM. Native without SVG support shows a dashed frame with the caption and "Imagen SVG; se ve en la versión web". |
 | Dibujo | Strokes in their own colour and weight, round caps. Stroke width does not scale when resized. | One block per pencil stroke. An agent's illustration or an older drawing may hold up to 32; "Split strokes" (selection bar, Scissors) separates them. |
@@ -928,8 +928,11 @@ or outside a group.
   every group layout. No "Soltar posición" pin.
 - **Hover** 1 px `foregroundMuted`@0.35 box 4 outside. **Selected** 1.5 px `accent` box 4 outside,
   no halo, plus square 8 px handles (`surface1`, 1.5 `accent` border; hit 20, touch 44): eight on
-  shapes, SVG and drawings, east/west only on text, two round end handles on a line. Shift keeps
-  proportion; SVG is always proportional. A handle moves only its own edges: the opposite corner or
+  shapes, SVG and drawings, four corners plus east/west on text, two round end handles on a line. Shift keeps
+  proportion; SVG is always proportional; Alt resizes about the centre (twice the pull). On text a corner
+  **scales** it (tldraw): font, box and any wrap width by one factor, font held within 8–400, nothing rewraps;
+  east/west set the wrap width and the text reflows, height following. The handles are pointer events on web,
+  so Alt and Shift reach them (react-native-web's responder drops Alt). A handle moves only its own edges: the opposite corner or
   side stays put (a proportional side handle grows the other axis evenly about the centre), sizes
   stay between 24 (8 for lines and drawings) and 4096, and nothing ever jumps. The box, its fill,
   stroke and label are drawn at the live size during the drag; release only saves. While a box
@@ -985,8 +988,11 @@ Seleccionar `V` · Mano `H` · Texto `T` · Forma `R` · Lápiz `D` · Goma `E`;
 Seleccionar; held Space is a temporary Mano.
 
 - **Mano** pans from anywhere and never selects.
-- **Texto**: click places a caret there; dragging a box sets a wrap width. Confirm with
-  `⌘/Ctrl Enter` or a click elsewhere; `Esc` cancels; an empty text leaves nothing behind.
+- **Texto**: click places a caret there; dragging a box sets a wrap width. `Enter` is a new line;
+  `⌘/Ctrl Enter`, `Esc` or a click elsewhere saves (tldraw); an empty text leaves nothing behind.
+  **Typing grows the box** on every key: an invisible copy of the draft in the saved text's own type sizes it
+  and the field lies exactly over that copy, so it never scrolls inside and the saved text lands on the same
+  lines, to the pixel. Trailing blank lines are dropped on save. Undo inside the field is the browser's.
 - **Forma**: click drops the default 160 × 104; drag draws corner to corner (Shift 1:1; lines snap
   to 15°). Double-click a shape (anywhere inside, filled or not) or press Enter to write its label;
   typing with one shape selected starts the label with that key. A label is never text-selected by
@@ -1037,6 +1043,10 @@ tool in hand, the selection.
 
 ## 21. Shape labels and dense graphs (v8)
 
+- **Label editing grows the shape.** The label wraps within the shape's inner width (minus `label.padding`
+  each side); when its lines need more than the shape's height (plus padding above and below) the shape grows
+  downward while typing and that height is saved with the label, in one step (tldraw). `Esc`, `⌘/Ctrl Enter`
+  or a click elsewhere saves; `Enter` is a new line.
 - **Label editing in place.** A shape's label is edited where it is drawn: the editor covers the shape,
   is transparent and borderless, centred both ways, in the label's own colour and size. The saved label is
   hidden while editing, so nothing moves or changes colour between editing and saved.
@@ -1481,7 +1491,8 @@ the draft stays.
 
 **On the canvas.** A selected checklist ends with a "+ Add an item" row: type and press Enter. A second press on a
 selected card within 400 ms (a double click) turns its title into a field: Enter or leaving saves, Escape keeps the old
-one. An empty Controls card says where to pick variables.
+one. The field wraps and grows line by line in the title's own type (an invisible copy sizes it; no inner scroll); the
+accent underline sits 2 px below the text box, so the card does not shift when the field opens or closes. An empty Controls card says where to pick variables.
 
 Verified with `design/whiteboard-harness/ux.cjs` (headless Chromium, example data, dark and light); captures in
 `design/qa-ux-2026-10/`.
@@ -1768,3 +1779,26 @@ the modifier gestures as fixed rows.
 
 Not added: layer order (z is document order; there is no operation to reorder without a server change), lock (no lock
 in the model), rotation (no rotation, so no 15° snap).
+
+## 43. Text that grows as it is typed, and text that scales (October 2026)
+
+- **One rule for every inline editor** (free text, shape labels, card titles): the field sits over an invisible copy
+  of the draft set in the saved text's exact type (family, size, weight, line height, letter spacing, alignment,
+  wrapping). The copy sizes the box on every key; the field fills it with `overflow: hidden`, no padding, no border,
+  no resize grip. There is no inner scrollbar and the saved text takes the same lines at the same place (checked to
+  1 px). Decoration that the editor adds (free text's accent box at `selection.outset`, the title's underline) is
+  drawn outside the text box.
+- **Free text** auto-sizes like tldraw: as wide as its longest line (at least `text.minWidth`), wrapping past
+  `text.autoMaxWidth`; a stored `width` wraps there. The canvas lays it out at the box it measures, so the
+  selection box, the editor and the saved text agree. `Enter` new line; `⌘/Ctrl Enter`, `Esc` or a click elsewhere
+  saves; empty text is removed. The saved text is hidden (not unmounted) while edited.
+- **Shape labels** wrap within the shape and grow the shape downward when they need more height (§21).
+- **Card titles** keep `Enter` = save and `Esc` = keep the old title; newlines become spaces.
+- **Scaling free text.** Corner handles scale it: `fontSize` (8–400, to 0.1) and any wrap width take the drag's
+  factor, the opposite corner (or with Alt the centre) stays, and the preview is drawn live with no write until
+  release ("Scale text", one undo step). A scaled size shows in Style → Size as a highlighted "36 px" chip beside
+  S/M/L/XL; choosing a step clears it. East/west handles set the wrap width ("Resize text"). Shapes keep resizing
+  their box only; labels keep their size.
+
+Verified with `design/whiteboard-harness/text-edit.cjs` (headless Chromium, real keys and pointer, light and dark),
+plus `power.cjs`, `shapes-strokes.cjs` and `frame-drag.cjs` for regressions.

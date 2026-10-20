@@ -60,14 +60,22 @@ function FormBody({ block, type, controller: c, saved }: { block: CanvasBlock; t
   };
   return <View style={{ gap: 8 }}>{type.properties.map(p => p.kind === 'boolean' ? <CheckRow key={p.key} label={p.label} checked={values.current[p.key] === true} disabled={c.offline || submitting} onPress={() => { const checked = values.current[p.key] !== true; values.current[p.key] = checked; dirty.current.add(p.key); render(n => n + 1); void save(p, checked).catch(e => setError(String(e))); }} /> : <Field key={p.key} label={p.label} required={p.required} value={p.kind === 'json' ? JSON.stringify(block.data[p.key] ?? null, null, 2) : str(block.data[p.key])} disabled={c.offline || submitting} multiline={p.kind === 'json'} mono={p.kind !== 'text'} onDraft={value => { values.current[p.key] = value; dirty.current.add(p.key); }} onSave={value => save(p, value)} />)}{error && <Txt kind="small">{error}</Txt>}<Button label={submitting ? 'Saving…' : 'Save'} variant="primary" small disabled={c.offline || submitting} onPress={() => { void (async () => { setSubmitting(true); setError(''); try { const documentId = c.current.current?.document.id; await c.settle(); if (documentId !== c.current.current?.document.id) return; const data = Object.fromEntries(type.properties.map(p => [p.key, propertyValue(p.kind, values.current[p.key])])) as CanvasBlock['data']; const result = await c.edit([{ type: 'block.update', id: block.id, patch: { data } }], `Save form “${block.title}”`); if (!result) throw new Error('The form was not saved.'); await saved(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSubmitting(false); } })(); }} /></View>;
 }
-/** The title, typed in place: Enter or leaving the field saves it, Escape keeps the old one. */
+/**
+ * The title, typed in place: Enter or leaving the field saves it, Escape keeps the old one. It wraps and grows line by
+ * line like the title it replaces: an invisible copy in the heading type sizes the box and the field lies over it, so
+ * there is no inner scroll and nothing moves on commit. The underline is drawn outside the text box.
+ */
 function TitleEditor({ title, save, close }: { title: string; save(title: string): Promise<unknown>; close(): void }) {
   const u = useUI(), [text, setText] = useState(title), done = useRef(false), born = useRef(Date.now());
   // Opened from the keyboard (Enter, F2), the same key's release must not submit or blur it straight away.
   const finish = (keep: boolean) => { if (done.current || keep && Date.now() - born.current < 250) return; done.current = true; const next = text.replace(/\s*\n\s*/g, ' ').trim().slice(0, 300); close(); if (keep && next !== title) void save(next); };
-  return <TextInput nativeID="lienzo-title-editor" accessibilityLabel="Title" autoFocus selectTextOnFocus value={text} onChangeText={setText} placeholder="Untitled" placeholderTextColor={u.c.foregroundMuted}
-    onSubmitEditing={() => finish(true)} onBlur={() => finish(true)} onKeyPress={e => { if (e.nativeEvent.key === 'Escape') finish(false); }}
-    style={[u.font('heading'), { padding: 0, margin: 0, borderWidth: 0, borderBottomWidth: 1.5, borderColor: u.c.accent, backgroundColor: 'transparent', outlineStyle: 'none' } as object]} />;
+  return <View>
+    <Txt kind="heading" style={{ opacity: 0 }}>{(text || 'Untitled') + '\u200b'}</Txt>
+    <TextInput nativeID="lienzo-title-editor" accessibilityLabel="Title" autoFocus selectTextOnFocus multiline blurOnSubmit value={text} onChangeText={value => setText(value.replace(/\n/g, ' '))} placeholder="Untitled" placeholderTextColor={u.c.foregroundMuted}
+      onSubmitEditing={() => finish(true)} onBlur={() => finish(true)} onKeyPress={e => { if (e.nativeEvent.key === 'Escape') finish(false); }}
+      style={[u.font('heading'), { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', padding: 0, margin: 0, borderWidth: 0, backgroundColor: 'transparent', overflow: 'hidden', outlineStyle: 'none', resize: 'none' } as object]} />
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: -2, height: 1.5, backgroundColor: u.c.accent }} />
+  </View>;
 }
 /** The last row of a selected checklist: type an item and press Enter. It lands at the end, not done. */
 function ChecklistAdd({ onAdd }: { onAdd(label: string): Promise<unknown> }) {
@@ -122,7 +130,7 @@ export function BlockCard({ block, controller: c, selected, onSelect, onInspect,
   const generic = () => <View style={{ gap: 8 }}>{(type?.properties ?? Object.keys(block.data).map(key => ({ key, label: key, kind: 'json' }))).map(p => <View key={p.key} style={{ gap: 4 }}><Txt kind="label" muted>{p.label}</Txt><Txt kind={p.kind === 'json' || p.kind === 'number' ? 'code' : 'body'} selectable numberOfLines={outline ? undefined : p.kind === 'json' ? 4 : 8}>{typeof block.data[p.key] === 'boolean' ? block.data[p.key] ? 'Yes' : 'No' : str(block.data[p.key])}</Txt></View>)}</View>;
   let body: React.ReactNode = generic(), qualifier = '';
   const renderer = type?.renderer;
-  if (isWhiteboardRenderer(renderer)) return <WhiteboardContent block={block} kind={renderer} width={block.size?.width ?? 160} height={block.size?.height ?? 104} outline={outline} onSelect={event => onSelect(block.id,event)} onMeasure={onMeasure} />;
+  if (isWhiteboardRenderer(renderer)) return <WhiteboardContent block={block} kind={renderer} width={block.size?.width ?? 160} height={block.size?.height ?? 104} outline={outline} onSelect={event => onSelect(block.id,event)} onMeasure={onMeasure ? height => onMeasure(height) : undefined} />;
   if (!type) body = <View style={{ gap: 8 }}><Txt>This block’s type is not in your catalog any more. Its content is kept; the agent can still read it.</Txt><Button label="Extensions" small variant="ghost" onPress={onPacks} /></View>;
   else if (getClientRenderer(renderer)) body = <RegisteredRenderer block={block} id={renderer!} controller={c} readOnly={disabled} />;
   else if (['note', 'text', 'callout', 'step'].includes(renderer ?? '') && typeof block.data.text === 'string') { const shown = boundText(block, block.data.text, B.size, B.lineHeight); body = <Txt selectable numberOfLines={outline || sized ? undefined : 8} style={shown.fontSize !== B.size ? { fontSize: shown.fontSize, lineHeight: shown.lineHeight } : undefined}>{shown.text}</Txt>; }

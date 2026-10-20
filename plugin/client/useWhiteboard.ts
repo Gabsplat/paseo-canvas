@@ -27,7 +27,11 @@ type Gesture = { documentId:string; tool:CanvasTool; start:Point; last:Point; pa
 export function useWhiteboard(environment:Environment) {
   const env=useRef(environment);env.current=environment;
   const gesture=useRef<Gesture|null>(null), store=useRef(new WhiteboardPreviewStore()).current, fading=useRef(new FadingStore()).current;
-  const [editor,setEditor]=useState<TextSession|null>(null),[editorError,setEditorError]=useState(''),[saving,setSaving]=useState(false);
+  const [editor,setEditorState]=useState<TextSession|null>(null),[editorError,setEditorError]=useState(''),[saving,setSaving]=useState(false),[grow,setGrowState]=useState<number|null>(null),growRef=useRef<number|null>(null);
+  /** A new or closed editor starts at the shape's own height; `grow` is what its label asks for while typed. */
+  // A ref as well: the editor's key handlers keep the save they were given first.
+  const setGrow=(height:number|null)=>{growRef.current=height;setGrowState(height);};
+  const setEditor=(next:TextSession|null)=>{setGrow(null);setEditorState(next);};
   const documentId=environment.controller.view?.document.id;
   function cancel(){gesture.current=null;store.set(null);fading.set(new Map());setEditor(null);setEditorError('');}
   useEffect(()=>{cancel();},[documentId]);
@@ -44,9 +48,13 @@ export function useWhiteboard(environment:Environment) {
   }
   async function saveText(value:string):Promise<boolean>{
     if(!editor||saving)return false;const session=editor,{c,doc}=context();if(!doc||doc.id!==session.documentId||c.offline||c.busy)return false;
+    // Trailing blank lines and spaces are not kept: the saved text would draw them one line shorter than the editor did.
+    value=value.replace(/\s+$/,'');
+    // A label taller than its shape grows the shape with it (tldraw), in the same step as the text.
+    const grown=session.kind==='wb-shape'&&session.blockId&&growRef.current&&growRef.current>session.height&&value?{width:Math.round(session.width),height:Math.min(4096,Math.ceil(growRef.current))}:null;
     const data={...session.block.data,text:value};let operations:CanvasOperation[];
     if(session.kind==='wb-text'&&!value.trim())operations=session.blockId?[{type:'block.delete',id:session.blockId}]:[];
-    else if(session.blockId)operations=value===String(session.block.data.text??'')?[]:[{type:'block.update',id:session.blockId,patch:{data:{text:value}}}];
+    else if(session.blockId)operations=value===String(session.block.data.text??'')&&!grown?[]:[{type:'block.update',id:session.blockId,patch:{data:{text:value},...(grown?{size:grown}:{})}}];
     else operations=[{type:'block.create',block:{...session.block,data:wbTextDataSchema.parse(data)}}];
     if(!operations.length){setEditor(null);if(!session.blockId)env.current.choose('select');return true;}
     setSaving(true);setEditorError('');try{const result=await c.edit(operations,session.kind==='wb-text'&&!value.trim()?'Delete text':session.blockId?'Edit text':'Create text');if(!result){setEditorError('Not saved. Try again or cancel the edit.');return false;}if(env.current.controller.view?.document.id===session.documentId){setEditor(null);if(!session.blockId)afterCreate(session.block.id);}return true;}catch{setEditorError('Not saved. Try again or cancel the edit.');return false;}finally{setSaving(false);}
@@ -100,7 +108,7 @@ export function useWhiteboard(environment:Environment) {
       if(env.current.controller.view?.document.id!==doc.id)return;if(id&&g.tool!=='draw')afterCreate(id);
     }catch(error){c.fail(g.tool==='draw'?new Error(WB_LAYER_LIMIT_MESSAGE):error);}
   }
-  return {store,fading,editor,editorError,saving,cancel,edit,saveText,insertSvg,begin,move,finish};
+  return {store,fading,editor,editorError,saving,grow,setGrow,cancel,edit,saveText,insertSvg,begin,move,finish};
 }
 /**
  * What an eraser gesture removes, as one transaction: a drawing that loses every stroke is deleted; one that keeps some

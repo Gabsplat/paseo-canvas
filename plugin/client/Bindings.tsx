@@ -15,6 +15,7 @@ import { newVariable, scopesOf, variableOperations, variableValueText } from './
 import { boundColor, wbColor } from './whiteboard-visuals';
 import { withAlpha } from './color';
 import { tokens } from './tokens';
+import { wbTextType } from './whiteboard-geometry';
 
 const B = tokens.face.bindings, P = tokens.face.properties;
 type UI = ReturnType<typeof useUI>;
@@ -33,7 +34,7 @@ function storedValue(def: Bindable, block: CanvasBlock, renderer: string | undef
     case 'opacity': return 1;
     case 'stroke.width': return tokens.whiteboard.weight[weight];
     case 'corner.radius': return d.shape === 'rounded' ? 16 : 0;
-    case 'text.size': return renderer === 'wb-text' ? tokens.whiteboard.text[scale].fontSize : renderer === 'wb-shape' ? tokens.whiteboard.shape.label.sizes[weight].fontSize : renderer === 'node' ? tokens.font.style.small.size : tokens.font.style.body.size;
+    case 'text.size': return renderer === 'wb-text' ? wbTextType(d).fontSize : renderer === 'wb-shape' ? tokens.whiteboard.shape.label.sizes[weight].fontSize : renderer === 'node' ? tokens.font.style.small.size : tokens.font.style.body.size;
     case 'text.template': return String(renderer === 'node' ? d.summary ?? '' : d.text ?? '');
     case 'stroke.color': return typeof d.color === 'string' ? d.color : 'tinta';
     case 'fill.color': return typeof d.fillColor === 'string' ? d.fillColor : typeof d.color === 'string' ? d.color : 'tinta';

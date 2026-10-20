@@ -52,7 +52,8 @@ Los colores son **roles**, nunca hex en el documento (§4 da el valor por tema).
   scale: WB_SCALE = 'm',
   font: 'sans'|'serif'|'mono' = 'sans',
   align: 'left'|'center'|'right' = 'left',
-  width?: number }              // 24..4096; ausente = se ajusta al texto (máx. 480 y luego parte línea)
+  width?: number,               // 24..4096; ausente = se ajusta al texto (máx. 480 y luego parte línea)
+  fontSize?: number }           // 8..400; ausente = el paso `scale`. Lo fija escalar desde una esquina.
 ```
 `size` del bloque **no se usa** (siempre ausente/null; el servidor lo rechaza con VALIDATION si
 llega). El alto es siempre el medido. `defaults: { text: '' }`.
@@ -203,8 +204,9 @@ interacción: clic corto los activa siempre.
 
 ### 3.4 Texto libre: editar
 - Crear o **doble clic** (o `Enter`/`F2` con uno seleccionado, o escribir) → edición en el sitio
-  con el mismo `InlineText`, multilínea: `Enter` línea nueva, `⌘/Ctrl Enter` o clic fuera
-  confirma, `Esc` cancela.
+  con el mismo `InlineText`, multilínea: `Enter` línea nueva, `⌘/Ctrl Enter`, `Esc` o clic fuera
+  confirma. La caja crece con cada tecla (una copia invisible del borrador con la misma tipografía la
+  mide); nunca hay scroll interno y el texto guardado queda en las mismas líneas.
 - Sin texto al confirmar: un bloque recién creado no se llega a guardar (no hay transacción); uno
   existente se elimina ("Eliminar texto"). Nunca queda un `wb-text` vacío guardado.
 - Clic simple selecciona; arrastre mueve (no hay selección de rango fuera de edición).
@@ -213,7 +215,7 @@ interacción: clic corto los activa siempre.
 ### 3.5 Selección, mover, redimensionar
 - Selección: caja `accent` 1.5 px a 4 px por fuera, **sin** halo ni fondo. Ocho asas cuadradas
   (8 × 8 pantalla, `surface1`, borde `accent` 1.5, zona 20; táctil 44) en `wb-shape`, `wb-svg` y
-  `wb-draw`; solo este/oeste en `wb-text` (cambian `width`); en `line`, dos asas redondas en los
+  `wb-draw`; en `wb-text` cuatro esquinas (escalan `fontSize`, y `width` si la hay) y este/oeste (cambian `width`); en `line`, dos asas redondas en los
   extremos (reescriben `position`, `size`, `from`). Shift = proporción; `wb-svg` siempre
   proporcional. Una transacción al soltar ("Redimensionar forma"…). Asas ocultas bajo 25 % zoom.
 - Mover, multiselección, guías de alineación, soltar en grupo, duplicar, eliminar, deshacer:

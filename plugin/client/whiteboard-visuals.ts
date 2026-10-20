@@ -13,6 +13,13 @@ export function wbColor(role: WbColor, u: ReturnType<typeof useUI>): string {
 }
 export const wbWeight = (scale: WbScale) => tokens.whiteboard.weight[scale];
 export const wbFont = (family: 'sans' | 'serif' | 'mono') => family === 'mono' ? Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, Menlo, Consolas, monospace' }) : family === 'serif' ? Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia, "Iowan Old Style", serif' }) : undefined;
+/**
+ * Free text's type on the canvas, shared by the saved text and its editor so the two set the same glyphs in the same
+ * lines: family, size, line height, weight, colour and alignment. `k` scales it live while a corner handle is held.
+ */
+export function wbTextStyle(data: { color: WbColor; font: 'sans' | 'serif' | 'mono'; align: 'left' | 'center' | 'right' }, type: { fontSize: number; lineHeight: number }, u: ReturnType<typeof useUI>, k = 1) {
+  return { fontFamily: wbFont(data.font), fontSize: type.fontSize * k, lineHeight: type.lineHeight * k, fontWeight: tokens.whiteboard.text.weight as '400', letterSpacing: 0, color: wbColor(data.color, u), textAlign: data.align };
+}
 export function islandStyle(u: ReturnType<typeof useUI>, popover = false) {
   const dark = isDark(u.c.surface0), t = tokens.elevation[popover ? 'popover' : 'island'];
   return { backgroundColor: u.c.surface1, borderRadius: tokens.island.radius, borderWidth: 1, borderColor: u.c.border, padding: tokens.island.padding, gap: tokens.island.gap,

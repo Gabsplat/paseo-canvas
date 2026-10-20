@@ -5,8 +5,8 @@ import type { CanvasBlock } from '../shared/model';
 import { wbTextDataSchema, wbShapeDataSchema, wbSvgDataSchema, wbDrawDataSchema, type WbRenderer } from '../shared/whiteboard';
 import { Txt, useUI } from './ui';
 import { WebSvg, WebVectors, type CanvasPointer, type VectorPath } from './web';
-import { shapePath, strokePath, arrowPath, lineEnds } from './whiteboard-geometry';
-import { wbColor, wbWeight, wbFont, boundShapeLook, boundText } from './whiteboard-visuals';
+import { shapePath, strokePath, arrowPath, lineEnds, wbTextType } from './whiteboard-geometry';
+import { wbColor, wbWeight, boundShapeLook, boundText, wbTextStyle } from './whiteboard-visuals';
 import { tokens } from './tokens';
 import type { FadingStore } from './useWhiteboard';
 /** Whiteboard content takes the cursor of the tool in hand from the canvas, not a button's pointer. */
@@ -21,15 +21,22 @@ export function whiteboardLabel(block: CanvasBlock, kind: WbRenderer): string {
   return String(block.data.text || tokens.whiteboard.shapes.items.find(s => s.id === block.data.shape)?.label || 'Shape');
 }
 /** `selected`: a hollow shape's inside then takes the pointer, so it drags and double-clicks from anywhere inside. `fading`: the eraser's live preview. */
-export type WhiteboardContentProps = { block: CanvasBlock; kind: WbRenderer; width: number; height: number; scale?: number; outline?: boolean; editing?: boolean; selected?: boolean; fading?: FadingStore; onSelect(event?: GestureResponderEvent): void; onHover?(inside: boolean): void; onMeasure?(height: number): void };
-export function WhiteboardContent({ block, kind, width, height, scale = 1, outline, editing, selected, fading, onSelect, onHover, onMeasure }: WhiteboardContentProps) {
+/**
+ * `textMode`: a handle is held on this free text. `wrap` (a side): the live box width is its wrap width. `scale` (a
+ * corner): its type grows by `textScale` too, at the live box width (2 px of slack for glyph rounding), so nothing rewraps.
+ * `onMeasure` gives free text's own box (height, width): the canvas lays the text out at exactly that size.
+ */
+export type WhiteboardContentProps = { block: CanvasBlock; kind: WbRenderer; width: number; height: number; scale?: number; outline?: boolean; editing?: boolean; selected?: boolean; fading?: FadingStore; textMode?: 'wrap' | 'scale'; textScale?: number; onSelect(event?: GestureResponderEvent): void; onHover?(inside: boolean): void; onMeasure?(height: number, width?: number): void };
+export function WhiteboardContent({ block, kind, width, height, scale = 1, outline, editing, selected, fading, textMode, textScale = 1, onSelect, onHover, onMeasure }: WhiteboardContentProps) {
   const u = useUI(), label = whiteboardLabel(block,kind);
   const press = (p?: CanvasPointer) => onSelect(p ? { nativeEvent: {shiftKey:p.shift,metaKey:p.command},stopPropagation(){} } as unknown as GestureResponderEvent : undefined);
   if (outline) return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onSelect} style={{minHeight:36,flexDirection:'row',alignItems:'center',gap:8}}><Icon name={tokens.whiteboard.types[kind].icon} size={16} color={u.c.foregroundMuted}/><Txt numberOfLines={1}>{label}</Txt></Pressable>;
   if (kind === 'wb-text') {
     const parsed = wbTextDataSchema.safeParse(block.data); if (!parsed.success) return <Txt kind="small">Invalid text</Txt>;
-    const data=parsed.data, t=tokens.whiteboard.text[data.scale], shown=boundText(block,data.text,t.fontSize+(data.font==='mono'?-1:0),t.lineHeight);
-    return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onSelect} onHoverIn={()=>onHover?.(true)} onHoverOut={()=>onHover?.(false)} style={{width:'100%',...inheritCursor,...noSelect}}><Txt selectable={false} onLayout={e=>onMeasure?.(e.nativeEvent.layout.height)} style={{...noSelect,fontFamily:wbFont(data.font),fontSize:shown.fontSize,lineHeight:shown.lineHeight,fontWeight:'400',color:wbColor(data.color,u),textAlign:data.align}}>{shown.text}</Txt></Pressable>;
+    const data=parsed.data, type=wbTextType(data), shown=boundText(block,data.text,type.fontSize,type.lineHeight), wrap=textMode==='scale'?width+2:textMode?width:data.width;
+    // Auto width: as wide as the longest line (max-content), wrapping past autoMaxWidth; the editor uses the same box.
+    // While it is edited the saved text keeps its place but is not drawn: the editor sets the same lines over it.
+    return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onSelect} onHoverIn={()=>onHover?.(true)} onHoverOut={()=>onHover?.(false)} style={{...textBox(wrap,u.layout.platform==='web'),opacity:editing?0:1,...inheritCursor,...noSelect}}><Txt key={`${data.fontSize}:${data.width}`} selectable={false} onLayout={e=>onMeasure?.(e.nativeEvent.layout.height,e.nativeEvent.layout.width)} style={{...noSelect,...wbTextStyle(data,shown,u,textMode==='scale'?textScale:1)}}>{shown.text}</Txt></Pressable>;
   }
   if (kind === 'wb-svg') {
     const parsed=wbSvgDataSchema.safeParse(block.data);if(!parsed.success)return <Txt kind="small">Invalid SVG</Txt>;const data=parsed.data;
@@ -54,6 +61,11 @@ export function WhiteboardContent({ block, kind, width, height, scale = 1, outli
   else visual=<Pressable onPress={onSelect} style={{height:'100%',borderWidth:1,borderStyle:'dashed',borderColor:color}}><Txt kind="small">{label}; shown in the web app</Txt></Pressable>;
   return <View pointerEvents="box-none" style={{width:'100%',height:'100%'}}>{visual}{!!look.label&&!editing&&data.shape!=='line'&&<View pointerEvents="box-none" style={{position:'absolute',left:look.padding,right:look.padding,top:0,bottom:0,alignItems:'center',justifyContent:'center',overflow:'hidden'}}><Pressable onPress={onSelect} style={[inheritCursor,noSelect]}><Txt selectable={false} style={{...noSelect,fontSize:look.fontSize,lineHeight:look.lineHeight,fontWeight:'500',textAlign:'center',color:look.text}}>{look.label}</Txt></Pressable></View>}</View>;
 }
+/** Free text's own box: a wrap width, or max-content up to the auto limit (native has no max-content: it fills, then wraps). */
+export function textBox(wrap: number | undefined, web: boolean) {
+  const T = tokens.whiteboard.text;
+  return { alignSelf: 'flex-start' as const, minWidth: T.minWidth, ...(wrap !== undefined ? { width: wrap } : { maxWidth: T.autoMaxWidth, ...(web ? { width: 'max-content' as unknown as number } : null) }) };
+}
 const never = () => () => {};
 /** A drawing's strokes; those the eraser is over fade, and only this drawing redraws as the set grows. */
 function FadingVectors({ id, fading, paths, ...props }: { id: string; fading?: FadingStore; paths: VectorPath[] } & Omit<React.ComponentProps<typeof WebVectors>, 'paths'>) {
@@ -65,7 +77,7 @@ function FadingVectors({ id, fading, paths, ...props }: { id: string; fading?: F
  * its saved size) the box's Animated width and height move ahead of the stored size; the drawing follows them so
  * its fill, stroke and label fill the box at every frame instead of staying fitted at the old proportions.
  */
-export function LiveWhiteboardContent({ w, h, width, height, ...props }: WhiteboardContentProps & { w: Animated.Value; h: Animated.Value }) {
+export function LiveWhiteboardContent({ w, h, width, height, textMode, ...props }: WhiteboardContentProps & { w: Animated.Value; h: Animated.Value }) {
   const [live, setLive] = useState<{ width: number; height: number } | null>(null);
   useEffect(() => {
     let lw = width, lh = height;
@@ -74,5 +86,6 @@ export function LiveWhiteboardContent({ w, h, width, height, ...props }: Whitebo
     setLive(null);
     return () => { w.removeListener(a); h.removeListener(b); };
   }, [w, h, width, height]);
-  return <WhiteboardContent {...props} width={live?.width ?? width} height={live?.height ?? height} />;
+  // A corner held on free text scales its type by the live height over the saved one (the height is never rounded).
+  return <WhiteboardContent {...props} textMode={textMode} textScale={textMode === 'scale' && live && height > 0 ? live.height / height : 1} width={live?.width ?? width} height={live?.height ?? height} />;
 }
