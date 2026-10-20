@@ -32,7 +32,7 @@ import type { RecentIcon } from './icon-library';
 import { DEFAULT_TOOL_STYLE, type CanvasTool, type ToolStyle, type SvgInsertOptions } from './whiteboard-tools';
 import { islandStyle } from './whiteboard-visuals';
 import { type linkBlock } from './media';
-import { panelFits } from './panel-actions';
+import { panelFits, splitOperations } from './panel-actions';
 import { sectionMemory, sectionScope } from './property-model';
 import { LinkSheet, SvgSheet } from './AddSheets';
 import { isWhiteboardRenderer, learnerLayerIds, strokeLayers, type WbRenderer, type WbDrawData, type WbShape } from '../shared/whiteboard';
@@ -433,6 +433,12 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (renderer === 'wb-draw') { const stroke = (data as WbDrawData).strokes[0]; return { ...toolStyle, color: stroke.color, scale: stroke.weight }; }
     return { ...toolStyle, ...Object.fromEntries(Object.keys(DEFAULT_TOOL_STYLE).filter(key => data[key] !== undefined).map(key => [key, data[key]])), ...(data.weight ? { scale: data.weight as ToolStyle['scale'] } : {}), fillColor: data.fillColor as ToolStyle['fillColor'] };
   })() : toolStyle;
+  // "Split strokes": older drawings (and an agent's illustration) hold several strokes; each becomes its own drawing.
+  const splittable = selectedWhiteboard.filter(block => rendererOf(block.typeId) === 'wb-draw' && Array.isArray(block.data.strokes) && block.data.strokes.length > 1);
+  function splitStrokes() {
+    if (disabled || !splittable.length) return; const parts = splittable.map(block => splitOperations(block, () => newId('draw'))), gone = new Set(splittable.map(block => block.id));
+    void c.edit(parts.flatMap(part => part.operations), 'Split strokes').then(next => { if (next) void c.select([...c.selection.filter(id => !gone.has(id)), ...parts.flatMap(part => part.ids)]); });
+  }
   // "Clear my strokes": only the learner's own drawings, in one undoable transaction. The agent's and the author's stay.
   const myLayers = strokeLayers(doc?.blocks ?? [], b => c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer === 'wb-draw').filter(layer => layer.author === 'learner');
   const clearMyStrokes = () => { const ids = learnerLayerIds(myLayers); if (ids.length && !c.busy && !c.offline) void c.edit(ids.map(id => ({ type: 'block.delete' as const, id })), 'Clear my strokes'); };
@@ -777,7 +783,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const colour = selectedWhiteboard.length && !linkId ? { kind: 'whiteboard' as const, value: displayedStyle.color, set: (color: ToolStyle['color']) => changeStyle({ color }) } : undefined;
   const link = linkId ? doc?.links.find(l => l.id === linkId) : undefined;
   const linkColour = link ? { kind: 'link' as const, link, set: (tone: typeof link.tone) => { if (tone) void c.edit([{ type: 'link.update', id: link.id, patch: { tone } }], 'Change link colour'); else if (link.tone) { const { tone: _tone, ...rest } = link; void c.edit([{ type: 'link.delete', id: link.id }, { type: 'link.create', link: rest }], 'Clear link colour'); } } } : undefined;
-  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} keyLabel={keyLabel} onProperties={!roomy ? () => showPanel() : undefined} arrange={id => { runShortcut(id); }} /> : undefined;
+  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} split={splittable.length ? splitStrokes : undefined} keyLabel={keyLabel} onProperties={!roomy ? () => showPanel() : undefined} arrange={id => { runShortcut(id); }} /> : undefined;
   const title = doc ? rename ? <Field key={doc.id} hideLabel label="Lienzo title" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
     if (!value.trim() || value.trim().length > 300) throw new Error('Write a title of up to 300 characters.');
     await c.settle(); if (c.current.current?.document.id !== doc.id) return;

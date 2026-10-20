@@ -48,6 +48,25 @@ export function erasedStrokes(data:WbDrawData,point:Point,size:{width:number;hei
     }return[];
   });
 }
+/** Whether `p` (box-local) lies inside the shape's outline. Lines have no inside. */
+export function shapeContains(shape:WbShapeData['shape'],width:number,height:number,p:Point):boolean{
+  if(shape==='line'||p.x<0||p.y<0||p.x>width||p.y>height)return false;
+  if(shape==='ellipse'){const rx=width/2,ry=height/2;return rx>0&&ry>0&&((p.x-rx)/rx)**2+((p.y-ry)/ry)**2<=1;}
+  const poly=shape==='diamond'?[width/2,0,width,height/2,width/2,height,0,height/2]:shape==='triangle'?[width/2,0,width,height,0,height]:shape==='hexagon'?[width*.22,0,width*.78,0,width,height/2,width*.78,height,width*.22,height,0,height/2]:null;
+  if(!poly)return true;
+  let inside=false;for(let i=0,j=poly.length-2;i<poly.length;j=i,i+=2){const xi=poly[i],yi=poly[i+1],xj=poly[j],yj=poly[j+1];if(yi>p.y!==yj>p.y&&p.x<(xj-xi)*(p.y-yi)/(yj-yi)+xi)inside=!inside;}
+  return inside;
+}
+/**
+ * The shape whose inside holds `p` when the press reached the canvas or a Frame's body, i.e. nothing else was hit there.
+ * Hollow shapes only paint their outline, so this is how their interior selects and edits (as in tldraw): the
+ * smallest shape containing the point wins, so a box drawn inside a bigger one stays reachable.
+ */
+export function shapeInteriorAt(shapes:readonly {id:string;shape:WbShapeData['shape'];rect:{x:number;y:number;width:number;height:number}}[],p:Point):string|null{
+  let best:string|null=null,area=Infinity;
+  for(const s of shapes){const r=s.rect,a=r.width*r.height;if(a<area&&shapeContains(s.shape,r.width,r.height,{x:p.x-r.x,y:p.y-r.y})){best=s.id;area=a;}}
+  return best;
+}
 /** Bounded online sampling. Persisted simplification is shared; preview never grows without a limit. */
 export function appendPreviewPoint(points:number[],p:Point,max=8192):void {
   const last=points.length;if(last>=4&&Math.hypot(p.x-points[last-2],p.y-points[last-1])<.5)return;

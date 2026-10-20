@@ -32,6 +32,7 @@ omabox run -- node "$PWD/dist/panel-qa/basic.cjs"
 omabox run -- node "$PWD/dist/panel-qa/features.cjs"
 omabox run -- node "$PWD/dist/panel-qa/imports.cjs"
 omabox run -- node "$PWD/dist/panel-qa/frames.cjs"
+omabox run -- node "$PWD/dist/panel-qa/shapes-strokes.cjs" papel  # hollow shapes and separate strokes; `dark` too; CDP, HTTP, OUT override
 omabox run -- node "$PWD/dist/panel-qa/library.cjs"
 omabox run -- node "$PWD/dist/panel-qa/compact.cjs"
 omabox run -- node "$PWD/dist/panel-qa/many.cjs"

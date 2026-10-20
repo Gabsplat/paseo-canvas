@@ -1607,7 +1607,10 @@ const baseTokens = {
           "xl": { "fontSize": 28, "lineHeight": 36 }
         },
         "weight": "500",
-        "padding": 12
+        "padding": 12,
+        "placeholder": "Label",
+        "placeholderAlpha": 0.6,
+        "hollowEditWash": 0.06
       }
     },
     "svg": {
@@ -1631,7 +1634,8 @@ const baseTokens = {
       "maxStrokes": 32,
       "maxPointsPerStroke": 512,
       "maxPoints": 4000,
-      "eraserRadiusScreen": 10
+      "eraserRadiusScreen": 10,
+      "eraserFade": 0.22
     },
     "selection": {
       "outset": 4,

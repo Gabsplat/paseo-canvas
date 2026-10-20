@@ -27,7 +27,7 @@ const CDP=process.env.CDP||9222,HTTP=process.env.HTTP||8765,OUT=process.env.OUT|
   await call('Runtime.enable');await call('Page.enable');await call('Emulation.setDeviceMetricsOverride',{width:1280,height:820,deviceScaleFactor:1,mobile:false});
   await call('Browser.grantPermissions',{permissions:['clipboardReadWrite','clipboardSanitizedWrite'],origin:`http://127.0.0.1:${HTTP}`}).catch(()=>{});
   await call('Page.navigate',{url:`http://127.0.0.1:${HTTP}/?theme=${theme}`});await wait('!!window.__panelQA&&__panelQA.doc().blocks.length>0','panel');await pause(700);
-  await ev(`__panelQA.seed([{type:'block.create',block:{id:'third',typeId:'node',title:'Third card (example)',data:{summary:'Example data'},position:{x:620,y:450}}},{type:'group.update',id:'frame',patch:{position:{x:64,y:620}}}])`);
+  await ev(`__panelQA.seed([{type:'block.create',block:{id:'third',typeId:'node',title:'Third card (example)',data:{summary:'Example data'},position:{x:620,y:450}}},{type:'block.create',block:{id:'hollow',typeId:'wb-shape',title:'',position:{x:760,y:560},size:{width:200,height:120},data:{shape:'rect',fill:'none',text:'Inside'}}},{type:'group.update',id:'frame',patch:{position:{x:64,y:620}}}])`);
   await wait('!!document.querySelector("#lienzo-entity-third")','third card');await pause(600);
   const original=await doc();
 
@@ -79,6 +79,21 @@ const CDP=process.env.CDP||9222,HTTP=process.env.HTTP||8765,OUT=process.env.OUT|
    const edges=[];for(const id of ['server','note','third']){const b=await box(id);edges.push(Math.round(b.x+b.w));}
    assert.ok(Math.max(...edges)-Math.min(...edges)<=1,'one right edge from the row: '+edges);
    await shot('aligned-right');
+  });
+  await check('a hollow shape held by its label: Alt-drag leaves it and drops a copy; Shift-drag keeps one axis',async()=>{
+   await key('Escape','Escape');await key('Escape','Escape');
+   const center=async()=>{const b=await box('hollow');return{x:b.x+b.w/2,y:b.y+b.h/2};};
+   let c=await center();await mouse('mouseMoved',c.x,c.y);await mouse('mousePressed',c.x,c.y,0,1);await mouse('mouseReleased',c.x,c.y);await pause(300);
+   const before=await doc(),pos=(await block('hollow')).position;
+   const dragAt=async(dx,dy,modifiers)=>{c=await center();await mouse('mouseMoved',c.x,c.y,modifiers);await mouse('mousePressed',c.x,c.y,modifiers,1);for(let i=1;i<=12;i++){await mouse('mouseMoved',c.x+dx*i/12,c.y+dy*i/12,modifiers,1);await pause(16);}await mouse('mouseReleased',c.x+dx,c.y+dy,modifiers);await pause(600);};
+   await dragAt(-40,-150,ALT);await wait(`__panelQA.doc().blocks.length===${before.blocks.length+1}`,'a copy of the shape');
+   const copy=(await doc()).blocks.find(b=>!before.blocks.some(o=>o.id===b.id));
+   assert.equal(copy.data.text,'Inside');assert.deepEqual((await block('hollow')).position,pos,'the original stays');
+   assert.ok(Math.abs(copy.position.x-pos.x+40)<=8&&Math.abs(copy.position.y-pos.y+150)<=8,JSON.stringify([pos,copy.position]));
+   assert.equal(await ev('String(getSelection())'),'','no text selected');await shot('hollow-alt-drag');
+   await key('Escape','Escape');c=await center();await mouse('mouseMoved',c.x,c.y);await mouse('mousePressed',c.x,c.y,0,1);await mouse('mouseReleased',c.x,c.y);await pause(300);
+   await dragAt(120,30,SHIFT);const after=(await block('hollow')).position;
+   assert.equal(after.y,pos.y,'no vertical movement');assert.ok(after.x-pos.x>100,JSON.stringify([pos,after]));
   });
   await check('? opens Settings → Shortcuts, with the Arrange and Pointer groups',async()=>{
    await key('Escape','Escape');await mouse('mouseMoved',1000,700);await mouse('mousePressed',1000,700,0,1);await mouse('mouseReleased',1000,700);await pause(300);

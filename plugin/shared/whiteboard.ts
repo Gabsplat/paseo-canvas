@@ -120,6 +120,28 @@ export function appendStroke(drawing: WbDrawing, worldPoints: readonly number[],
   return { position: { x, y }, size: { width, height }, data: next };
 }
 
+type Layer = Pick<WbDrawData, 'author' | 'anchor'>;
+const layerOf = (data: Layer): Layer => ({ ...(data.author ? { author: data.author } : {}), ...(data.anchor ? { anchor: data.anchor } : {}) });
+/** A drawing boxed tightly around strokes whose points are in its parent's space (the space of `position`). */
+export function fitStrokes(strokes: readonly WbStroke[], layer: Layer = {}): WbDrawing {
+  const xs = strokes.flatMap(s => s.points.filter((_, i) => i % 2 === 0)), ys = strokes.flatMap(s => s.points.filter((_, i) => i % 2 === 1));
+  const x = Math.floor(Math.min(...xs) * 2) / 2, y = Math.floor(Math.min(...ys) * 2) / 2;
+  const width = Math.max(8, Math.ceil((Math.max(...xs) - x) * 2) / 2), height = Math.max(8, Math.ceil((Math.max(...ys) - y) * 2) / 2);
+  return { position: { x, y }, size: { width, height }, data: wbDrawDataSchema.parse({ extent: { width, height }, strokes: strokes.map(s => ({ ...s, points: s.points.map((v, i) => v - (i % 2 ? y : x)) })), ...layerOf(layer) }) };
+}
+/** A drawing's strokes as drawn: scaled to its box and placed in its parent's space. */
+export function placedStrokes(drawing: WbDrawing): WbStroke[] {
+  const { position, size, data } = drawing;
+  return data.strokes.map(s => ({ ...s, points: s.points.map((v, i) => i % 2 ? v * size.height / data.extent.height + position.y : v * size.width / data.extent.width + position.x) }));
+}
+/** One drawing per stroke, each where it was drawn, keeping author and anchor. Undo restores the original. */
+export const splitDrawing = (drawing: WbDrawing): WbDrawing[] => placedStrokes(drawing).map(stroke => fitStrokes([stroke], drawing.data));
+/** The drawing without the strokes at `removed`, refitted to what is left; null when nothing is left. */
+export function withoutStrokes(drawing: WbDrawing, removed: ReadonlySet<number>): WbDrawing | null {
+  const left = placedStrokes(drawing).filter((_, i) => !removed.has(i));
+  return left.length ? fitStrokes(left, drawing.data) : null;
+}
+
 /** A drawing follows the copy of its card when both are copied; an outside card keeps its id. */
 export function remapDrawAnchor<Data extends Record<string, unknown>>(data: Data, ids: ReadonlyMap<string, string>): Data {
   const anchor = typeof data.anchor === 'string' ? ids.get(data.anchor) : undefined;

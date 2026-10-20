@@ -205,7 +205,12 @@ Shape/SVG/draw selections expose eight resize handles, text exposes width handle
 and lines expose endpoint handles. SVG resize always preserves its aspect ratio.
 Filled shapes use their box for hits; empty shapes and drawings only intercept their
 contour or stroke with an eight-screen-pixel hit band, so their interior lets users
-reach cards beneath them.
+reach cards beneath them. A press that reaches the bare canvas or a Frame's body
+inside an empty shape selects the smallest shape containing it (`shapeInteriorAt`),
+and a double-click there edits its label; a drag from there still draws a selection
+box. Once selected, an empty shape's interior takes the pointer, so it drags and
+double-clicks from anywhere inside. Shape and text labels are never text-selectable:
+pressing and dragging on a label moves the box; double-click or Enter edits it.
 
 The layer order is group frames, shapes/SVG, links, cards, text, drawings, guides and
 handles. Positioned whiteboard objects sit outside automatic placement and overlap
@@ -214,12 +219,15 @@ links. Group frames still include their bounds; creating or moving inside a grou
 stores parent-relative coordinates.
 
 The pencil samples at most 8192 points per gesture. Shared bounded simplification
-and schemas enforce 512 points per stroke, 4000 per drawing and 32 strokes. Consecutive
-strokes append to the same drawing while tool, document, parent and limits permit.
+and schemas enforce 512 points per stroke, 4000 per drawing and 32 strokes. Every
+pen stroke is its own drawing, so it selects, moves and erases alone; an agent's
+illustration or an older drawing may hold several, and "Split strokes" in the
+selection bar turns those into one drawing per stroke in one transaction.
 A separate preview store redraws only the preview on pointer movement. The whole
 canvas layout runs after a committed document change. Each completed stroke creates
-one transaction; the eraser removes whole crossed strokes in one transaction at
-release, including crossings between sparse pointer events. Escape, document changes,
+one transaction; the eraser fades the strokes it touches while dragging and removes
+them in one transaction at release, including crossings between sparse pointer
+events. A drawing that keeps some strokes is refitted around them. Escape, document changes,
 offline state and busy persistence abort pending creation gestures without a save.
 
 The library contains twelve canonical Tabler SVGs, bundled locally with their pinned

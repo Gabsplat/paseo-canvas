@@ -9,6 +9,7 @@ import type { Point } from './logic';
 import { wbColor, wbFont, shapeLook } from './whiteboard-visuals';
 import { wbShapeDataSchema } from '../shared/whiteboard';
 import { tokens } from './tokens';
+import { withAlpha } from './color';
 export function WhiteboardPreview({store,origin}:{store:WhiteboardPreviewStore;origin:Point}){
   const preview=useSyncExternalStore(store.subscribe,store.snapshot,()=>null);if(!preview)return null;const r=preview.rect;
   return <View pointerEvents="none" style={{position:'absolute',left:r.x-origin.x,top:r.y-origin.y,width:r.width,height:r.height,opacity:.55,zIndex:8}}><WhiteboardContent block={preview.block} kind={preview.block.typeId==='wb-shape'?'wb-shape':'wb-draw'} width={r.width} height={r.height} onSelect={()=>{}}/></View>;
@@ -23,11 +24,12 @@ export function WhiteboardEditor({session,origin,error,saving,onSave,onCancel}:{
   if(session.kind==='wb-shape'){
     // The label is edited where it lives: centred in the shape, in its own colour, on the shape's own fill.
     // An invisible copy of the draft sizes the box, so the caret stays vertically centred as lines are added.
-    const look=shapeLook(wbShapeDataSchema.parse(session.block.data),u),type={fontSize:look.fontSize,lineHeight:look.lineHeight,fontWeight:'500' as const,textAlign:'center' as const};
+    // A hollow shape has nothing behind the label: a faint wash marks where typing goes, and the caret and placeholder use the accent.
+    const look=shapeLook(wbShapeDataSchema.parse(session.block.data),u),type={fontSize:look.fontSize,lineHeight:look.lineHeight,fontWeight:'500' as const,textAlign:'center' as const},L=tokens.whiteboard.shape.label,hollow=look.fill==='none';
     return <View ref={host} nativeID="lienzo-editor" style={{position:'absolute',left:session.at.x-origin.x,top:session.at.y-origin.y,width:session.width,height:session.height,zIndex:20}}>
-      <View style={{flex:1,paddingHorizontal:look.padding,justifyContent:'center',overflow:'hidden'}}><View style={{minHeight:look.lineHeight}}>
+      <View style={{flex:1,paddingHorizontal:look.padding,justifyContent:'center',overflow:'hidden'}}><View style={{minHeight:look.lineHeight,borderRadius:4,backgroundColor:hollow?withAlpha(u.c.accent,L.hollowEditWash):undefined}}>
         <Txt style={{...type,opacity:0}}>{draft+'\u200b'}</Txt>
-        <TextInput autoFocus multiline value={draft} maxLength={1000} editable={!saving} accessibilityLabel="Edit the shape label" onChangeText={value=>{draftRef.current=value;setDraft(value);}} onBlur={()=>{void submit();}} onKeyPress={event=>{if(event.nativeEvent.key==='Escape')cancel();}} style={{...type,position:'absolute',left:0,right:0,top:0,bottom:0,padding:0,borderWidth:0,borderRadius:0,backgroundColor:'transparent',color:look.text,textAlignVertical:'top',...({outlineStyle:'none',boxShadow:'none'} as object)}}/>
+        <TextInput autoFocus multiline value={draft} maxLength={1000} editable={!saving} accessibilityLabel="Edit the shape label" placeholder={L.placeholder} placeholderTextColor={withAlpha(look.text,L.placeholderAlpha)} onChangeText={value=>{draftRef.current=value;setDraft(value);}} onBlur={()=>{void submit();}} onKeyPress={event=>{if(event.nativeEvent.key==='Escape')cancel();}} style={{...type,position:'absolute',left:0,right:0,top:0,bottom:0,padding:0,borderWidth:0,borderRadius:0,backgroundColor:'transparent',color:look.text,textAlignVertical:'top',...({outlineStyle:'none',boxShadow:'none',caretColor:u.c.accent} as object)}}/>
       </View></View>
       {failure&&<View style={{position:'absolute',left:0,top:'100%',minWidth:200,marginTop:6}}>{failure}</View>}
     </View>;

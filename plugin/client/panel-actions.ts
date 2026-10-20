@@ -2,6 +2,7 @@ import { tokens } from './tokens';
 import type { BlockType, CanvasBlock, CanvasDocument, CanvasGroup, CanvasOperation, CanvasCatalog } from '../shared/model';
 import { anchorCard, containerMode, freezeOperations, manual, topSelection, type Rect, type Camera } from './logic';
 import { getRendererSpec } from '../shared/renderers';
+import { splitDrawing, wbDrawDataSchema } from '../shared/whiteboard';
 export type Entity = CanvasBlock | CanvasGroup;
 export const layoutIcons = { graph: 'Workflow', stack: 'Rows3', grid: 'Grid2x2', flow: 'ArrowRightFromLine', free: 'Move', rows: 'Rows3' } as const;
 export const inlineKeys = (renderer?: string): string[] => ({ note: ['text'], text: ['text'], callout: ['text'], step: ['text'], node: ['summary', 'details'], code: ['code'], checklist: ['items'], quiz: ['question', 'options'], metric: ['value', 'label'], 'image-ref': ['caption'], 'preview-frame': ['description'] }[renderer ?? ''] ?? []);
@@ -77,4 +78,10 @@ export function toolbarPosition(camera: Camera, box: Pick<Rect, 'x' | 'y' | 'wid
  */
 export function panelFits(width: number, compact = false): boolean {
   const P = tokens.face.rightPanel; return !compact && width >= P.width + 2 * P.inset + P.minCanvas;
+}
+/** "Split strokes": a drawing of several strokes becomes one drawing per stroke, in place, in one transaction. */
+export function splitOperations(block:CanvasBlock,makeId:()=>string):{operations:CanvasOperation[];ids:string[]}{
+  const parsed=block.position&&block.size?wbDrawDataSchema.safeParse(block.data):undefined;if(!parsed?.success||parsed.data.strokes.length<2)return{operations:[],ids:[]};
+  const parts=splitDrawing({position:block.position!,size:block.size!,data:parsed.data}),ids=parts.map(()=>makeId());
+  return{ids,operations:[{type:'block.delete',id:block.id},...parts.map((part,i):CanvasOperation=>({type:'block.create',block:{id:ids[i],typeId:block.typeId,title:block.title,parentGroupId:block.parentGroupId??null,...part}}))]};
 }

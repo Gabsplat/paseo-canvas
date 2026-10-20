@@ -41,8 +41,8 @@ function BarButton({ label, icon, onPress, disabled, shortcut, detail, active, d
  * The small bar over the selection: colour, Frame, duplicate, delete. Detail lives in the right panel.
  * A selected link gets its own: colour, kind, reverse, delete.
  */
-export function SelectionBar({ controller: c, disabled, linkId, colour, duplicate, remove, wrap, unwrap, keyLabel, onProperties, arrange }: {
-  controller: CanvasController; disabled: boolean; linkId?: string | null; colour?: Colour; duplicate(): void; remove(): void; wrap(): void; unwrap(): void; keyLabel(id: string): string | undefined; onProperties?(): void;
+export function SelectionBar({ controller: c, disabled, linkId, colour, duplicate, remove, wrap, unwrap, split, keyLabel, onProperties, arrange }: {
+  controller: CanvasController; disabled: boolean; linkId?: string | null; colour?: Colour; duplicate(): void; remove(): void; wrap(): void; unwrap(): void; split?(): void; keyLabel(id: string): string | undefined; onProperties?(): void;
   /** Align, distribute and flip, by shortcut id (arrange.ts ARRANGE_COMMANDS); shown for two things or more. */
   arrange?(id: string): void;
 }) {
@@ -63,6 +63,7 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, duplicat
       </> : <>
         {group ? <BarButton nativeID="lienzo-selection-unwrap" label="Unwrap Frame" icon="Ungroup" shortcut={keyLabel('edit.unwrap')} detail="Keeps what is inside; removes the frame." disabled={disabled} onPress={unwrap} />
           : <BarButton nativeID="lienzo-selection-marco" label="Wrap in a Frame" icon="SquareDashed" shortcut={keyLabel('edit.wrap')} detail={MARCO} disabled={disabled} onPress={wrap} />}
+        {split && <BarButton nativeID="lienzo-selection-split" label="Split strokes" icon="Scissors" detail="Each stroke becomes its own drawing, so you can move or erase it alone." disabled={disabled} onPress={split} />}
         <BarButton nativeID="lienzo-selection-duplicate" label="Duplicate" icon="CopyPlus" shortcut={keyLabel('edit.duplicate')} disabled={disabled} onPress={duplicate} />
         {arrange && selected.length > 1 && <BarButton nativeID="lienzo-selection-align" label="Align and distribute" icon="AlignStartVertical" active={aligning} disabled={disabled} onPress={() => { setSwatches(false); setAligning(v => !v); }} />}
       </>}
