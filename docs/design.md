@@ -902,7 +902,7 @@ or outside a group.
 | Texto libre | Just the text in its colour role. `scale` s/m/l/xl = 14/20, 18/26, 28/36, 44/52; `sans`, `serif` or `mono`, weight 400. | Auto-width up to 480 then wraps; a stored `width` wraps there. Height always measured. Empty text is never stored. |
 | Forma | Outline in `weight` 1.5/2.5/4/7, fill none / colour@0.14 / colour@1 (then its text is `surface0`). Centred label 15/21 weight 500. | Rectángulo, Redondeado (radius 16), Elipse, Rombo, Triángulo, Hexágono, Cilindro, Línea; Flecha is a line with an open V head. Round joins and caps. |
 | Imagen SVG | The sanitised image, aspect preserved, `currentColor` painted in the colour role. Optional caption `small` muted 4 below. | Painted as an image, never as inline DOM. Native without SVG support shows a dashed frame with the caption and "Imagen SVG; se ve en la versión web". |
-| Dibujo | Strokes in their own colour and weight, round caps. Stroke width does not scale when resized. | One block per pencil session, at most 32 strokes. |
+| Dibujo | Strokes in their own colour and weight, round caps. Stroke width does not scale when resized. | One block per pencil stroke. An agent's illustration or an older drawing may hold up to 32; "Split strokes" (selection bar, Scissors) separates them. |
 
 - **Paint order:** group frames · shapes and SVG · connections · cards · free text · drawings ·
   guides and handles. A shape can sit behind cards as a backdrop; a drawing annotates on top.
@@ -970,10 +970,19 @@ Seleccionar; held Space is a temporary Mano.
 - **Texto**: click places a caret there; dragging a box sets a wrap width. Confirm with
   `⌘/Ctrl Enter` or a click elsewhere; `Esc` cancels; an empty text leaves nothing behind.
 - **Forma**: click drops the default 160 × 104; drag draws corner to corner (Shift 1:1; lines snap
-  to 15°). Double-click a shape to write its label.
+  to 15°). Double-click a shape (anywhere inside, filled or not) or press Enter to write its label;
+  typing with one shape selected starts the label with that key. A label is never text-selected by
+  a press: press and drag on it moves the shape. While editing a hollow shape the line gets an
+  `accent`@0.06 wash, an `accent` caret and a "Label" placeholder at 60 % of the text colour.
+- **Hollow shapes** (tldraw's rule): their inside is empty canvas until it is the only thing under
+  the pointer. A click there selects the smallest shape containing it, a double-click edits it, a
+  drag still draws a selection box (so a big frame-like box never blocks marquee selection).
+  Once selected, the whole inside drags the shape.
 - **Lápiz**: every stroke is saved when the pointer lifts and is one undo step ("Dibujar trazo").
-- **Goma** removes whole strokes it touches, one undo step per gesture ("Borrar trazos"); a
-  drawing left without strokes disappears.
+- **Goma** removes whole strokes it touches (hit along the stroke's path within 10 screen px, not
+  its box), one undo step per gesture ("Borrar trazos"). While dragging, touched strokes fade to
+  22 % opacity; release removes them, `Esc` restores them. Inside a multi-stroke drawing only the
+  touched strokes go and the drawing is refitted; a drawing left without strokes disappears.
 - After placing a text, shape or SVG the tool returns to Seleccionar with the new element
   selected. Double-clicking a tool button locks it (4 px `accent` dot under the icon) until `Esc`.
   Lápiz and Goma always stay until left.

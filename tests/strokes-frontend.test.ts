@@ -58,10 +58,10 @@ test('the pencil signs strokes as the learner and anchors them to the card they 
   await h.stroke([[40, 40], [90, 60], [140, 40]]);
   await h.stroke([[250, 150], [300, 180], [350, 150]]); await h.stroke([[260, 200], [340, 200]]);
   await h.stroke([[650, 150], [700, 150]]);
-  const [free, onA, onB] = draws(h.doc());
-  assert.equal(draws(h.doc()).length, 3, 'Empty canvas, card A and card B are three separate layers.');
+  const [free, onA, onA2, onB] = draws(h.doc());
+  assert.equal(draws(h.doc()).length, 4, 'Every stroke is its own drawing, even two in a row on the same card.');
   assert.deepEqual([free.data.author, free.data.anchor], ['learner', undefined]); assert.deepEqual(free.position, { x: 40, y: 40 });
-  assert.equal(onA.data.anchor, 'a'); assert.equal(onA.data.strokes.length, 2, 'Consecutive strokes on the same card share one drawing.'); assert.deepEqual(onA.position, { x: 50, y: 50 }, 'Stored relative to the card corner, not to the canvas.');
+  assert.equal(onA.data.anchor, 'a'); assert.equal(onA.data.strokes.length, 1); assert.deepEqual([onA2.data.anchor, onA2.data.strokes.length, onA2.position], ['a', 1, { x: 60, y: 100 }]); assert.deepEqual(onA.position, { x: 50, y: 50 }, 'Stored relative to the card corner, not to the canvas.');
   assert.equal(onB.data.anchor, 'b'); assert.deepEqual(onB.position, { x: 50, y: 50 });
   assert.deepEqual(h.rect(onA.id), { ...h.rect(onA.id), x: 250, y: 150 }, 'It is drawn exactly where it was drawn.');
   assert.ok(h.transactions.every(t => t.label === 'Draw stroke')); assert.equal(h.transactions.length, 4, 'One transaction, one undo step, per stroke.');
@@ -95,7 +95,7 @@ test('the eraser works on anchored drawings where they are shown, and appending 
   const h = harness(); await h.stroke([[250, 150], [350, 150]]); await h.stroke([[250, 200], [350, 200]]);
   h.apply([{ type: 'entity.move', id: 'a', parentGroupId: null, position: { x: 900, y: 400 } }]);
   await h.setTool('eraser'); h.wb.begin(pointer(1000, 450)); await h.wb.finish(pointer(1000, 450), false);
-  assert.equal(draws(h.doc())[0].data.strokes.length, 1, 'The stroke under the pointer at the card\'s new place is the one erased.'); assert.equal(h.transactions.at(-1).label, 'Erase strokes');
+  assert.equal(draws(h.doc()).length, 1, 'The stroke under the pointer at the card\'s new place is the one erased.'); assert.deepEqual(draws(h.doc())[0].position, { x: 50, y: 100 }); assert.equal(h.transactions.at(-1).label, 'Erase strokes');
   const kept = draws(h.doc())[0], next = appendStroke({ position: kept.position, size: kept.size, data: kept.data }, [60, 60, 90, 90], { color: 'rojo', weight: 'l' });
   assert.deepEqual([next.data.author, next.data.anchor, next.data.strokes.length], ['learner', 'a', 2]);
 });
@@ -118,21 +118,32 @@ test('a stroke that cannot fit is refused with the size message and the earlier 
   assert.equal(h.transactions.length, 1, 'The oversized stroke was never sent.'); assert.equal(h.wb.store.current, null, 'Its preview is gone.');
   assert.equal(layerFits('ñ'.repeat(10), '', 80), false, 'Size is counted in UTF-8 bytes, as the server does.'); assert.equal(layerFits('n'.repeat(10), '', 80), true);
 });
-test('appending to an existing layer near the document cap counts its replacement, not a second copy of its strokes', async () => {
-  const h = harness(), limit = 1024 * 1024;
-  await h.stroke(Array.from({ length: 200 }, (_, i) => [40 + i * 2, 40 + (i % 2) * 40] as [number, number]));
-  h.apply([{ type: 'block.create', block: { id: 'filler', typeId: 'note', title: 'Relleno de ejemplo', position: { x: 2000, y: 2000 }, data: { text: '' } } }]);
-  const room = limit - Buffer.byteLength(JSON.stringify(h.doc())) - 256;
-  h.apply([{ type: 'block.update', id: 'filler', patch: { data: { text: 'x'.repeat(room) } } }]);
-  const earlier = draws(h.doc())[0], original = JSON.stringify(earlier.data.strokes[0]);
-  await h.stroke([[40, 100], [50, 100]]);
-  assert.deepEqual(h.failures, [], 'The small append fits even though another copy of the old layer would not.');
-  assert.equal(draws(h.doc()).length, 1);
-  assert.equal(draws(h.doc())[0].id, earlier.id);
-  assert.equal(draws(h.doc())[0].data.strokes.length, 2);
-  assert.equal(JSON.stringify(draws(h.doc())[0].data.strokes[0]), original, 'The old points are retained.');
-  assert.equal(h.transactions.length, 2);
-  assert.ok(Buffer.byteLength(JSON.stringify(h.doc())) < limit);
+test('the eraser fades what it touches, removes single strokes from an older multi-stroke drawing and refits it, in one undo step', async () => {
+  // An older drawing (or an agent's illustration): three strokes in one block, drawn at half its stored extent.
+  const old = { id: 'old', typeId: 'wb-draw', title: '', position: { x: 40, y: 400 }, size: { width: 200, height: 100 }, data: { extent: { width: 100, height: 50 }, author: 'learner', strokes: [0, 20, 40].map(y => ({ points: [0, y, 100, y + 5], color: 'tinta', weight: 'm' })) } };
+  const h = harness(document([card('a', 200, 100), old])); await h.setTool('eraser');
+  h.wb.begin(pointer(30, 425)); assert.equal(h.wb.fading.current.size, 0, 'Nothing under the pointer yet.');
+  // One sparse pointer event passes within the eraser radius of the middle stroke (y 440..450 on screen) only.
+  h.wb.move(pointer(300, 447)); assert.deepEqual([...h.wb.fading.of('old')], [1], 'The touched stroke fades before anything is saved.'); assert.equal(h.transactions.length, 0);
+  await h.wb.finish(pointer(300, 447), false);
+  assert.equal(h.wb.fading.current.size, 0); assert.equal(h.transactions.length, 1); assert.equal(h.transactions[0].label, 'Erase strokes');
+  const kept = draws(h.doc())[0]; assert.equal(kept.id, 'old'); assert.equal(kept.data.strokes.length, 2);
+  assert.deepEqual(kept.position, { x: 40, y: 400 }); assert.deepEqual(kept.size, { width: 200, height: 90 }, 'Refitted around what is left, at the same place and scale.');
+  assert.deepEqual(kept.data.strokes.map((s: any) => s.points), [[0, 0, 200, 10], [0, 80, 200, 90]]);
+  // A cancelled gesture clears its fade and saves nothing.
+  h.wb.begin(pointer(100, 400)); h.wb.move(pointer(110, 402)); assert.ok(h.wb.fading.current.size); await h.wb.finish(pointer(110, 402), true);
+  assert.equal(h.wb.fading.current.size, 0); assert.equal(h.transactions.length, 1);
+});
+test('Split strokes turns a multi-stroke drawing into one drawing per stroke, in place, keeping author, anchor and Frame', () => {
+  const { splitOperations } = require('../plugin/client/panel-actions');
+  const old = { id: 'old', typeId: 'wb-draw', title: '', parentGroupId: null, position: { x: 10, y: 20 }, size: { width: 200, height: 100 }, data: { extent: { width: 100, height: 50 }, author: 'learner', anchor: 'a', strokes: [{ points: [0, 0, 50, 10], color: 'rojo', weight: 'l' }, { points: [60, 30, 100, 50], color: 'tinta', weight: 'm' }] } };
+  const doc = document([card('a', 200, 100), old]); let n = 0;
+  const { operations, ids } = splitOperations(old, () => `part${++n}`);
+  assert.deepEqual(ids, ['part1', 'part2']); assert.equal(operations[0].type, 'block.delete');
+  const after = reduce(doc, operations, catalog), parts = draws(after);
+  assert.deepEqual(parts.map((p: any) => [p.id, p.position, p.size, p.data.strokes.length, p.data.author, p.data.anchor, p.data.strokes[0].color]), [
+    ['part1', { x: 10, y: 20 }, { width: 100, height: 20 }, 1, 'learner', 'a', 'rojo'], ['part2', { x: 130, y: 80 }, { width: 80, height: 40 }, 1, 'learner', 'a', 'tinta']]);
+  assert.deepEqual(splitOperations(parts[0], () => 'x'), { operations: [], ids: [] }, 'A single stroke has nothing to split.');
 });
 test('keys typed with nothing focused reach the panel that was pressed last, across listener replacement', () => {
   // Reproduces the browser sequence: press inside the panel, the pressed control disables itself so focus falls
@@ -155,4 +166,10 @@ test('keys typed with nothing focused reach the panel that was pressed last, acr
     fire('pointerdown', { target: { parentElement: body } }); type('v'); assert.deepEqual(seen, ['second:Escape'], 'A press outside every panel releases the keys.');
     detach(); detachOther(); assert.equal([...listeners.values()].reduce((sum, set) => sum + set.size, 0), 0, 'No document listener is left behind.');
   } finally { if (prior) Object.defineProperty(globalThis, 'document', prior); else delete (globalThis as any).document; }
+});
+test('a stroke drawn while the previous one is still saving is kept: strokes queue, each its own drawing', async () => {
+  const h = harness(); h.c.busy = true;
+  await h.stroke([[40, 40], [90, 60]]); await h.stroke([[40, 400], [90, 420]]);
+  assert.equal(draws(h.doc()).length, 2); assert.equal(h.transactions.length, 2);
+  await h.setTool('eraser'); assert.equal(h.wb.begin(pointer(60, 50)), false, 'The eraser still waits: it reads the saved drawings.');
 });

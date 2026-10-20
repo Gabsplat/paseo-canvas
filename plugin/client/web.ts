@@ -452,7 +452,8 @@ export type EntityPointerHandlers = {
   start(id: string, point: CanvasPointer): void;
   move(point: CanvasPointer): void;
   end(cancelled: boolean, velocity: { vx: number; vy: number }): void;
-  edit?(id: string): void;
+  /** A double-click. `id` is the entity under it, null on the bare canvas; `point` is where, in page pixels. */
+  edit?(id: string | null, point: CanvasPointer): void;
 };
 /** Capture only after movement, so ordinary clicks still reach all nested controls. */
 export function attachEntityDrag(element: unknown, handlers: EntityPointerHandlers, threshold = 4): () => void {
@@ -483,7 +484,12 @@ export function attachEntityDrag(element: unknown, handlers: EntityPointerHandle
   const up = (e: Event) => { if (pending && (e.pointerId ?? 0) === pending.start.pointerId) { const active = pending.active; finish(false); if (active) { e.preventDefault(); e.stopPropagation(); } } };
   const cancel = () => finish(true);
   const key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && pending) { cancel(); e.preventDefault(); e.stopPropagation(); } };
-  const edit = (e: Event) => { if (isEditingTarget(e.target)) return; const id = entity(e); if (id && handlers.edit) { handlers.edit(id); } };
+  const edit = (e: Event) => {
+    if (isEditingTarget(e.target)) return; const id = entity(e) ?? null;
+    // Off every entity only the bare canvas counts: not the minimap, zoom, lens or another island over it.
+    if (!id && pointerElement(e.target)?.closest?.(`${CONTROLS},[id^="lienzo-interactive-"],[id^="lienzo-tools"]`)) return;
+    handlers.edit?.(id, point(e));
+  };
   const press = (e: Event) => { if (!handlers.press || !handlers.enabled() || isEditingTarget(e.target) || pointerElement(e.target)?.closest?.('[role="button"],[role="checkbox"],[role="menuitem"],[role="radio"],button,a,[id^="lienzo-interactive-"],[id^="lienzo-link-handle-"],[id^="lienzo-using-"]')) return; const id = entity(e); if (id) handlers.press(id, point(e)); };
   node.addEventListener('click', press);
   node.addEventListener('pointerdown', down, true); node.addEventListener('dblclick', edit); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true);
@@ -833,13 +839,14 @@ export function WebRange({ id, label, min, max, step, value, disabled, color, on
   });
 }
 
-export type VectorPath = { d: string; color: string; weight: number; fill?: string; dash?: string; hit?: boolean };
+/** `area`: the inside takes the pointer even when unpainted (a selected hollow shape). `opacity`: the eraser's fade. */
+export type VectorPath = { d: string; color: string; weight: number; fill?: string; dash?: string; hit?: boolean; area?: boolean; opacity?: number };
 /** Shape geometry uses browser SVG only here; native components render their own geometric fallback. */
 export function WebVectors({ width, height, paths, label, scale = 1, onPress, onHover }: { width: number; height: number; paths: readonly VectorPath[]; label: string; scale?: number; onPress?: (point?: CanvasPointer) => void; onHover?: (inside: boolean) => void }) {
   if (Platform.OS !== 'web') return null;
   return React.createElement('svg', { width:'100%',height:'100%',viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':label,style:{overflow:'visible',pointerEvents:'none'} }, ...paths.flatMap((path,i) => [
-    React.createElement('path',{key:`paint-${i}`,d:path.d,fill:path.fill??'none',stroke:path.color,strokeWidth:path.weight,strokeDasharray:path.dash,strokeLinecap:'round',strokeLinejoin:'round',vectorEffect:'non-scaling-stroke',style:{pointerEvents:'none'}}),
-    ...(path.hit===false?[]:[React.createElement('path',{key:`hit-${i}`,d:path.d,fill:path.fill&&path.fill!=='none'?'transparent':'none',stroke:'transparent',strokeWidth:16/Math.max(.01,scale),style:{pointerEvents:path.fill&&path.fill!=='none'?'all':'stroke',cursor:'inherit'},onClick:(e:{stopPropagation():void;clientX:number;clientY:number;shiftKey:boolean;ctrlKey:boolean;metaKey:boolean})=>{e.stopPropagation();onPress?.({x:e.clientX,y:e.clientY,shift:e.shiftKey,command:e.ctrlKey||e.metaKey,pointerId:0});},onPointerEnter:()=>onHover?.(true),onPointerLeave:()=>onHover?.(false)})]),
+    React.createElement('path',{key:`paint-${i}`,d:path.d,fill:path.fill??'none',stroke:path.color,strokeWidth:path.weight,strokeDasharray:path.dash,strokeLinecap:'round',strokeLinejoin:'round',vectorEffect:'non-scaling-stroke',opacity:path.opacity,style:{pointerEvents:'none'}}),
+    ...(path.hit===false?[]:[React.createElement('path',{key:`hit-${i}`,d:path.d,fill:path.area||path.fill&&path.fill!=='none'?'transparent':'none',stroke:'transparent',strokeWidth:16/Math.max(.01,scale),style:{pointerEvents:path.area||path.fill&&path.fill!=='none'?'all':'stroke',cursor:'inherit'},onClick:(e:{stopPropagation():void;clientX:number;clientY:number;shiftKey:boolean;ctrlKey:boolean;metaKey:boolean})=>{e.stopPropagation();onPress?.({x:e.clientX,y:e.clientY,shift:e.shiftKey,command:e.ctrlKey||e.metaKey,pointerId:0});},onPointerEnter:()=>onHover?.(true),onPointerLeave:()=>onHover?.(false)})]),
   ]));
 }
 
