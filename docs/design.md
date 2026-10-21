@@ -1240,8 +1240,8 @@ by whole words. Keyboard alone works fully; so does the mouse.
 ## 32. Extension tools
 
 A person or their agent can add a tool without touching the plugin (contract in `docs/extensions.md`). Tools are
-listed in the + catalog's Extensions section and open as a tab of the right panel, working on the shared selection;
-several can be open at once. An imported tool that asks for a permission shows a warning-toned strip saying what it
+listed in the + catalog's Extensions section and open over the canvas the way their presentation asks (§45; by default
+a panel on the right), working on the shared selection; several can be open at once. An imported tool that asks for a permission shows a warning-toned strip saying what it
 asks for in words and a single "Allow". "Manage extensions…" opens the Extensions screen (§35.5).
 Extensions take every colour from the theme they are given. Verified with `design/whiteboard-harness/extensions.cjs`.
 
@@ -1825,3 +1825,42 @@ plus `power.cjs`, `shapes-strokes.cjs` and `frame-drag.cjs` for regressions.
   "Shared on your network" chip (aviso, RadioTower). Aviso, not riesgo: it is a door opened on purpose, kept visible.
 - **Agents seen** adds "from ana@example.com · " (the Tailscale login) or "from 100.88.1.2 · " before the time for
   agents on other computers.
+
+## 45. How an extension appears (October 2026)
+
+Extensions choose a presentation (`docs/extensions.md`, "Presentation"); the look of each is fixed here and in
+`tokens.extensionUi`. Captures: `design/qa-extension-ui-2026-10/`.
+
+- **One box per open tool.** Every open extension is one absolutely placed box in the Lienzo area
+  (`ExtensionSurface`, `client/extension-ui.ts` `surfaceBox`). `lienzo.ui.set` only restyles it, so the frame never
+  reloads. Tools no longer live as tabs of the right panel: the right panel is for Properties, tool options and
+  comments, and a tool sits beside it, clear of it (fits avoid both).
+- **Layers.** An overlay sits in DOM order under the islands and toolbar (z 0), so Lienzo's controls stay on top of an
+  effect. Panels (z 26) and popovers (z 27) float over the islands like the right panel; fullscreen (z 39) covers the
+  islands but not menus, ⌘K or screens. A `dimCanvas` scrim is ink `#0B0B0E` at 0–0.6 over the canvas, under the tool,
+  in both themes.
+- **Panel, full chrome.** The island look (popover elevation, 12 radius, 1 px border). A 40 px title bar: a 24 px tile
+  with the tool's icon in its accent on a 14 % wash, the name in bodyStrong, Help (its description as the tooltip) and
+  ✕. The frame paints `surface1`. Default 320 × 440 on the right, under the top islands, above the toolbar's strip;
+  `left`, `bottom` and `center` use the same room. Several on one side cascade by 24 px.
+- **Minimal.** The same card without a title bar; a 24 px round ✕ (surface1 at 94 %, 1 px border, 12 px glyph) sits 8 px
+  into the top-right corner, always visible.
+- **None.** Lienzo paints nothing: no card, no border, no shadow, a transparent frame. The page draws its own surface
+  and usually its own close. The corner ✕ fades in on hover (and stays 400 ms after the pointer leaves, so it can be
+  reached) or on keyboard focus; it is always there on touch. Esc closes.
+- **Popover.** A small card (280 × 160 by default) 12 px above its anchor, centred on it, kept inside the canvas room;
+  below when there is no room above. A 7 px diamond arrow points at the anchor's centre. Its border takes the accent at
+  45 % so it reads as attached to that card, not as a panel. It follows the camera. Esc or the hover ✕ closes it.
+- **Overlay.** Invisible apart from what the page draws. Its **chip** sits in the middle of the top row, level with the
+  islands (under them on panels narrower than 880): a 30 px pill with the tool's icon on an 18 px accent-washed disc,
+  its name, Allow when it waits for permission, and ✕ (Esc). It answers "what is drawing over my canvas" and is how to
+  stop it. While the page holds the pointer the pill's border becomes 1.5 px in the accent.
+- **Fullscreen.** The Lienzo area in `surface0`, the page on top, the hover ✕ in the top-right corner; Esc leaves.
+- **Accent.** The manifest's `accent` (a canvas tone or `#rrggbb`) tints the tool's icon in its title tile, its chip,
+  the + catalog tile and a pinned toolbar button. Without one, Lienzo's accent.
+- **Restricted tools** keep the amber Allow strip under the title bar (panels, popovers, fullscreen) or an Allow
+  button in the chip (overlays).
+- **Snap (example).** Grains are 2–3 px cut out of a crisp picture of the card (a snapshot in the desktop app, a
+  stand-in card drawn from the theme in a browser), released left to right with jitter over 1.3 s and drifting up and
+  right; one grain in four turns 60 % toward the canvas' violet once it flies, so the dust reads on light and dark
+  cards. The question card that follows uses the island look and the theme's accent for Delete.

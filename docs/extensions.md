@@ -15,7 +15,7 @@ nothing from the plugin, so a plugin update cannot break it.
 ```
 
 - `kind`: `tool`, the only kind. A tool is listed in the Extensions section of the + catalog (and in ⌘K) and opens
-  as a tab of the right panel; it usually acts on the selection. The canvas is the one way to look at a document, so
+  over the canvas, as a panel on the right unless its `presentation` says otherwise; it usually acts on the selection. The canvas is the one way to look at a document, so
   the former kind `view` is retired: catalogs and files stored with views still load without them, a file that
   carries one imports without it, and a view can no longer be saved.
 - `api`: always `1` today.
@@ -35,6 +35,9 @@ nothing from the plugin, so a plugin update cannot break it.
   permissions. A Lienzo older than this field refuses a file that carries it, so leave it out for those.
 
 - `actions` (optional, added to API 1): what the extension offers an agent. See "Actions" below. A Lienzo older than
+  this field refuses a file that carries it.
+- `presentation` (optional, added to API 1): how it appears: a panel, an overlay over the canvas, a popover at the
+  selection or fullscreen, with its size, chrome, position and accent. See "Presentation" below. A Lienzo older than
   this field refuses a file that carries it.
 
 A walkthrough for writing one with your agent, with a complete example, is in
@@ -61,6 +64,13 @@ A walkthrough for writing one with your agent, with a complete example, is in
 | `lienzo.highlight(ids, { dim?, tone? })` | — | Outlines those things on the canvas; `dim` fades every other card. Resolves `{ ids }`. Never saved. |
 | `lienzo.highlight.clear()` | — | Removes this extension's highlight. |
 | `lienzo.storage.get()` / `lienzo.storage.set(value)` | — | One JSON value for this extension on this Lienzo. See "Storage". |
+| `lienzo.ui.state` | — | How the tool shows now, or `null` before Lienzo says. See "Presentation". |
+| `lienzo.ui.set(patch)` | — | Changes mode, size, chrome, position or `dimCanvas` at run time, without a reload. Resolves the new state and `ignored` keys. |
+| `lienzo.ui.onChange(fn)` / `lienzo.ui.close()` | — | Follows the state; closes the tool (same as `lienzo.close()`). |
+| `lienzo.ui.capturePointer(on)` | — | An overlay takes the pointer (`true`) or lets it through to the canvas again (`false`). |
+| `lienzo.hide(ids, { ms? })` / `lienzo.show(ids?)` | — | Hides blocks and Frames on this screen only, for an effect. See "Overlay effects". |
+| `lienzo.view.snapshot(ids)` | `view` | A PNG of those things as drawn now, `{ url, rect }`, or `null`. `lienzo.view.canSnapshot` says if it can. |
+| `lienzo.input` / `lienzo.onInput(fn)` | — | What an agent handed the tool when it opened it. See "Opening from an agent". |
 | `lienzo.kit.stage(options)` | — | A 2D surface that behaves like the canvas. See below. |
 | `lienzo.kit.card(g, item, view, options)` | — | Draws a thing with the standard selection, hover and drag look. |
 
@@ -93,8 +103,14 @@ Added to API 1 with the `view` permission, for tools that present or tour a Lien
 view = { scale,                                 // camera zoom, 1 = 100 %
          bounds: { x, y, width, height },       // the world rectangle the canvas shows (the whole canvas area)
          sheetId,                               // the Sheet under the centre of the view, or null
-         visibleIds }                           // groups and blocks whose rectangle overlaps bounds, document order
+         visibleIds,                            // groups and blocks whose rectangle overlaps bounds, document order
+         screen: { width, height },             // the canvas area, in pixels (added)
+         rects: { [id]: { x, y, width, height } } }  // each visible thing on it, in pixels (added)
 ```
+
+`rects` are in the pixels of the canvas area, the coordinates an overlay draws in: an overlay's frame covers that area
+exactly, so `rects[id]` is where the card is under it. For a panel, subtract `lienzo.ui.state.rect` (where the frame
+is on the same area).
 
 - `view.fit(ids, { padding, animate })` uses the canvas' own fit-and-fly animation; `padding` is screen pixels
   (0–400, default the canvas' fit inset), `animate: false` jumps. It frames them in the part of the canvas not covered
@@ -179,6 +195,77 @@ drag, theme, context }`. It returns `{ canvas, fit(), redraw(), items(), selecti
 
 A tool that shows things should use the kit: it is what keeps interactions the same everywhere.
 
+## Presentation
+
+Added to API 1, optional and feature-detectable (`if (lienzo.ui)`). Without `presentation` a tool opens as it always
+did: a panel with a title bar, on the right.
+
+```json
+{ "presentation": { "mode": "panel", "width": 360, "height": 420, "chrome": "minimal", "position": "center",
+  "dimCanvas": 0.2, "accent": "violet" } }
+```
+
+| Field | Values | Notes |
+|---|---|---|
+| `mode` | `panel` (default), `overlay`, `popover`, `fullscreen` | |
+| `width`, `height` | 200–720, 120–900 pixels | Clamped, never refused. A panel starts at 320 × 440, a popover at 280 × 160. |
+| `chrome` | `full` (default), `minimal`, `none` | Panels: a title bar; only a ✕ in the corner; nothing at all (the page draws its whole surface, Lienzo paints nothing behind it). |
+| `position` | `right` (default), `left`, `bottom`, `center` | Panels. Several on one side cascade. |
+| `dimCanvas` | 0–0.6 | A scrim over the canvas under the tool. |
+| `accent` | `accent`, `success`, `warning`, `violet` or `#rrggbb` | Its icon tile, title and toolbar button. |
+
+The modes:
+
+- **panel**: a floating card above the canvas, under Lienzo's menus. On a compact (phone) layout it is a sheet across
+  the bottom.
+- **overlay**: a transparent layer over the whole canvas, under Lienzo's own islands and toolbar. Pointer events go
+  through to the canvas, so the person keeps working, until the page calls `lienzo.ui.capturePointer(true)` (for an
+  effect or a choice); `false` gives them back. A small chip at the top names the tool and closes it; its ring takes
+  the accent while the page holds the pointer. Leave the page's background unset: Lienzo paints nothing behind the
+  frame (it is created with `allowtransparency`) and the root element carries `data-lienzo-mode="overlay"` for CSS.
+- **popover**: a small bubble with an arrow, above the selection (below when there is no room), or above `anchorId`
+  when an agent opened it with one. It follows the camera.
+- **fullscreen**: covers the whole Lienzo area, islands included, for presentations and games.
+
+Closing: Esc closes every mode except a panel with its title bar (Esc there keeps deselecting on the canvas). A page
+that binds Escape with `lienzo.keys` takes it instead. Lienzo always keeps a close affordance: the title bar, the
+corner ✕ (always shown for `minimal`, on hover or keyboard focus for `none`, popovers and fullscreen), or the chip.
+
+At run time, `lienzo.ui.state` is `{ mode, width, height, chrome, position, dimCanvas, capturing, canSnapshot,
+anchorId, rect }` (`rect`: where the frame is on the canvas area, in pixels). `lienzo.ui.set(patch)` changes any of
+mode, width, height, chrome, position and dimCanvas, clamped like the manifest; a mode switch keeps the same frame, so
+the page is never reloaded, and a size the page set survives it. Keys with a wrong type are left as they were and
+listed in `ignored`. `lienzo.ui.onChange(fn)` hears every change.
+
+### Overlay effects
+
+`lienzo.hide(ids, { ms })` hides blocks and Frames (with what is inside them and the links that touch them) on this
+screen only: no revision, nothing saved, nothing another window sees. The layout keeps their place. They come back on
+`lienzo.show(ids)` (no ids: all of them), after `ms` (16 ms to 2 minutes) when given, and always when the tool closes.
+Unknown ids are dropped; at most 400 at once. Each extension owns what it hid.
+
+`lienzo.view.snapshot(ids)` (permission `view`) resolves `{ url, rect }`: a PNG data URL of those things as drawn now
+(the union of their rectangles, cut to the visible canvas) and that rectangle in the canvas area's pixels. It works in
+the desktop app, which captures its own window (`webContents.capturePage`); in a browser there is no cheap way to take
+one, so it resolves `null` and `lienzo.view.canSnapshot` is `false`. Take the snapshot before hiding; anything drawn
+over the cards at that moment (an open panel) is in the picture.
+
+The pattern, as in the Snap example: read `lienzo.view.get().rects`, take a snapshot if you can, hide the cards, draw
+them in the overlay and animate them away, then either `lienzo.edit` a `block.delete` (permission `edit`; one undoable
+step) or `lienzo.show` them. The complete page is in Help → Make your own → "7. How it appears"
+(`shared/wiki/snap.ts`), and the catalog repository ships it as `extensions/snap`. It is example code: nothing installs
+it.
+
+### Opening from an agent
+
+An agent opens a tool for the person with `canvas_extension_open { extension, mode?, input?, anchorId?, documentId? }`
+and closes it with `canvas_extension_close` (docs/mcp.md). The request reaches the person's open Lienzo window through
+the watch it already polls; the tool says whether a window took it and never pretends when none shows the Lienzo.
+`input` (any JSON up to 4 KB) is `lienzo.input` (`null` when none) and goes to `lienzo.onInput(fn)`, now and on every
+later open of the same tool while it stays open. The page still runs with the permissions the person gave it: one from
+a file that was not allowed opens restricted. Nothing goes back from the page to the agent.
+
+## Actions
 ## Actions
 
 An action is a job the extension offers an agent: the agent calls `canvas_extension_run { extension, action, input,
@@ -331,7 +418,7 @@ the page like any missing function. A future API 2 would live beside
 it. Nothing ships with Lienzo. The find-and-replace tool in `tests/fixtures/find-replace.ts` is written against API 1
 only and is the contract example; `tests/extensions.test.ts` runs the runtime itself. If it breaks, the contract
 broke. The guide the agent gets ends with the complete example of Help → Make your own (`shared/wiki/tutorial.ts`), the
-same one the catalog ships as `extensions/title-case`. `docs` and `actions` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`); so were the `view` and `variables` permissions, `context.view`, `lienzo.view`, `lienzo.keys`, `lienzo.highlight`, `lienzo.storage`, `lienzo.comments` and `lienzo.variables`, and `lienzo.open` framing what it opens with `view`. (The kind `view` was retired
+same one the catalog ships as `extensions/title-case`. `docs`, `actions` and `presentation` were added to API 1 as optional fields (with `lienzo.action`, `lienzo.run` and `lienzo.headless`; `lienzo.ui`, `lienzo.input`, `lienzo.onInput`, `lienzo.hide`, `lienzo.show`, `lienzo.view.snapshot`, `lienzo.view.canSnapshot`, and `screen` and `rects` in the view); so were the `view` and `variables` permissions, `context.view`, `lienzo.view`, `lienzo.keys`, `lienzo.highlight`, `lienzo.storage`, `lienzo.comments` and `lienzo.variables`, and `lienzo.open` framing what it opens with `view`. (The kind `view` was retired
 with the one-canvas redesign; the frame API itself did not change.)
 
 ## Not in API 1

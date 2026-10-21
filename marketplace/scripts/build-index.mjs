@@ -75,7 +75,7 @@ const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(
 const contentHash = extensions => createHash("sha256").update(canonical(extensions.map(e => ({ ...e, description: e.description ?? "", permissions: e.permissions ?? [] })))).digest("hex");
 function validateExtension(where, e, fileId) {
   if (!e || typeof e !== "object" || Array.isArray(e)) return fail(where, "is not an object");
-  only(where, e, ["id", "kind", "api", "name", "description", "icon", "html", "permissions", "docs", "actions"]);
+  only(where, e, ["id", "kind", "api", "name", "description", "icon", "html", "permissions", "docs", "actions", "presentation"]);
   if (!isText(e.id, 1, 100) || !ID.test(e.id)) fail(where, "id is 1-100 letters, digits, . _ : -");
   else if (!e.id.startsWith(`${fileId}.`)) fail(where, `id must start with "${fileId}."`);
   if (e.kind !== "tool") fail(where, 'kind must be "tool"');
@@ -89,6 +89,16 @@ function validateExtension(where, e, fileId) {
   if (!Array.isArray(permissions) || permissions.length > 3 || new Set(permissions).size !== permissions.length || permissions.some(p => p !== "edit" && p !== "network" && p !== "view")) fail(where, 'permissions is a list of "edit", "network" and "view", without repeats');
   if (e.docs !== undefined) { const issue = docsIssue(e.docs); if (issue) fail(where, issue); }
   if (e.actions !== undefined) validateActions(where, e.actions, e.html);
+  if (e.presentation !== undefined) validatePresentation(`${where} presentation`, e.presentation);
+}
+// How it appears (Lienzo's shared/presentation.ts): sizes are clamped by the app, so only types are checked here.
+function validatePresentation(where, p) {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return fail(where, "is an object");
+  only(where, p, ["mode", "width", "height", "chrome", "position", "dimCanvas", "accent"]);
+  const one = (key, list) => { if (p[key] !== undefined && !list.includes(p[key])) fail(where, `${key} is one of ${list.join(", ")}`); };
+  one("mode", ["panel", "overlay", "popover", "fullscreen"]); one("chrome", ["full", "minimal", "none"]); one("position", ["right", "left", "bottom", "center"]);
+  for (const key of ["width", "height", "dimCanvas"]) if (p[key] !== undefined && (typeof p[key] !== "number" || !Number.isFinite(p[key]))) fail(where, `${key} is a number`);
+  if (p.accent !== undefined && !/^(accent|success|warning|violet|#[0-9a-fA-F]{6})$/.test(String(p.accent))) fail(where, "accent is accent, success, warning, violet or #rrggbb");
 }
 function git(argsList) { try { return execFileSync("git", argsList, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
 

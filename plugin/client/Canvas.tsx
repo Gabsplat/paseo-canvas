@@ -113,11 +113,11 @@ const BlockItem = React.memo(function BlockItem({ left, top, width, resizeHandle
     {ringed && <View pointerEvents="none" style={{ position: 'absolute', inset: -4, borderRadius: tokens.radius.block + 4, borderWidth: 2, borderColor: accent }} />}
   </Animated.View>;
 }, (a, b) => a.left === b.left && a.top === b.top && a.width === b.width && a.anim === b.anim && a.dim === b.dim && a.ringed === b.ringed && a.handlers === b.handlers && a.resizeHandlers === b.resizeHandlers && a.resizeCursor === b.resizeCursor && a.accent === b.accent && a.shadow === b.shadow && sameCard(a, b));
-export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, obscuredRight = 0, glowIds = [], onUserCamera, highlight, overlay }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
+export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, obscuredRight = 0, glowIds = [], onUserCamera, highlight, veiled, overlay }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
   /** Keys the panel's shortcut registry owns: the canvas lets them through instead of typing them into a selected label. */
   reservedKey?: (key: string) => boolean; lensShortcut?: string;
   /** Pixels on the right covered by a floating panel; the beacon stays clear of them. */
-  obscuredRight?: number; glowIds?: string[]; onUserCamera?: () => void; highlight?: CanvasHighlight | null; overlay?: (view: CanvasOverlay) => React.ReactNode }) {
+  obscuredRight?: number; glowIds?: string[]; onUserCamera?: () => void; highlight?: CanvasHighlight | null; veiled?: ReadonlySet<string>; overlay?: (view: CanvasOverlay) => React.ReactNode }) {
   const obscured = useRef(obscuredRight); obscured.current = obscuredRight;
   const [interaction, setInteraction] = useState<string | null>(null), interactionRef = useRef<string | null>(null), interactionCallback = useRef(onInteractionChange); interactionCallback.current = onInteractionChange;
   const setInteractionMode = (id: string | null) => { interactionRef.current = id; setInteraction(id); interactionCallback.current?.(id); };
@@ -142,6 +142,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const pressed = useRef<string | null>(null);
   const viewport = useRef<View>(null), marks = useRef<View>(null), links = useRef<LinkLayerHandle>(null), vp = useRef<Point | null>(null);
   const layout = useMemo(() => layoutCanvas(doc, heights, c.catalog, size.width || undefined), [doc, heights, c.catalog, size.width]), rects = layout.rects, index = layout.index;
+  // Hidden by an extension for an effect (lienzo.hide): not drawn, with what is inside it, and the links that touch it.
+  // The layout keeps their place, so nothing else moves. Never saved.
+  const veil = (id: string) => !!veiled?.size && index.chain(id).some(x => veiled.has(x));
   // A resize stops where a card's controls would be cut (a shader's measured floor), not only at its type's minimum.
   const measuredHeights = useRef(heights); measuredHeights.current = heights;
   const resizeFloor = (block: CanvasBlock, catalog: typeof c.catalog) => { const min = minimumBlockSize(block, catalog), floor = measuredHeights.current[minimumKey(block.id)]; return floor ? { ...min, height: Math.max(min.height, Math.ceil(floor)) } : min; };
@@ -694,7 +697,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const calls = useRef({ select, onInspect, onPacks, reorder }); calls.current = { select, onInspect, onPacks, reorder };
   const stable = useMemo(() => ({ onSelect: (id: string, event?: GestureResponderEvent, long?: boolean) => calls.current.select(id, event, long), onInspect: () => calls.current.onInspect(), onPacks: () => calls.current.onPacks(), onReorder: (id: string, d: number) => calls.current.reorder(id, d) }), []);
   const blockProps = { controller: c, onSelect: select, onInspect, onPacks, onReorder: reorder };
-  const routes = useMemo(() => mode === 'canvas' ? linkRoutes(doc, layout) : [], [doc, layout, mode]);
+  const routes = useMemo(() => mode === 'canvas' ? linkRoutes(doc, layout).filter(r => !veil(r.from) && !veil(r.to)) : [], [doc, layout, mode, veiled]);
   // Focus, strongest first: a link under the pointer, a linked card under the pointer, the selected link, the selection.
   const focus = useMemo(() => {
     if (linkDraft || drag?.live) return null;
@@ -739,7 +742,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   }
   const wbKind = (b: CanvasBlock) => c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer;
   function whiteboardItems(kinds: WbRenderer[]) {
-    return doc.blocks.filter(b => !rects.get(b.id)?.hidden && kinds.includes(wbKind(b) as WbRenderer)).map(b => {
+    return doc.blocks.filter(b => !rects.get(b.id)?.hidden && !veil(b.id) && kinds.includes(wbKind(b) as WbRenderer)).map(b => {
       const r = rects.get(b.id)!, a = animOf(b.id, NATIVE), kind = wbKind(b) as WbRenderer, card = kind === 'wb-draw' ? anchorCard(doc, b, c.catalog) : undefined, ride = card ? animOf(card.id, NATIVE) : null, selected = c.selection.includes(b.id), lifted = !!drag?.ids.has(b.id), line = kind === 'wb-shape' && b.data.shape === 'line';
       const handles: ResizeHandle[] = kind === 'wb-text' ? ['nw','ne','e','se','sw','w'] : line ? ['start','end'] : ['nw','n','ne','e','se','s','sw','w'];
       const ends = line ? lineEnds(b.data as unknown as Parameters<typeof lineEnds>[0], r.width, r.height) : null;
@@ -785,7 +788,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     <View {...(web || toolRef.current === 'select' ? pan.panHandlers : nativeTools.panHandlers)} style={{ position: 'absolute', inset: 0 }}>
     <Pressable accessible={false} focusable={false} onPress={event => { if (toolRef.current !== 'select') return; const shape = interiorAt(pageOf(event)); if (shape) { select(shape, event); return; } clearSelection(); }} style={{ position: 'absolute', inset: 0, ...(toolCursor ? { cursor: toolCursor } as object : null) }} />
     <Animated.View pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width: bound.width, height: bound.height, opacity: shown, transformOrigin: 'top left', transform: [{ translateX: worldX }, { translateY: worldY }, { scale: camS }] }}>
-      {doc.groups.filter(g => !rects.get(g.id)!.hidden).sort((a, b) => rects.get(a.id)!.depth - rects.get(b.id)!.depth).map(g => { const r = rects.get(g.id)!, a = animOf(g.id, false), lifted = !!drag?.ids.has(g.id), selected = c.selection.includes(g.id), targeted = drag?.into === g.id, nested = !!g.parentGroupId, dashed = region(g), radius = nested ? tokens.radius.block : tokens.radius.group, inset = nested ? tokens.size.groupPaddingNested : tokens.size.groupPadding;
+      {doc.groups.filter(g => !rects.get(g.id)!.hidden && !veil(g.id)).sort((a, b) => rects.get(a.id)!.depth - rects.get(b.id)!.depth).map(g => { const r = rects.get(g.id)!, a = animOf(g.id, false), lifted = !!drag?.ids.has(g.id), selected = c.selection.includes(g.id), targeted = drag?.into === g.id, nested = !!g.parentGroupId, dashed = region(g), radius = nested ? tokens.radius.block : tokens.radius.group, inset = nested ? tokens.size.groupPaddingNested : tokens.size.groupPadding;
         const siblings = g.parentGroupId ? doc.groups.find(parent => parent.id === g.parentGroupId)!.groupIds : doc.groups.filter(group => !group.parentGroupId).map(group => group.id);
         // The frame's size is the one animated layout property on the canvas: a scaled frame would bend its border and radius.
         return <Animated.View key={g.id} nativeID={`lienzo-entity-${g.id}`} style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: a.target ? a.w : r.width, height: a.target ? a.h : r.height, zIndex: lifted ? 2 : 0, opacity: a.enter, transform: [{ translateX: a.x }, { translateY: a.y }, { scale: a.scale }] }}>
@@ -800,7 +803,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       {whiteboardItems(['wb-shape','wb-svg'])}
       <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
       {drag?.copy?.map(id => { const r = rects.get(id); return r && !r.hidden ? <View key={'copy-ghost-' + id} nativeID={'lienzo-copy-ghost-' + id} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: r.width, height: r.height, borderRadius: 6, borderWidth: 1.5, borderStyle: 'dashed', borderColor: withAlpha(u.c.accent, .7), backgroundColor: withAlpha(u.c.accent, .05) }} /> : null; })}
-      {doc.blocks.filter(b => !rects.get(b.id)!.hidden && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer)).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
+      {doc.blocks.filter(b => !rects.get(b.id)!.hidden && !veil(b.id) && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer)).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
         return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || boundSize(b, 'height') !== undefined || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) && !sizeBoundTo(doc, b) ? resizeHandlers(b.id) : undefined} resizeCursor={web ? cursors.resizeNWSE : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!shines(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
       {c.selection.length === 1 && (() => { const b = doc.blocks.find(x => x.id === c.selection[0]), r = b && rects.get(b.id), label = b && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer) ? sizeBoundTo(doc, b) : null; return r && !r.hidden && label ? <View pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: r.width, height: r.height, zIndex: 3 }}><BoundHint label={label} scale={camS} /></View> : null; })()}
       {lensLayer}

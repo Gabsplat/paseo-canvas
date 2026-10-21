@@ -5,6 +5,7 @@ import { documentViewSchema, documentSummarySchema, type CanvasDocument } from '
 import { reduce } from '../../plugin/server/reducer';
 export type PluginHostProps = any; export type PluginWorkspacePanelProps = any;
 import { findAndReplace } from '../../tests/fixtures/find-replace';
+import { SNAP_EXTENSION } from '../../plugin/shared/wiki/snap';
 import { fromBase64, mediaRef, parseMediaRef, prepareImage, toBase64 } from '../../plugin/shared/media';
 // Images from the computer, kept in memory by content hash as the server keeps them on disk (plugin/server/media.ts).
 const media=new Map<string,string>();
@@ -43,7 +44,9 @@ const commentThread=(anchor:any,messages:any[],status='open')=>{const now=new Da
 const snapshot=()=>structuredClone(documentViewSchema.parse({document:doc,connection:null,canUndo:!!undo.length,canRedo:!!redo.length,selectionVersion,runtimeVersion,runtime,latestAgent,commentsVersion:commentsOf(doc.id).version}));
 // `seed` stands in for another author; `seedAgent` runs the reducer as the assistant actor. `actions` stays empty:
 // the canvas is one-way and has no RPC that sends to an agent (a call to one throws "does not implement").
-(globalThis as any).__panelQA={addDocument:(d:any,agent?:string)=>{if(agent)agents.set(d.id,agent);others.set(d.id,{workspaceId:'qa-workspace',description:'',example:false,selectedIds:[],communication,links:[],groups:[],blocks:[],revision:1,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:new Date().toISOString(),...d});},documents:()=>[doc,...others.values()].map(d=>d.id),setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};agentTx++;latestAgent={transactionId:'qa-tx-'+agentTx,revision:doc.revision,at:new Date().toISOString(),label:'Example agent edit '+agentTx,kind:'edit',ids:opIds(operations),removed:[]};},view:snapshot,
+// Requests an agent made with canvas_extension_open / _close (server/extension-ui.ts), as the watch hands them out.
+const uiRequests:any[]=[];
+(globalThis as any).__panelQA={snap:SNAP_EXTENSION,uiRequest:(r:any)=>{uiRequests.push({id:'qa-ui-'+(uiRequests.length+1),...r,seq:uiRequests.length+1});return uiRequests.length;},addDocument:(d:any,agent?:string)=>{if(agent)agents.set(d.id,agent);others.set(d.id,{workspaceId:'qa-workspace',description:'',example:false,selectedIds:[],communication,links:[],groups:[],blocks:[],revision:1,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:new Date().toISOString(),...d});},documents:()=>[doc,...others.values()].map(d=>d.id),setHistory:(entries:any[])=>{history.splice(0,history.length,...entries);},doc:()=>structuredClone(doc),log,errors,actions,runtime:()=>structuredClone(runtime),failNext:()=>{fail=true;},catalog,addExtension:(extension:any,source='local')=>{catalog.extensions=[...catalog.extensions.filter((e:any)=>e.id!==extension.id),{description:'',permissions:[],...extension,source,granted:source==='local'}];catalog.revision++;},seed:(operations:any[])=>{doc={...reduce(doc,operations,catalog),revision:doc.revision+1};},seedAgent:(operations:any[])=>{doc={...reduce(doc,operations,catalog,'agent'),revision:doc.revision+1};agentTx++;latestAgent={transactionId:'qa-tx-'+agentTx,revision:doc.revision,at:new Date().toISOString(),label:'Example agent edit '+agentTx,kind:'edit',ids:opIds(operations),removed:[]};},view:snapshot,
  // A thread as the person or an agent left it: seedComment({kind:'block',id:'server'}, [{author:{kind:'person'},text:'…'}]).
  seedComment:(anchor:any,messages:any[],status='open')=>{const c=commentsOf(doc.id),t=commentThread(anchor.kind==='point'?anchor:{dx:0,dy:0,...anchor},messages,status);c.threads.push(t);c.version++;return t.id;},
  comments:()=>structuredClone(commentsOf(doc.id)),media:()=>[...media.keys()]};
@@ -68,7 +71,7 @@ async function invoke(contract:any, raw:any) {
    catalog.revision++;output=catalog;
  }
  else if(name==='canvas.read'){if(input.documentId!==doc.id)throw Error('NOT_FOUND');output=snapshot();}
- else if(name==='canvas.watch'){const cv=commentsOf(doc.id).version;output={revision:doc.revision,runtimeVersion,commentsVersion:cv,...(input.knownRevision!==doc.revision||input.knownCommentsVersion!==undefined&&input.knownCommentsVersion!==cv?{view:snapshot()}:{})};}
+ else if(name==='canvas.watch'){const cv=commentsOf(doc.id).version,ui=input.knownUiSeq===undefined?[]:uiRequests.filter(r=>r.seq>input.knownUiSeq);output={revision:doc.revision,runtimeVersion,commentsVersion:cv,uiSeq:uiRequests.length,...(ui.length?{ui}:{}),...(input.knownRevision!==doc.revision||input.knownCommentsVersion!==undefined&&input.knownCommentsVersion!==cv?{view:snapshot()}:{})};}
  else if(name.startsWith('canvas.comments.')){
    const c=commentsOf(doc.id),thread=input.threadId?c.threads.find((t:any)=>t.id===input.threadId):undefined,now=new Date().toISOString();
    if(input.threadId&&!thread)throw Error('NOT_FOUND thread');

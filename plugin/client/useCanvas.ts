@@ -3,10 +3,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRpc } from './host';
 import type { RpcInput } from '../shared/contract';
 import * as rpc from '../shared/rpc';
+import type { z } from 'zod';
 import type { CanvasCatalog, CanvasOperation, DocumentView } from '../shared/model';
 import { useHostId } from './ui';
 import { initialDocumentId, rememberOpenDocument } from './session';
 import { reuseDocumentEntities } from './logic';
+export type ExtensionUiRequest = z.infer<typeof rpc.extensionUiRequestSchema>;
 export type Failure = { message: string; conflict: boolean; revision?: number; retry?: () => Promise<unknown>; affectedIds?: string[]; operationKey?: string };
 export const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 export function useCanvas(workspaceId: string) {
@@ -38,13 +40,17 @@ export function useCanvas(workspaceId: string) {
   const learningRef = useRef<LearningRuntimeStore | null>(null);
   if (!learningRef.current) learningRef.current = new LearningRuntimeStore(request => apiRef.current.runtimeSet(request), error => fail(error));
   const learning = learningRef.current;
+  // Requests from agents to open or close an extension here (canvas_extension_open), carried by the watch below. The
+  // seq starts unknown for each Lienzo opened, so nothing made before this window looked is replayed.
+  const uiSeq = useRef<number | undefined>(undefined), uiListeners = useRef(new Set<(request: ExtensionUiRequest) => void>());
+  const onUiRequest = (listener: (request: ExtensionUiRequest) => void) => { uiListeners.current.add(listener); return () => { uiListeners.current.delete(listener); }; };
   function accept(next: DocumentView) {
     if (!active.current || scopeRef.current !== scope || next.document.workspaceId !== workspaceId) return;
     const prev = current.current;
     if (prev?.document.id === next.document.id && (next.document.revision < prev.document.revision || next.runtimeVersion < prev.runtimeVersion)) return;
     const shared = { ...next, document: reuseDocumentEntities(prev?.document, next.document) };
     current.current = shared; learning.sync(shared.document, shared.runtimeVersion, shared.runtime); setView(shared);
-    if (prev?.document.id !== next.document.id) rememberOpenDocument(hostId, workspaceId, next.document.id);
+    if (prev?.document.id !== next.document.id) { rememberOpenDocument(hostId, workspaceId, next.document.id); uiSeq.current = undefined; }
     if (desired.current === null) setSelection(next.document.selectedIds);
   }
   function clearFailure() { setFailure(null); }
@@ -84,8 +90,11 @@ export function useCanvas(workspaceId: string) {
       const v = current.current, g = generation.current;
       if (v) {
         try {
-          const change = await apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion, knownCommentsVersion: v.commentsVersion ?? 0 });
-          if (!stopped && g === generation.current) { if (change.view) accept(change.view); setOffline(false); }
+          const change = await apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion, knownCommentsVersion: v.commentsVersion ?? 0, ...(uiSeq.current !== undefined ? { knownUiSeq: uiSeq.current } : {}) });
+          if (!stopped && g === generation.current) {
+            if (change.view) accept(change.view); setOffline(false);
+            if (current.current?.document.id === v.document.id && change.uiSeq !== undefined) { uiSeq.current = change.uiSeq; for (const request of change.ui ?? []) uiListeners.current.forEach(listener => listener(request)); }
+          }
         } catch { if (!stopped && g === generation.current) setOffline(true); }
       }
       try {
@@ -192,6 +201,6 @@ export function useCanvas(workspaceId: string) {
     const v = current.current; if (!v) return;
     try { accept(await apiRef.current.read({ workspaceId, documentId: v.document.id })); setOffline(false); } catch (e) { fail(e, refresh); }
   }
-  return { learning, api, workspaceId, view, current, documents, catalog, setCatalog, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, task, create, remove, refreshList, settle, arrival, openImported };
+  return { learning, api, workspaceId, onUiRequest, view, current, documents, catalog, setCatalog, loading, busy, pendingIds, offline, failure, clearFailure, fail, selection, select, accept, open, refresh, edit, revision, task, create, remove, refreshList, settle, arrival, openImported };
 }
 export type CanvasController = ReturnType<typeof useCanvas>;

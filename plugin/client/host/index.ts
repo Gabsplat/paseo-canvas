@@ -28,3 +28,5 @@ export const AgentBadge: ClientHost['AgentBadge'] = null;
 export const AboutUpdates: ClientHost['AboutUpdates'] = null;
 // Paseo has no file dialogs of its own here: a .lienzo file is downloaded by the browser and opened with a picker.
 export const files: ClientHost['files'] = null;
+// A browser page cannot take a picture of itself cheaply: lienzo.view.snapshot says null and canSnapshot false.
+export const capture: ClientHost['capture'] = null;

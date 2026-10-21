@@ -1,4 +1,4 @@
-import { cleanRuntime, DOCUMENT_SCOPE, isDiscreteVariable, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
+import { type JSONValue, cleanRuntime, DOCUMENT_SCOPE, isDiscreteVariable, RUNTIME_BLOCK_BYTES, RUNTIME_DOCUMENT_BYTES } from "../shared/learning";
 import { safeJson } from "./reducer";
 import type { RpcInput } from "../shared/contract";
 import * as rpc from "../shared/rpc";
@@ -13,6 +13,8 @@ import { catalogView, extensionsHash, packDiff, packIssues, parsePack, validateE
 import { clone, newId, reduce, validateDocument, normalizeBlock, effectiveInstructions } from "./reducer";
 import { nextSheetPlacement, sheetSummaries } from "./sheets";
 import { runExtensionAction } from "./actions";
+import { ExtensionUiChannel } from "./extension-ui";
+import { presentationInputIssue, type PresentationMode } from "../shared/presentation";
 import { EXTENSION_LIMITS } from "../shared/extensions";
 import { COMMENT_LIMITS, commentAnchorSchema, commentTextSchema, type CommentAnchor, type CommentAuthor, type CommentThread, type CommentsView } from "../shared/comments";
 
@@ -113,7 +115,9 @@ function commentsChanged(record: DocumentRecord) {
 }
 
 export class CanvasService {
-  constructor(readonly store: CanvasStore) {}
+  /** Requests from agents to open or close an extension in the person's open Lienzo (canvas_extension_open). */
+  readonly ui: ExtensionUiChannel;
+  constructor(readonly store: CanvasStore, ui?: ExtensionUiChannel) { this.ui = ui ?? new ExtensionUiChannel(); }
   async list(input: RpcInput<typeof rpc.listDocuments>, agentId?: string) {
     const state = await this.store.read();
     return { documents: Object.values(state.documents).filter(record => record.document.workspaceId === input.workspaceId && (!agentId || reachable(state, record, agentId))).map(({ document, connection }) => ({ id: document.id, workspaceId: document.workspaceId, title: document.title, description: document.description, example: document.example, revision: document.revision, updatedAt: document.updatedAt,
@@ -123,7 +127,7 @@ export class CanvasService {
   async watch(input: RpcInput<typeof rpc.watchDocument>) {
     const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
     const commentsVersion = record.comments?.version ?? 0;
-    return { revision: record.document.revision, runtimeVersion: record.runtimeVersion, commentsVersion, ...(input.knownRevision !== record.document.revision || input.knownRuntimeVersion !== record.runtimeVersion || input.knownCommentsVersion !== undefined && input.knownCommentsVersion !== commentsVersion ? { view: view(record) } : {}) };
+    return { revision: record.document.revision, runtimeVersion: record.runtimeVersion, commentsVersion, ...this.ui.watch(input.documentId, input.knownUiSeq), ...(input.knownRevision !== record.document.revision || input.knownRuntimeVersion !== record.runtimeVersion || input.knownCommentsVersion !== undefined && input.knownCommentsVersion !== commentsVersion ? { view: view(record) } : {}) };
   }
   /** Deletes a Lienzo and its history. A conversation whose copilot drew there gets a new one the next time it is turned on. */
   remove(input: RpcInput<typeof rpc.deleteDocument>) {
@@ -353,6 +357,28 @@ export class CanvasService {
       }
       return { ...summary, revision: record.document.revision, committed: !!entry, ...(entry ? { transactionId: entry.id, label: entry.label, changed: entry.changed, removed: entry.removed } : {}), ...(selection ? { selection } : {}) };
     });
+  }
+  /**
+   * canvas_extension_open / _close: asks the windows showing a Lienzo to open (or close) an extension's UI, through
+   * the watch they already poll. Without documentId: the Lienzo a window of this workspace showed most recently. Says
+   * honestly whether a window took it; nothing is queued for later when none shows the Lienzo.
+   */
+  async extensionUi(input: { workspaceId: string; documentId?: string; action: "open" | "close"; extension: string; mode?: PresentationMode; input?: JSONValue; anchorId?: string }, agentId: string) {
+    const state = await this.store.read(), catalog = catalogView(state.catalog), extension = catalog.extensions.find(item => item.id === input.extension);
+    if (!extension) throw new CanvasError("NOT_FOUND", `No extension ${input.extension} is installed; canvas_catalog list shows the extensions.`);
+    const issue = presentationInputIssue(input.input); if (issue) throw new CanvasError("TOO_LARGE", issue);
+    const mine = Object.values(state.documents).filter(item => item.document.workspaceId === input.workspaceId && reachable(state, item, agentId));
+    const documentId = input.documentId ?? this.ui.latest(mine.map(item => item.document.id));
+    const base = { extension: extension.id, name: extension.name, action: input.action };
+    if (!documentId) return { ...base, documentId: null, delivered: false, note: "No Lienzo window is open in this workspace right now, so nothing was shown. Ask the person to open Lienzo, then try again." };
+    const record = documentRecord(state, documentId, input.workspaceId);
+    if (!reachable(state, record, agentId)) throw new CanvasError("FORBIDDEN", "This canvas belongs to another agent. This workspace keeps one canvas per agent; use canvas_list for yours or create one.");
+    if (input.anchorId && ![...record.document.blocks, ...record.document.groups].some(entity => entity.id === input.anchorId)) throw new CanvasError("NOT_FOUND", `anchorId ${input.anchorId} is not on this Lienzo.`);
+    if (!this.ui.present(documentId)) return { ...base, documentId, delivered: false, note: "No window shows this Lienzo right now, so nothing was shown. Ask the person to open it in Lienzo, then try again." };
+    const delivered = await this.ui.send(documentId, { id: newId("ui"), action: input.action, extension: extension.id, ...(input.mode ? { mode: input.mode } : {}), ...(input.input !== undefined ? { input: input.input } : {}), ...(input.anchorId ? { anchorId: input.anchorId } : {}) });
+    const allowed = extension.granted || !extension.permissions.length;
+    return { ...base, documentId, delivered, ...(input.action === "open" && delivered && !allowed ? { note: `It opened without its permissions (${extension.permissions.join(", ")}): it came in a file and the person has not allowed it yet. It can read and select until they press Allow.` } : {}),
+      ...(!delivered ? { note: "A window shows this Lienzo but did not take the request in time (it may be asleep or offline). Nothing was shown." } : {}) };
   }
   // ---- Comments. Never a revision, never history: a comment does not break anyone's expectedRevision.
   async comments(input: RpcInput<typeof rpc.listComments>) { return commentsView(documentRecord(await this.store.read(), input.documentId, input.workspaceId)); }

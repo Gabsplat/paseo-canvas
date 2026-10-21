@@ -1290,7 +1290,7 @@ const baseTokens = {
         16,
         9
       ],
-      "minHeight": 160,
+      "minHeight": 120,
       "maxHeight": 420,
       "padding": 12,
       "grid": {
@@ -1996,6 +1996,51 @@ const baseTokens = {
     "ring": 2,
     "tone": "aviso",
     "tokenMask": "•"
+  },
+  "extensionUi": {
+    "$doc": "How an extension appears (docs/design.md §45). One stable box per open extension; switching mode only restyles it, so the page never reloads. Panels float over the canvas like the right panel (z 26), an overlay sits under Lienzo's islands (DOM order), fullscreen covers the islands but not menus (z 39). The overlay chip names who draws over the canvas and closes it; its ring turns accent while the page takes the pointer.",
+    "panel": {
+      "width": 320,
+      "height": 440,
+      "minWidth": 200,
+      "maxWidth": 720,
+      "minHeight": 120,
+      "maxHeight": 900,
+      "header": 40,
+      "tile": 24,
+      "tileIcon": 14,
+      "cascade": 24,
+      "z": 26
+    },
+    "popover": {
+      "width": 280,
+      "height": 160,
+      "gap": 12,
+      "arrow": 7,
+      "edge": 8,
+      "z": 27
+    },
+    "close": {
+      "size": 24,
+      "icon": 12,
+      "inset": 8,
+      "idleAlpha": 0,
+      "hideMs": 400
+    },
+    "chip": {
+      "height": 30,
+      "tile": 18,
+      "icon": 11,
+      "maxWidth": 280,
+      "z": 26
+    },
+    "scrim": {
+      "ink": "#0B0B0E",
+      "max": 0.6
+    },
+    "fullscreen": {
+      "z": 39
+    }
   }
 } as const;
 
