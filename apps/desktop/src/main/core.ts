@@ -2,10 +2,11 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCanvasCore, type CanvasCore } from '../../../../plugin/server/core';
 import type { CanvasStore } from '../../../../plugin/server/store';
-import { DEFAULT_MCP_PORT, DESKTOP_WORKSPACE, desktopStatus, openExternal, setAppearance, settingsRpc, updateSettings, writeClipboard, type InvokeResult } from '../shared/rpc';
+import { DEFAULT_MCP_PORT, DESKTOP_WORKSPACE, desktopStatus, openExternal, remoteRegenerate, remoteSet, remoteStatus, setAppearance, settingsRpc, updateSettings, writeClipboard, type InvokeResult } from '../shared/rpc';
 import { interfacePreferences } from '../../../../plugin/shared/preferences';
 import { DesktopHost } from './host';
 import { McpHttpServer } from './mcp-http';
+import { RemoteAccess, type RemoteAccessOptions } from './remote-access';
 
 /** What the agent reads when it connects. The plugin's version speaks of Paseo's copilot chip, which is not here. */
 export const desktopInstructions = `[Lienzo]
@@ -18,6 +19,8 @@ export interface DesktopOptions {
   /** Explicit MCP port. Otherwise LIENZO_MCP_PORT, then desktop.json `mcpPort`, then the default. */
   mcpPort?: number;
   /** What the shell can do for the renderer: Electron opens links and writes the clipboard; the preview cannot. */
+  /** Tests replace how addresses and Tailscale are found. */
+  remote?: Pick<RemoteAccessOptions, 'interfaces' | 'tailscale' | 'intervalMs'>;
   shell?: { openExternal(url: string): Promise<boolean>; writeClipboard(text: string): Promise<boolean>; setAppearance?(appearance: 'system' | 'light' | 'dark'): void };
 }
 export interface Desktop {
@@ -28,6 +31,7 @@ export interface Desktop {
   appearance(): Promise<'system' | 'light' | 'dark'>;
   readonly core: CanvasCore;
   readonly mcp: McpHttpServer;
+  readonly remote: RemoteAccess;
   settle(name: unknown, input: unknown): Promise<InvokeResult>;
   close(): Promise<void>;
 }
@@ -79,13 +83,19 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
     mcpError = code === 'EADDRINUSE' ? `Port ${mcp.port} is already in use, so agents cannot connect. Quit what uses it, or set another port in desktop.json.` : 'The MCP server could not start.';
     console.error('Lienzo MCP server did not start', error);
   }
+  // Agents on other computers: off unless the person turned it on; a broken saved choice leaves it off.
+  const remote = new RemoteAccess({ mcp, store: host, ...options.remote });
+  await remote.start().catch(error => console.error('Lienzo sharing did not start', error));
+  host.handle(remoteStatus, ({ refresh }) => remote.status(refresh));
+  host.handle(remoteSet, change => remote.set(change));
+  host.handle(remoteRegenerate, () => remote.regenerate());
   host.registerSettings(updateSettings);
   host.handle(openExternal, async ({ url }) => ({ opened: /^https?:\/\//i.test(url) && !!options.shell && await options.shell.openExternal(url) }));
   host.handle(setAppearance, ({ appearance }) => { if (!options.shell?.setAppearance) return { applied: false }; options.shell.setAppearance(appearance); return { applied: true }; });
   host.handle(writeClipboard, async ({ text }) => ({ written: !!options.shell && await options.shell.writeClipboard(text) }));
-  host.handle(desktopStatus, () => ({ version: options.version, dataDirectory: options.dataDirectory, mcp: { url: mcp.url, port: mcp.port, listening: mcp.listening, error: mcpError, clients: mcp.clients() } }));
+  host.handle(desktopStatus, () => ({ version: options.version, dataDirectory: options.dataDirectory, mcp: { url: mcp.url, port: mcp.port, listening: mcp.listening, error: mcpError, clients: mcp.clients(), sharing: mcp.sharingEnabled } }));
   return {
-    host, core, mcp,
+    host, core, mcp, remote,
     async autoCheckUpdates() {
       const result = await host.invoke(settingsRpc(updateSettings.id).read.name, {}) as { status: string; values?: { autoCheck?: boolean } };
       return result.status !== 'ready' || result.values?.autoCheck !== false;
@@ -96,6 +106,6 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
       return value === 'light' || value === 'dark' ? value : 'system';
     },
     settle: (name, input) => host.settle(name, input),
-    async close() { await mcp.close(); await core.stop(); await core.store.close(); },
+    async close() { await remote.stop(); await mcp.close(); await core.stop(); await core.store.close(); },
   };
 }

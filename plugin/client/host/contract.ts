@@ -100,6 +100,11 @@ export interface ClientHost {
   AgentSheet: ComponentType<AgentSheetProps> | null;
   /** Settings → Agents on hosts that connect agents over MCP (the desktop app): address, setup commands, agents seen. */
   AgentSettings: ComponentType<{ connectedAgentId: string | null }> | null;
+  /**
+   * A small dot drawn on the Menu button and the Agent row while agents on other computers may connect (the desktop
+   * app's sharing). Renders nothing when sharing is off. Null on hosts that never share (Paseo).
+   */
+  AgentBadge: ComponentType | null;
   /** Settings → About on hosts that update themselves (the desktop app): update state, check, the auto-check switch. */
   AboutUpdates: ComponentType | null;
   files: HostFiles | null;

@@ -6,13 +6,14 @@ import { tokens } from '../../../../plugin/client/tokens';
 import { LIENZO_THEMES, resolveDark, subscribeAppearance, getAppearance, themeFor, useAppearance } from '../../../../plugin/client/appearance';
 import type { WindowInset } from '../../../../plugin/client/host/contract';
 import { DESKTOP_WORKSPACE, setAppearance } from '../shared/rpc';
-import { ConnectAgentBody, ConnectAgentSheet } from './ConnectAgent';
-import { ThemeContext, ToastProvider, call, provideAboutUpdates, provideAgentSettings, provideAgentSheet, useWindowInset } from './host';
+import { ConnectAgentBody, ConnectAgentSheet, SharingBadge } from './ConnectAgent';
+import { ThemeContext, ToastProvider, call, provideAboutUpdates, provideAgentBadge, provideAgentSettings, provideAgentSheet, useWindowInset } from './host';
 import { UIProvider } from '../../../../plugin/client/ui';
 import { AboutUpdatesCard, UpdatePill } from './Updates';
 
 provideAgentSheet(ConnectAgentSheet);
 provideAgentSettings(ConnectAgentBody);
+provideAgentBadge(SharingBadge);
 provideAboutUpdates(AboutUpdatesCard);
 
 // Settings → Appearance also sets the window's native theme, so the title area and the background behind the page match.

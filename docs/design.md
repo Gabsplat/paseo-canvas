@@ -1802,3 +1802,26 @@ in the model), rotation (no rotation, so no 15° snap).
 
 Verified with `design/whiteboard-harness/text-edit.cjs` (headless Chromium, real keys and pointer, light and dark),
 plus `power.cjs`, `shapes-strokes.cjs` and `frame-drag.cjs` for regressions.
+
+## 44. Sharing with other computers (October 2026, desktop)
+
+- **Where.** One block at the end of "Connect an agent", which Settings → Agents shows inline too; nowhere else to
+  look. A switch row, "Let agents on other computers connect", with one muted line: "Over Tailscale, with an access
+  token. Agents on this computer keep working as they are." Off by default. The local command above it does not
+  change; its footnote says "Programs on this computer need no token" while sharing is on.
+- **When on**, in reading order: Access token (masked `lz_AbCd••••••••••••wxyz` in the code face, Copy, then
+  "Regenerate…", which asks once inline: the danger-tinted Regenerate plus Cancel, and a red line saying agents with
+  the current token stop working). Then "On the other computer": the same Claude Code · Codex · Cursor segments as
+  above drive a read-only field with the command for the best address, token masked; "Copy with token" copies it
+  whole. The address and its kind ("tailscale serve, https", "Tailscale name", "Tailscale address", "local network")
+  follow in small muted text, with the others after "Also:". One line on the other tailnet case (Machines → Share).
+- **No address yet** is an amber wash card, not an error: what to install or open, that Lienzo starts listening by
+  itself, and the `tailscale serve --bg <port>` alternative. Listener problems (port in use on an address) are single
+  amber lines.
+- **LAN** is a second, quieter switch row ("Also allow my local network (Wi-Fi/LAN)"). On, it shows a red wash card:
+  anyone on the network can try, traffic is not encrypted, prefer Tailscale.
+- **Indicator** (`tokens.sharing`): while on, an 8 px dot in the aviso tone with a 2 px ring of the panel colour sits
+  on the Menu button's top-right corner and before the Agent row's presence, and the sheet's intro carries a
+  "Shared on your network" chip (aviso, RadioTower). Aviso, not riesgo: it is a door opened on purpose, kept visible.
+- **Agents seen** adds "from ana@example.com · " (the Tailscale login) or "from 100.88.1.2 · " before the time for
+  agents on other computers.

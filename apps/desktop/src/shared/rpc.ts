@@ -11,6 +11,8 @@ export const RECENT_MS = 10 * 60 * 1000;
 export const mcpClientSchema = z.object({
   agentId: z.string(), name: z.string(), version: z.string(),
   firstSeenAt: z.iso.datetime(), lastSeenAt: z.iso.datetime(), toolCalls: z.number().int().nonnegative(),
+  /** null: a program on this computer. Otherwise another computer: its Tailscale login, or its address. */
+  from: z.string().nullable(),
 });
 export type McpClient = z.infer<typeof mcpClientSchema>;
 
@@ -21,9 +23,30 @@ export const desktopStatus = defineRpc({
   output: z.object({
     version: z.string(),
     dataDirectory: z.string(),
-    mcp: z.object({ url: z.string(), port: z.number().int(), listening: z.boolean(), error: z.string().nullable(), clients: z.array(mcpClientSchema) }),
+    mcp: z.object({ url: z.string(), port: z.number().int(), listening: z.boolean(), error: z.string().nullable(), clients: z.array(mcpClientSchema), sharing: z.boolean() }),
   }),
 });
+/**
+ * "Let agents on other computers connect" (desktop only). Off by default. On: Lienzo also listens on this computer's
+ * Tailscale addresses (and its LAN ones if `lan`), and any request not from this computer needs the token. Addresses
+ * come best first: a `tailscale serve` https address, the MagicDNS name, then the Tailscale and LAN addresses.
+ */
+export const remoteAddressSchema = z.object({ url: z.string(), kind: z.enum(['serve', 'magicdns', 'tailscale', 'lan']) });
+export const remoteStatusSchema = z.object({
+  enabled: z.boolean(), lan: z.boolean(),
+  /** Shown masked, copied whole. Null until sharing is first turned on. */
+  token: z.string().nullable(),
+  port: z.number().int(), listening: z.boolean(),
+  addresses: z.array(remoteAddressSchema),
+  listeners: z.array(z.object({ address: z.string(), kind: z.enum(['tailscale', 'lan']), listening: z.boolean(), error: z.string().nullable() })),
+  tailscale: z.object({ found: z.boolean(), running: z.boolean(), dnsName: z.string().nullable(), serveUrl: z.string().nullable() }),
+});
+export type RemoteStatus = z.infer<typeof remoteStatusSchema>;
+export const remoteStatus = defineRpc({ name: 'desktop.remote.status', input: z.object({ refresh: z.boolean().optional() }).strict(), output: remoteStatusSchema });
+export const remoteSet = defineRpc({ name: 'desktop.remote.set', input: z.object({ enabled: z.boolean().optional(), lan: z.boolean().optional() }).strict(), output: remoteStatusSchema });
+/** A new token: the old one stops working and its sessions close. */
+export const remoteRegenerate = defineRpc({ name: 'desktop.remote.regenerate', input: z.object({}).strict(), output: remoteStatusSchema });
+
 export const openExternal = defineRpc({ name: 'desktop.open-external', input: z.object({ url: z.string().url().max(4000) }).strict(), output: z.object({ opened: z.boolean() }) });
 /** Light, Dark or System (Settings → Appearance): the window's own background and title area follow it too. */
 export const setAppearance = defineRpc({ name: 'desktop.appearance', input: z.object({ appearance: z.enum(['system', 'light', 'dark']) }).strict(), output: z.object({ applied: z.boolean() }) });

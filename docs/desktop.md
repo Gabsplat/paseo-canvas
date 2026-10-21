@@ -157,10 +157,77 @@ person's interaction left on each block.
 **An agent cannot** be woken, receive a message from the canvas, or be reminded to draw. The server only answers
 requests.
 
+## Agents on other computers
+
+Off by default. **Settings → Agents** (or **Menu → Agent**) → **Let agents on other computers connect** turns it on.
+Then:
+
+- Lienzo makes an access token (`lz_` + 32 random bytes, base64url) and keeps it in `settings.json` in its data
+  folder, written with mode 0600. It stays when sharing is turned off and on again; **Regenerate…** replaces it, and
+  every session that used the old one closes at once. The sheet shows it masked; **Copy** copies it whole.
+- A request that is not from this computer needs `Authorization: Bearer <token>`. "From this computer" means it came
+  in on the 127.0.0.1 listener, from a loopback address, with Host `127.0.0.1:<port>` or `localhost:<port>`, and with
+  no forwarding headers (`Forwarded`, `X-Forwarded-*`, `Tailscale-User-*`). Those still need no token, as before.
+  Requests with an `Origin` header are refused from other computers even with the token; browsers never get in.
+- A wrong or missing token gets 403; after 10 failures in a minute from one source, 429 until the minute passes.
+  Tokens are compared in constant time and never logged.
+- Turning it off closes the extra listeners and every session from another computer immediately.
+- **Agents seen** shows where each remote agent came from: the `Tailscale-User-Login` of `tailscale serve`, or its
+  address. A remote agent has its own identity (`mcp:claude-code@ana-example.com`), so its undo is its own.
+- While it is on, a dot sits on the Menu button and the Agent row, and the sheet shows **Shared on your network**.
+
+There are two ways for the other computer to reach this one. Both work at the same time; the sheet picks the best
+address (a `tailscale serve` https address, then the MagicDNS name, then the Tailscale IP) and writes the command
+for Claude Code, Codex or Cursor with the token in it.
+
+**Direct over Tailscale.** While sharing is on, Lienzo also listens on this computer's Tailscale addresses
+(100.64.0.0/10 and fd7a:115c:a1e0::/48), on the same port, and checks every 10 seconds for addresses that appear or
+go (Tailscale may start after Lienzo). It never listens on 0.0.0.0. **Also allow my local network (Wi-Fi/LAN)**
+adds this computer's private IPv4 addresses (10/8, 172.16/12, 192.168/16); it is off by default and warns that LAN
+traffic is not encrypted.
+
+**Through `tailscale serve`.** On the computer running Lienzo:
+
+```sh
+tailscale serve --bg 7421
+```
+
+`https://<computer>.<tailnet>.ts.net/` then proxies to `127.0.0.1:7421`. Those requests arrive from 127.0.0.1 with a
+ts.net Host, so Lienzo treats them as remote: they need the token. Lienzo runs `tailscale status --json` and
+`tailscale serve status --json` (the CLI inside `/Applications/Tailscale.app` on macOS, `tailscale` on PATH
+elsewhere; 2.5 s timeout) to find the MagicDNS name and whether `serve` already proxies the port. Without the CLI it
+uses the Tailscale IP.
+
+On the other computer (Claude Code):
+
+```sh
+claude mcp add lienzo --transport http https://<computer>.<tailnet>.ts.net/mcp --header "Authorization: Bearer lz_…"
+```
+
+Codex, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.lienzo]
+url = "https://<computer>.<tailnet>.ts.net/mcp"
+http_headers = { Authorization = "Bearer lz_…" }
+```
+
+Cursor, in `~/.cursor/mcp.json`:
+
+```json
+{ "mcpServers": { "lienzo": { "url": "https://<computer>.<tailnet>.ts.net/mcp", "headers": { "Authorization": "Bearer lz_…" } } } }
+```
+
+The other computer must be in the same tailnet. If it belongs to someone else's, share this computer with them in
+the Tailscale admin console (Machines → this computer → Share). The Paseo plugin has none of this: Paseo has its
+own remote access.
+
 ## Known limits
 
-- Requests are refused when they carry a foreign `Host` header or a browser `Origin`, so web pages cannot drive the
-  server. It has no token, so any program on this computer can call it.
+- Requests from this computer need no token, so any program on it can call the server; web pages cannot (their
+  `Origin` is refused). Other computers need sharing on and the token (see Agents on other computers).
+- Over a direct Tailscale address the traffic is plain HTTP inside Tailscale's encrypted tunnel; over the LAN option
+  it is not encrypted at all.
 - Sessions live in memory. After the app restarts, a client holding an old session gets "Session not found" (404),
   and per the MCP spec it should start a new session. If one does not, reconnect it (`/mcp` in Claude Code).
 - All clients with the same declared name share one identity, so two Claude Code sessions undo each other's edits

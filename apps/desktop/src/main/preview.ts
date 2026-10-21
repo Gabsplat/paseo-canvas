@@ -9,12 +9,16 @@ import { registerUpdateRpcs } from './updater/rpc';
  * The desktop renderer in a plain browser, for checking the UI headless without Electron: the same core, MCP server
  * and RPCs, with the renderer's invoke going over POST /rpc instead of IPC. Local only; no clipboard or link opening.
  * LIENZO_DATA_DIR (default .local-state/desktop-preview), LIENZO_PREVIEW_PORT (7422) and LIENZO_MCP_PORT apply.
+ * LIENZO_PREVIEW_REMOTE=example (a made-up Tailscale device with `tailscale serve`) or =none (no Tailscale) keeps the
+ * sharing UI off this computer's real interfaces and tailnet while checking it.
  */
 async function main() {
   const root = resolve(__dirname, 'renderer');
   const dataDirectory = resolve(process.env.LIENZO_DATA_DIR || join(process.cwd(), '.local-state', 'desktop-preview'));
   const port = Number(process.env.LIENZO_PREVIEW_PORT || 7422);
-  const desktop = await startDesktop({ dataDirectory, version: 'preview' });
+  const fake = process.env.LIENZO_PREVIEW_REMOTE, example = 'example-mac.tailnet-example.ts.net';
+  const remote = fake === 'example' || fake === 'none' ? { interfaces: () => ({}), tailscale: async () => fake === 'example' ? { found: true, running: true, dnsName: example, ips: [], serveUrl: `https://${example}` } : { found: false, running: false, dnsName: null, ips: [], serveUrl: null } } : undefined;
+  const desktop = await startDesktop({ dataDirectory, version: 'preview', remote });
   // The preview never updates. Its state can be set by hand (desktop.updates.fake) to check the pill and About.
   let updateState: UpdateState = { kind: 'off', reason: 'Updates are off in the preview.' };
   registerUpdateRpcs(desktop.host, { status: () => ({ version: 'preview', state: updateState }), check: async () => updateState, restart: async () => false });

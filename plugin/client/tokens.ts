@@ -1989,6 +1989,13 @@ const baseTokens = {
       "wb-draw",
       "guides + handles"
     ]
+  },
+  "sharing": {
+    "$doc": "Compartir con otras computadoras (docs/design.md §44): punto en el botón Menú y en la fila Agente mientras está activo; chip 'Shared on your network' en Conectar un agente. Tono aviso: es una puerta abierta a propósito, no un error.",
+    "dot": 8,
+    "ring": 2,
+    "tone": "aviso",
+    "tokenMask": "•"
   }
 } as const;
 
