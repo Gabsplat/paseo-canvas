@@ -22,6 +22,8 @@ export const usePaseo: ClientHost['usePaseo'] = sdkUsePaseo as unknown as Client
 export const capabilities: ClientHost['capabilities'] = { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true };
 export const AgentSheet: ClientHost['AgentSheet'] = null;
 export const AgentSettings: ClientHost['AgentSettings'] = null;
+// Paseo's agents run inside Paseo; nothing is shared with other computers from here.
+export const AgentBadge: ClientHost['AgentBadge'] = null;
 // Paseo updates the plugin itself; the panel shows no app updates.
 export const AboutUpdates: ClientHost['AboutUpdates'] = null;
 // Paseo has no file dialogs of its own here: a .lienzo file is downloaded by the browser and opened with a picker.

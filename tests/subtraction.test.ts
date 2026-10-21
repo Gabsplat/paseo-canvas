@@ -41,7 +41,7 @@ function runtime(controller: any) {
   const host = { Icon: 'Icon', ScrollView: 'ScrollView', Modal: modal, useToast: () => ({ show() {}, error() {} }) };
   const modules: Record<string, any> = {
     react, 'react-native': native,
-    './host': { ...host, useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }), AgentSheet: null, capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
+    './host': { ...host, useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }), AgentSheet: null, AgentBadge: null, capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
     './useCanvas': { useCanvas: () => controller }, './tokens': { tokens }, './logic': logic,
     '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {}, attachFileDrop: () => () => {}, attachFilePaste: () => () => {} }, './motion': {},
     './panel-actions': panelActions, '../shared/learning': learning, '../shared/extensions': { extensionView: () => null },

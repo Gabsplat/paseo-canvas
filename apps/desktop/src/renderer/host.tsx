@@ -195,6 +195,10 @@ let agentSettings: React.ComponentType<{ connectedAgentId: string | null }> | nu
 export function provideAgentSettings(component: React.ComponentType<{ connectedAgentId: string | null }>) { agentSettings = component; }
 export const AgentSettings: ClientHost['AgentSettings'] = function AgentSettingsSlot(props: { connectedAgentId: string | null }) { const Body = agentSettings; return Body ? <Body {...props} /> : null; };
 
+let agentBadge: React.ComponentType | null = null;
+export function provideAgentBadge(component: React.ComponentType) { agentBadge = component; }
+export const AgentBadge: ClientHost['AgentBadge'] = function AgentBadgeSlot() { const Badge = agentBadge; return Badge ? <Badge /> : null; };
+
 let aboutUpdates: React.ComponentType | null = null;
 export function provideAboutUpdates(component: React.ComponentType) { aboutUpdates = component; }
 export const AboutUpdates: ClientHost['AboutUpdates'] = function AboutUpdatesSlot() { const Body = aboutUpdates; return Body ? <Body /> : null; };
@@ -203,5 +207,5 @@ export const AboutUpdates: ClientHost['AboutUpdates'] = function AboutUpdatesSlo
 export const files: ClientHost['files'] = window.lienzo?.saveFile && window.lienzo.onOpenFile ? { save: file => window.lienzo!.saveFile!(file), onOpen: listener => window.lienzo!.onOpenFile!(listener) } : null;
 
 // Every export above, checked against the contract in one place.
-const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AboutUpdates, files };
+const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AgentBadge, AboutUpdates, files };
 void host;

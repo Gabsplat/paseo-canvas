@@ -71,6 +71,18 @@ export class DesktopHost implements ServerHost {
     this.handle(contracts.write, input => write(input));
     this.handle(contracts.reset, input => write({ revision: input.revision, values: {} }));
   }
+  /**
+   * A host-only entry of settings.json with no settings RPC (the sharing token lives here): read and replaced only by
+   * the main process. The file is written 0600, as every write of it is.
+   */
+  async readPrivate(id: string): Promise<unknown> { const all = await this.readSettings(); return Object.hasOwn(all, id) ? all[id].values : undefined; }
+  writePrivate(id: string, values: unknown) {
+    return this.serial(async () => {
+      const all = await this.readSettings(), revision = (Object.hasOwn(all, id) ? all[id].revision : 0) + 1;
+      all[id] = { version: 1, revision, values };
+      await atomicWrite(this.settingsFile, JSON.stringify(all, null, 2));
+    });
+  }
   private serial<T>(run: () => Promise<T>): Promise<T> {
     const next = this.settingsQueue.then(run); this.settingsQueue = next.catch(() => {}); return next;
   }

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, View } from 'react-native';
-import { type PanelProps, AgentSheet, capabilities, useAgent, useSettings } from './host';
+import { type PanelProps, AgentBadge, AgentSheet, capabilities, useAgent, useSettings } from './host';
 import { Icon, ScrollView, useToast } from './host';
 import type { BlockType, CanvasGroup, CanvasOperation } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
@@ -121,10 +121,15 @@ function LoadingDocument() {
   </View>;
 }
 
+/** The Menu button, with the host's sharing dot over its corner when agents on other computers may connect. */
+function Badged({ children }: { children: React.ReactNode }) {
+  if (!AgentBadge) return <>{children}</>;
+  return <View>{children}<View pointerEvents="none" style={{ position: 'absolute', top: 3, right: 3 }}><AgentBadge /></View></View>;
+}
 function Presence({ id, open }: { id: string | null; open: () => void }) {
   const u = useUI(), agent = useAgent(id ?? '', a => ({ title: a.title, status: a.status }));
   // A host without agents (the desktop app) knows who connected over MCP, not whether it is working: no status.
-  if (!capabilities.runsAgents) return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agent connected over MCP: ' + (agent?.title || 'unknown client') : 'Connect an agent'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View><Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'MCP client' : 'No agent'}</Txt></Pressable>;
+  if (!capabilities.runsAgents) return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agent connected over MCP: ' + (agent?.title || 'unknown client') : 'Connect an agent'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}>{AgentBadge && <AgentBadge />}<View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View><Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'MCP client' : 'No agent'}</Txt></Pressable>;
   const status = agent?.status === 'running' ? 'working' : agent?.status === 'idle' ? 'idle' : agent?.status === 'error' ? 'with an error' : agent?.status === 'closed' ? 'closed' : agent ? 'starting' : 'no data';
   const color = agent?.status === 'running' ? u.c.accent : agent?.status === 'idle' ? u.c.statusSuccess : agent?.status === 'error' || agent?.status === 'closed' ? u.c.statusDanger : u.c.foregroundMuted;
   return <Pressable accessibilityRole="button" accessibilityLabel={id ? 'Agent connected: ' + (agent?.title || 'Agent unavailable') + ', ' + status : 'Connect an agent'} onPress={open} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 160, padding: 6 }}><View style={{ width: 12 }}><Icon name={id ? 'Bot' : 'Unplug'} size={12} color={u.c.foregroundMuted} /></View>{id && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />}<Txt kind="small" muted numberOfLines={1} style={{ flexShrink: 1 }}>{id ? agent?.title || 'Agent unavailable' : 'No agent'}</Txt></Pressable>;
@@ -826,7 +831,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const empty = !!doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select';
   return <TooltipProvider root={root}><View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
     {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, paddingLeft: 8 + u.inset.left, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
-      <IconButton icon="Menu" label="Menu" onPress={() => setOverflow(true)} /><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center />}<IconButton icon="Undo2" label="Undo" shortcut={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} onPress={() => setPaletteOpen(true)} /><IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} disabled={!doc} active={panelVisible} onPress={togglePanel} />
+      <Badged><IconButton icon="Menu" label="Menu" onPress={() => setOverflow(true)} /></Badged><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center />}<IconButton icon="Undo2" label="Undo" shortcut={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} onPress={() => setPaletteOpen(true)} /><IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} disabled={!doc} active={panelVisible} onPress={togglePanel} />
     </View>}
     <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState art={<MateDrawing size={112} />} title="Pour yourself a mate." description="Then start a Lienzo, or ask your agent to draw what it is explaining.">
@@ -839,7 +844,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {imagesBusy && <View pointerEvents="none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 31 }}><View nativeID="lienzo-images-busy" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><LoadingEgg /><Txt kind="small">Adding images…</Txt></View></View>}
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}
       {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, left: islandLeft, maxWidth: Math.max(0, width - 24 - 120 - u.inset.left) }}><View nativeID="lienzo-document-island" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
-        <IconButton icon="Menu" label="Menu" detail="Lienzos, history, agent, extensions and settings." size={36} onPress={() => { setAddOpen(false); setOverflow(true); }} />
+        <Badged><IconButton icon="Menu" label="Menu" detail="Lienzos, history, agent, extensions and settings." size={36} onPress={() => { setAddOpen(false); setOverflow(true); }} /></Badged>
         <View style={{ flexShrink: 1, minWidth: 0, maxWidth: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth, ...(rename ? { width: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth } : {}) }}>{title}</View>
         {doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center style={{ marginRight: 6 }} />}
         {(saveSlow || c.failure) && <View accessibilityLabel={c.failure ? 'Not saved' : 'Saving'} style={{ width: 6, height: 6, borderRadius: 3, marginRight: 8, backgroundColor: c.failure ? u.c.statusDanger : u.c.statusWarning }} />}

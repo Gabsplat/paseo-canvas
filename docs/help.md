@@ -782,6 +782,28 @@ Your agent draws through a small set of canvas tools. In Paseo they are there fo
 - “List my Lienzos.”
 - “Open the Lienzo about sign-in and add the logout flow.”
 
+### Agents on other computers
+
+Desktop app: let an agent on another computer use this Lienzo, over Tailscale and with a token.
+
+Normally only agents on the computer running Lienzo can connect. Turn on sharing and an agent on another computer can connect too, if it sends the access token Lienzo makes. It works over Tailscale: directly to this computer's Tailscale address, or through `tailscale serve`. Agents on this computer keep working without a token, and web pages can never connect. Paseo has its own remote access, so this is only in the desktop app.
+
+#### By hand
+
+1. Install Tailscale on both computers and sign in to the same tailnet.
+2. Open Settings → Agents and turn on Let agents on other computers connect.
+3. Pick the agent (Claude Code, Codex or Cursor), press Copy with token, and run or paste it on the other computer.
+4. Start a new session of the agent there. It shows up in Agents seen with where it came from.
+
+#### Tips
+
+- While sharing is on, a dot sits on the Menu button and the sheet says Shared on your network.
+- Regenerate… makes a new token: agents with the old one are disconnected until you give them the new one.
+- Turning it off disconnects every other computer at once.
+- For an https address, run `tailscale serve --bg 7421` on this computer; Lienzo finds it and uses it.
+- If the other computer is on someone else's tailnet, share this computer with them in Tailscale (Machines → Share).
+- Also allow my local network works without Tailscale, but traffic on the Wi-Fi is not encrypted: use it only on a network you trust.
+
 ### Drawing while it works
 
 Turn on the copilot and the agent sketches as it answers.

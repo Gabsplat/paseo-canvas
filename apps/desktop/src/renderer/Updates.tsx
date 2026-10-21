@@ -37,9 +37,9 @@ async function restart(toast: ReturnType<typeof useToast>) {
 }
 
 /** A small switch, as in the copilot popover. */
-function Switch({ value, onChange, disabled, label }: { value: boolean; onChange(next: boolean): void; disabled?: boolean; label: string }) {
+export function Switch({ value, onChange, disabled, label, id = 'lienzo-updates-auto' }: { value: boolean; onChange(next: boolean): void; disabled?: boolean; label: string; id?: string }) {
   const u = useUI();
-  return <Pressable nativeID="lienzo-updates-auto" accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value, disabled: !!disabled }} aria-checked={value} disabled={disabled} onPress={() => onChange(!value)}
+  return <Pressable nativeID={id} accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value, disabled: !!disabled }} aria-checked={value} disabled={disabled} onPress={() => onChange(!value)}
     style={{ width: 36, height: 20, borderRadius: 10, padding: 2, justifyContent: 'center', backgroundColor: value ? u.c.accent : u.c.surface2, borderWidth: 1, borderColor: value ? u.c.accent : u.c.border, opacity: disabled ? .45 : 1 }}>
     <View style={{ width: 14, height: 14, borderRadius: 7, alignSelf: value ? 'flex-end' : 'flex-start', backgroundColor: value ? u.c.accentForeground : u.c.foregroundMuted }} />
   </Pressable>;
