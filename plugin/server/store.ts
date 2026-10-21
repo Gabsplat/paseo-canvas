@@ -168,6 +168,12 @@ export class CanvasStore {
     await atomicWrite(this.file, data);
     await syncDirectory(this.directory);
   }
+  /** Reads the live state after queued writes, without a copy: `look` must not change it nor keep references to it. */
+  async peek<T>(look: (state: Readonly<CanvasState>) => T): Promise<T> {
+    await this.initialize();
+    await this.queue;
+    return look(this.state!);
+  }
   async read(): Promise<CanvasState> {
     await this.initialize();
     await this.queue;
@@ -207,6 +213,20 @@ export class CanvasStore {
     });
     this.queue = run.catch(() => {}); return run;
   }
+  /**
+   * The selection of one document, changed in place: `change` may only touch selectedIds, selectionVersion, selectedAt
+   * and runtimeVersion, and must throw before touching anything when it refuses. Memory first, disk shortly after.
+   */
+  selectionTransaction<T>(documentId: string, workspaceId: string, change: (record: DocumentRecord) => T): Promise<T> {
+    if (this.closing || this.closed) return Promise.reject(new CanvasError('UNAVAILABLE', 'Canvas store is closing.'));
+    const run = this.queue.then(async () => {
+      await this.initialize();
+      const result = change(documentRecord(this.state!, documentId, workspaceId));
+      this.state!.commit++; this.deferPersist();
+      return result;
+    });
+    this.queue = run.catch(() => {}); return run;
+  }
   /** lienzo.storage of one document, by extension id: like runtime, memory first and disk shortly after, no revision. */
   extensionStorage<T>(documentId: string, workspaceId: string, change: (storage: Record<string, JSONValue>) => T): Promise<T> {
     if (this.closing || this.closed) return Promise.reject(new CanvasError('UNAVAILABLE', 'Canvas store is closing.'));
@@ -242,7 +262,8 @@ export class CanvasStore {
     this.closing = true;
     try {
       await this.queue;
-      await this.flushRuntime();
+      // A deferred write (runtime, selection, storage) has nowhere to go when the folder itself was removed.
+      await this.flushRuntime().catch(error => { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; });
       await this.ready?.catch(() => {});
     } finally { await this.releaseLock(); this.closed = true; }
   }

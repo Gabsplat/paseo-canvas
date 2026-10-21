@@ -3,7 +3,7 @@ import { Animated, PanResponder, Pressable, View, type GestureResponderEvent, ty
 import { Icon, ScrollView } from './host';
 import type { CanvasBlock, CanvasDocument, CanvasGroup } from '../shared/model';
 import type { CanvasController } from './useCanvas';
-import { alignmentGuides, boundLook, boundSize, sizeBoundTo, anchorCard, boundsOf, connectOperations, descriptionKey, minimumKey, textWidthKey, dropTarget, movable, pressRole, edgePan, fitCamera, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
+import { alignmentGuides, boundLook, boundSize, sizeBoundTo, anchorCard, boundsOf, connectOperations, descriptionKey, minimumKey, textWidthKey, dropTarget, movable, pressRole, edgePan, fitCameraIn, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows, requestTitleEdit } from './Blocks';
@@ -113,12 +113,16 @@ const BlockItem = React.memo(function BlockItem({ left, top, width, resizeHandle
     {ringed && <View pointerEvents="none" style={{ position: 'absolute', inset: -4, borderRadius: tokens.radius.block + 4, borderWidth: 2, borderColor: accent }} />}
   </Animated.View>;
 }, (a, b) => a.left === b.left && a.top === b.top && a.width === b.width && a.anim === b.anim && a.dim === b.dim && a.ringed === b.ringed && a.handlers === b.handlers && a.resizeHandlers === b.resizeHandlers && a.resizeCursor === b.resizeCursor && a.accent === b.accent && a.shadow === b.shadow && sameCard(a, b));
-export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, obscuredRight = 0, glowIds = [], onUserCamera, highlight, veiled, overlay }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
+export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, freeZone, bare = false, glowIds = [], onUserCamera, highlight, veiled, overlay }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
   /** Keys the panel's shortcut registry owns: the canvas lets them through instead of typing them into a selected label. */
   reservedKey?: (key: string) => boolean; lensShortcut?: string;
-  /** Pixels on the right covered by a floating panel; the beacon stays clear of them. */
-  obscuredRight?: number; glowIds?: string[]; onUserCamera?: () => void; highlight?: CanvasHighlight | null; veiled?: ReadonlySet<string>; overlay?: (view: CanvasOverlay) => React.ReactNode }) {
-  const obscured = useRef(obscuredRight); obscured.current = obscuredRight;
+  /**
+   * The part of the canvas no Lienzo UI covers, in canvas pixels (safe-area.ts): every fit (Fit all, Fit selection, the
+   * agent's fly, lienzo.view.fit) frames things inside it, and the beacon stays in it. `bare` hides the canvas' own
+   * islands (zoom, map, Lens, beacon) for Hide all UI.
+   */
+  freeZone?: () => Box | null; bare?: boolean; glowIds?: string[]; onUserCamera?: () => void; highlight?: CanvasHighlight | null; veiled?: ReadonlySet<string>; overlay?: (view: CanvasOverlay) => React.ReactNode }) {
+  const zoneRef = useRef(freeZone); zoneRef.current = freeZone;
   const [interaction, setInteraction] = useState<string | null>(null), interactionRef = useRef<string | null>(null), interactionCallback = useRef(onInteractionChange); interactionCallback.current = onInteractionChange;
   const setInteractionMode = (id: string | null) => { interactionRef.current = id; setInteraction(id); interactionCallback.current?.(id); };
   const styleRef = useRef(toolStyle); styleRef.current = toolStyle; const lockedRef = useRef(toolLocked); lockedRef.current = toolLocked;
@@ -205,12 +209,12 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const visible = (ids: string[]) => ids.map(id => latest.current.rects.get(id)).filter((r): r is Rect => !!r && !r.hidden);
   function fit(ids?: string[]) {
     const { size, doc } = latest.current; if (!size.width || !size.height) return;
-    const box = boundsOf(visible(ids?.length ? ids : [...doc.groups, ...doc.blocks].filter(e => !e.parentGroupId).map(e => e.id))); if (box) flyTo(fitCamera(size, box, tokens.canvas.fitMax), C.fitMs);
+    const box = boundsOf(visible(ids?.length ? ids : [...doc.groups, ...doc.blocks].filter(e => !e.parentGroupId).map(e => e.id))); if (box) flyTo(fitCameraIn(size, zoneRef.current?.(), box, tokens.canvas.fitMax), C.fitMs);
   }
   function frameIds(ids: string[], options: { padding?: number; animate?: boolean } = {}) {
     const { size } = latest.current, box = boundsOf(visible(ids)); if (!size.width || !size.height || !box) return false;
-    const padding = Math.max(0, Math.min(400, options.padding ?? tokens.canvas.fitInset)), width = Math.max(Math.min(size.width, 240), size.width - obscured.current);
-    flyTo(fitCamera({ width, height: size.height }, box, tokens.canvas.fitMax, padding), options.animate === false ? 0 : C.fitMs); return true;
+    const padding = options.padding === undefined ? undefined : Math.max(0, Math.min(400, options.padding));
+    flyTo(fitCameraIn(size, zoneRef.current?.(), box, tokens.canvas.fitMax, padding), options.animate === false ? 0 : C.fitMs); return true;
   }
   useEffect(() => { if (ready && size.width && size.height && fitted.current !== doc.id) {
     const x = roots.length ? Math.min(...roots.map(r => r.x)) : 0, y = roots.length ? Math.min(...roots.map(r => r.y)) : 0;
@@ -775,9 +779,10 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const showMap = !u.compact && size.width >= tokens.canvas.minimap.minPanelWidth && doc.blocks.length + doc.groups.length >= tokens.canvas.minimap.minItems;
   const lensLayer = lens !== 'none' && !drag ? doc.blocks.map(b => { const r = rects.get(b.id), key = tint.marks.get(b.id), entry = tint.legend.find(l => l.key === key); if (!r || r.hidden || !entry) return null; const tone = u.tone(entry.tone), L = tokens.lens;
     return <View key={b.id} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x - L.outset, top: r.y - bound.y - L.outset, width: r.width + 2 * L.outset, height: r.height + 2 * L.outset, zIndex: 7, borderRadius: L.radius, borderWidth: L.border, borderColor: entry.tone === 'neutro' ? withAlpha(u.c.foregroundMuted, .5) : tone, backgroundColor: withAlpha(entry.tone === 'neutro' ? u.c.foregroundMuted : tone, entry.tone === 'neutro' ? L.fill / 2 : L.fill) }} />; }) : null;
-  const wayfinding = mode === 'canvas' && size.width > 0 ? <>
+  const beaconInset = () => { const z = freeZone?.(), I = tokens.canvas.beacon.inset; return z ? { top: Math.max(I.top, z.y + 8), left: Math.max(I.left, z.x + 8), bottom: Math.max(I.bottom, size.height - z.y - z.height + 8), right: Math.max(I.right, size.width - z.x - z.width + 8) } : I; };
+  const wayfinding = mode === 'canvas' && size.width > 0 && !bare ? <>
     {!u.compact && doc.blocks.length > 0 && <LensControl lens={lens} legend={tint.legend} note={lensNote} bottom={tokens.island.inset + (showMap ? tokens.canvas.minimap.height + 2 * tokens.canvas.minimap.padding + 10 : 0)} onChange={setLens} shortcut={lensShortcut} />}
-    {beaconId && beaconBox && !beaconBox.hidden && <SelectionBeacon id={beaconId} title={title(beaconId)} box={beaconBox} remote={pressed.current !== beaconId} view={size} source={cameraSource} inset={{ ...tokens.canvas.beacon.inset, right: Math.max(tokens.canvas.beacon.inset.right, obscuredRight + 16) }} onGo={() => fit([beaconId])} />}
+    {beaconId && beaconBox && !beaconBox.hidden && <SelectionBeacon id={beaconId} title={title(beaconId)} box={beaconBox} remote={pressed.current !== beaconId} view={size} source={cameraSource} inset={beaconInset()} onGo={() => fit([beaconId])} />}
     {showMap && mapItems.length >= tokens.canvas.minimap.minItems && <Minimap items={mapItems} content={mapContent} view={size} source={cameraSource} onNavigate={goTo} />}
   </> : null;
   const guideLine = (line: typeof guideV, vertical: boolean) => <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, zIndex: 6, backgroundColor: u.c.accent, opacity: line.opacity, transformOrigin: 'top left', transform: [{ translateX: line.x }, { translateY: line.y }, { scaleX: vertical ? line.thickness : line.length }, { scaleY: vertical ? line.length : line.thickness }] }} />;
@@ -836,7 +841,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     }} />; })()}
     <Animated.View pointerEvents="none" nativeID="lienzo-marquee" style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, opacity: box.o, zIndex: 18, borderWidth: 1, borderRadius: 2, borderColor: u.c.accent, backgroundColor: withAlpha(u.c.accent, tokens.canvas.marquee.fill) }} />
     {wayfinding}
-    <ZoomControl width={size.width} camera={cam} subscribe={listener => { camSubs.current.add(listener); return () => { camSubs.current.delete(listener); }; }} onStep={zoomStep} onReset={() => zoomTo(1)} onFit={() => fit()} />
+    {!bare && <ZoomControl width={size.width} camera={cam} subscribe={listener => { camSubs.current.add(listener); return () => { camSubs.current.delete(listener); }; }} onStep={zoomStep} onReset={() => zoomTo(1)} onFit={() => fit()} />}
   </View>;
 }
 const noHandlers: GestureResponderHandlers = {};

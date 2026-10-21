@@ -154,7 +154,7 @@ test("sandbox: no host objects, no way out through globals or constructor chains
     return out;
   });`, []));
   const result = (await h.run("mira")).result as Record<string, string | string[]>;
-  for (const key of ["process", "require", "module", "Buffer", "fetch", "XMLHttpRequest", "WebSocket", "setTimeout", "setInterval", "setImmediate", "queueMicrotask", "WebAssembly", "std", "os", "document", "window", "navigator", "host", "importScripts", "Deno", "Bun"]) assert.equal(result[key], "undefined", key);
+  for (const key of ["process", "require", "module", "Buffer", "fetch", "XMLHttpRequest", "WebSocket", "setInterval", "setImmediate", "queueMicrotask", "WebAssembly", "std", "os", "document", "window", "navigator", "host", "importScripts", "Deno", "Bun"]) assert.equal(result[key], "undefined", key);
   assert.equal(result.viaConstructor, "undefinedundefined"); assert.equal(result.viaFunction, "undefined");
   assert.deepEqual(result.globals, [], "the bridge is never a global");
   assert.ok(!String(result.caller).includes("host("), "the prelude's bridge does not leak through callers");

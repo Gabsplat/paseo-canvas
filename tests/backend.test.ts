@@ -357,9 +357,13 @@ test("selection has an independent version, no content revision and polling dete
   const { service } = await setup(t);
   assert.equal((await service.watch({ ...reference, knownRevision: 0, knownRuntimeVersion: 0 })).view, undefined);
   const selected = await service.selection({ ...reference, expectedSelectionVersion: 0, ids: ["b"] });
-  assert.equal(selected.document.revision, 0);
-  assert.equal(selected.selectionVersion, 1);
-  assert.ok((await service.watch({ ...reference, knownRevision: 0, knownRuntimeVersion: 0 })).view);
+  assert.deepEqual([selected.revision, selected.selectionVersion, selected.selectedIds, "document" in selected], [0, 1, ["b"], false], "the answer is the versions and ids, never the document");
+  // Another window hears a selection as its ids alone; a runtime change still brings the view.
+  const watched = await service.watch({ ...reference, knownRevision: 0, knownRuntimeVersion: 0, knownSelectionVersion: 0 });
+  assert.deepEqual([watched.view, watched.selection], [undefined, { selectionVersion: 1, selectedIds: ["b"] }]);
+  assert.equal((await service.watch({ ...reference, knownRevision: 0, knownRuntimeVersion: 0, knownSelectionVersion: 1 })).selection, undefined);
+  await service.runtimeSet({ ...reference, blocks: [{ id: "b", state: { n: 1 } }], scopes: [] } as never);
+  assert.ok((await service.watch({ ...reference, knownRevision: 0, knownRuntimeVersion: 0, knownSelectionVersion: 1 })).view);
   await assert.rejects(service.selection({ ...reference, expectedSelectionVersion: 0, ids: [] }), rejectCode("REVISION_CONFLICT"));
 });
 

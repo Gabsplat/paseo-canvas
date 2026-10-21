@@ -336,6 +336,7 @@ const baseTokens = {
       "topInsetCompact": 48
     },
     "fitInset": 48,
+    "fitInsetFree": 24,
     "fitMax": 1,
     "pin": {
       "size": 18,

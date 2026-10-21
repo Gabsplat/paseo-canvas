@@ -90,9 +90,9 @@ export function useCanvas(workspaceId: string) {
       const v = current.current, g = generation.current;
       if (v) {
         try {
-          const change = await apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion, knownCommentsVersion: v.commentsVersion ?? 0, ...(uiSeq.current !== undefined ? { knownUiSeq: uiSeq.current } : {}) });
+          const change = await apiRef.current.watch({ workspaceId, documentId: v.document.id, knownRevision: v.document.revision, knownRuntimeVersion: v.runtimeVersion, knownCommentsVersion: v.commentsVersion ?? 0, knownSelectionVersion: current.current?.document.id === v.document.id ? current.current.selectionVersion : v.selectionVersion, ...(uiSeq.current !== undefined ? { knownUiSeq: uiSeq.current } : {}) });
           if (!stopped && g === generation.current) {
-            if (change.view) accept(change.view); setOffline(false);
+            if (change.view) accept(change.view); else if (change.selection && current.current?.document.id === v.document.id) adoptSelection({ documentId: v.document.id, revision: change.revision, runtimeVersion: change.runtimeVersion, ...change.selection }); setOffline(false);
             if (current.current?.document.id === v.document.id && change.uiSeq !== undefined) { uiSeq.current = change.uiSeq; for (const request of change.ui ?? []) uiListeners.current.forEach(listener => listener(request)); }
           }
         } catch { if (!stopped && g === generation.current) setOffline(true); }
@@ -141,6 +141,17 @@ export function useCanvas(workspaceId: string) {
       accept(await apiRef.current.read({ workspaceId, documentId: id })); return edit(operations, label);
     }, affectedIds, JSON.stringify([id, operations, label]));
   }
+  /**
+   * The server's answer to a selection: versions and ids only. The view keeps its document object (only selectedIds
+   * changes in it), so nothing keyed on the document (layouts, an extension's context) is rebuilt for a selection, and
+   * no render is asked for when c.selection already shows it. The same for a selection made in another window (watch).
+   */
+  function adoptSelection(next: Awaited<ReturnType<typeof api.selection>>) {
+    const v = current.current; if (!v || v.document.id !== next.documentId || next.selectionVersion <= v.selectionVersion) return;
+    (v.document as { selectedIds: string[] }).selectedIds = [...next.selectedIds];
+    current.current = { ...v, selectionVersion: next.selectionVersion };
+    if (desired.current === null) setSelection(old => old.length === next.selectedIds.length && old.every((id, i) => id === next.selectedIds[i]) ? old : next.selectedIds);
+  }
   async function select(ids: string[]) {
     const g = generation.current;
     desired.current = [...new Set(ids)]; setSelection(desired.current);
@@ -152,7 +163,7 @@ export function useCanvas(workspaceId: string) {
         const request = desired.current; desired.current = null;
         try {
           const next = await apiRef.current.selection({ workspaceId, documentId: v.document.id, expectedSelectionVersion: v.selectionVersion, ids: request });
-          if (g === generation.current) accept(next);
+          if (g === generation.current) adoptSelection(next);
         } catch (e) {
           if (g === generation.current) {
             const next = await apiRef.current.read({ workspaceId, documentId: v.document.id }); accept(next);

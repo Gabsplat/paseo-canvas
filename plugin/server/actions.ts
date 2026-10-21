@@ -4,11 +4,13 @@ import { EXTENSION_API, EXTENSION_FORBIDDEN_OPERATIONS, EXTENSION_LIMITS } from 
 import { CanvasError } from "../shared/errors";
 import { operationSchema, type CanvasCatalog, type CanvasDocument, type CanvasOperation, type CatalogExtension } from "../shared/model";
 import { reduce, safeJson } from "./reducer";
+import type { JSONValue } from "../shared/learning";
 import { runSandboxed, SandboxError } from "./sandbox";
 
 /**
  * An extension's action, run for an agent: the extension's `<script data-lienzo="actions">` in QuickJS, with the
- * headless `lienzo` (context, edit, select, action, run; no page, theme or layout). Its edits are checked one call at a
+ * headless `lienzo` (context, edit, select, action, run, storage, sleep and setTimeout; no page, theme or layout).
+ * lienzo.storage is the same value the page reads on that Lienzo; what a run sets is written only if the run succeeds. Its edits are checked one call at a
  * time against a working copy of the document and returned together, to be committed as one transaction by the
  * service. A run that fails changes nothing.
  */
@@ -18,6 +20,8 @@ export type ActionOutcome = {
   label: string | null;
   /** The selection it asked for (the last lienzo.select), or null. */
   selection: string[] | null;
+  /** What it left in lienzo.storage, when it set it (null clears it). */
+  storage?: { value: JSONValue | null };
   logs: string[];
 };
 
@@ -39,8 +43,20 @@ function line(kind) {
     try { host('log', stringify({ kind: kind, text: parts.join(' ').slice(0, 1000) })); } catch (e) {}
   };
 }
+var timers = [], serial = 0, now = Date.now;
+globalThis.setTimeout = function (fn, ms) {
+  if (typeof fn !== 'function') throw new TypeError('setTimeout(fn, ms) needs a function.');
+  if (timers.length >= 100) throw new Err('At most 100 timers may wait at once.');
+  var id = ++serial, args = [].slice.call(arguments, 2), wait = Number(ms); timers.push({ id: id, at: now() + Math.max(0, Math.min(2000, wait === wait ? wait : 0)), fn: fn, args: args }); return id;
+};
+globalThis.clearTimeout = function (id) { timers = timers.filter(function (t) { return t.id !== id; }); };
 globalThis.lienzo = {
   api: 1, headless: true,
+  sleep: function (ms) { return new P(function (ok) { globalThis.setTimeout(ok, ms); }); },
+  storage: {
+    get: function () { return new P(function (ok) { ok(call('storage.get', null)); }); },
+    set: function (value) { return new P(function (ok) { ok(call('storage.set', { value: value === undefined ? null : value })); }); }
+  },
   get context() { return ctx; },
   onContext: function (fn) { if (typeof fn === 'function') fn(ctx); return function () {}; },
   action: function (name, fn) { if (typeof fn !== 'function') throw new TypeError('lienzo.action(name, fn) needs a function.'); handlers[Str(name)] = fn; return fn; },
@@ -50,6 +66,8 @@ globalThis.lienzo = {
 };
 globalThis.console = { log: line('log'), info: line('log'), debug: line('log'), warn: line('warn'), error: line('error') };
 return {
+  next: function () { var at = Infinity; for (var i = 0; i < timers.length; i++) if (timers[i].at < at) at = timers[i].at; return timers.length ? Math.max(0, at - now()) : -1; },
+  fire: function () { var t = now(), due = timers.filter(function (x) { return x.at <= t; }).sort(function (a, b) { return a.at - b.at || a.id - b.id; }); timers = timers.filter(function (x) { return x.at > t; }); for (var i = 0; i < due.length; i++) due[i].fn.apply(undefined, due[i].args); },
   start: function (name, input) {
     var fn = handlers[name];
     if (typeof fn !== 'function') return stringify({ missing: true, registered: keys(handlers) });
@@ -82,7 +100,7 @@ const reason = (error: unknown) => error instanceof z.ZodError ? error.issues.sl
 const parsed = (json: string): unknown => { const value: unknown = JSON.parse(json); safeJson(value); return value; };
 
 /** Checks the input, runs the action, and returns what it asked for. Throws a CanvasError a person can act on. */
-export async function runExtensionAction(options: { extension: CatalogExtension; action: string; input: unknown; document: CanvasDocument; catalog: CanvasCatalog }): Promise<ActionOutcome> {
+export async function runExtensionAction(options: { extension: CatalogExtension; action: string; input: unknown; document: CanvasDocument; catalog: CanvasCatalog; storage?: JSONValue | null }): Promise<ActionOutcome> {
   const { extension, catalog } = options;
   const declared = extension.actions ?? [];
   const action: ActionDefinition | undefined = declared.find(a => a.name === options.action);
@@ -99,6 +117,7 @@ export async function runExtensionAction(options: { extension: CatalogExtension;
   const held = extension.granted ? extension.permissions : [];
   let working = options.document, label: string | null = null, selection: string[] | null = null, denied = "", edits = 0, selects = 0;
   const operations: CanvasOperation[] = [], logs: string[] = [];
+  let stored: JSONValue | null = options.storage ?? null, storageSet = false;
   const known = (id: unknown): id is string => typeof id === "string" && [...working.blocks, ...working.groups].some(entity => entity.id === id);
 
   const host = (method: string, json: string): string => {
@@ -107,6 +126,12 @@ export async function runExtensionAction(options: { extension: CatalogExtension;
       case "log": {
         if (logs.length < ACTION_LIMITS.logs) { const line = parsed(json) as { kind?: unknown; text?: unknown }; logs.push(`${line?.kind === "log" ? "" : `${String(line?.kind)}: `}${String(line?.text ?? "")}`.slice(0, ACTION_LIMITS.logChars)); }
         return answer(null);
+      }
+      case "storage.get": return answer(stored);
+      case "storage.set": {
+        const value = (parsed(json) as { value?: unknown } | null)?.value ?? null;
+        if (value !== null && Buffer.byteLength(JSON.stringify(value)) > EXTENSION_LIMITS.storage) return refuse(`lienzo.storage holds at most ${EXTENSION_LIMITS.storage / 1024} KiB of JSON.`);
+        stored = value as JSONValue | null; storageSet = true; return answer(null);
       }
       case "select": {
         if (++selects > ACTION_LIMITS.selects) return refuse(`lienzo.select may be called at most ${ACTION_LIMITS.selects} times in one run.`);
@@ -149,7 +174,7 @@ export async function runExtensionAction(options: { extension: CatalogExtension;
   try {
     text = await runSandboxed({
       prelude: PRELUDE, scripts: scripts.map((code, i) => ({ name: `${extension.id}.actions${scripts.length > 1 ? `.${i + 1}` : ""}.js`, code })),
-      args: [action.name, inputText], host, bridgeChars: ACTION_LIMITS.payload,
+      args: [action.name, inputText], host, bridgeChars: ACTION_LIMITS.payload, timers: true,
       limits: { timeMs: ACTION_LIMITS.timeMs, memoryBytes: ACTION_LIMITS.memoryBytes, stackBytes: ACTION_LIMITS.stackBytes, jobs: ACTION_LIMITS.jobs, resultChars: ACTION_LIMITS.result + 32 },
     });
   } catch (error) {
@@ -162,5 +187,5 @@ export async function runExtensionAction(options: { extension: CatalogExtension;
   catch (error) { throw new CanvasError("EXTENSION_FAILED", `${extension.name} → ${action.name} returned something that is not plain JSON data (${error instanceof Error ? error.message.replace(/^[A-Z_]+: /, "") : "invalid"}). Nothing changed.`, { reason: "output", logs }); }
   if (outcome?.missing) throw new CanvasError("NOT_FOUND", `${extension.name} declares ${action.name}, but its actions script does not register it with lienzo.action. Registered: ${Array.isArray(outcome.registered) && outcome.registered.length ? outcome.registered.join(", ") : "none"}.`);
   if (JSON.stringify(outcome?.value ?? null).length > ACTION_LIMITS.result) throw new CanvasError("EXTENSION_FAILED", `${extension.name} → ${action.name} returned more than ${ACTION_LIMITS.result} characters. Nothing changed.`, { reason: "output", logs });
-  return { result: outcome?.value ?? null, operations, label, selection, logs };
+  return { result: outcome?.value ?? null, operations, label, selection, logs, ...(storageSet ? { storage: { value: stored } } : {}) };
 }

@@ -133,15 +133,16 @@ export type ExtensionCall = { method: string; args: Record<string, unknown> };
 /**
  * The frame an extension runs in. Same isolation as a mini app (opaque origin, scripts only), always interactive, and
  * a request/response channel on top: the page calls a method, `onCall` answers or throws, and the page gets the result.
- * `revision` says when the context is worth sending again, so a large document is not serialised on every render.
+ * Everything else (the context and its patches, the view, keys) goes through `channel` once the page is listening;
+ * `onReady` says when it is, after every load.
  */
 /**
  * `passThrough`: an overlay that lets the pointer reach the canvas under it (lienzo.ui.capturePointer turns it off).
  * `onEscape`: Esc pressed inside the page and not bound by it. A transparent `surface` keeps the frame see-through: the
  * page's own background (none by default) is all that paints.
  */
-export function WebExtension({ id, source, title, surface, context, revision, onCall, onReady, channel, passThrough, onEscape, onHover }: { id: string; source: string; title: string; surface: string; context: unknown; revision: string; onCall(call: ExtensionCall): Promise<unknown>; onReady?(): void; channel?: { current: ((message: Record<string, unknown>) => void) | null }; passThrough?: boolean; onEscape?(): void; onHover?(inside: boolean): void }) {
-  const frame = useRef<{ contentWindow?: { postMessage(message: unknown, target: string): void } | null } | null>(null), ready = useRef(false), latest = useRef({ context, onCall, onReady, onEscape }); latest.current = { context, onCall, onReady, onEscape };
+export function WebExtension({ id, source, title, surface, onCall, onReady, channel, passThrough, onEscape, onHover }: { id: string; source: string; title: string; surface: string; onCall(call: ExtensionCall): Promise<unknown>; onReady?(): void; channel?: { current: ((message: Record<string, unknown>) => void) | null }; passThrough?: boolean; onEscape?(): void; onHover?(inside: boolean): void }) {
+  const frame = useRef<{ contentWindow?: { postMessage(message: unknown, target: string): void } | null } | null>(null), ready = useRef(false), latest = useRef({ onCall, onReady, onEscape }); latest.current = { onCall, onReady, onEscape };
   const post = (message: Record<string, unknown>) => { try { frame.current?.contentWindow?.postMessage({ lienzo: 1, ...message }, '*'); } catch {} };
   // Messages besides the context and results (the view, a key), once the page is listening.
   if (channel) channel.current = message => { if (ready.current) post(message); };
@@ -151,7 +152,7 @@ export function WebExtension({ id, source, title, surface, context, revision, on
     const listen = (event: { source: unknown; data: unknown }) => {
       const data = event.data as { lienzo?: unknown; type?: unknown; id?: unknown; method?: unknown; args?: unknown } | null;
       if (!frame.current?.contentWindow || event.source !== frame.current.contentWindow || !data || data.lienzo !== 1) return;
-      if (data.type === 'ready') { ready.current = true; post({ type: 'context', context: latest.current.context }); latest.current.onReady?.(); }
+      if (data.type === 'ready') { ready.current = true; latest.current.onReady?.(); }
       else if (data.type === 'escape') latest.current.onEscape?.();
       else if (data.type === 'call' && typeof data.id === 'number' && typeof data.method === 'string') { const callId = data.id;
         Promise.resolve().then(() => latest.current.onCall({ method: data.method as string, args: data.args && typeof data.args === 'object' ? data.args as Record<string, unknown> : {} }))
@@ -159,7 +160,6 @@ export function WebExtension({ id, source, title, surface, context, revision, on
     };
     host.addEventListener('message', listen); return () => { host.removeEventListener?.('message', listen); ready.current = false; };
   }, [source]);
-  useEffect(() => { if (ready.current) post({ type: 'context', context: latest.current.context }); }, [revision]);
   if (Platform.OS !== 'web') return null;
   return React.createElement('div', { id: `lienzo-extension-${id}`, 'data-lienzo-interacting': 'true', onMouseEnter: onHover && (() => onHover(true)), onMouseLeave: onHover && (() => onHover(false)), style: { position: 'relative', height: '100%', width: '100%', overflow: 'hidden', backgroundColor: surface, pointerEvents: passThrough ? 'none' : 'auto' } },
     React.createElement('iframe', { key: source, ref: frame, srcDoc: source, title, sandbox: 'allow-scripts allow-forms allow-modals allow-pointer-lock', referrerPolicy: 'no-referrer', allow: 'fullscreen', allowtransparency: 'true', style: { width: '100%', height: '100%', border: 0, display: 'block', background: 'transparent', colorScheme: 'normal', pointerEvents: passThrough ? 'none' : 'auto' } }));

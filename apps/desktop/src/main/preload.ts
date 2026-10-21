@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { CAPTURE_CHANNEL, FULL_SCREEN_CHANNEL } from '../shared/chrome';
+import { CAPTURE_CHANNEL, FULL_SCREEN_CHANNEL, SET_FULL_SCREEN_CHANNEL } from '../shared/chrome';
 import { FILES_WAITING_CHANNEL, SAVE_FILE_CHANNEL, TAKE_FILES_CHANNEL, type OpenedFile } from '../shared/files';
 
 // The renderer's only door to the main process: one invoke for every Lienzo RPC, plus what the window's chrome needs
@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('lienzo', {
     ipcRenderer.on(FULL_SCREEN_CHANNEL, handler);
     return () => { ipcRenderer.removeListener(FULL_SCREEN_CHANNEL, handler); };
   },
+  /** lienzo.ui.immersive: the window's native full screen. Resolves whether it is in full screen afterwards. */
+  setFullScreen: (on: boolean): Promise<boolean> => ipcRenderer.invoke(SET_FULL_SCREEN_CHANNEL, on === true),
   saveFile: (file: { name: string; mime: string; text: string }): Promise<boolean> => ipcRenderer.invoke(SAVE_FILE_CHANNEL, { name: file.name, text: file.text }),
   /** A PNG data URL of part of this window as drawn now (an extension's lienzo.view.snapshot), or null. */
   capture: (rect: { x: number; y: number; width: number; height: number }): Promise<string | null> => ipcRenderer.invoke(CAPTURE_CHANNEL, rect),

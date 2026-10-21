@@ -1,7 +1,7 @@
 import { getRendererSpec, rendererSpecs } from "../shared/renderers";
 import { z } from "zod";
 import * as rpc from "../shared/rpc";
-import { idSchema, groupSchema, groupPatchSchema, revisionSchema, extensionSchema, layoutSchema, type CanvasDocument } from "../shared/model";
+import { idSchema, groupSchema, groupPatchSchema, revisionSchema, extensionSchema, layoutSchema, type CanvasDocument, type CatalogExtension } from "../shared/model";
 import { EXTENSION_GUIDE } from "../shared/extensions";
 import { PRESENTATION_MODES } from "../shared/presentation";
 import { actionNameSchema } from "../shared/actions";
@@ -17,6 +17,26 @@ import { agentLabel, commentAnchorSchema, commentTextSchema, type CommentThread 
 const readable = (document: Parameters<typeof legibility>[0]) => { const report = legibility(document); return report.warnings.length ? { legibility: report } : {}; };
 
 const empty = z.object({}).strict();
+/**
+ * The most a tool result may weigh, in bytes. Most answers stay small for the agent's context; the catalog list grows
+ * with every installed extension (a summary each), and read_extension carries one extension's whole page.
+ */
+export const RESULT_LIMITS = { default: 24 * 1024, list: 64 * 1024, extension: 384 * 1024 } as const;
+const resultLimit = (name: string, input: unknown) => {
+  const action = name === "canvas_catalog" && input && typeof input === "object" ? (input as { action?: unknown }).action : undefined;
+  return action === "list" ? RESULT_LIMITS.list : action === "read_extension" ? RESULT_LIMITS.extension : RESULT_LIMITS.default;
+};
+const bytes = (value: unknown) => value === undefined ? 0 : Buffer.byteLength(typeof value === "string" ? value : JSON.stringify(value));
+/** canvas_catalog list's entry for an extension: what an agent needs to choose and run it, never its page. */
+export function extensionSummary(extension: CatalogExtension, schemas = true) {
+  const { id, kind, name, description, icon, permissions, source, granted, actions, presentation, context, docs, html } = extension;
+  // What it may do now: an extension from a file holds nothing until the person allows it.
+  const missing = granted ? [] : permissions;
+  return { id, kind, name, description, ...(icon ? { icon } : {}), permissions, source, allowed: !missing.length, ...(missing.length ? { missingPermissions: missing, note: "Ask the person to allow it in Extensions; until then its actions cannot use these permissions." } : {}),
+    ...(presentation?.mode ? { presentation: presentation.mode } : {}), ...(context?.document && context.document !== "full" ? { context: context.document } : {}),
+    sizes: { html: bytes(html), ...(docs ? { docs: bytes(docs) } : {}) },
+    ...(actions?.length ? { actions: actions.map(({ name, description, input, returns }) => schemas ? { name, description, input: input ?? { type: "object", properties: {} }, ...(returns ? { returns } : {}) } : { name, description }) } : {}) };
+}
 const readInput = z.object({ documentId: idSchema, view: z.enum(["outline", "full"]).default("outline"), ids: z.array(idSchema).max(100).optional(), sinceRevision: revisionSchema.optional() }).strict();
 const scopedRead = z.object({ documentId: idSchema }).strict();
 const groupInput = z.discriminatedUnion("action", [
@@ -27,6 +47,7 @@ const groupInput = z.discriminatedUnion("action", [
 const catalogInput = z.discriminatedUnion("action", [
   z.object({ action: z.literal("list") }).strict(),
   z.object({ action: z.literal("read"), id: idSchema }).strict(),
+  z.object({ action: z.literal("read_extension"), id: idSchema }).strict(),
   z.object({ action: z.literal("save_type"), expectedRevision: revisionSchema, blockType: rpc.mutateCatalog.input.shape.action.options[0].shape.blockType }).strict(),
   z.object({ action: z.literal("save_extension"), expectedRevision: revisionSchema, extension: extensionSchema }).strict(),
   z.object({ action: z.literal("remove_extension"), expectedRevision: revisionSchema, id: idSchema }).strict(),
@@ -59,7 +80,7 @@ const tools = [
   { name: "canvas_read", description: "Read outline first; outline/full include links, root/group layouts and the current selectedIds. Full view or ids returns content and entity instructions, most-specific first; ids can also retrieve links, and for a block its state (what the person did with it: runtime values, a quiz answer, a mini app's stored state, lastInteraction). Outline marks such blocks with hasState. Large responses ask you to read by ids. sinceRevision reports changed and removed IDs, including links.", schema: readInput, readOnly: true },
   { name: "canvas_apply", description: "Atomically apply 1..200 operations with expectedRevision; failures roll back. On REVISION_CONFLICT reread and retry. Build node blocks + graph groups, then link.create:{link:{id,from,to,kind?,label?,tone?}}; kind is flow (default), depends or reference. from is drawn before to, so link in reading order; from/to accept group IDs, and one area-to-area link beats many block-to-block links across areas. If the result carries legibility.warnings, restructure before adding more. link.update uses {id,patch}; link.delete uses {id}. Endpoints are existing block/group IDs, distinct; (from,to,kind) is unique. Deleting entities removes touching links. document.update accepts layout. Group positions are relative. block.update data is an RFC 7396 merge patch; arrays replace. Use summary/details for text, few prose notes, and an html mini app when something should be tried rather than read. While the copilot is on, a call adds at most 6 blocks: draw stage by stage. A variety field means the Sheet is only cards: make the next stage show something.", schema: rpc.mutateDocument.input.omit({ workspaceId: true }), readOnly: false },
   { name: "canvas_group", description: "Create/update area groups (Frames) with layout.mode graph, or ungroup children. Membership moves children to one parent; groups nest to depth 4. patch.locked true locks a Frame's position for the person (it moves only by its header and not while locked; children stay editable).", schema: groupInput, readOnly: false },
-  { name: "canvas_catalog", description: "List/read block types and extensions. Writes require catalog expectedRevision. save_type adds a local block type. save_extension adds or replaces a tool the person can use from then on, in Paseo and in the desktop app; its manifest presentation picks how it appears (panel, overlay over the canvas, popover at the selection, fullscreen) and canvas_extension_open shows it (list returns extensionGuide with the whole API; remove_extension deletes a local one). help {page?, query?} reads the person's Help pages (contents, a search, or one page as Markdown): use it to tell the person how to do something by hand; each listed block type names its page. Extension pages run only sandboxed in a frame. Library writes require normal user permission.", schema: catalogInput, readOnly: false },
+  { name: "canvas_catalog", description: "List/read block types and extensions. list is a compact summary: block types with their guidance, and each extension's manifest (no html): permissions, presentation, actions with their input schemas, and its size; read_extension {id} returns one extension whole (html, docs, manifest), up to 384 KiB. Writes require catalog expectedRevision. save_type adds a local block type. save_extension adds or replaces a tool the person can use from then on, in Paseo and in the desktop app; its manifest presentation picks how it appears (panel, overlay over the canvas, popover at the selection, fullscreen) and canvas_extension_open shows it (list returns extensionGuide with the whole API; remove_extension deletes a local one). help {page?, query?} reads the person's Help pages (contents, a search, or one page as Markdown): use it to tell the person how to do something by hand; each listed block type names its page. Extension pages run only sandboxed in a frame. Library writes require normal user permission.", schema: catalogInput, readOnly: false },
   { name: "canvas_extension_run", description: "Run an action an installed extension offers (canvas_catalog list shows each extension's actions with their input schema, and whether it holds the permissions it needs). {extension, action, input?, documentId?}; without documentId it runs on the Lienzo the person selected in most recently. The action runs sandboxed on the server, sees the document and the person's selection, and its edits are applied as one undoable transaction labelled \"<extension> (agent): <label>\" that the person sees in History; a failing action changes nothing. Returns its result and the new revision. An extension that came in a file and was not allowed yet cannot edit: ask the person to allow it in Extensions. To show its UI instead (a panel, an overlay effect), use canvas_extension_open.", schema: extensionRunInput, readOnly: false },
   { name: "canvas_extension_open", description: "Open an installed extension's UI in the person's Lienzo window, now. {extension, documentId?, mode?: panel|overlay|popover|fullscreen (default: its manifest presentation), input? (any JSON up to 4 KB; the page reads it as lienzo.input and lienzo.onInput(fn)), anchorId? (a block or Frame a popover points at; default the selection)}. Without documentId it goes to the Lienzo a window shows now. Returns delivered: true only when an open window took it; false with a note when no window shows that Lienzo (nothing is queued: tell the person instead). Use it to show a tool or an effect you saved with save_extension; the page then runs in the person's window. An extension from a file that was not allowed yet opens without its permissions.", schema: extensionOpenInput, readOnly: false },
   { name: "canvas_extension_close", description: "Close an extension's UI in the person's Lienzo window(s). {extension, documentId?}. Returns delivered like canvas_extension_open. Ephemeral effects it made (hidden cards, highlights) are undone on close.", schema: extensionCloseInput, readOnly: false },
@@ -106,13 +127,16 @@ export class ToolRouter {
     const result = await this.dispatch(name, value, scope);
     // Using a canvas connects the agent to it; no manual step in the panel.
     if (documentId) await this.service.autoConnect(documentId, scope.workspaceId, scope.agentId, ["canvas_apply", "canvas_undo", "canvas_redo", "canvas_extension_run"].includes(name) || name === "canvas_group" || name === "canvas_sheet" && sheetInput.parse(input).action !== "list");
-    if (Buffer.byteLength(JSON.stringify(result)) > 24 * 1024) {
+    const limit = resultLimit(name, input);
+    if (Buffer.byteLength(JSON.stringify(result)) > limit) {
       if (name === "canvas_read") {
         const current = await this.service.read({ documentId: readInput.parse(input).documentId, workspaceId: scope.workspaceId });
         return { revision: current.document.revision, truncated: true, hint: "Full result exceeds 24 KiB. Read a smaller ids array; use outline to discover IDs.", counts: { blocks: current.document.blocks.length, groups: current.document.groups.length, links: current.document.links.length }, ids: [...current.document.blocks, ...current.document.groups, ...current.document.links].slice(0, 100).map(entity => entity.id) };
       }
       const committedWrite = ["canvas_create", "canvas_apply", "canvas_undo", "canvas_redo", "canvas_extension_run"].includes(name) || name === "canvas_group" || name === "canvas_sheet" && sheetInput.parse(input).action !== "list";
       if (committedWrite) return { committed: true, truncated: true, hint: "Operation succeeded. Read the document by IDs for content." };
+      if (limit === RESULT_LIMITS.extension) throw new CanvasError("TOO_LARGE", `This extension is over ${limit / 1024} KiB as a result (its page, docs and manifest), the most canvas_catalog read_extension returns. Its manifest and actions are in canvas_catalog list.`);
+      if (name === "canvas_catalog") throw new CanvasError("TOO_LARGE", "Result exceeds 24 KiB. For an extension, use canvas_catalog read_extension {id}.");
       throw new CanvasError("TOO_LARGE", "Result exceeds 24 KiB. Request fewer entities, or read by ids.");
     }
     return result;
@@ -214,13 +238,18 @@ export class ToolRouter {
         }
         if (args.action === "list") {
           const catalog = await this.service.catalog();
-          return { revision: catalog.revision, blockTypes: catalog.blockTypes.map(({ id, name, description, renderer }) => ({ id, name, description, renderer, guidance: getRendererSpec(renderer)?.guidance, help: pageForBlockType(id)?.id })),
-            extensions: catalog.extensions.map(({ id, kind, name, description, permissions, source, granted, actions }) => {
-              // What it may do now: an extension from a file holds nothing until the person allows it.
-              const missing = granted ? [] : permissions;
-              return { id, kind, name, description, permissions, source, allowed: !missing.length, ...(missing.length ? { missingPermissions: missing, note: "Ask the person to allow it in Extensions; until then its actions cannot use these permissions." } : {}),
-                ...(actions?.length ? { actions: actions.map(({ name, description, input, returns }) => ({ name, description, input: input ?? { type: "object", properties: {} }, ...(returns ? { returns } : {}) })) } : {}) };
-            }), extensionGuide: EXTENSION_GUIDE };
+          const listed = { revision: catalog.revision, blockTypes: catalog.blockTypes.map(({ id, name, description, renderer }) => ({ id, name, description, renderer, guidance: getRendererSpec(renderer)?.guidance, help: pageForBlockType(id)?.id })),
+            extensions: catalog.extensions.map(extension => extensionSummary(extension)), extensionGuide: EXTENSION_GUIDE, note: "Extensions are summaries; canvas_catalog read_extension {id} returns one whole (html, docs)." };
+          // So many extensions that even their summaries do not fit: their action schemas go first (read_extension has them).
+          if (bytes(listed) <= RESULT_LIMITS.list) return listed;
+          const lean = { ...listed, extensions: catalog.extensions.map(extension => extensionSummary(extension, false)), note: "Too many extensions to list their action schemas here; canvas_catalog read_extension {id} returns one whole, schemas included." };
+          if (bytes(lean) <= RESULT_LIMITS.list) return lean;
+          return { ...listed, extensions: catalog.extensions.map(({ id, name, granted, permissions, actions }) => ({ id, name, allowed: granted || !permissions.length, ...(actions?.length ? { actions: actions.map(a => a.name) } : {}) })), note: "Too many extensions to describe here: ids, names and action names only; canvas_catalog read_extension {id} returns one whole." };
+        }
+        if (args.action === "read_extension") {
+          const catalog = await this.service.catalog(), extension = catalog.extensions.find(entry => entry.id === args.id);
+          if (!extension) throw new CanvasError("NOT_FOUND", `No extension ${args.id} is installed; canvas_catalog list shows the extensions.`);
+          return { revision: catalog.revision, extension, sizes: extensionSummary(extension).sizes };
         }
         if (args.action === "read") {
           const catalog = await this.service.catalog(), entry = [...catalog.blockTypes, ...catalog.extensions].find(entry => entry.id === args.id);

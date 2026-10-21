@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import { CAPTURE_CHANNEL, FULL_SCREEN_CHANNEL, TRAFFIC_LIGHTS, captureRect } from '../shared/chrome';
+import { CAPTURE_CHANNEL, FULL_SCREEN_CHANNEL, SET_FULL_SCREEN_CHANNEL, TRAFFIC_LIGHTS, captureRect } from '../shared/chrome';
 import { FILES_WAITING_CHANNEL, LIENZO_FILE_MAX_BYTES, SAVE_FILE_CHANNEL, TAKE_FILES_CHANNEL, isLienzoPath, type OpenedFile } from '../shared/files';
 import { startDesktop, type Desktop } from './core';
 import { createAppUpdates } from './updater';
@@ -121,6 +121,12 @@ async function start() {
   });
   ipcMain.handle(SAVE_FILE_CHANNEL, (event, file: unknown) => window && event.sender === window.webContents ? saveFile(file) : false);
   ipcMain.handle(TAKE_FILES_CHANNEL, event => window && event.sender === window.webContents ? takeFiles() : []);
+  // lienzo.ui.immersive: only the app's own page; the window says when it actually got there (FULL_SCREEN_CHANNEL too).
+  ipcMain.handle(SET_FULL_SCREEN_CHANNEL, async (event, on: unknown) => {
+    if (!window || event.sender !== window.webContents) return false;
+    const want = on === true; if (window.isFullScreen() !== want) window.setFullScreen(want);
+    return want;
+  });
   // An extension's lienzo.view.snapshot: only the app's own page, only inside its window, never larger than CAPTURE_MAX.
   ipcMain.handle(CAPTURE_CHANNEL, async (event, value: unknown) => {
     if (!window || event.sender !== window.webContents) return null;

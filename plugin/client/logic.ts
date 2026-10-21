@@ -615,6 +615,16 @@ export function fitCamera(viewport: { width: number; height: number }, box: Box,
   const scale = Math.max(tokens.canvas.zoomMin, Math.min(max, (viewport.width - 2 * inset) / Math.max(1, box.width), (viewport.height - 2 * inset) / Math.max(1, box.height)));
   return { scale, offset: { x: (viewport.width - box.width * scale) / 2 - box.x * scale, y: (viewport.height - box.height * scale) / 2 - box.y * scale } };
 }
+/**
+ * fitCamera inside `zone`, the part of the viewport no Lienzo UI covers (safe-area.ts), in viewport pixels. The zone
+ * already clears the islands, so the margin inside it is the smaller fitInsetFree unless one is asked for. A zone too
+ * small to frame anything (a narrow window with the panel open) falls back to the whole viewport.
+ */
+export function fitCameraIn(viewport: { width: number; height: number }, zone: Box | null | undefined, box: Box, max = 1, inset?: number): Camera {
+  const usable = !!zone && zone.width >= Math.min(viewport.width, 240) && zone.height >= Math.min(viewport.height, 160);
+  const z = usable ? zone! : { x: 0, y: 0, ...viewport }, c = fitCamera({ width: z.width, height: z.height }, box, max, inset ?? (usable ? tokens.canvas.fitInsetFree : tokens.canvas.fitInset));
+  return { scale: c.scale, offset: { x: c.offset.x + z.x, y: c.offset.y + z.y } };
+}
 /** Zoom to `scale` keeping the world point under the screen point `anchor` where it is. */
 export function zoomAround(camera: Camera, scale: number, anchor: Point): Camera {
   scale = Math.max(tokens.canvas.zoomMin, Math.min(tokens.canvas.zoomMax, scale));
