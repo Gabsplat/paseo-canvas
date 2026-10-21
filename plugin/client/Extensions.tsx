@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { EXTENSION_API, EXTENSION_FORBIDDEN_OPERATIONS, EXTENSION_LIMITS, EXTENSION_TONES, extensionDocument, extensionVariables, extensionVariableTarget, isExtensionKey, routeExtensionKey, type ExtensionTone, type ExtensionView } from '../shared/extensions';
 import type { CanvasOperation, CatalogExtension, ExtensionPermission } from '../shared/model';
 import type { CommentAnchor, CommentsView } from '../shared/comments';
-import { isDark } from './color';
+import { isDark, withAlpha } from './color';
+import { hideRequest, presentationInputIssue, resolvePresentation, type ResolvedPresentation } from '../shared/presentation';
+import { closesOnEscape, takesPointer, type Box, type SurfacePlacement } from './extension-ui';
+import { tokens } from './tokens';
+import { islandStyle } from './whiteboard-visuals';
+import { Icon } from './host';
 import { layoutCanvas } from './logic';
 import { Button, IconButton, Txt, useUI } from './ui';
 import { capabilities } from './host';
@@ -12,6 +17,12 @@ import { listenExtensionKeys, WebExtension, type ExtensionCall } from './web';
 
 const PERMISSION: Record<ExtensionPermission, string> = { edit: 'change the canvas', network: 'load things from the internet', view: 'move the view of the canvas', variables: 'move the values of variables' };
 export const extensionIcon = (extension: CatalogExtension) => extension.icon ?? 'Puzzle';
+const TONE_NAMES = { accent: 'acento', success: 'exito', warning: 'aviso', violet: 'violeta' } as const;
+/** The colour of an extension's icon, title tile and overlay chip: its manifest accent, else Lienzo's accent. */
+export const extensionAccent = (extension: Pick<CatalogExtension, 'presentation'>, u: ReturnType<typeof useUI>) => {
+  const a = extension.presentation?.accent; return !a ? u.c.accent : a.startsWith('#') ? a : u.tone(TONE_NAMES[a as keyof typeof TONE_NAMES] ?? 'acento');
+};
+const X = tokens.extensionUi;
 const list = (items: string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 
 /**
@@ -21,13 +32,22 @@ const list = (items: string[]) => items.length < 2 ? items.join('') : `${items.s
 export type ExtensionStage = {
   view(): ExtensionView | null; fit(ids: string[], options?: { padding?: number; animate?: boolean }): boolean; subscribe(listener: () => void): () => void;
   highlight(owner: string, next: { ids: string[]; dim: boolean; tone: ExtensionTone } | null): void;
+  /** lienzo.hide / lienzo.show: things off this screen for an effect, per extension, back when it closes. */
+  hide(owner: string, ids: string[], ms: number | null): void; show(owner: string, ids: string[] | null): void;
+  /** lienzo.view.snapshot: a picture of those things as drawn, where the host can take one (the desktop app). */
+  snapshot: ((ids: string[]) => Promise<{ url: string; rect: Box } | null>) | null;
 };
+/** One open extension: how it shows now, whether an overlay holds the pointer, and what an agent handed it. */
+export type OpenExtension = { id: string; ui: ResolvedPresentation; capturing: boolean; input?: { value: unknown; seq: number }; anchorId?: string };
+/** What lienzo.ui.state says: the presentation, and where the frame is on the canvas area. */
+type UiState = ResolvedPresentation & { capturing: boolean; canSnapshot: boolean; anchorId: string | null; rect: Box };
 /**
  * One extension running: its frame, the context it is told, and the answers to what it asks for. Everything an
  * extension does goes through here, so what it may do is decided in one place: reading and selecting are always
  * allowed, editing only with the permission, and an imported one holds none until granted. Nothing reaches the agent.
  */
-function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { extension: CatalogExtension; controller: CanvasController; stage?: ExtensionStage; onOpen(id: string): void; onClose?(): void }) {
+function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose, entry, rect, onEntry, onEscape, onHover, transparent, surface }: { extension: CatalogExtension; controller: CanvasController; stage?: ExtensionStage; onOpen(id: string): void; onClose?(): void;
+  entry?: OpenExtension; rect?: Box; onEntry?(patch: Partial<OpenExtension>): void; onEscape?(): void; onHover?(inside: boolean): void; transparent?: boolean; surface?: string }) {
   const u = useUI(), doc = c.view!.document, allowed = extension.granted ? extension.permissions : [], sees = allowed.includes('view') && !!stage;
   const channel = useRef<((message: Record<string, unknown>) => void) | null>(null), [keys, setKeys] = useState<string[]>([]);
   // The view, at most every 100 ms (the last change always arrives), to an extension holding "view". Moving the camera
@@ -40,7 +60,15 @@ function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { 
   };
   useEffect(() => { if (!sees) return; const stop = stage!.subscribe(viewChanged); return () => { stop(); if (timer.current) clearTimeout(timer.current); timer.current = null; }; }, [sees, stage]);
   useEffect(() => { if (sees) viewChanged(); }, [doc.revision, sees]);
-  useEffect(() => () => stage?.highlight(extension.id, null), [stage, extension.id]);
+  useEffect(() => () => { stage?.highlight(extension.id, null); stage?.show(extension.id, null); }, [stage, extension.id]);
+  // lienzo.ui.state, sent when it changes; and input from an agent, once per open (lienzo.input, lienzo.onInput).
+  const ui: UiState | null = entry ? { ...entry.ui, capturing: entry.capturing && entry.ui.mode === 'overlay', canSnapshot: sees && !!stage?.snapshot, anchorId: entry.anchorId ?? null, rect: rect ?? { x: 0, y: 0, width: 0, height: 0 } } : null;
+  const uiKey = JSON.stringify(ui), uiSent = useRef(''), inputSent = useRef(-1), sendUi = useRef<() => void>(() => {});
+  sendUi.current = () => {
+    if (ui && uiKey !== uiSent.current) { uiSent.current = uiKey; channel.current?.({ type: 'ui', ui }); }
+    const input = entry?.input; if (input && input.seq !== inputSent.current && !presentationInputIssue(input.value)) { inputSent.current = input.seq; channel.current?.({ type: 'input', input: input.value }); }
+  };
+  useEffect(() => { sendUi.current(); }, [uiKey, entry?.input?.seq]);
   // Variables, to a page that asked with lienzo.variables.onChange: now, and at most every 50 ms while values or
   // declarations change. Runtime values never write a revision.
   const [watching, setWatching] = useState(false), varTimer = useRef<ReturnType<typeof setTimeout> | null>(null), varsSent = useRef('');
@@ -111,6 +139,23 @@ function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { 
       if (method === 'comments.resolve') { await c.api.commentResolve({ ...scope, threadId }); return { id: threadId }; }
     }
     if (method === 'close') { onClose?.(); return null; }
+    if (method === 'ui.set') {
+      if (!entry || !onEntry) throw new Error('lienzo.ui is not available here.');
+      const next = resolvePresentation(extension.presentation, entry.ui, args.patch), { ignored, ...state } = next;
+      onEntry({ ui: state, ...(state.mode !== 'overlay' ? { capturing: false } : {}) });
+      return { ...state, capturing: entry.capturing && state.mode === 'overlay', canSnapshot: sees && !!stage?.snapshot, anchorId: entry.anchorId ?? null, rect: rect ?? null, ignored };
+    }
+    if (method === 'ui.capture') { if (!entry || !onEntry) throw new Error('lienzo.ui is not available here.'); const on = args.on === true && entry.ui.mode === 'overlay'; onEntry({ capturing: on }); return { capturing: on }; }
+    if (method === 'hide' || method === 'show') {
+      if (method === 'show' && (args.ids === null || args.ids === undefined)) { stage?.show(extension.id, null); return { ids: [] }; }
+      const { ids, ms } = hideRequest(args, known);
+      if (method === 'hide') stage?.hide(extension.id, ids, ms); else stage?.show(extension.id, ids);
+      return { ids, ...(method === 'hide' && ms !== null ? { ms } : {}) };
+    }
+    if (method === 'view.snapshot') {
+      need('view'); const ids = [...new Set((Array.isArray(args.ids) ? args.ids : []).filter(known))].slice(0, EXTENSION_LIMITS.selection);
+      return ids.length && stage?.snapshot ? stage.snapshot(ids) : null;
+    }
     if (method === 'edit') {
       need('edit'); const operations = args.operations;
       if (!Array.isArray(operations) || !operations.length || operations.length > EXTENSION_LIMITS.operations) throw new Error(`Expected 1 to ${EXTENSION_LIMITS.operations} operations.`);
@@ -122,24 +167,77 @@ function ExtensionFrame({ extension, controller: c, stage, onOpen, onClose }: { 
     throw new Error(`lienzo.${method} does not exist in API ${EXTENSION_API}.`);
   };
   if (u.layout.platform !== 'web') return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}><Txt kind="small" muted>Extensions run in the web and desktop apps.</Txt></View>;
-  return <WebExtension id={extension.id} source={source} title={extension.name} surface={u.c.surface0} context={context} revision={`${doc.id}:${doc.revision}:${c.selection.join()}:${u.c.surface0}:${allowed.join()}`} onCall={onCall} channel={channel} onReady={() => { setKeys([]); setWatching(false); sendView.current(); }} />;
+  return <WebExtension id={extension.id} source={source} title={extension.name} surface={transparent ? 'transparent' : surface ?? u.c.surface0} passThrough={!!entry && !takesPointer(entry.ui, entry.capturing)} context={context} revision={`${doc.id}:${doc.revision}:${c.selection.join()}:${u.c.surface0}:${allowed.join()}`} onCall={onCall} channel={channel} onEscape={onEscape} onHover={onHover}
+    onReady={() => { setKeys([]); setWatching(false); uiSent.current = ''; inputSent.current = -1; sendUi.current(); sendView.current(); }} />;
 }
 /** An imported extension asks before it does more than read: what it wants, in words, and one press to allow it. */
-function Grant({ extension, controller: c }: { extension: CatalogExtension; controller: CanvasController }) {
+function Grant({ extension, controller: c, inline }: { extension: CatalogExtension; controller: CanvasController; inline?: boolean }) {
   const u = useUI(), [error, setError] = useState('');
   if (extension.granted || !extension.permissions.length) return null;
   const allow = () => { setError(''); void c.task(async () => { const catalog = await c.api.catalog({}); c.setCatalog(await c.api.catalogMutate({ expectedRevision: catalog.revision, action: { type: 'extension.grant', id: extension.id, granted: true } })); }).catch(() => setError('The permission could not be saved.')); };
+  if (inline) return <Button label={error ? 'Retry' : 'Allow'} small variant="primary" onPress={allow} />;
   return <View nativeID={`lienzo-extension-grant-${extension.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.wash('aviso') }}>
     <Txt kind="small" style={{ flex: 1 }}>It came in the file “{c.catalog?.packs.find(p => p.id === extension.source)?.name ?? extension.source}” and asks to {list(extension.permissions.map(p => PERMISSION[p]))}. Without your permission it can only read and select.{error ? ` ${error}` : ''}</Txt>
     <Button label="Allow" small variant="primary" onPress={allow} />
   </View>;
 }
-/** A tool made by the person or their agent, as a tab of the right panel, working on the shared selection. */
-export function ExtensionTool({ extension, controller, stage, onOpen, onClose, height }: { extension: CatalogExtension; controller: CanvasController; stage?: ExtensionStage; onOpen(id: string): void; onClose(): void; height: number }) {
-  const u = useUI();
-  return <View nativeID={`lienzo-extension-tool-${extension.id}`} style={{ height, overflow: 'hidden' }}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 4, minHeight: 36, borderBottomWidth: 1, borderColor: u.c.border }}><Txt kind="small" muted numberOfLines={1} style={{ flex: 1 }}>{extension.description || 'Extension'}</Txt><IconButton icon="X" label={`Close ${extension.name}`} onPress={onClose} /></View>
-    <Grant extension={extension} controller={controller} />
-    <View style={{ flex: 1, minHeight: 0 }}><ExtensionFrame extension={extension} controller={controller} stage={stage} onOpen={onOpen} onClose={onClose} /></View>
+/** A small round ✕ in the corner: always there for a minimal panel; for chromeless ones and fullscreen, on hover or focus. */
+function CloseDot({ name, onPress, visible }: { name: string; onPress(): void; visible: boolean }) {
+  const u = useUI(), [focus, setFocus] = useState(false), [hover, setHover] = useState(false), shown = visible || focus || hover || u.compact;
+  return <Pressable nativeID="lienzo-extension-close" accessibilityRole="button" accessibilityLabel={`Close ${name}`} onPress={e => { e.stopPropagation(); onPress(); }} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} onHoverIn={() => setHover(true)} onHoverOut={() => setHover(false)} hitSlop={6}
+    style={{ position: 'absolute', top: X.close.inset, right: X.close.inset, width: X.close.size, height: X.close.size, borderRadius: X.close.size / 2, alignItems: 'center', justifyContent: 'center', zIndex: 3, opacity: shown ? 1 : X.close.idleAlpha,
+      backgroundColor: hover ? u.c.surface2 : withAlpha(u.c.surface1, .94), borderWidth: focus ? 2 : 1, borderColor: focus ? u.c.accent : u.c.border, transitionProperty: 'opacity, background-color', transitionDuration: '160ms' } as object}>
+    <Icon name="X" size={X.close.icon} color={u.c.foreground} />
+  </Pressable>;
+}
+/** The name of whatever draws over the canvas, and its close button. Its ring turns accent while the page holds the pointer. */
+function OverlayChip({ extension, controller, capturing, onClose, top }: { extension: CatalogExtension; controller: CanvasController; capturing: boolean; onClose(): void; top: number }) {
+  const u = useUI(), accent = extensionAccent(extension, u), restricted = !extension.granted && extension.permissions.length > 0;
+  return <View pointerEvents="box-none" style={{ position: 'absolute', top, left: 0, right: 0, alignItems: 'center', zIndex: X.chip.z }}>
+    <View nativeID={`lienzo-extension-chip-${extension.id}`} accessibilityLabel={`${extension.name} draws over the canvas${capturing ? ' and takes the pointer' : ''}`} style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, height: X.chip.height, maxWidth: X.chip.maxWidth, paddingLeft: 6, paddingRight: 2, paddingVertical: 0, borderRadius: X.chip.height / 2, borderWidth: capturing ? 1.5 : 1, borderColor: capturing ? accent : u.c.border }]}>
+      <View style={{ width: X.chip.tile, height: X.chip.tile, borderRadius: X.chip.tile / 2, backgroundColor: withAlpha(accent, .16), alignItems: 'center', justifyContent: 'center' }}><Icon name={extensionIcon(extension)} size={X.chip.icon} color={accent} /></View>
+      <Txt kind="small" numberOfLines={1} style={{ flexShrink: 1 }}>{extension.name}</Txt>
+      {restricted && <Grant extension={extension} controller={controller} inline />}
+      <IconButton icon="X" label={`Close ${extension.name}`} detail="Esc" size={26} onPress={onClose} />
+    </View>
   </View>;
+}
+/**
+ * An open extension, the way its presentation asks (docs/design.md §45): one box whose style follows the mode, so
+ * lienzo.ui.set never reloads the page. Panels get Lienzo's island look with a title bar (full), only a ✕ (minimal) or
+ * nothing at all (none); a popover points at its anchor; an overlay is clear and lets the pointer through; fullscreen
+ * covers the Lienzo area.
+ */
+export function ExtensionSurface({ extension, controller, stage, entry, place, canvas, chipTop, onEntry, onOpen, onClose, onHelp }: { extension: CatalogExtension; controller: CanvasController; stage: ExtensionStage; entry: OpenExtension; place: SurfacePlacement; canvas: Box; chipTop: number;
+  onEntry(patch: Partial<OpenExtension>): void; onOpen(id: string): void; onClose(): void; onHelp?(): void }) {
+  const u = useUI(), ui = entry.ui, accent = extensionAccent(extension, u);
+  const card = ui.mode === 'popover' || ui.mode === 'panel' && ui.chrome !== 'none', bare = ui.mode === 'overlay' || ui.mode === 'panel' && ui.chrome === 'none';
+  const [hover, setHover] = useState(false), hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hovering = (inside: boolean) => { if (hoverTimer.current) clearTimeout(hoverTimer.current); if (inside) setHover(true); else hoverTimer.current = setTimeout(() => setHover(false), X.close.hideMs); };
+  useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
+  const z = place.z === 'overlay' ? 0 : place.z === 'fullscreen' ? X.fullscreen.z : place.z === 'popover' ? X.popover.z : X.panel.z;
+  const frameRect = { x: place.x - canvas.x, y: place.y - canvas.y, width: place.width, height: place.height };
+  const header = ui.mode === 'panel' && ui.chrome === 'full', dot = ui.mode === 'fullscreen' || ui.mode === 'popover' || ui.mode === 'panel' && ui.chrome !== 'full';
+  const box = { position: 'absolute', left: place.x, top: place.y, width: place.width, height: place.height, zIndex: z } as const;
+  const look = card ? { ...islandStyle(u, true), padding: 0, gap: 0, overflow: 'visible' as const, borderColor: ui.mode === 'popover' ? withAlpha(accent, .45) : u.c.border } : ui.mode === 'fullscreen' ? { backgroundColor: u.c.surface0 } : { backgroundColor: 'transparent' };
+  const escape = closesOnEscape(ui) ? onClose : undefined;
+  return <>
+    {ui.dimCanvas > 0 && <View pointerEvents="none" nativeID={`lienzo-extension-scrim-${extension.id}`} style={{ position: 'absolute', left: canvas.x, top: canvas.y, width: canvas.width, height: canvas.height, zIndex: z, backgroundColor: withAlpha(X.scrim.ink, ui.dimCanvas) }} />}
+    <View nativeID={`lienzo-extension-tool-${extension.id}`} accessibilityLabel={extension.name} pointerEvents={ui.mode === 'overlay' ? 'box-none' : 'auto'} {...{ dataSet: { mode: ui.mode, chrome: ui.chrome } }} style={[box, look]}>
+      {ui.mode === 'popover' && place.arrow && <View pointerEvents="none" style={{ position: 'absolute', left: place.arrow.x - X.popover.arrow, [place.arrow.side === 'top' ? 'top' : 'bottom']: -X.popover.arrow, width: 2 * X.popover.arrow, height: 2 * X.popover.arrow, backgroundColor: u.c.surface1, borderColor: withAlpha(accent, .45),
+        borderTopWidth: place.arrow.side === 'top' ? 1 : 0, borderLeftWidth: place.arrow.side === 'top' ? 1 : 0, borderBottomWidth: place.arrow.side === 'bottom' ? 1 : 0, borderRightWidth: place.arrow.side === 'bottom' ? 1 : 0, transform: [{ rotate: '45deg' }], zIndex: 2 }} />}
+      <View style={{ flex: 1, minHeight: 0, borderRadius: card ? tokens.island.radius : 0, overflow: 'hidden' }}>
+        {header && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8, paddingRight: 4, height: X.panel.header, borderBottomWidth: 1, borderColor: u.c.border }}>
+          <View style={{ width: X.panel.tile, height: X.panel.tile, borderRadius: 7, backgroundColor: withAlpha(accent, .14), alignItems: 'center', justifyContent: 'center' }}><Icon name={extensionIcon(extension)} size={X.panel.tileIcon} color={accent} /></View>
+          <Txt kind="bodyStrong" numberOfLines={1} style={{ flex: 1, minWidth: 0 }}>{extension.name}</Txt>
+          {onHelp && <IconButton icon="CircleHelp" label={`Help: ${extension.name}`} detail={extension.description || undefined} onPress={onHelp} />}
+          <IconButton icon="X" label={`Close ${extension.name}`} onPress={onClose} />
+        </View>}
+        {ui.mode !== 'overlay' && <Grant extension={extension} controller={controller} />}
+        <View style={{ flex: 1, minHeight: 0 }}><ExtensionFrame extension={extension} controller={controller} stage={stage} onOpen={onOpen} onClose={onClose} entry={entry} rect={frameRect} onEntry={onEntry} onEscape={escape} onHover={dot ? hovering : undefined} transparent={bare} surface={card ? u.c.surface1 : undefined} /></View>
+      </View>
+      {dot && <CloseDot name={extension.name} onPress={onClose} visible={ui.chrome === 'minimal' && ui.mode === 'panel' || hover} />}
+    </View>
+    {ui.mode === 'overlay' && <OverlayChip extension={extension} controller={controller} capturing={entry.capturing} onClose={onClose} top={chipTop} />}
+  </>;
 }

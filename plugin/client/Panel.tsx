@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, View } from 'react-native';
-import { type PanelProps, AgentBadge, AgentSheet, capabilities, useAgent, useSettings } from './host';
+import { type PanelProps, AgentBadge, AgentSheet, capabilities, capture, useAgent, useSettings } from './host';
 import { Icon, ScrollView, useToast } from './host';
 import type { BlockType, CanvasGroup, CanvasOperation } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
@@ -13,7 +13,7 @@ import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
 import { requestTitleEdit, visual } from './Blocks';
 import { connectOperations, groupOperations, layoutDocument, movable, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
-import { attachClipboard, attachFileDrop, attachFilePaste, isMacPlatform, keyboard, readClipboardText, runCopyCommand, trackPointer, type PanelKey } from './web';
+import { attachClipboard, attachFileDrop, attachFilePaste, isMacPlatform, isTyping, keyboard, onEscapeKey, readClipboardText, runCopyCommand, trackPointer, type PanelKey } from './web';
 import { ARRANGE_COMMANDS, alignDeltas, arrangeOperations, distributeDeltas, flipOperations, nudgeBurst, nudgeDelta, selectionBoxes, type AlignKind, type DistributeKind, type FlipAxis } from './arrange';
 import { clipBounds, clipText, copyClip, duplicateOperations, parseClip, pasteOperations, placeAt, rememberClip, rememberedClip, type Clip } from './clipboard';
 import { imageFiles, imageTitle, provideMediaHost, storeImage, type ImageFile } from './media-store';
@@ -25,7 +25,9 @@ import { tokens } from './tokens';
 import { isDark, withAlpha, type Tone } from './color';
 import { APPEARANCES, adoptAppearance, chooseAppearance, getAppearance, type Appearance } from './appearance';
 import { usePresentation } from './usePresentation';
-import { ExtensionTool, extensionIcon, type ExtensionStage } from './Extensions';
+import { ExtensionSurface, extensionAccent, extensionIcon, type ExtensionStage, type OpenExtension } from './Extensions';
+import { HiddenRegistry, clipBox, closesOnEscape, screenBounds, surfaceBox, type Box } from './extension-ui';
+import { presentationInputIssue, resolvePresentation } from '../shared/presentation';
 import { extensionView } from '../shared/extensions';
 import { StyleIsland, LibraryPopover } from './FloatingTools';
 import type { RecentIcon } from './icon-library';
@@ -142,7 +144,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   }), [raw]);
   const doc = c.view?.document, comments = useComments(c);
   const [width, setWidth] = useState(0), [panelHeight, setPanelHeight] = useState(0), [toolbarBox, setToolbarBox] = useState({ x: 0, width: 0 });
-  const [extTools, setExtTools] = useState<string[]>([]), [screen, setScreen] = useState<ScreenState | null>(null);
+  const [canvasBox, setCanvasBox] = useState<Box>({ x: 0, y: 0, width: 0, height: 0 }), [, setCameraTick] = useState(0);
+  const [opened, setOpened] = useState<OpenExtension[]>([]), [screen, setScreen] = useState<ScreenState | null>(null);
   const [showAllWarnings, setShowAllWarnings] = useState(false);
   const [agentsOpen, setAgentsOpen] = useState(false), [overflow, setOverflow] = useState(false), [reload, setReload] = useState(false);
   const [tool, setTool] = useState<CanvasTool>('select'), [toolStyle, setToolStyle] = useState<ToolStyle>(DEFAULT_TOOL_STYLE), [toolLocked, setToolLocked] = useState(false), [shapePick, setShapePick] = useState<WbShape>('rect');
@@ -195,18 +198,37 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   // What an open extension sees of the canvas and may do to it beside the document: the camera, a highlight (never saved).
   const framedRef = useRef<() => void>(() => {}), viewSubs = useRef(new Set<() => void>()), docRef = useRef(doc); docRef.current = doc;
   const [highlight, setHighlight] = useState<(CanvasHighlight & { owner: string }) | null>(null);
+  // What extensions hid for an effect (lienzo.hide): drawn as gone, never saved, back when they close.
+  const hiddenRef = useRef<HiddenRegistry | null>(null); if (!hiddenRef.current) hiddenRef.current = new HiddenRegistry(); const hiddenRegistry = hiddenRef.current;
+  const [veiled, setVeiled] = useState<ReadonlySet<string>>(() => hiddenRegistry.ids());
+  useEffect(() => hiddenRegistry.subscribe(() => setVeiled(hiddenRegistry.ids())), [hiddenRegistry]);
   const stage = useMemo<ExtensionStage>(() => ({
+    hide: (owner, ids, ms) => hiddenRegistry.hide(owner, ids, ms), show: (owner, ids) => hiddenRegistry.show(owner, ids),
+    // A picture of things as drawn now: the host captures the window (the desktop app); in a browser there is none.
+    snapshot: capture ? async ids => {
+      const camera = canvas.current?.camera(), port = canvasPort(); if (!camera || !port) return null;
+      const k = camera.scale, rects = ids.map(id => geometry.current.rects.get(id)).filter((r): r is Rect => !!r && !r.hidden);
+      const box = screenBounds(rects, { scale: k, offset: { x: -camera.bounds.x * k, y: -camera.bounds.y * k } }), seen = box && clipBox(box, { x: 0, y: 0, width: port.width, height: port.height });
+      if (!seen) return null;
+      const url = await capture!({ x: Math.round(port.x + seen.x), y: Math.round(port.y + seen.y), width: Math.round(seen.width), height: Math.round(seen.height) });
+      return url ? { url, rect: { x: Math.round(seen.x), y: Math.round(seen.y), width: Math.round(seen.width), height: Math.round(seen.height) } } : null;
+    } : null,
     view: () => { const camera = canvas.current?.camera(), d = docRef.current; if (!camera || !d) return null; return extensionView(camera, geometry.current.rects, [...d.groups, ...d.blocks].map(e => e.id), d.groups.filter(g => g.sheet && !g.parentGroupId).sort((a, b) => a.sheet!.number - b.sheet!.number).map(g => g.id)); },
     fit: (ids, options) => { const framed = canvas.current?.frameIds(ids, options) ?? false; if (framed) framedRef.current(); return framed; },
     subscribe: listener => { viewSubs.current.add(listener); return () => { viewSubs.current.delete(listener); }; },
     highlight: (owner, next) => setHighlight(current => next?.ids.length ? { ...next, owner } : current?.owner === owner ? null : current),
   }), []);
+  // Where the canvas is in the page, for a snapshot (the desktop app captures page pixels).
+  function canvasPort(): Box | null {
+    const el = (globalThis as unknown as { document?: { getElementById(id: string): { getBoundingClientRect(): { left: number; top: number; width: number; height: number } } | null } }).document?.getElementById('lienzo-canvas-viewport');
+    if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height };
+  }
   const copilot = useCopilotCanvas({ c, fly: ids => canvas.current?.flyToIds(ids), geometry, center: () => canvas.current?.viewportCenter(), active: !(u.compact && ['select', 'svg'].includes(tool)) && !!c.view });
   framedRef.current = copilot.framed;
   const keyLabel = (id: string) => { const combo = resolved.list.find(s => s.id === id)?.assigned[0]; return combo ? formatCombo(combo, mac) : undefined; };
   const chips = (combo: string) => comboParts(combo, mac);
   useEffect(() => { if (c.arrival) toast.show(`New Lienzo: “${c.arrival.title}”`, { variant: 'info' }); }, [c.arrival?.id]);
-  useEffect(() => { setReload(false); setLinkId(null); setExtTools([]); setHighlight(null); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
+  useEffect(() => { setReload(false); setLinkId(null); setOpened([]); setHighlight(null); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
   useEffect(() => { setAddOpen(false); }, [u.compact]);
   useEffect(() => { if (linkId && (c.selection.length || !doc?.links.some(l => l.id === linkId))) setLinkId(null); }, [linkId, c.selection, doc?.links]);
   // A new selection brings the panel back if the person had hidden it, and a section asked for earlier is forgotten.
@@ -539,7 +561,29 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   // Tools the person or their agent added are read again whenever the catalog or the menu opens.
   const extensionTools = (c.catalog?.extensions ?? []).filter(e => e.kind === 'tool');
   useEffect(() => { if (addOpen || overflow || paletteOpen) void c.api.catalog({}).then(c.setCatalog).catch(() => {}); }, [addOpen, overflow, paletteOpen]);
-  const toggleExtension = (id: string) => { if (!doc) { openDocuments(); return; } setExtTools(open => open.includes(id) ? open.filter(x => x !== id) : [...open, id]); setPanel(p => ({ ...p, hidden: false, tab: 'ext:' + id })); };
+  // ---- Open extensions: each shows the way its presentation asks (Extensions.tsx, ExtensionSurface), above the canvas.
+  const openExtension = (id: string, how: { mode?: OpenExtension['ui']['mode']; input?: unknown; anchorId?: string } = {}) => {
+    const extension = (c.catalog?.extensions ?? []).find(e => e.id === id); if (!extension) return false;
+    setOpened(list => {
+      const was = list.find(e => e.id === id), base = was?.ui ?? resolvePresentation(extension.presentation);
+      const ui = how.mode && how.mode !== base.mode ? resolvePresentation(extension.presentation, base, { mode: how.mode }) : base;
+      const { ignored: _, ...clean } = ui as typeof ui & { ignored?: string[] };
+      const next: OpenExtension = { id, ui: clean, capturing: (was?.capturing ?? false) && clean.mode === 'overlay', ...(how.input !== undefined && !presentationInputIssue(how.input) ? { input: { value: how.input, seq: (was?.input?.seq ?? 0) + 1 } } : was?.input ? { input: was.input } : {}), ...(how.anchorId ? { anchorId: how.anchorId } : was?.anchorId ? { anchorId: was.anchorId } : {}) };
+      return was ? list.map(e => e.id === id ? next : e) : [...list, next];
+    });
+    return true;
+  };
+  const closeExtension = (id: string) => setOpened(list => list.filter(e => e.id !== id));
+  const toggleExtension = (id: string) => { if (!doc) { openDocuments(); return; } if (opened.some(e => e.id === id)) closeExtension(id); else openExtension(id); };
+  // An agent asked this window to open or close one (canvas_extension_open / _close): the catalog is read again
+  // first when it names one this window has not seen yet.
+  const uiRequest = useRef<(request: { action: 'open' | 'close'; extension: string; mode?: OpenExtension['ui']['mode']; input?: unknown; anchorId?: string }) => void>(() => {});
+  uiRequest.current = request => {
+    if (request.action === 'close') { closeExtension(request.extension); return; }
+    setScreen(null);
+    if (!openExtension(request.extension, request)) void c.api.catalog({}).then(next => { c.setCatalog(next); setTimeout(() => uiRequest.current(request), 0); }).catch(() => {});
+  };
+  useEffect(() => raw.onUiRequest(request => uiRequest.current(request)), []);
   const typeOf = (renderer: string) => c.catalog?.blockTypes.find(t => t.renderer === renderer);
   const entries: ToolEntry[] = (() => {
     const shape = (id: WbShape, name: string, description: string, shortcut?: string): ToolEntry => ({ id: 'shape.' + id, section: 'Shapes & drawing', name, description, icon: shapeIcon(id), keywords: 'shape ' + id, shortcut: shortcut && keyLabel(shortcut), active: toolId === 'shape' && toolStyle.shape === id, run: () => pickShape(id) });
@@ -564,12 +608,12 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       if (isWhiteboardRenderer(type.renderer) || ['html', 'file-tree', 'preview-frame', 'image-ref'].includes(type.renderer ?? '')) continue;
       const v = visual(type); list.push({ id: 'type.' + type.id, section: 'Blocks', name: type.name, description: type.description, icon: v.icon, tone: v.tone as Tone, keywords: (getClientRenderer(type.renderer) ? 'interactive ' : '') + type.id, run: () => insert(type) });
     }
-    for (const extension of extensionTools) list.push({ id: 'ext.' + extension.id, section: 'Extensions', name: extension.name, description: extension.description || 'A tool from an extension.', icon: extensionIcon(extension), keywords: 'extension tool', active: extTools.includes(extension.id), run: () => toggleExtension(extension.id) });
+    for (const extension of extensionTools) list.push({ id: 'ext.' + extension.id, section: 'Extensions', name: extension.name, description: extension.description || 'A tool from an extension.', icon: extensionIcon(extension), color: extension.presentation?.accent ? extensionAccent(extension, u) : undefined, keywords: 'extension tool', active: opened.some(e => e.id === extension.id), run: () => toggleExtension(extension.id) });
     return list.map(e => ({ ...e, disabled: !doc || (disabled && e.section !== 'Extensions') }));
   })();
   const pinnedEntries = pinnedIds.map(id => entries.find(e => e.id === id)).filter((e): e is ToolEntry => !!e);
   const togglePin = (id: string) => { const next = pinnedIds.includes(id) ? pinnedIds.filter(x => x !== id) : [...pinnedIds, id].slice(-F.toolbar.maxPinned); savePrefs({ pinned: next }); };
-  const pinnedTools: PinnedTool[] = pinnedEntries.map(e => ({ id: e.id, label: e.name, icon: e.icon, color: e.tone && e.tone !== 'neutro' ? u.tone(e.tone) : undefined, detail: e.description, active: e.active, onPress: e.run }));
+  const pinnedTools: PinnedTool[] = pinnedEntries.map(e => ({ id: e.id, label: e.name, icon: e.icon, color: e.color ?? (e.tone && e.tone !== 'neutro' ? u.tone(e.tone) : undefined), detail: e.description, active: e.active, onPress: e.run }));
   // ---- The right panel: Properties of the selection, the tool's options, extension tools; the document when asked.
   const hasSelection = !!doc && (!!c.selection.length || !!linkId), toolOptions = !!doc && ['text', 'shape', 'draw', 'eraser'].includes(tool);
   const styleNode = (selectionKinds.size > 0 || toolOptions) ? <StyleIsland bare tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation="vertical" touch={u.compact} disabled={disabled} myStrokes={myLayers.reduce((sum, layer) => sum + layer.strokes, 0)} onClearMyStrokes={clearMyStrokes} /> : null;
@@ -594,7 +638,6 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   })();
   if (hasSelection) tabs.push({ id: 'properties', label: 'Properties', icon: 'SlidersHorizontal', content: selectionProperties, help: () => openHelp(selectionHelp) });
   if (toolOptions && styleNode) tabs.push({ id: 'tool', label: toolName + ' options', icon: tool === 'draw' ? 'Pencil' : tool === 'text' ? 'Type' : tool === 'eraser' ? 'Eraser' : 'Shapes', content: <View nativeID="lienzo-tool-options" style={{ padding: F.rightPanel.padding }}>{styleNode}</View> });
-  for (const id of extTools) { const extension = extensionTools.find(e => e.id === id); if (extension && doc) tabs.push({ id: 'ext:' + id, label: extension.name, icon: extensionIcon(extension), help: () => openHelp(pageForSelection({ kind: 'extension', id: extension.id })), scroll: false, content: <ExtensionTool key={id} extension={extension} controller={c} stage={stage} onOpen={id => { void c.select([id]); }} onClose={() => setExtTools(open => open.filter(x => x !== extension.id))} height={Math.min(440, Math.max(240, panelHeight - F.top.height - 2 * tokens.island.inset - F.rightPanel.bottomClearance - F.rightPanel.tabs - 20))} /> }); }
   if (doc && comments.listOpen) tabs.push({ id: 'comments', label: 'Comments', icon: 'MessageSquare', help: () => openHelp('agents.comments'), content: <CommentsList state={comments} titleOf={titleOf} inline={mode === 'outline'} onGo={goToComment} /> });
   if (!tabs.length && (panel.pinned || panel.forced) && documentProperties) tabs.push({ id: 'properties', label: 'Lienzo', icon: 'Frame', content: documentProperties });
   // A selection opens Properties by itself only when it fits beside the canvas; on a narrow or compact panel it would
@@ -602,8 +645,12 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const roomy = panelFits(width, u.compact);
   const panelVisible = !!doc && !immersive && !panel.hidden && tabs.length > 0 && (roomy ? true : panel.forced);
   const activeTab = tabs.some(t => t.id === panel.tab) ? panel.tab : tabs[0]?.id ?? 'properties';
+  // What covers the right of the canvas, so a fit (lienzo.view.fit, Go to) frames things clear of it: the right panel
+  // and extension panels docked on the right.
+  const rightTools = u.compact ? [] : opened.filter(e => e.ui.mode === 'panel' && e.ui.position === 'right');
+  const obscuredRight = (panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0) + (rightTools.length ? Math.max(...rightTools.map(e => e.ui.width)) + tokens.island.inset : 0);
   // ⌘\ hides what is showing; it brings the panel back for the selection or the tool, or for the Lienzo when there is neither.
-  const sources = hasSelection || (toolOptions && !!styleNode) || extTools.length > 0 || comments.listOpen;
+  const sources = hasSelection || (toolOptions && !!styleNode) || comments.listOpen;
   const togglePanel = () => setPanel(p => panelVisible ? { ...p, hidden: true, forced: false } : { ...p, hidden: false, forced: !sources || !roomy });
   // ---- ⌘K: everything the panel can do, in one list.
   const paletteItems = (query: string): PaletteItem[] => {
@@ -716,6 +763,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (comments.placing) { comments.setPlacing(false); return true; }
     if (addOpen) { setAddOpen(false); return true; }
     if (libraryOpen) { setLibraryOpen(false); return true; }
+    // An extension that is not a panel with its title bar closes with Esc, the most recent first.
+    const dismiss = [...opened].reverse().find(e => closesOnEscape(e.ui));
+    if (dismiss) { closeExtension(dismiss.id); return true; }
     if (immersive) { setImmersive(false); return true; }
     if (interactionId) { canvas.current?.endInteraction(); return true; }
     if (tool !== 'select') { canvas.current?.cancelGesture(); chooseTool('select'); return true; }
@@ -764,6 +814,15 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (u.layout.platform !== 'web') return;
     return keyboard(root.current, e => keys.current.main(e), e => keys.current.field(e));
   }, [u.layout.platform]);
+  // Esc closes an overlay, popover, fullscreen or chromeless panel from anywhere, the canvas included (which keeps
+  // Esc for itself), unless something above it takes Esc first or the person is typing.
+  const extensionEscape = useRef<() => boolean>(() => false);
+  extensionEscape.current = () => {
+    if (modalOpen || overflow || addOpen || libraryOpen || comments.open || comments.placing || isTyping()) return false;
+    const dismiss = [...opened].reverse().find(e => closesOnEscape(e.ui)); if (!dismiss) return false;
+    closeExtension(dismiss.id); return true;
+  };
+  useEffect(() => onEscapeKey(() => extensionEscape.current(), true), []);
   const menuRows = <>
       {/* Grouped by what the action is about; one left edge, dividers instead of headings. */}
       <MenuRow icon="Plus" label="New Lienzo" disabled={disabled} onPress={() => { setOverflow(false); void newCanvas(); }} />
@@ -828,18 +887,42 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {screen?.kind === 'help' && <WikiContent width={frame.width} page={screen.page} onPage={page => setScreen({ kind: 'help', page })} extensions={c.catalog?.extensions ?? []} shortcuts={resolved.list} chips={chips} onTour={() => { setScreen(null); setGuideOpen(true); }} />}
     </Screen>
   </>;
+  // ---- Open extensions over the canvas (docs/design.md §45). One box each; a popover follows the camera.
+  const popoverOpen = opened.some(e => e.ui.mode === 'popover');
+  useEffect(() => {
+    if (!popoverOpen) return; let frame = 0;
+    const stop = stage.subscribe(() => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; setCameraTick(t => t + 1); }); });
+    return () => { stop(); if (frame) cancelAnimationFrame(frame); };
+  }, [popoverOpen, stage]);
+  const anchorBox = (entry: OpenExtension): Box | null => {
+    const camera = canvas.current?.camera(); if (!camera) return null;
+    const ids = entry.anchorId && geometry.current.rects.has(entry.anchorId) ? [entry.anchorId] : c.selection, k = camera.scale;
+    const box = screenBounds(ids.map(id => geometry.current.rects.get(id)).filter((r): r is Rect => !!r && !r.hidden), { scale: k, offset: { x: canvasBox.x - camera.bounds.x * k, y: canvasBox.y - camera.bounds.y * k } });
+    return box && clipBox(box, canvasBox) ? box : null;
+  };
+  const surfaceInsets = u.compact ? { top: 8, bottom: 8, left: 8, right: 8, chip: 8 }
+    : { top: tokens.island.inset + F.top.height + F.top.islandGap - canvasBox.y, bottom: toolbarBottom + F.toolbar.height + 12, left: islandLeft, right: tokens.island.inset + (panelVisible ? F.rightPanel.width + F.rightPanel.inset : 0), chip: 0 };
+  const chipTop = u.compact ? canvasBox.y + 8 : width < 880 ? tokens.island.inset + F.top.height + 8 : tokens.island.inset + (F.top.height - tokens.extensionUi.chip.height) / 2;
+  const extensionLayer = doc && canvasBox.width > 0 ? opened.map((entry, i) => {
+    const extension = extensionTools.find(e => e.id === entry.id); if (!extension) return null;
+    const stack = opened.slice(0, i).filter(e => e.ui.mode === 'panel' && e.ui.position === entry.ui.position && entry.ui.mode === 'panel').length;
+    const place = surfaceBox(entry.ui, { width, height: panelHeight }, canvasBox, surfaceInsets, { compact: u.compact, anchor: entry.ui.mode === 'popover' ? anchorBox(entry) : null, stack });
+    return <ExtensionSurface key={entry.id} extension={extension} controller={c} stage={stage} entry={entry} place={place} canvas={canvasBox} chipTop={chipTop}
+      onEntry={patch => setOpened(list => list.map(e => e.id === entry.id ? { ...e, ...patch } : e))} onOpen={id => { void c.select([id]); }} onClose={() => closeExtension(entry.id)} onHelp={() => openHelp(pageForSelection({ kind: 'extension', id: extension.id }))} />;
+  }) : null;
   const empty = !!doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select';
   return <TooltipProvider root={root}><View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
     {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, paddingLeft: 8 + u.inset.left, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
       <Badged><IconButton icon="Menu" label="Menu" onPress={() => setOverflow(true)} /></Badged><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center />}<IconButton icon="Undo2" label="Undo" shortcut={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} onPress={() => setPaletteOpen(true)} /><IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} disabled={!doc} active={panelVisible} onPress={togglePanel} />
     </View>}
-    <View style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
+    <View onLayout={e => { const l = e.nativeEvent.layout; setCanvasBox(b => b.x === l.x && b.y === l.y && b.width === l.width && b.height === l.height ? b : { x: l.x, y: l.y, width: l.width, height: l.height }); }} style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState art={<MateDrawing size={112} />} title="Pour yourself a mate." description="Then start a Lienzo, or ask your agent to draw what it is explaining.">
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}<Button label="Import…" icon="FileInput" variant="ghost" disabled={c.offline} onPress={() => { void importLienzo(); }} /></View>
-      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} veiled={veiled} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={obscuredRight}
         overlay={view => <CommentLayer state={comments} view={view} groups={new Set(doc.groups.map(g => g.id))} titleOf={titleOf} hidden={immersive}
           clear={u.compact ? { top: 8, bottom: 8, right: 8 } : { top: tokens.island.inset + F.top.height + 8, bottom: F.toolbar.bottom + F.toolbar.height + 8, right: panelVisible ? F.rightPanel.width + F.rightPanel.inset + 8 : 8 }} />} />}
     </View>
+    {extensionLayer}
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {imagesBusy && <View pointerEvents="none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 31 }}><View nativeID="lienzo-images-busy" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><LoadingEgg /><Txt kind="small">Adding images…</Txt></View></View>}
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}

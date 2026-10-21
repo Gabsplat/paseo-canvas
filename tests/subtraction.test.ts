@@ -19,6 +19,8 @@ import * as propertyModel from '../plugin/client/property-model';
 import * as mediaStore from '../plugin/client/media-store';
 import * as sharedMedia from '../plugin/shared/media';
 import * as wiki from '../plugin/shared/wiki';
+import * as extensionUi from '../plugin/client/extension-ui';
+import * as presentation from '../plugin/shared/presentation';
 import { builtinTypes } from '../plugin/shared/builtins';
 import { createInputSchema, blockTypeSchema, type CanvasDocument } from '../plugin/shared/model';
 
@@ -41,7 +43,7 @@ function runtime(controller: any) {
   const host = { Icon: 'Icon', ScrollView: 'ScrollView', Modal: modal, useToast: () => ({ show() {}, error() {} }) };
   const modules: Record<string, any> = {
     react, 'react-native': native,
-    './host': { ...host, useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }), AgentSheet: null, AgentBadge: null, capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
+    './host': { ...host, useAgent: () => null, useSettings: () => ({ status: 'ready', values: { guideSeen: true } }), AgentSheet: null, AgentBadge: null, capture: null, capabilities: { kind: 'paseo', name: 'Paseo', keptFor: 'for this Paseo host', runsAgents: true } },
     './useCanvas': { useCanvas: () => controller }, './tokens': { tokens }, './logic': logic,
     '../shared/preferences': { canvasPreferences, interfacePreferences }, './web': { isMacPlatform: () => false, focusInput() {}, keyboard: () => () => {}, attachFileDrop: () => () => {}, attachFilePaste: () => () => {} }, './motion': {},
     './panel-actions': panelActions, '../shared/learning': learning, '../shared/extensions': { extensionView: () => null },
@@ -55,7 +57,7 @@ function runtime(controller: any) {
     './HiddenResult': { HiddenResult: control('HiddenResult') },
     './useLearning': { recordInteraction: async () => {} },
     './FloatingTools': Object.fromEntries(['ToolIsland','StyleIsland','ShapePopover','LibraryPopover','SvgImportDialog'].map(name=>[name,control(name)])), './whiteboard-tools': { DEFAULT_TOOL_STYLE }, './interaction': { needsContentInteraction:()=>true }, '../shared/whiteboard': whiteboard, './whiteboard-visuals': { islandStyle: () => ({}) }, './media': { mediaSource: () => null }, './AddSheets': { LinkSheet: control('LinkSheet'), SvgSheet: control('SvgSheet') },
-    './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined }, './Hojas': { HojaControls: control('HojaControls'), HojaMenu: control('HojaMenu'), LatestPill: control('LatestPill'), useCopilotCanvas: () => ({ hojas: [], current: -1, follow: true, glowIds: [], unseen: false, menuOpen: false, setMenuOpen() {}, toggleFollow() {}, goToLatest: () => false, goToHoja: () => false, step: () => false, userMoved() {} }) }, './Extensions': { ExtensionTool: control('ExtensionTool'), extensionIcon: () => 'Puzzle' },
+    './renderers/RegisteredRenderer': { RegisteredRenderer: control('RegisteredRenderer') }, './renderers': { getClientRenderer: () => undefined }, './Hojas': { HojaControls: control('HojaControls'), HojaMenu: control('HojaMenu'), LatestPill: control('LatestPill'), useCopilotCanvas: () => ({ hojas: [], current: -1, follow: true, glowIds: [], unseen: false, menuOpen: false, setMenuOpen() {}, toggleFollow() {}, goToLatest: () => false, goToHoja: () => false, step: () => false, userMoved() {} }) }, './Extensions': { ExtensionSurface: control('ExtensionSurface'), extensionIcon: () => 'Puzzle', extensionAccent: () => '#000000' }, './extension-ui': extensionUi, '../shared/presentation': presentation,
     './Toolbar': { Toolbar: control('Toolbar'), GLOSSARY: { lienzo: 'Lienzo', marco: 'Frame', hoja: 'Sheet', lente: 'Lens', ventana: 'Window' }, shapeIcon: () => 'Square' },
     './AddMenu': { AddMenu: control('AddMenu') }, './RightPanel': { RightPanel: control('RightPanel'), PanelSection: control('PanelSection') },
     './CommandPalette': { CommandPalette: control('CommandPalette') },

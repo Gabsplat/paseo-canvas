@@ -33,7 +33,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');
  await click('#lienzo-tool-add');await wait('!!document.querySelector("#lienzo-add-menu")');const listed=await ev(`document.querySelector('#lienzo-add-menu').innerText`);
  assert.ok(listed.includes('Extensions')&&listed.includes('Find and replace'),'a tool made here is in the Extensions section');assert.ok(!listed.includes('Example · Mosaic'),'no extension view is offered');
  await shot('catalog');await click('[aria-label="Close the catalog"]');
- // 2. A tool made here (the find-and-replace contract example) edits through the same transactions as everything else, as a tab of the right panel.
+ // 2. A tool made here (the find-and-replace contract example) edits through the same transactions as everything else, in its panel over the canvas.
  await tool('find-replace');await wait(`!!document.querySelector('[id="lienzo-extension-find-replace"] iframe')`);await pause(700);
  const t=await frame('find-replace');await tap(t.x+t.w/2,t.y+44);await call('Input.insertText',{text:'Ejemplo'});await tap(t.x+t.w/2,t.y+100);await call('Input.insertText',{text:'Caso'});await pause(300);await shot('tool');
  const logged=await ev('__panelQA.log.length');let done=false;for(const dy of [164,150,178,136,192]){await tap(t.x+t.w/2,t.y+dy);await pause(500);if(await ev('__panelQA.log.length')>logged){done=true;break;}}

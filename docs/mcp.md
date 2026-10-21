@@ -707,6 +707,26 @@ Limits per run: 2 s, 64 MiB, a 64 KiB interpreter stack, 100 000 promise jobs, 2
 `lienzo.edit` calls, 20 `lienzo.select` calls, a 16 KiB result. The tool is preapproved like `canvas_apply`: what it can
 change is bounded by the permissions the person gave the extension.
 
+### Opening an extension's UI
+
+`canvas_extension_open { extension, documentId?, mode?, input?, anchorId? }` asks the person's open Lienzo window to
+open an extension the way the agent wants it seen: `mode` is `panel`, `overlay`, `popover` or `fullscreen` (default the
+manifest's `presentation`), `input` is any JSON up to 4 KB that the page reads as `lienzo.input` and through
+`lienzo.onInput(fn)`, and `anchorId` is the block or Frame a popover points at (default the selection).
+`canvas_extension_close { extension, documentId? }` closes it; what it hid or highlighted comes back.
+
+Delivery reuses the watch every open Lienzo already polls (`canvas.watch`, every 1.5 s): the request is held in memory
+by `server/extension-ui.ts` and handed to the windows that poll that Lienzo next, with `knownUiSeq`/`uiSeq` so a window
+that opens later never replays an old one. The tool waits up to 4.5 s for a window to take it. Without `documentId` it
+goes to the Lienzo a window of this workspace polled most recently. Nothing is queued for later.
+
+Result: `{ extension, name, action, documentId, delivered, note? }`. `delivered` is true only when a window took it;
+otherwise `note` says why (no Lienzo window open in the workspace, no window shows that Lienzo, or one shows it but did
+not take the request in time). An extension from a file that the person has not allowed yet opens without its
+permissions, and the note says so. Errors: `NOT_FOUND` (no such extension; an `anchorId` that is not on the Lienzo),
+`TOO_LARGE` (input over 4 KB), `FORBIDDEN` (another agent's canvas when the workspace keeps one per agent). The canvas
+stays one-way: nothing comes back from the page to the agent.
+
 ## Help pages
 
 `canvas_catalog help` reads the person's Help, the same data the Help screen shows (`plugin/shared/wiki`), so the agent

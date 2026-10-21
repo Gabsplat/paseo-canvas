@@ -72,8 +72,13 @@ test("visible ids, bounds and the Sheet under the centre come from the camera an
   ]);
   const ids = ["sheet-1", "sheet-2", "a", "b", "folded"], sheets = ["sheet-1", "sheet-2"];
   const first = extensionView({ scale: 1.23456, bounds: { x: -50, y: -50, width: 1100, height: 700 } }, rects, ids, sheets);
-  assert.deepEqual(first, { scale: 1.235, bounds: { x: -50, y: -50, width: 1100, height: 700 }, sheetId: "sheet-1", visibleIds: ["sheet-1", "a"] });
-  assert.deepEqual(extensionView({ scale: .5, bounds: { x: 900, y: 0, width: 600, height: 400 } }, rects, ids, sheets), { scale: .5, bounds: { x: 900, y: 0, width: 600, height: 400 }, sheetId: "sheet-2", visibleIds: ["sheet-1", "sheet-2", "b"] });
+  const { screen, rects: onScreen, ...rest } = first;
+  assert.deepEqual(rest, { scale: 1.235, bounds: { x: -50, y: -50, width: 1100, height: 700 }, sheetId: "sheet-1", visibleIds: ["sheet-1", "a"] });
+  // Added: where each visible thing is in pixels of the canvas area, the coordinates an overlay draws in.
+  assert.deepEqual(screen, { width: 1358, height: 864 }); assert.deepEqual(Object.keys(onScreen), ["sheet-1", "a"]);
+  assert.deepEqual(onScreen.a, { x: 185.2, y: 185.2, width: 246.9, height: 98.8 });
+  assert.deepEqual(extensionView({ scale: .5, bounds: { x: 900, y: 0, width: 600, height: 400 } }, rects, ids, sheets), { scale: .5, bounds: { x: 900, y: 0, width: 600, height: 400 }, sheetId: "sheet-2", visibleIds: ["sheet-1", "sheet-2", "b"],
+    screen: { width: 300, height: 200 }, rects: { "sheet-1": { x: -450, y: 0, width: 500, height: 300 }, "sheet-2": { x: 150, y: 0, width: 500, height: 300 }, b: { x: 200, y: 50, width: 100, height: 40 } } });
   assert.equal(extensionView({ scale: 1, bounds: { x: 1000, y: 700, width: 180, height: 400 } }, rects, ids, sheets).sheetId, null, "between Sheets is no Sheet");
 });
 

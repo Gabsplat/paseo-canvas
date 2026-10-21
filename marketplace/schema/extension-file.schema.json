@@ -47,6 +47,17 @@
           "icon": { "type": "string", "pattern": "^[A-Za-z0-9]{1,40}$", "description": "A Lucide icon name, like CaseSensitive." },
           "html": { "type": "string", "minLength": 1, "maxLength": 300000 },
           "permissions": { "type": "array", "uniqueItems": true, "maxItems": 4, "items": { "enum": ["edit", "network", "view", "variables"] } },
+          "presentation": {
+            "description": "How it appears (added to API 1): a panel, an overlay over the canvas, a popover at the selection or fullscreen. Sizes outside the limits are clamped.",
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "mode": { "enum": ["panel", "overlay", "popover", "fullscreen"] },
+              "width": { "type": "number", "description": "200 to 720 px." }, "height": { "type": "number", "description": "120 to 900 px." },
+              "chrome": { "enum": ["full", "minimal", "none"] }, "position": { "enum": ["right", "left", "bottom", "center"] },
+              "dimCanvas": { "type": "number", "minimum": 0, "description": "0 to 0.6." },
+              "accent": { "type": "string", "pattern": "^(accent|success|warning|violet|#[0-9a-fA-F]{6})$" }
+            }
+          },
           "actions": {
             "description": "What the extension offers an agent (canvas_extension_run). Each handler is registered with lienzo.action(name, fn) in a <script data-lienzo=\"actions\"> of html.",
             "type": "array", "minItems": 1, "maxItems": 20,

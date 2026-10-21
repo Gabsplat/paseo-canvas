@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import { FULL_SCREEN_CHANNEL, TRAFFIC_LIGHTS } from '../shared/chrome';
+import { CAPTURE_CHANNEL, FULL_SCREEN_CHANNEL, TRAFFIC_LIGHTS, captureRect } from '../shared/chrome';
 import { FILES_WAITING_CHANNEL, LIENZO_FILE_MAX_BYTES, SAVE_FILE_CHANNEL, TAKE_FILES_CHANNEL, isLienzoPath, type OpenedFile } from '../shared/files';
 import { startDesktop, type Desktop } from './core';
 import { createAppUpdates } from './updater';
@@ -121,6 +121,13 @@ async function start() {
   });
   ipcMain.handle(SAVE_FILE_CHANNEL, (event, file: unknown) => window && event.sender === window.webContents ? saveFile(file) : false);
   ipcMain.handle(TAKE_FILES_CHANNEL, event => window && event.sender === window.webContents ? takeFiles() : []);
+  // An extension's lienzo.view.snapshot: only the app's own page, only inside its window, never larger than CAPTURE_MAX.
+  ipcMain.handle(CAPTURE_CHANNEL, async (event, value: unknown) => {
+    if (!window || event.sender !== window.webContents) return null;
+    const [width, height] = window.getContentSize(), rect = captureRect(value, { width, height });
+    if (!rect) return null;
+    try { const image = await window.webContents.capturePage(rect); return image.isEmpty() ? null : image.toDataURL(); } catch { return null; }
+  });
   nativeTheme.themeSource = await desktop.appearance();
   nativeTheme.on('updated', () => window?.setBackgroundColor(windowBackground()));
   buildMenu();

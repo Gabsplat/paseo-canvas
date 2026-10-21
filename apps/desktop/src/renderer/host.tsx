@@ -11,7 +11,7 @@ import { DESKTOP_WORKSPACE, desktopStatus, openExternal, settingsRpc, writeClipb
 
 export type * from '../../../../plugin/client/host/contract';
 
-declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult>; trafficLights?: boolean; onFullScreen?(listener: (fullScreen: boolean) => void): () => void; saveFile?(file: { name: string; mime: string; text: string }): Promise<boolean>; onOpenFile?(listener: (file: { name: string; text: string; error?: string }) => void): () => void } } }
+declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult>; trafficLights?: boolean; onFullScreen?(listener: (fullScreen: boolean) => void): () => void; saveFile?(file: { name: string; mime: string; text: string }): Promise<boolean>; onOpenFile?(listener: (file: { name: string; text: string; error?: string }) => void): () => void; capture?(rect: { x: number; y: number; width: number; height: number }): Promise<string | null> } } }
 
 /** Electron IPC through the preload's one function; in the browser preview, the preview server's POST /rpc. */
 export async function invoke(name: string, input: unknown): Promise<unknown> {
@@ -205,7 +205,9 @@ export const AboutUpdates: ClientHost['AboutUpdates'] = function AboutUpdatesSlo
 
 // .lienzo files: the system's Save dialog, and files opened with the app. The browser preview has neither: it downloads.
 export const files: ClientHost['files'] = window.lienzo?.saveFile && window.lienzo.onOpenFile ? { save: file => window.lienzo!.saveFile!(file), onOpen: listener => window.lienzo!.onOpenFile!(listener) } : null;
+// lienzo.view.snapshot: the main process captures part of this window (webContents.capturePage).
+export const capture: ClientHost['capture'] = window.lienzo?.capture ? rect => window.lienzo!.capture!(rect) : null;
 
 // Every export above, checked against the contract in one place.
-const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AgentBadge, AboutUpdates, files };
+const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AgentBadge, AboutUpdates, files, capture };
 void host;

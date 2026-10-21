@@ -2,8 +2,31 @@
   "format": "lienzo-extension-index",
   "version": 1,
   "repository": "Gabsplat/lienzo-extensions",
-  "generatedAt": "2026-10-18T22:31:01.650Z",
+  "generatedAt": "2026-10-21T06:53:17.287Z",
   "entries": [
+    {
+      "id": "snap",
+      "name": "Snap (example)",
+      "description": "Example: turns the selected cards to dust over the canvas, then deletes them or brings them back.",
+      "extensions": [
+        {
+          "id": "snap.snap",
+          "name": "Snap (example)",
+          "description": "Example: turns the selected cards to dust over the canvas, then deletes them or brings them back.",
+          "icon": "Sparkles",
+          "permissions": [
+            "view",
+            "edit"
+          ],
+          "docs": true
+        }
+      ],
+      "path": "extensions/snap/extension.json",
+      "sha256": "29cbb939f5a293ce8530fbc8383d6c083f365c9365c06e76872b46ec1fdaec7e",
+      "bytes": 11439,
+      "contentHash": "107a0efeba5533e004525f31640aad7b4c17ac607a7ea58e25b3bd679211258b",
+      "readme": "extensions/snap/README.md"
+    },
     {
       "id": "title-case",
       "name": "Title Case",

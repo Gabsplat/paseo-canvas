@@ -108,4 +108,9 @@ export interface ClientHost {
   /** Settings → About on hosts that update themselves (the desktop app): update state, check, the auto-check switch. */
   AboutUpdates: ComponentType | null;
   files: HostFiles | null;
+  /**
+   * A picture of part of the window as drawn now, a PNG data URL (lienzo.view.snapshot). `rect` is in CSS pixels of the
+   * page. The desktop app captures its own window; null where the host cannot (Paseo in a browser).
+   */
+  capture: ((rect: { x: number; y: number; width: number; height: number }) => Promise<string | null>) | null;
 }

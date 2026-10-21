@@ -2,6 +2,7 @@ import { storedRendererNames } from "./renderers";
 import { variablesSchema, runtimeStateSchema } from "./learning";
 import { z } from "zod";
 import { DOCS_LIMITS, extensionDocsIssue } from "./markdown";
+import { presentationSchema } from "./presentation";
 import { actionListSchema } from "./actions";
 import { bindingsSchema } from "./bindings";
 
@@ -122,6 +123,9 @@ export const extensionSchema = z.object({
   // `actions` (optional, added to API 1): what the extension offers an agent through canvas_extension_run. Each is
   // declared here and registered by the page's `<script data-lienzo="actions">` with lienzo.action (shared/actions.ts).
   actions: actionListSchema.optional(),
+  // `presentation` (optional, added to API 1): how it appears (a panel, an overlay over the canvas, a popover at the
+  // selection, fullscreen), its size, chrome and accent (shared/presentation.ts). Sizes are clamped, not refused.
+  presentation: presentationSchema.optional(),
 }).strict();
 const isRetiredExtension = (entry: unknown) => !!entry && typeof entry === "object" && (entry as { kind?: unknown }).kind === "view";
 /** Drops the retired "agent" permission from a stored or imported extension; everything else is left to validation. */

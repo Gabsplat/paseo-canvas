@@ -4,6 +4,7 @@ import { MEDIA_LIMITS } from "./media";
 import { LIENZO_FILE, lienzoReviewSchema } from "./lienzo-file";
 import { commentAnchorSchema, commentTextSchema, commentsViewSchema, COMMENT_LIMITS } from "./comments";
 import { z } from "zod";
+import { PRESENTATION_MODES } from "./presentation";
 import {
   idSchema, revisionInputSchema, revisionSchema, createInputSchema, mutateInputSchema,
   documentViewSchema, documentSummarySchema, catalogSchema, catalogMutateInputSchema,
@@ -28,7 +29,10 @@ export const connectAgent = defineRpc({
   name: "canvas.connect", input: revisionInputSchema.extend({ connection: connectionSchema.nullable() }),
   output: z.object({ view: documentViewSchema, requiresReload: z.boolean() }),
 });
-export const watchDocument = defineRpc({ name: "canvas.watch", input: readInputSchema.extend({ knownRevision: revisionSchema, knownRuntimeVersion: revisionSchema, knownCommentsVersion: revisionSchema.optional() }), output: z.object({ revision: revisionSchema, runtimeVersion: revisionSchema, commentsVersion: revisionSchema.optional(), view: documentViewSchema.optional() }) });
+// knownUiSeq / uiSeq / ui (added): what agents asked this window to do with an extension's UI since its last poll
+// (canvas_extension_open and _close, server/extension-ui.ts). A window that sends no knownUiSeq is told only the seq.
+export const extensionUiRequestSchema = z.object({ seq: z.number().int(), id: z.string().max(80), action: z.enum(["open", "close"]), extension: idSchema, mode: z.enum(PRESENTATION_MODES).optional(), input: z.json().optional(), anchorId: idSchema.optional() }).strict();
+export const watchDocument = defineRpc({ name: "canvas.watch", input: readInputSchema.extend({ knownRevision: revisionSchema, knownRuntimeVersion: revisionSchema, knownCommentsVersion: revisionSchema.optional(), knownUiSeq: z.number().int().min(0).optional() }), output: z.object({ revision: revisionSchema, runtimeVersion: revisionSchema, commentsVersion: revisionSchema.optional(), view: documentViewSchema.optional(), uiSeq: z.number().int().optional(), ui: z.array(extensionUiRequestSchema).optional() }) });
 export const setSelection = defineRpc({ name: "canvas.selection.set", input: readInputSchema.extend({ expectedSelectionVersion: revisionSchema, ids: z.array(idSchema).max(1200) }), output: documentViewSchema });
 export const importPack = defineRpc({ name: "canvas.pack.import", input: z.object({ expectedRevision: revisionSchema, pack: z.unknown(), replace: z.boolean().default(false), dryRun: z.boolean().default(false) }).strict(), output: z.object({ catalog: catalogSchema, diff: z.object({ added: z.array(z.string()), replaced: z.array(z.string()), unchanged: z.array(z.string()) }), committed: z.boolean() }) });
 export const readHistory = defineRpc({ name: "canvas.history", input: readInputSchema, output: z.object({ revision: revisionSchema, transactions: z.array(z.object({ id: idSchema, revision: revisionSchema, actor: z.enum(["user", "agent", "system"]), agentId: z.string().optional(), label: z.string(), at: z.iso.datetime(), changed: z.array(z.string()), removed: z.array(idSchema), kind: z.enum(["edit", "undo", "redo"]) })) }) });

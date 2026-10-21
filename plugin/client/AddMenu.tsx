@@ -10,7 +10,7 @@ import { itemScore } from './palette';
 export type AddSection = 'Shapes & drawing' | 'Embeds' | 'Blocks' | 'Extensions';
 export const ADD_SECTIONS: readonly AddSection[] = ['Shapes & drawing', 'Embeds', 'Blocks', 'Extensions'];
 /** One thing the `+` catalog can add or start. The same entries feed pinned tools and the command palette. */
-export type ToolEntry = { id: string; section: AddSection; name: string; description: string; icon: string; tone?: Tone; shortcut?: string; keywords?: string; disabled?: boolean; active?: boolean; run(): void };
+export type ToolEntry = { id: string; section: AddSection; name: string; description: string; icon: string; tone?: Tone; color?: string; shortcut?: string; keywords?: string; disabled?: boolean; active?: boolean; run(): void };
 const A = tokens.face.catalog;
 
 function PinToggle({ pinned, name, visible, onPress }: { pinned: boolean; name: string; visible: boolean; onPress(): void }) {
@@ -25,7 +25,7 @@ function Row({ entry, pinned, active, onRun, onPin, onHover }: { entry: ToolEntr
   return <Pressable nativeID={`lienzo-add-${entry.id}`} accessibilityRole="menuitem" accessibilityLabel={entry.name} accessibilityHint={entry.description} accessibilityState={{ disabled: !!entry.disabled, selected: active }} disabled={entry.disabled}
     onPress={e => { e.stopPropagation(); onRun(); }} onHoverIn={() => { setHovered(true); onHover(); }} onHoverOut={() => setHovered(false)}
     style={({ pressed }) => ({ minHeight: u.compact ? 48 : A.row, paddingHorizontal: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 10, opacity: entry.disabled ? .45 : 1, backgroundColor: pressed ? withAlpha(u.c.foreground, .1) : active ? withAlpha(u.c.accent, tokens.face.palette.activeWash) : 'transparent' })}>
-    <View style={{ width: A.tile, height: A.tile, borderRadius: 6, backgroundColor: u.wash(tone), alignItems: 'center', justifyContent: 'center' }}><Icon name={entry.icon} size={A.tileIcon} color={tone === 'neutro' ? u.c.foreground : u.tone(tone)} /></View>
+    <View style={{ width: A.tile, height: A.tile, borderRadius: 6, backgroundColor: entry.color ? withAlpha(entry.color, .14) : u.wash(tone), alignItems: 'center', justifyContent: 'center' }}><Icon name={entry.icon} size={A.tileIcon} color={entry.color ?? (tone === 'neutro' ? u.c.foreground : u.tone(tone))} /></View>
     <View style={{ flex: 1, minWidth: 0 }}><Txt numberOfLines={1} style={{ fontWeight: '600' }}>{entry.name}</Txt>{!!entry.description && <Txt kind="small" muted numberOfLines={1}>{entry.description}</Txt>}</View>
     {!!entry.shortcut && <Txt kind="keys" muted>{entry.shortcut}</Txt>}
     <PinToggle pinned={pinned} name={entry.name} visible={hovered || active || u.compact} onPress={onPin} />

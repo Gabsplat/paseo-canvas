@@ -190,7 +190,7 @@ function SceneTools({ t }: { t: T }) {
       <Pill><Icon name="Sparkles" size={13} color={u.c.accent} /><Txt kind="small" style={{ fontWeight: '600' }}>Works in Paseo</Txt></Pill>
       <Pill style={{ opacity: seg(t, .88, .94) }}><Icon name="Monitor" size={13} color={u.c.accent} /><Txt kind="small" style={{ fontWeight: '600' }}>and the desktop app</Txt></Pill>
     </Animated.View>
-    {/* Pressed, the new tool opens beside the canvas like any other: a tab of the right panel. */}
+    {/* Pressed, the new tool opens beside the canvas like any other: a panel on the right (docs/design.md §45). */}
     <Animated.View style={[{ position: 'absolute', right: 20, top: 28, width: 184, borderRadius: 12, borderWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1, overflow: 'hidden', boxShadow: `0 10px 24px ${withAlpha('#000000', .14)}` } as object, appear(t, .76, .84)]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderBottomWidth: 1, borderColor: u.c.border }}><Icon name="Timer" size={13} color={u.c.accent} /><Txt kind="small" style={{ fontWeight: '700' }}>Timer</Txt></View>
       <View style={{ padding: 14, gap: 10, alignItems: 'center' }}>
