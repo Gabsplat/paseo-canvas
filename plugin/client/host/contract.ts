@@ -113,4 +113,11 @@ export interface ClientHost {
    * page. The desktop app captures its own window; null where the host cannot (Paseo in a browser).
    */
   capture: ((rect: { x: number; y: number; width: number; height: number }) => Promise<string | null>) | null;
+  /**
+   * The window's own full screen (lienzo.ui.immersive): `set` resolves whether the window is in full screen afterwards;
+   * `onChange` hears it leave by other means (the system's Esc, a menu). The desktop app uses BrowserWindow.setFullScreen;
+   * in a browser it is the page's Fullscreen API, which may refuse without a recent press.
+   */
+  fullScreen: HostFullScreen | null;
 }
+export type HostFullScreen = { set(on: boolean): Promise<boolean>; isOn(): boolean; onChange(listener: (on: boolean) => void): () => void };

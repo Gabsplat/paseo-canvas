@@ -10,6 +10,7 @@ import { tokens } from './tokens';
 import { IconButton, Tooltip, Txt, useUI } from './ui';
 import type { CanvasController } from './useCanvas';
 import { islandStyle } from './whiteboard-visuals';
+import { useSafeRect } from './safe-area';
 
 /** How long what the agent just added glows, in ms. */
 export const GLOW_MS = 3000;
@@ -90,10 +91,10 @@ export function HojaMenu({ copilot, left, top, maxHeight }: { copilot: CopilotCa
 }
 /** When you are not following and the agent drew somewhere else: one press takes you there. */
 export function LatestPill({ copilot, bottom, label }: { copilot: CopilotCanvas; bottom: number; label?: string }) {
-  const u = useUI();
+  const u = useUI(), safe = useSafeRect('pill', { on: copilot.unseen && !copilot.follow });
   if (!copilot.unseen || copilot.follow) return null;
   return <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom, alignItems: 'center', zIndex: 20 }}>
-    <Pressable nativeID="lienzo-agent-latest" accessibilityRole="button" accessibilityLabel="Go to the agent's latest" onPress={() => copilot.goToLatest()}
+    <Pressable ref={safe.ref} onLayout={safe.onLayout} nativeID="lienzo-agent-latest" accessibilityRole="button" accessibilityLabel="Go to the agent's latest" onPress={() => copilot.goToLatest()}
       style={({ pressed }) => [islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, height: 36, borderRadius: 18, opacity: pressed ? .8 : 1 }]}>
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: u.c.accent }} /><Txt kind="small" style={{ fontWeight: '600' }}>Agent's latest</Txt>{!!label && <Txt kind="small" muted numberOfLines={1} style={{ maxWidth: 220 }}>{label}</Txt>}<Icon name="ArrowRight" size={14} color={u.c.foreground} />
     </Pressable>

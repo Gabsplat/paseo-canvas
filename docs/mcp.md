@@ -343,7 +343,7 @@ Deletion through `group.delete` deletes the subtree by default; `ungroup:true` r
 and converts their local positions into positions relative to the former group's parent.
 Duplication (`entity.duplicate`) uses `idPrefix.oldId` for every copied entity and link.
 
-`canvas_catalog` actions are `list`, `read`, `save_type`, `save_extension`, `remove_extension`, `help`. Library mutation
+`canvas_catalog` actions are `list`, `read`, `read_extension`, `save_type`, `save_extension`, `remove_extension`, `help`. Library mutation
 revisions are independent of document revisions. `list` returns block types and extensions (no templates or packs);
 each block type names its Help page (`help`).
 Extension files are imported by the person in the Extensions screen, not by the agent: every extension in a file
@@ -672,11 +672,15 @@ with ordinary `canvas_apply` operations using `parentGroupId`. Outline reads inc
 
 ## Extensions
 
-`canvas_catalog` also lists, reads, saves and removes extensions: `list` returns `extensions` (ID, kind, name,
-description, permissions, source, `allowed`, and for one from a file that waits for the person `missingPermissions` and
-a note; with `actions`, each action's name, description, input schema and optional returns) and `extensionGuide`, the
-whole frame API as text; `read { id }` returns one with
-its page; `save_extension { expectedRevision, extension }` adds or replaces a local one; `remove_extension` deletes a
+`canvas_catalog` also lists, reads, saves and removes extensions: `list` returns `extensions`, a compact summary of
+each, never its page (ID, kind, name, description, icon, permissions, source, `allowed`, and for one from a file that
+waits for the person `missingPermissions` and a note; `presentation` mode, `context` mode when not full, `sizes`
+`{ html, docs? }` in bytes; with `actions`, each action's name, description, input schema and optional returns) and
+`extensionGuide`, the whole frame API as text. The list may weigh up to 64 KiB (other results 24 KiB); with so many
+extensions that it would not fit, action schemas are left out first, then everything but ids, names and action names,
+and `note` says so. `read_extension { id }` returns one extension whole (`extension` with `html`, `docs`, manifest, and
+`sizes`), up to 384 KiB, more than the largest page a manifest allows in practice; past that it fails with TOO_LARGE and
+says so. `read { id }` still returns a block type or a small extension with its guidance (24 KiB); `save_extension { expectedRevision, extension }` adds or replaces a local one; `remove_extension` deletes a
 local one. Like every catalog write it needs the person's approval. The guide ends with the complete example of Help →
 Make your own (`shared/wiki/tutorial.ts`). An extension may carry `docs`, its own Help page in safe Markdown (no HTML;
 refused otherwise). The contract is in `docs/extensions.md`.

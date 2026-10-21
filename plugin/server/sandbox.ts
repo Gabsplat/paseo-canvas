@@ -18,6 +18,10 @@ import variant from "@jitl/quickjs-singlefile-browser-release-sync";
  *
  * Limits: wall-clock time (which is CPU time, since the run is synchronous), memory, the interpreter's stack, and the
  * number of promise jobs. A host stack overflow or a WebAssembly trap is caught too: the instance is simply dropped.
+ *
+ * Timers (`timers: true`): the prelude keeps its own queue (setTimeout, lienzo.sleep) and exposes next() and fire().
+ * When no promise job is left, the host waits for the earliest timer for real (an await: the server is not blocked)
+ * and fires it. The wait counts against the same wall-clock limit, so a run still ends within it.
  */
 export type SandboxFailure = "timeout" | "memory" | "recursion" | "error" | "unfinished" | "jobs" | "output" | "crashed";
 export class SandboxError extends Error {
@@ -38,6 +42,8 @@ export interface SandboxProgram {
   host(method: string, json: string): string;
   /** The longest string the bridge accepts from inside, in characters. */
   bridgeChars: number;
+  /** The prelude's object also has next() (ms to the earliest timer, or -1) and fire() (runs the due ones). */
+  timers?: boolean;
   limits: SandboxLimits;
 }
 
@@ -103,7 +109,14 @@ export async function runSandboxed(program: SandboxProgram): Promise<string> {
       if (state.type === "rejected") throw failure(state.error);
       const ran = runtime.executePendingJobs(256);
       if (ran.error) throw failure(ran.error);
-      if (!ran.value) throw new SandboxError("unfinished", "It never finished: it waited on a promise nothing settles (there are no timers or network here).");
+      if (!ran.value) {
+        const wait = program.timers ? vm.getNumber(take(vm.callFunction(vm.getProp(api, "next"), api))) : -1;
+        if (!(wait >= 0)) throw new SandboxError("unfinished", `It never finished: it waited on a promise nothing settles (there is no network here${program.timers ? ", and no timer was waiting" : ", nor timers"}).`);
+        if (Date.now() + wait > deadline) throw new SandboxError("timeout", `It waits on a timer past its ${limits.timeMs / 1000} s.`);
+        await new Promise(resolve => setTimeout(resolve, wait));
+        take(vm.callFunction(vm.getProp(api, "fire"), api));
+        continue;
+      }
       if ((jobs += ran.value) > limits.jobs) throw new SandboxError("jobs", `It queued more than ${limits.jobs} promise jobs.`);
     }
     if (late) throw new SandboxError("timeout", `It ran longer than ${limits.timeMs / 1000} s.`);

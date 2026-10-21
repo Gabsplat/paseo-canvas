@@ -36,6 +36,12 @@ nothing from the plugin, so a plugin update cannot break it.
 
 - `actions` (optional, added to API 1): what the extension offers an agent. See "Actions" below. A Lienzo older than
   this field refuses a file that carries it.
+- `context` (optional, added to API 1): `{ "document": "full" | "outline" | "none" }`, how much of the document the
+  page is told. `full` (the default) has every block with its `data`; `outline` has ids, titles, types, renderers,
+  parents, groups and links but no block `data`; `none` only `{ id, title, description, revision }`. A heavy extension
+  picks `outline` or `none` and reads what it needs with `lienzo.read(ids)`; `lienzo.setContext({ document })`
+  switches at run time. `context.document.mode` says which it holds. A Lienzo older than this field refuses a file
+  that carries it.
 - `presentation` (optional, added to API 1): how it appears: a panel, an overlay over the canvas, a popover at the
   selection or fullscreen, with its size, chrome, position and accent. See "Presentation" below. A Lienzo older than
   this field refuses a file that carries it.
@@ -50,7 +56,11 @@ A walkthrough for writing one with your agent, with a complete example, is in
 | `lienzo.api` | — | `1`. |
 | `lienzo.onContext(fn)` | — | Calls `fn(context)` now and on every change. Returns a function that stops listening. |
 | `lienzo.context` | — | The last context, or `null` before the first one. |
-| `lienzo.select(ids)` | — | Sets the shared selection. Unknown IDs are dropped. |
+| `lienzo.select(ids)` | — | Sets the shared selection. Unknown IDs are dropped. Local first: it resolves `{ ids }` at once, after the page's own `context.selection` already says so; the canvas follows on the next task and the server keeps it after. |
+| `lienzo.onSelection(fn)` | — | Calls `fn(ids)` now and whenever the selection changes, and for nothing else. Returns a function that stops listening. |
+| `lienzo.read(ids)` | — | Resolves `{ revision, blocks, groups, links }`: those entities whole (blocks with `data`), whatever the context mode. At most 1200 ids. |
+| `lienzo.setContext({ document })` | — | Switches the context mode (`full`, `outline`, `none`) for this page. The document part is sent again in that mode. |
+| `lienzo.sleep(ms)` | — | A promise that resolves after `ms` (also headless, within the 2 s budget). |
 | `lienzo.open(id)` | — | Selects that thing. With `view` it also frames it (like `view.fit([id])`); without, the camera does not move. |
 | `lienzo.close()` | — | Closes a tool panel. |
 | `lienzo.edit(operations, label)` | `edit` | One transaction of canvas operations. Resolves `{ revision }`, rejects with the reason. Undoable. `selection.set` and `communication.set` are refused. At most 200 operations. |
@@ -59,7 +69,9 @@ A walkthrough for writing one with your agent, with a complete example, is in
 | `lienzo.headless` | — | `false` in the frame, `true` when an action runs for an agent. |
 | `lienzo.view.get()` | `view` | Resolves `{ scale, bounds, sheetId, visibleIds }`. See "The view". |
 | `lienzo.view.fit(ids, { padding?, animate? })` | `view` | Flies the camera to frame those things. Resolves `true`, or `false` when none of them is on the canvas. |
-| `lienzo.view.onChange(fn)` | `view` | Calls `fn(view)` when the camera or the layout changes, at most every 100 ms. Returns a function that stops listening. |
+| `lienzo.view.onChange(fn)` | `view` | Calls `fn(view)` once per animation frame while the camera moves, then once with the exact view when it stops. Returns a function that stops listening. See "Cost model". |
+| `lienzo.view.camera` | `view` | The latest camera `{ scale, offset, bounds, screen, version }`, or `null`. |
+| `lienzo.view.toScreen(rect)` / `lienzo.view.toWorld(rect)` | `view` | World rect or point (`layout` units) to canvas pixels with the latest camera, and back. |
 | `lienzo.keys.bind(keys, fn)` | — | While the tool is open, those keys go to `fn(key)` instead of the canvas. Returns `unbind()`. See "Keys". |
 | `lienzo.highlight(ids, { dim?, tone? })` | — | Outlines those things on the canvas; `dim` fades every other card. Resolves `{ ids }`. Never saved. |
 | `lienzo.highlight.clear()` | — | Removes this extension's highlight. |
@@ -67,6 +79,8 @@ A walkthrough for writing one with your agent, with a complete example, is in
 | `lienzo.ui.state` | — | How the tool shows now, or `null` before Lienzo says. See "Presentation". |
 | `lienzo.ui.set(patch)` | — | Changes mode, size, chrome, position or `dimCanvas` at run time, without a reload. Resolves the new state and `ignored` keys. |
 | `lienzo.ui.onChange(fn)` / `lienzo.ui.close()` | — | Follows the state; closes the tool (same as `lienzo.close()`). |
+| `lienzo.ui.safeArea` / `lienzo.ui.freeRect` | — | What Lienzo's own UI covers on the canvas, and the largest free rectangle. See "Safe area". |
+| `lienzo.ui.immersive(on)` | `view` | Hides Lienzo's UI (like ⌘.) and puts the window in full screen where it can. Resolves `{ immersive }`, whether this tool holds it. See "Immersive". |
 | `lienzo.ui.capturePointer(on)` | — | An overlay takes the pointer (`true`) or lets it through to the canvas again (`false`). |
 | `lienzo.hide(ids, { ms? })` / `lienzo.show(ids?)` | — | Hides blocks and Frames on this screen only, for an effect. See "Overlay effects". |
 | `lienzo.view.snapshot(ids)` | `view` | A PNG of those things as drawn now, `{ url, rect }`, or `null`. `lienzo.view.canSnapshot` says if it can. |
@@ -79,8 +93,8 @@ A walkthrough for writing one with your agent, with a complete example, is in
 ```
 { api, extension: { id, kind, name, permissions },
   theme: { dark, colors: { background, surface, foreground, muted, border, accent, flow, needs, mentions, areas[] } },
-  document: { id, title, description, revision,
-    blocks: [{ id, title, typeId, renderer, data, parentGroupId }],
+  document: { id, title, description, revision, mode,          // mode: "full" | "outline" | "none" (manifest context)
+    blocks: [{ id, title, typeId, renderer, data, parentGroupId }],   // no data in outline; no blocks, groups, links in none
     groups: [{ id, title, description, blockIds, groupIds, parentGroupId }],
     links:  [{ id, from, to, kind, label }] },
   layout: { [id]: { x, y, width, height } },   // where each thing is on the canvas
@@ -115,9 +129,55 @@ is on the same area).
 - `view.fit(ids, { padding, animate })` uses the canvas' own fit-and-fly animation; `padding` is screen pixels
   (0–400, default the canvas' fit inset), `animate: false` jumps. It frames them in the part of the canvas not covered
   by the floating panel. Any pan, zoom or drag by the person stops a fit in flight and wins.
-- `view.onChange(fn)` and `context.view` are updated at most every 100 ms, on camera moves and layout changes.
-  A camera change alone updates `context.view` and calls `onChange`, not `onContext`.
+- While the camera moves (a pan, a zoom, a fly), `view.onChange(fn)` is called once per animation frame with a light
+  view: `{ scale, bounds, offset, screen, version, moving: true, sheetId }`, plus `visibleIds` and `rects` worked out
+  in the page from `context.layout` only when read. When the camera has been still for 120 ms, one exact view from
+  Lienzo follows (`moving: false`, with Lienzo's own `visibleIds` and `rects`). Draw from `lienzo.view.toScreen(layout[id])`
+  each frame and overlays stay on their cards. `context.view` is the settled view; a camera change never calls
+  `onContext`.
+- `version` grows with every camera change, so a page can drop stale work.
 - Moving the camera never creates a revision or a history entry, and nothing about it is saved.
+
+### Cost model
+
+What Lienzo sends an open extension, and when (`shared/extension-context.ts`):
+
+| Message | When | Size (600-card Lienzo, ~330 KB) |
+|---|---|---|
+| `context` (whole) | once per page load | ~340 KB with `full`, ~60 KB `outline`, ~40 KB `none` (mostly `layout`) |
+| `patch` | a top-level part changed: `selection`, `theme`, `extension`, `document` (new revision or mode), `layout` (new revision) | a selection: ~50 bytes |
+| `camera` | at most once per animation frame while the camera moves, only to a page with `view.onChange` | ~200 bytes |
+| `view` | once the camera settles (120 ms still), to every page holding `view` | ~70 bytes per visible thing |
+
+A selection costs a few bytes for every open extension, not the document. `lienzo.select` resolves before the canvas
+renders the change (about 2 ms on that Lienzo, it was ~230 ms). Compute screen positions in the page with
+`lienzo.view.toScreen`; reading `view.rects` during motion works too, computed lazily from `layout`.
+
+### Safe area
+
+`lienzo.ui.safeArea` (also `lienzo.ui.state.safeArea`) is what Lienzo's own UI covers on the canvas, in the canvas-area
+pixels an overlay draws in:
+
+```
+{ top, right, bottom, left,                    // how far to stay from each edge to clear what hugs it
+  rects: [{ x, y, width, height, kind }],      // kind: document, actions, toolbar, zoom, minimap, lens, panel,
+                                               //       popover, pill, comments, restore
+  freeRect: { x, y, width, height } }          // the largest rectangle nothing covers (also lienzo.ui.freeRect)
+```
+
+Each island reports its own box as laid out, so the area follows when Properties opens or closes, the window
+resizes, the layout turns compact or another extension opens a panel. The page's own frame is never in its way; its
+overlay pill is. With Hide all UI (⌘.) the islands are gone: `rects` is empty and the insets are zero (the small
+"Show the interface" button stays, as `restore`). `lienzo.ui.onChange` fires on every change. `view.fit`, Fit all,
+Fit selection and the agent's fly all frame inside the same `freeRect`.
+
+### Immersive
+
+`lienzo.ui.immersive(true)` (permission `view`) presents over the real canvas: Lienzo's UI hides like ⌘. (including
+the zoom, the map and Lens) and the window goes full screen: the desktop app's own window, or the page through the
+browser's Fullscreen API where it is allowed (it needs a recent press; if refused, only the UI hides). Esc, the
+person's ⌘. or closing the tool always leave it; `immersive(false)` or closing restores what was before.
+`lienzo.ui.state.immersive` says whether Lienzo's UI is hidden now.
 
 ### Keys
 
@@ -265,6 +325,11 @@ the watch it already polls; the tool says whether a window took it and never pre
 later open of the same tool while it stays open. The page still runs with the permissions the person gave it: one from
 a file that was not allowed opens restricted. Nothing goes back from the page to the agent.
 
+An agent finds extensions with `canvas_catalog list`: a compact summary of each (manifest without `html`:
+permissions, presentation, context mode, actions with their input schemas, and `sizes` in bytes), so the list stays
+small however many are installed (64 KiB at most; past that, action schemas and then descriptions are left out, with a
+note). `canvas_catalog read_extension { id }` returns one extension whole, its page included, up to 384 KiB.
+
 ## Actions
 ## Actions
 
@@ -296,8 +361,10 @@ interpreter wrapper, `server/actions.ts` the headless `lienzo`, `CanvasService.r
 2. starts a **new WebAssembly instance, runtime and context**, evaluates a prelude, then the actions scripts, then calls
    the handler; nothing persists between calls except what the extension writes to the document;
 3. gives it the headless `lienzo`: `api`, `headless: true`, `context` (as in the frame without `theme` and `layout`:
-   `extension`, `document`, `selection`), `onContext(fn)` (calls `fn` once), `action`, `run`, `select(ids)` and
-   `edit(operations, label)`; both return promises like in the frame; `console.log` lines come back as `logs`;
+   `extension`, `document`, `selection`), `onContext(fn)` (calls `fn` once), `action`, `run`, `select(ids)`,
+   `edit(operations, label)`, `storage.get()` / `storage.set(value)` (the same value the page reads on that Lienzo,
+   4 KiB, written only if the run succeeds), `sleep(ms)` and `setTimeout(fn, ms)` / `clearTimeout(id)`; all return
+   promises like in the frame; `console.log` lines come back as `logs`;
 4. checks each `lienzo.edit` against a working copy of the document (the frame's rules: `edit` held, at most 200
    operations in all, `selection.set` and `communication.set` refused, the canvas' own validation), so a bad operation
    rejects there with the reason and `lienzo.context` shows the edits so far;
@@ -306,10 +373,15 @@ interpreter wrapper, `server/actions.ts` the headless `lienzo`, `CanvasService.r
    reverses; then applies its last `lienzo.select`. If the handler fails, or the document changed meanwhile, nothing is
    written.
 
-There is no DOM, no network, no timers (`setTimeout` and friends do not exist), no module loader and no host object:
+Timers are the prelude's own: when no promise job is left, the host waits (an `await`, so the server keeps serving) for
+the earliest timer and fires it. The wait counts against the same 2 s, at most 100 timers wait at once and one waits
+at most 2 s; a timer that would end past the budget fails the run at once ("It waits on a timer past its 2 s"), and an
+exception in a timer's function fails the run. `setInterval` does not exist.
+
+There is no DOM, no network, no module loader and no host object:
 the only bridge is a function the prelude receives as an argument (never a global) that carries JSON strings both
 ways; the host parses and validates everything it receives (`safeJson`: no `__proto__`, `constructor` or `prototype`
-keys, 32 levels at most). Limits per call: **2 s** (the run is synchronous, so this is CPU time; the interrupt handler
+keys, 32 levels at most). Limits per call: **2 s** (wall clock: the run is synchronous apart from timer waits; the interrupt handler
 also stops catastrophic regular expressions), **64 MiB** of interpreter memory, a **64 KiB interpreter stack** (about 370
 plain nested calls; QuickJS must stop recursion before the host's stack does, and a host stack overflow or a WebAssembly
 trap is caught too and only drops that instance), **100 000** promise jobs, **20** edit and select calls, a

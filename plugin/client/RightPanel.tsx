@@ -7,6 +7,7 @@ import { IconButton, Modal, Txt, useUI } from './ui';
 import { islandStyle } from './whiteboard-visuals';
 import { useKeyboardFocus } from './web';
 import { sectionMemory } from './property-model';
+import { useSafeRect } from './safe-area';
 
 /** `help` puts a "?" in the panel's header that opens the Help page of what the tab shows. */
 export type PanelTab = { id: string; label: string; icon: string; content: React.ReactNode; scroll?: boolean; help?: () => void };
@@ -40,7 +41,7 @@ export function PanelSection({ title, children, trailing, summary, defaultOpen =
  * with a tab per source. The pin keeps it open; ⌘\ toggles it. On a compact panel it is a sheet.
  */
 export function RightPanel({ tabs, active, onTab, pinned, onPin, onClose, top, maxHeight, title, open = true, shortcut, focusSection, scope = '' }: { tabs: readonly PanelTab[]; active: string; onTab(id: string): void; pinned: boolean; onPin(pinned: boolean): void; onClose(): void; top: number; maxHeight: number; title?: string; open?: boolean; shortcut?: string; focusSection?: string; scope?: string }) {
-  const u = useUI(), tab = tabs.find(t => t.id === active) ?? tabs[0];
+  const u = useUI(), tab = tabs.find(t => t.id === active) ?? tabs[0], safe = useSafeRect('panel', { on: !u.compact && !!tab });
   // A section asked for by name (Instructions from the menu) opens for the selection it was asked for.
   useEffect(() => { if (focusSection) sectionMemory.force(focusSection, scope); }, [focusSection, scope]);
   const folding = { scope, open: focusSection };
@@ -56,7 +57,7 @@ export function RightPanel({ tabs, active, onTab, pinned, onPin, onClose, top, m
   </View>;
   const body = <Folding.Provider value={folding}>{tab.scroll === false ? <View style={{ flexShrink: 1, minHeight: 0 }}>{tab.content}</View> : <ScrollView style={{ flexShrink: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 4 }} keyboardShouldPersistTaps="handled">{tab.content}</ScrollView>}</Folding.Provider>;
   if (u.compact) return <Modal title={title ?? tab.label} open={open} onOpenChange={value => { if (!value) onClose(); }}><Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}><View nativeID="lienzo-right-panel" style={{ maxHeight, minHeight: 240 }}>{(tabs.length > 1 || tab.help) && header}{body}</View></Modal.Content></Modal>;
-  return <View nativeID="lienzo-right-panel" accessibilityLabel={title ?? tab.label} style={[islandStyle(u, true), { position: 'absolute', right: R.inset, top, width: R.width, maxHeight, padding: 0, gap: 0, overflow: 'hidden', zIndex: 25 }]}>
+  return <View ref={safe.ref} onLayout={safe.onLayout} nativeID="lienzo-right-panel" accessibilityLabel={title ?? tab.label} style={[islandStyle(u, true), { position: 'absolute', right: R.inset, top, width: R.width, maxHeight, padding: 0, gap: 0, overflow: 'hidden', zIndex: 25 }]}>
     {header}{body}
   </View>;
 }

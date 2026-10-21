@@ -10,6 +10,7 @@ import { tokens } from './tokens';
 import { withAlpha } from './color';
 import { Button, IconButton, Segments, Txt, friendlyError, useUI } from './ui';
 import { islandStyle } from './whiteboard-visuals';
+import { useSafeRect } from './safe-area';
 import { authorName, commentTarget, relativeTime, visibleThreads, type CommentFilter } from './comment-logic';
 
 /**
@@ -111,7 +112,7 @@ function Pin({ thread, x, y, active, onPress, dim }: { thread: CommentThread; x:
 export function CommentLayer({ state, view, groups, titleOf, hidden = false, clear = { top: 0, bottom: 0, right: 0 } }: { state: CommentsState; view: CanvasOverlay; groups: ReadonlySet<string>; titleOf(id: string): string; hidden?: boolean;
   /** Screen edges the popover keeps clear of: the top islands, the toolbar, the right panel. */
   clear?: { top: number; bottom: number; right: number } }) {
-  const u = useUI(), [, setTick] = useState(0), [aim, setAim] = useState<{ kind: 'block' | 'group'; id: string } | null>(null), [popHeight, setPopHeight] = useState(240), draftText = useRef('');
+  const safe = useSafeRect('comments', { on: !!state.open && !hidden }), u = useUI(), [, setTick] = useState(0), [aim, setAim] = useState<{ kind: 'block' | 'group'; id: string } | null>(null), [popHeight, setPopHeight] = useState(240), draftText = useRef('');
   useEffect(() => {
     let frame: number | null = null;
     const stop = view.subscribe(() => { if (frame === null) frame = requestAnimationFrame(() => { frame = null; setTick(t => t + 1); }); });
@@ -166,7 +167,7 @@ export function CommentLayer({ state, view, groups, titleOf, hidden = false, cle
     {placed.map(p => <Pin key={p.thread.id} thread={p.thread} x={p.x} y={p.y} active={p.thread.id === openId} dim={false} onPress={() => state.setOpen(openId === p.thread.id ? null : { kind: 'thread', id: p.thread.id })} />)}
     {draft && tip && <View pointerEvents="none" style={{ position: 'absolute', left: tip.x, top: tip.y - K.pin, width: K.pin, height: K.pin, borderRadius: K.pin / 2, borderBottomLeftRadius: 3, backgroundColor: u.c.foreground, borderWidth: K.pinRing, borderColor: u.c.accent, alignItems: 'center', justifyContent: 'center', zIndex: 3 }}><Icon name="Plus" size={K.pinGlyph} color={u.c.surface1} /></View>}
     {draft && draftAnchor && (() => { const s = screen(draftAnchor); return <View pointerEvents="none" style={{ position: 'absolute', left: s.x - K.placing.outset, top: s.y - K.placing.outset, width: draftAnchor.width * cam.scale + 2 * K.placing.outset, height: draftAnchor.height * cam.scale + 2 * K.placing.outset, borderRadius: tokens.radius.block + K.placing.outset, borderWidth: K.placing.outline, borderColor: withAlpha(u.c.accent, .55) }} />; })()}
-    {state.open && tip && <View nativeID="lienzo-interactive-comment-thread" onLayout={e => setPopHeight(e.nativeEvent.layout.height)} style={[islandStyle(u, true), { position: 'absolute', left, top, width, maxHeight: Math.max(160, Math.min(P.maxHeight, maxBottom - minTop)), padding: 0, gap: 0, overflow: 'hidden', zIndex: 4 }]}>
+    {state.open && tip && <View ref={safe.ref} nativeID="lienzo-interactive-comment-thread" onLayout={e => { setPopHeight(e.nativeEvent.layout.height); safe.onLayout(); }} style={[islandStyle(u, true), { position: 'absolute', left, top, width, maxHeight: Math.max(160, Math.min(P.maxHeight, maxBottom - minTop)), padding: 0, gap: 0, overflow: 'hidden', zIndex: 4 }]}>
       {draft ? <ThreadView key="draft" state={state} draft={draft.anchor} titleOf={titleOf} onDraft={text => { draftText.current = text; }} onClose={() => state.setOpen(null)} />
         : (() => { const thread = state.threads.find(t => t.id === openId); return thread ? <ThreadView key={openId} state={state} thread={thread} titleOf={titleOf} onClose={() => state.setOpen(null)} /> : null; })()}
     </View>}

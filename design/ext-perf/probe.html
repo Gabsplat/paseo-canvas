@@ -1,0 +1,45 @@
+<!-- Lienzo extension performance probe (harness only, example data). An overlay with "view": times lienzo.select,
+     counts lienzo.view.onChange during a fly and a wheel pan, sums the bytes of every message the host posts, and draws
+     lienzo.ui.safeArea (when the runtime has it) so a screenshot shows what Lienzo's own UI covers. -->
+<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}canvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}</style>
+<canvas id="c"></canvas>
+<script>
+var bytes={},counts={},events=[],phase=null,report={},g=document.getElementById('c').getContext('2d'),W=0,H=0,cam=null;
+addEventListener('message',function(e){var d=e.data;if(!d||d.lienzo!==1||e.source!==parent)return;var n=JSON.stringify(d).length;bytes[d.type]=(bytes[d.type]||0)+n;counts[d.type]=(counts[d.type]||0)+1});
+function size(){var d=devicePixelRatio||1;W=innerWidth;H=innerHeight;g.canvas.width=W*d;g.canvas.height=H*d;g.setTransform(d,0,0,d,0,0);draw()}
+addEventListener('resize',size);
+function stats(a){a=a.slice().sort(function(x,y){return x-y});var s=0;a.forEach(function(x){s+=x});var q=function(p){return +a[Math.min(a.length-1,Math.floor(p*a.length))].toFixed(1)};return{n:a.length,mean:+(s/a.length).toFixed(1),p50:q(.5),p95:q(.95),max:+a[a.length-1].toFixed(1)}}
+function rate(list){if(list.length<2)return{events:list.length,perSecond:0};var span=(list[list.length-1].t-list[0].t)/1000;return{events:list.length,perSecond:+((list.length-1)/span).toFixed(1),meanBytes:Math.round(list.reduce(function(s,e){return s+e.bytes},0)/list.length)}}
+function save(){lienzo.storage.set(report).catch(function(){})}
+function draw(){
+  g.clearRect(0,0,W,H);var ctx=lienzo.context;if(!ctx)return;var c=ctx.theme.colors,sa=lienzo.ui&&lienzo.ui.safeArea;
+  if(sa){
+    g.lineWidth=2;g.font='600 11px system-ui,sans-serif';
+    (sa.rects||[]).forEach(function(r){g.fillStyle='rgba(230,80,60,.18)';g.fillRect(r.x,r.y,r.width,r.height);g.strokeStyle='rgb(230,80,60)';g.strokeRect(r.x+1,r.y+1,r.width-2,r.height-2);g.fillStyle=c.foreground;g.fillText(r.kind,r.x+6,r.y+r.height/2+4)});
+    var f=lienzo.ui.freeRect;if(f){g.setLineDash([8,6]);g.strokeStyle=c.accent;g.strokeRect(f.x+1,f.y+1,f.width-2,f.height-2);g.setLineDash([]);g.fillStyle=c.accent;g.fillText('freeRect '+Math.round(f.width)+'×'+Math.round(f.height)+'  insets t'+sa.top+' r'+sa.right+' b'+sa.bottom+' l'+sa.left,f.x+8,f.y+16)}
+  }
+  var sel=ctx.selection||[];if(sel.length&&lienzo.view&&lienzo.view.toScreen&&ctx.layout){g.strokeStyle=c.accent;g.lineWidth=3;sel.forEach(function(id){var w=ctx.layout[id];if(!w)return;var r=lienzo.view.toScreen(w);g.strokeRect(r.x-4,r.y-4,r.width+8,r.height+8)})}
+}
+function onView(v){var t=performance.now(),b=JSON.stringify(v).length;if(phase)events.push({t:t,bytes:b,phase:phase});cam=v;draw()}
+lienzo.view.onChange(onView);
+if(lienzo.ui&&lienzo.ui.onChange)lienzo.ui.onChange(draw);
+lienzo.onContext(draw);
+function pause(ms){return new Promise(function(r){setTimeout(r,ms)})}
+async function run(){
+  var ids=lienzo.context.document.blocks.map(function(b){return b.id}),times=[];
+  await pause(800);var b0=JSON.stringify(bytes),c0=JSON.stringify(counts);bytes={};counts={};
+  for(var i=0;i<40;i++){var s=performance.now();await lienzo.select([ids[(i*37+5)%ids.length]]);times.push(performance.now()-s);await pause(60)}
+  await pause(400);
+  report.select=stats(times);report.selectMessages={bytes:bytes,counts:counts,perSelect:Math.round(Object.keys(bytes).reduce(function(s,k){return s+bytes[k]},0)/40)};
+  await lienzo.select([]);await pause(300);
+  phase='fly';await lienzo.view.fit([ids[ids.length-1]],{animate:true});await pause(1400);phase=null;
+  report.fly=rate(events.filter(function(e){return e.phase==='fly'}));
+  report.done=true;save();
+}
+lienzo.keys.bind(['Shift+w'],function(){events=events.filter(function(e){return e.phase!=='wheel'});phase='wheel'});
+lienzo.keys.bind(['Shift+f'],function(){var s=lienzo.context.selection||[];if(s.length)lienzo.view.fit(s,{animate:false})});
+lienzo.keys.bind(['Shift+i'],function(){lienzo.ui.immersive(true).then(function(on){report.immersive={held:on,state:lienzo.ui.state&&lienzo.ui.state.immersive};save()})});
+lienzo.keys.bind(['Shift+r'],function(){phase=null;report.wheel=rate(events.filter(function(e){return e.phase==='wheel'}));report.wheelDone=true;save()});
+size();
+var started=false;lienzo.onContext(function(){if(!started&&lienzo.context.document&&lienzo.context.document.blocks){started=true;run()}});
+</script>

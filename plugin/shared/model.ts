@@ -3,6 +3,7 @@ import { variablesSchema, runtimeStateSchema } from "./learning";
 import { z } from "zod";
 import { DOCS_LIMITS, extensionDocsIssue } from "./markdown";
 import { presentationSchema } from "./presentation";
+import { CONTEXT_DOCUMENT_MODES } from "./extension-context";
 import { actionListSchema } from "./actions";
 import { bindingsSchema } from "./bindings";
 
@@ -126,6 +127,9 @@ export const extensionSchema = z.object({
   // `presentation` (optional, added to API 1): how it appears (a panel, an overlay over the canvas, a popover at the
   // selection, fullscreen), its size, chrome and accent (shared/presentation.ts). Sizes are clamped, not refused.
   presentation: presentationSchema.optional(),
+  // `context` (optional, added to API 1): how much of the document the page is told (shared/extension-context.ts).
+  // "outline" and "none" keep a heavy extension's messages small; lienzo.read(ids) brings whole entities when needed.
+  context: z.object({ document: z.enum(CONTEXT_DOCUMENT_MODES).default("full") }).strict().optional(),
 }).strict();
 const isRetiredExtension = (entry: unknown) => !!entry && typeof entry === "object" && (entry as { kind?: unknown }).kind === "view";
 /** Drops the retired "agent" permission from a stored or imported extension; everything else is left to validation. */

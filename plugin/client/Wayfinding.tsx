@@ -8,6 +8,7 @@ import { NATIVE, easeOut, reducedMotion } from './motion';
 import { tokens } from './tokens';
 import { Tooltip, Txt, useUI } from './ui';
 import { islandStyle } from './whiteboard-visuals';
+import { useSafeRect } from './safe-area';
 
 type Camera = { scale: number; offset: Point };
 type CameraSource = { camera(): Camera; subscribe(listener: () => void): () => void };
@@ -29,7 +30,7 @@ function Frame({ fit, view, source }: { fit: { k: number; x: number; y: number }
  * part on screen as a frame. Pressing or dragging on it carries the view there.
  */
 export function Minimap({ items, content, view, source, onNavigate }: { items: readonly MinimapItem[]; content: Box; view: { width: number; height: number }; source: CameraSource; onNavigate(world: Point, animate: boolean): void }) {
-  const u = useUI(), fit = useMemo(() => minimapFit(content, M), [content.x, content.y, content.width, content.height]), latest = useRef({ fit, onNavigate }); latest.current = { fit, onNavigate };
+  const safe = useSafeRect('minimap'), u = useUI(), fit = useMemo(() => minimapFit(content, M), [content.x, content.y, content.width, content.height]), latest = useRef({ fit, onNavigate }); latest.current = { fit, onNavigate };
   const go = (x: number, y: number, animate: boolean) => { const f = latest.current.fit; latest.current.onNavigate({ x: (x - f.x) / f.k, y: (y - f.y) / f.k }, animate); };
   const start = useRef({ x: 0, y: 0 }), responder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true, onMoveShouldSetPanResponder: () => true, onPanResponderTerminationRequest: () => false,
@@ -39,7 +40,7 @@ export function Minimap({ items, content, view, source, onNavigate }: { items: r
   const marks = useMemo(() => items.map(item => { const b = item.box, style = { position: 'absolute' as const, left: b.x * fit.k + fit.x, top: b.y * fit.k + fit.y, width: Math.max(2, b.width * fit.k), height: Math.max(2, b.height * fit.k) };
     return item.group ? <View key={item.id} style={{ ...style, borderWidth: 1, borderColor: item.lit ? u.c.accent : withAlpha(u.c.foregroundMuted, M.groupAlpha), borderRadius: 2 }} />
       : <View key={item.id} style={{ ...style, borderRadius: 1, backgroundColor: item.lit ? u.c.accent : withAlpha(u.c.foregroundMuted, M.cardAlpha) }} />; }), [items, fit, u.c.accent, u.c.foregroundMuted]);
-  return <View nativeID="lienzo-interactive-minimap" accessibilityRole="adjustable" accessibilityLabel="Map of the Lienzo. Press or drag to move around" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom: tokens.island.inset, padding: M.padding }]}>
+  return <View ref={safe.ref} onLayout={safe.onLayout} nativeID="lienzo-interactive-minimap" accessibilityRole="adjustable" accessibilityLabel="Map of the Lienzo. Press or drag to move around" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom: tokens.island.inset, padding: M.padding }]}>
     <View {...responder.panHandlers} style={{ width: M.width, height: M.height, overflow: 'hidden', borderRadius: 6, backgroundColor: u.c.surface0, ...({ cursor: 'pointer' } as object) }}>
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}>{marks}<Frame fit={fit} view={view} source={source} /></View>
     </View>
@@ -76,8 +77,8 @@ export function SelectionBeacon({ id, title, box, remote, view, source, inset, o
  * in use and what each tint means; pressing it moves to the next one.
  */
 export function LensControl({ lens, legend, note, bottom, onChange, shortcut }: { lens: LensId; legend: readonly LensKey[]; note?: string; bottom: number; onChange(next: LensId): void; shortcut?: string }) {
-  const u = useUI(), next = LENSES[(LENSES.indexOf(lens) + 1) % LENSES.length], on = lens !== 'none';
-  return <View nativeID="lienzo-interactive-lens" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom, maxWidth: 260, padding: on ? 8 : tokens.island.padding, gap: 6 }]}>
+  const safe = useSafeRect('lens'), u = useUI(), next = LENSES[(LENSES.indexOf(lens) + 1) % LENSES.length], on = lens !== 'none';
+  return <View ref={safe.ref} onLayout={safe.onLayout} nativeID="lienzo-interactive-lens" style={[islandStyle(u), { position: 'absolute', left: tokens.island.inset, bottom, maxWidth: 260, padding: on ? 8 : tokens.island.padding, gap: 6 }]}>
     <Tooltip label={`Lens: ${LENS_LABEL[next]} next`} shortcut={shortcut} detail="A way to colour the same canvas.">
     <Pressable accessibilityRole="button" accessibilityLabel={`Lens: ${LENS_LABEL[lens]}. Press for ${LENS_LABEL[next]}`} onPress={e => { e.stopPropagation(); onChange(next); }}
       style={({ pressed, ...state }) => ({ minHeight: 28, paddingHorizontal: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: on ? withAlpha(u.c.accent, .14) : pressed ? withAlpha(u.c.foreground, .1) : (state as { hovered?: boolean }).hovered ? withAlpha(u.c.foreground, .06) : 'transparent' })}>

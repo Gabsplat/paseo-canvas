@@ -30,3 +30,5 @@ export const AboutUpdates: ClientHost['AboutUpdates'] = null;
 export const files: ClientHost['files'] = null;
 // A browser page cannot take a picture of itself cheaply: lienzo.view.snapshot says null and canSnapshot false.
 export const capture: ClientHost['capture'] = null;
+// Full screen of the page Paseo runs in, through the browser's Fullscreen API (browserFullScreen, web.ts).
+export { browserFullScreen as fullScreen } from '../fullscreen';

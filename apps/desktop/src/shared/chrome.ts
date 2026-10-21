@@ -9,6 +9,8 @@ export const TRAFFIC_LIGHTS = { x: 18, y: 27 } as const;
 export const TRAFFIC_LIGHT_INSET = { left: 78, top: 52 } as const;
 /** Main → renderer: the window entered (true) or left (false) full screen, where macOS hides the lights. */
 export const FULL_SCREEN_CHANNEL = 'lienzo:full-screen';
+/** Renderer → main: enter (true) or leave (false) full screen for lienzo.ui.immersive; answers whether it is now. */
+export const SET_FULL_SCREEN_CHANNEL = 'lienzo:set-full-screen';
 /** Renderer → main: a PNG of part of the window as drawn now (lienzo.view.snapshot), as a data URL, or null. */
 export const CAPTURE_CHANNEL = 'lienzo:capture';
 /** The largest picture an extension may ask for, per side, in CSS pixels. */

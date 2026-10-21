@@ -68,6 +68,7 @@ function runtime(controller: any) {
     './appearance': { APPEARANCES: [], adoptAppearance() {}, chooseAppearance() {}, getAppearance: () => 'system', useAppearance: () => 'system', themeFor: (_appearance: string, theme: unknown) => theme },
     './property-model': propertyModel, './media-store': mediaStore, '../shared/media': sharedMedia,
     './LienzoFile': { ExportSheet: control('ExportSheet'), ImportSheet: control('ImportSheet'), isLienzoName: (name: string) => /\.lienzo$/i.test(name), onOpenLienzo: () => () => {}, pickLienzoFile: async () => null, readLienzoFile: async () => null },
+    './safe-area': { SafeAreaContext: { Provider: 'SafeAreaProvider' }, SafeAreaRegistry: class { setCanvas() {} free() { return null; } measurer() { return () => {}; } remeasure() {} subscribe() { return () => {}; } }, measureNode() {}, useSafeRect: () => ({ ref: { current: null }, onLayout() {} }) },
     './Comments': { CommentLayer: control('CommentLayer'), CommentsList: control('CommentsList'), useComments: () => ({ threads: [], placing: false, open: null, listOpen: false, pins: true, openCount: 0, resolvedCount: 0, setPlacing() {}, setOpen() {}, setListOpen() {}, setPins() {} }) },
   };
   const load = (name: string) => {
@@ -82,8 +83,8 @@ function runtime(controller: any) {
   Object.assign(modules['./ui'], { Modal: modal, friendlyError: realUI.friendlyError, useTooltip: () => ({ ref: { current: null }, onHoverIn() {}, onHoverOut() {}, onPressIn() {}, onLongPress() {} }), useUI: () => ({ compact: false, inset: { left: 0, top: 0 }, host: { id: 'host' }, layout: { platform: 'web' }, font: () => ({}), c: {}, wash: () => '', tone: () => '' }) });
   modules['./SelectionActions'] = load('SelectionActions');
   const panel = load('Panel').LienzoPanel({ theme: {}, layout: {}, host: { id: 'host' }, workspaceId: 'workspace' }).props.children[0];
-  // The panel's root view sits inside the tooltip provider.
-  return { render: () => { cursor = 0; return panel.type(panel.props).props.children[0]; }, load, friendlyError: realUI.friendlyError, modules };
+  // The panel's root view sits inside the safe-area and tooltip providers.
+  return { render: () => { cursor = 0; return panel.type(panel.props).props.children[0].props.children[0]; }, load, friendlyError: realUI.friendlyError, modules };
 }
 function nodes(tree: any, visible = false): Element[] {
   if (Array.isArray(tree)) return tree.flatMap(child => nodes(child, visible));

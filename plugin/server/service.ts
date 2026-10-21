@@ -124,10 +124,15 @@ export class CanvasService {
       blockCount: document.blocks.length, groupCount: document.groups.filter(group => !group.sheet).length, hojaCount: document.groups.filter(group => group.sheet).length, agentId: connection?.agentId ?? null })) };
   }
   async read(input: RpcInput<typeof rpc.readDocument>, actor: Actor = "user", agentId?: string) { return view(documentRecord(await this.store.read(), input.documentId, input.workspaceId), actor, agentId); }
+  /** Every window polls this; it reads the live state without copying it, and copies only the view it answers with. */
   async watch(input: RpcInput<typeof rpc.watchDocument>) {
-    const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
-    const commentsVersion = record.comments?.version ?? 0;
-    return { revision: record.document.revision, runtimeVersion: record.runtimeVersion, commentsVersion, ...this.ui.watch(input.documentId, input.knownUiSeq), ...(input.knownRevision !== record.document.revision || input.knownRuntimeVersion !== record.runtimeVersion || input.knownCommentsVersion !== undefined && input.knownCommentsVersion !== commentsVersion ? { view: view(record) } : {}) };
+    return this.store.peek(state => {
+      const record = documentRecord(state, input.documentId, input.workspaceId), commentsVersion = record.comments?.version ?? 0;
+      const stale = input.knownRevision !== record.document.revision || input.knownRuntimeVersion !== record.runtimeVersion || input.knownCommentsVersion !== undefined && input.knownCommentsVersion !== commentsVersion;
+      const change: { view?: DocumentView; selection?: { selectionVersion: number; selectedIds: string[] } } = stale ? { view: view(record) }
+        : input.knownSelectionVersion !== undefined && input.knownSelectionVersion !== record.selectionVersion ? { selection: { selectionVersion: record.selectionVersion, selectedIds: [...record.document.selectedIds] } } : {};
+      return { revision: record.document.revision, runtimeVersion: record.runtimeVersion, commentsVersion, ...this.ui.watch(input.documentId, input.knownUiSeq), ...change };
+    });
   }
   /** Deletes a Lienzo and its history. A conversation whose copilot drew there gets a new one the next time it is turned on. */
   remove(input: RpcInput<typeof rpc.deleteDocument>) {
@@ -220,13 +225,18 @@ export class CanvasService {
     const record = documentRecord(await this.store.read(), input.documentId, input.workspaceId);
     return { revision: record.document.revision, transactions: record.history.map(({ id, revision, actor, agentId, label, at, changed, removed, kind }) => ({ id, revision, actor, agentId, label, at, changed, removed, kind })) };
   }
+  /**
+   * The person selects. Selection is not content (no revision, no history), so like runtime it is applied in memory and
+   * written shortly after (store.selectionTransaction): no copy of the whole state, no schema pass over every document
+   * and its history, no fsync on the way back. On a 600-card Lienzo that was ~190 ms per press; now well under 1 ms.
+   */
   selection(input: RpcInput<typeof rpc.setSelection>) {
-    return this.store.transaction(state => {
-      const record = documentRecord(state, input.documentId, input.workspaceId);
+    return this.store.selectionTransaction(input.documentId, input.workspaceId, record => {
       if (record.selectionVersion !== input.expectedSelectionVersion) throw new CanvasError("REVISION_CONFLICT", "Selection changed. Read current selection and retry.", { currentSelectionVersion: record.selectionVersion });
-      const next = clone(record.document); next.selectedIds = [...input.ids]; validateDocument(next);
-      record.document.selectedIds = next.selectedIds; record.selectionVersion++; record.selectedAt = timestamp(); touchRuntime(record);
-      return view(record);
+      const present = new Set<string>(); for (const entity of record.document.blocks) present.add(entity.id); for (const entity of record.document.groups) present.add(entity.id);
+      if (new Set(input.ids).size !== input.ids.length || input.ids.some(id => !present.has(id))) throw new CanvasError("INVARIANT", "Selection must contain unique existing entity IDs.");
+      record.document.selectedIds = [...input.ids]; record.selectionVersion++; record.selectedAt = timestamp();
+      return { documentId: record.document.id, revision: record.document.revision, selectionVersion: record.selectionVersion, runtimeVersion: record.runtimeVersion, selectedIds: [...record.document.selectedIds] };
     });
   }
   async runtimeRead(raw: RpcInput<typeof rpc.readRuntime>) {
@@ -336,10 +346,13 @@ export class CanvasService {
     }
     if (!reachable(state, record, agentId)) throw new CanvasError("FORBIDDEN", "This canvas belongs to another agent. This workspace keeps one canvas per agent; use canvas_list for yours or create one.");
     const base = record.document.revision, documentId = record.document.id;
-    const outcome = await runExtensionAction({ extension, action: input.action, input: input.input, document: clone(record.document), catalog });
+    const storage = record.extensionStorage && Object.hasOwn(record.extensionStorage, extension.id) ? clone(record.extensionStorage[extension.id]) : null;
+    const outcome = await runExtensionAction({ extension, action: input.action, input: input.input, document: clone(record.document), catalog, storage });
     const summary = { documentId, extension: extension.id, action: input.action, result: outcome.result, ...(outcome.logs.length ? { logs: outcome.logs } : {}) };
-    if (!outcome.operations.length && !outcome.selection) return { ...summary, revision: base, committed: false };
-    return this.store.transaction(state => {
+    // lienzo.storage set by the run: written only once the run (and its edits, if any) went through.
+    const keep = async <T>(result: T): Promise<T> => { if (outcome.storage) await this.extensionStorage({ workspaceId: input.workspaceId, documentId, extensionId: extension.id, action: "set", value: outcome.storage.value as never }); return result; };
+    if (!outcome.operations.length && !outcome.selection) return keep({ ...summary, revision: base, committed: false });
+    return keep(await this.store.transaction(state => {
       const record = documentRecord(state, documentId, input.workspaceId);
       if (record.document.revision !== base) throw new CanvasError("REVISION_CONFLICT", "The Lienzo changed while the action ran, so nothing was applied. Run the action again.", { currentRevision: record.document.revision });
       let entry: HistoryEntry | undefined;
@@ -356,7 +369,7 @@ export class CanvasService {
         if (JSON.stringify(selection) !== JSON.stringify(record.document.selectedIds)) { record.document.selectedIds = selection; record.selectionVersion++; touchRuntime(record); }
       }
       return { ...summary, revision: record.document.revision, committed: !!entry, ...(entry ? { transactionId: entry.id, label: entry.label, changed: entry.changed, removed: entry.removed } : {}), ...(selection ? { selection } : {}) };
-    });
+    }));
   }
   /**
    * canvas_extension_open / _close: asks the windows showing a Lienzo to open (or close) an extension's UI, through

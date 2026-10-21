@@ -7,11 +7,12 @@ import type { ZodType, output as ZodOutput } from 'zod';
 import type { AgentSheetProps, AgentSnapshot, ClientHost, HostTheme, IconProps, ModalContentProps, ModalProps, SettingsState, ToastApi, ToastVariant, WindowInset } from '../../../../plugin/client/host/contract';
 import type { RpcContract, SettingsDefinition } from '../../../../plugin/shared/contract';
 import { TRAFFIC_LIGHT_INSET } from '../shared/chrome';
+import { browserFullScreen } from '../../../../plugin/client/fullscreen';
 import { DESKTOP_WORKSPACE, desktopStatus, openExternal, settingsRpc, writeClipboard, type InvokeResult } from '../shared/rpc';
 
 export type * from '../../../../plugin/client/host/contract';
 
-declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult>; trafficLights?: boolean; onFullScreen?(listener: (fullScreen: boolean) => void): () => void; saveFile?(file: { name: string; mime: string; text: string }): Promise<boolean>; onOpenFile?(listener: (file: { name: string; text: string; error?: string }) => void): () => void; capture?(rect: { x: number; y: number; width: number; height: number }): Promise<string | null> } } }
+declare global { interface Window { lienzo?: { invoke(name: string, input: unknown): Promise<InvokeResult>; trafficLights?: boolean; onFullScreen?(listener: (fullScreen: boolean) => void): () => void; saveFile?(file: { name: string; mime: string; text: string }): Promise<boolean>; onOpenFile?(listener: (file: { name: string; text: string; error?: string }) => void): () => void; setFullScreen?(on: boolean): Promise<boolean>; capture?(rect: { x: number; y: number; width: number; height: number }): Promise<string | null> } } }
 
 /** Electron IPC through the preload's one function; in the browser preview, the preview server's POST /rpc. */
 export async function invoke(name: string, input: unknown): Promise<unknown> {
@@ -26,12 +27,12 @@ export async function call<C extends RpcContract>(contract: C, input: unknown): 
 }
 
 // ---- Window chrome: on macOS the traffic lights sit over the top-left corner, except in full screen where they hide.
-let fullScreen = false;
+let fullScreen_ = false;
 const chromeListeners = new Set<() => void>();
-window.lienzo?.onFullScreen?.(next => { fullScreen = next; chromeListeners.forEach(listener => listener()); });
+window.lienzo?.onFullScreen?.(next => { fullScreen_ = next; chromeListeners.forEach(listener => listener()); });
 /** The corner the panel keeps clear of the window controls (`layout.inset`), or none. */
 export function useWindowInset(): WindowInset | undefined {
-  const full = useSyncExternalStore(listener => { chromeListeners.add(listener); return () => { chromeListeners.delete(listener); }; }, () => fullScreen);
+  const full = useSyncExternalStore(listener => { chromeListeners.add(listener); return () => { chromeListeners.delete(listener); }; }, () => fullScreen_);
   return window.lienzo?.trafficLights && !full ? TRAFFIC_LIGHT_INSET : undefined;
 }
 
@@ -207,7 +208,13 @@ export const AboutUpdates: ClientHost['AboutUpdates'] = function AboutUpdatesSlo
 export const files: ClientHost['files'] = window.lienzo?.saveFile && window.lienzo.onOpenFile ? { save: file => window.lienzo!.saveFile!(file), onOpen: listener => window.lienzo!.onOpenFile!(listener) } : null;
 // lienzo.view.snapshot: the main process captures part of this window (webContents.capturePage).
 export const capture: ClientHost['capture'] = window.lienzo?.capture ? rect => window.lienzo!.capture!(rect) : null;
+// lienzo.ui.immersive: the window's native full screen (BrowserWindow.setFullScreen); the browser preview uses the page's.
+export const fullScreen: ClientHost['fullScreen'] = window.lienzo?.setFullScreen ? {
+  isOn: () => fullScreen_,
+  set: on => window.lienzo!.setFullScreen!(on),
+  onChange: listener => { const run = () => listener(fullScreen_); chromeListeners.add(run); return () => { chromeListeners.delete(run); }; },
+} : browserFullScreen;
 
 // Every export above, checked against the contract in one place.
-const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AgentBadge, AboutUpdates, files, capture };
+const host: ClientHost = { Icon, ScrollView, TextInput, Modal, useToast, copyText, openExternalUrl, useRpc, useSettings, useAgent, usePaseo, capabilities, AgentSheet, AgentSettings, AgentBadge, AboutUpdates, files, capture, fullScreen };
 void host;

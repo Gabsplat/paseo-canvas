@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, View } from 'react-native';
-import { type PanelProps, AgentBadge, AgentSheet, capabilities, capture, useAgent, useSettings } from './host';
+import { type PanelProps, AgentBadge, AgentSheet, capabilities, capture, fullScreen, useAgent, useSettings } from './host';
 import { Icon, ScrollView, useToast } from './host';
 import type { BlockType, CanvasGroup, CanvasOperation } from '../shared/model';
 import { useCanvas, type CanvasController } from './useCanvas';
@@ -37,6 +37,7 @@ import { type linkBlock } from './media';
 import { panelFits, splitOperations } from './panel-actions';
 import { sectionMemory, sectionScope } from './property-model';
 import { LinkSheet, SvgSheet } from './AddSheets';
+import { SafeAreaContext, SafeAreaRegistry, measureNode, useSafeRect } from './safe-area';
 import { isWhiteboardRenderer, learnerLayerIds, strokeLayers, type WbRenderer, type WbDrawData, type WbShape } from '../shared/whiteboard';
 import { Toolbar, GLOSSARY, shapeIcon, type ToolId, type PinnedTool } from './Toolbar';
 import { AddMenu, type ToolEntry } from './AddMenu';
@@ -162,8 +163,14 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const [ventana, setVentana] = useState<VentanaKind | null>(null);
   // A .lienzo file being exported or reviewed for import (LienzoFile.tsx).
   const [fileFlow, setFileFlow] = useState<LienzoFlow | null>(null);
-  // Hide all UI (⌘.) hides the floating controls. Failures and the canvas zoom stay visible.
-  const [immersive, setImmersive] = useState(false);
+  // Hide all UI (⌘.) hides every island over the canvas, the canvas' own ones too; failures stay visible. An extension
+  // may ask for it (lienzo.ui.immersive), with the window's full screen: then Esc, ⌘. or closing the tool leaves it, and
+  // closing restores what was before. `immersiveRef` is the truth the stage reads between renders.
+  const [immersive, setImmersiveState] = useState(false), [immersiveOwner, setImmersiveOwner] = useState<string | null>(null);
+  const immersiveRef = useRef({ on: false, owner: null as string | null, before: false, screen: false });
+  const leaveOwner = () => { const r = immersiveRef.current, entered = r.screen; if (!r.owner) return; r.owner = null; r.screen = false; setImmersiveOwner(null); if (entered) void fullScreen?.set(false); };
+  /** The person's choice (⌘., the menu, Esc, opening something): it always ends an extension's immersive mode. */
+  const setImmersive = (next: boolean | ((on: boolean) => boolean)) => { const r = immersiveRef.current, value = typeof next === 'function' ? next(r.on) : next; leaveOwner(); r.on = value; setImmersiveState(value); };
   const [guideOpen, setGuideOpen] = useState(false), guideClaim = useRef(false), guideMounted = useRef(true);
   useEffect(() => { guideMounted.current = true; return () => { guideMounted.current = false; }; }, []);
   useEffect(() => {
@@ -202,7 +209,23 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const hiddenRef = useRef<HiddenRegistry | null>(null); if (!hiddenRef.current) hiddenRef.current = new HiddenRegistry(); const hiddenRegistry = hiddenRef.current;
   const [veiled, setVeiled] = useState<ReadonlySet<string>>(() => hiddenRegistry.ids());
   useEffect(() => hiddenRegistry.subscribe(() => setVeiled(hiddenRegistry.ids())), [hiddenRegistry]);
+  const safeRef = useRef<SafeAreaRegistry | null>(null); safeRef.current ??= new SafeAreaRegistry(); const safeArea = safeRef.current;
   const stage = useMemo<ExtensionStage>(() => ({
+    camera: () => canvas.current?.camera() ?? null, safeArea,
+    chrome: () => ({ hidden: immersiveRef.current.on, owner: immersiveRef.current.owner }),
+    immersive: async (owner, on) => {
+      const r = immersiveRef.current;
+      if (on) {
+        if (r.owner === owner) return true;
+        if (!r.owner) r.before = r.on; else leaveOwner();
+        r.owner = owner; r.on = true; setImmersiveOwner(owner); setImmersiveState(true);
+        if (fullScreen && !fullScreen.isOn()) { const got = await fullScreen.set(true); if (immersiveRef.current.owner === owner) r.screen = got; else if (got) void fullScreen.set(false); }
+        return immersiveRef.current.owner === owner;
+      }
+      if (r.owner !== owner) return false;
+      leaveOwner(); r.on = r.before; setImmersiveState(r.before); return false;
+    },
+    exitImmersive: owner => { if (immersiveRef.current.owner !== owner) return false; setImmersive(false); return true; },
     hide: (owner, ids, ms) => hiddenRegistry.hide(owner, ids, ms), show: (owner, ids) => hiddenRegistry.show(owner, ids),
     // A picture of things as drawn now: the host captures the window (the desktop app); in a browser there is none.
     snapshot: capture ? async ids => {
@@ -218,6 +241,12 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     subscribe: listener => { viewSubs.current.add(listener); return () => { viewSubs.current.delete(listener); }; },
     highlight: (owner, next) => setHighlight(current => next?.ids.length ? { ...next, owner } : current?.owner === owner ? null : current),
   }), []);
+  // The window left full screen by other means (the system's Esc): an extension's immersive mode ends with it.
+  useEffect(() => fullScreen?.onChange(on => { const r = immersiveRef.current; if (!on && r.owner && r.screen) { r.screen = false; setImmersive(false); } }), []);
+  // ---- The safe area (safe-area.ts): every island below reports its box; the canvas' box anchors them.
+  const canvasHost = useRef<View>(null), measureCanvas = () => measureNode(canvasHost.current, box => safeArea.setCanvas(box));
+  useEffect(() => safeArea.measurer(measureCanvas), []);
+  const docIsland = useSafeRect('document', { registry: safeArea }), actionsIsland = useSafeRect('actions', { registry: safeArea }), toolbarIsland = useSafeRect('toolbar', { registry: safeArea }), restoreIsland = useSafeRect('restore', { registry: safeArea });
   // Where the canvas is in the page, for a snapshot (the desktop app captures page pixels).
   function canvasPort(): Box | null {
     const el = (globalThis as unknown as { document?: { getElementById(id: string): { getBoundingClientRect(): { left: number; top: number; width: number; height: number } } | null } }).document?.getElementById('lienzo-canvas-viewport');
@@ -645,10 +674,10 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const roomy = panelFits(width, u.compact);
   const panelVisible = !!doc && !immersive && !panel.hidden && tabs.length > 0 && (roomy ? true : panel.forced);
   const activeTab = tabs.some(t => t.id === panel.tab) ? panel.tab : tabs[0]?.id ?? 'properties';
-  // What covers the right of the canvas, so a fit (lienzo.view.fit, Go to) frames things clear of it: the right panel
-  // and extension panels docked on the right.
-  const rightTools = u.compact ? [] : opened.filter(e => e.ui.mode === 'panel' && e.ui.position === 'right');
-  const obscuredRight = (panelVisible && !u.compact ? F.rightPanel.width + F.rightPanel.inset : 0) + (rightTools.length ? Math.max(...rightTools.map(e => e.ui.width)) + tokens.island.inset : 0);
+  // Anything that can move an island makes every island look at its box again (safe-area.ts); once more after the
+  // panels' own transitions have settled. Fits (lienzo.view.fit, Go to, Fit all, the agent's fly) use the free zone.
+  const layoutKey = [width, panelHeight, panelVisible, activeTab, immersive, u.compact, opened.map(e => `${e.id}:${e.ui.mode}:${e.ui.position}:${e.ui.width}:${e.ui.height}`).join(), !!doc].join('|');
+  useEffect(() => { safeArea.remeasure(); const later = setTimeout(() => safeArea.remeasure(), 320); return () => clearTimeout(later); }, [layoutKey]);
   // ⌘\ hides what is showing; it brings the panel back for the selection or the tool, or for the Lienzo when there is neither.
   const sources = hasSelection || (toolOptions && !!styleNode) || comments.listOpen;
   const togglePanel = () => setPanel(p => panelVisible ? { ...p, hidden: true, forced: false } : { ...p, hidden: false, forced: !sources || !roomy });
@@ -763,7 +792,8 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (comments.placing) { comments.setPlacing(false); return true; }
     if (addOpen) { setAddOpen(false); return true; }
     if (libraryOpen) { setLibraryOpen(false); return true; }
-    // An extension that is not a panel with its title bar closes with Esc, the most recent first.
+    // An extension's immersive mode goes first, then an extension that is not a panel with its title bar, most recent first.
+    if (immersiveOwner) { setImmersive(false); return true; }
     const dismiss = [...opened].reverse().find(e => closesOnEscape(e.ui));
     if (dismiss) { closeExtension(dismiss.id); return true; }
     if (immersive) { setImmersive(false); return true; }
@@ -911,14 +941,14 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       onEntry={patch => setOpened(list => list.map(e => e.id === entry.id ? { ...e, ...patch } : e))} onOpen={id => { void c.select([id]); }} onClose={() => closeExtension(entry.id)} onHelp={() => openHelp(pageForSelection({ kind: 'extension', id: extension.id }))} />;
   }) : null;
   const empty = !!doc && !doc.blocks.length && !doc.groups.length && mode === 'canvas' && !immersive && tool === 'select';
-  return <TooltipProvider root={root}><View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
+  return <SafeAreaContext.Provider value={safeArea}><TooltipProvider root={root}><View ref={root} onLayout={e => { setWidth(e.nativeEvent.layout.width); setPanelHeight(e.nativeEvent.layout.height); }} style={{ flex: 1, minHeight: 0, backgroundColor: u.c.surface0 }}>
     {u.compact && !immersive && <View style={{ height: tokens.size.topBarCompact, paddingHorizontal: 8, paddingLeft: 8 + u.inset.left, flexDirection: 'row', alignItems: 'center', gap: 4, borderBottomWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1 }}>
       <Badged><IconButton icon="Menu" label="Menu" onPress={() => setOverflow(true)} /></Badged><View style={{ flex: 1, minWidth: 0 }}>{title}</View>{doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center />}<IconButton icon="Undo2" label="Undo" shortcut={keyLabel('edit.undo')} disabled={disabled || !c.view?.canUndo} onPress={() => { void changeRevision('undo'); }} /><IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} onPress={() => setPaletteOpen(true)} /><IconButton icon="PanelRight" label="Properties" shortcut={keyLabel('panel.right')} disabled={!doc} active={panelVisible} onPress={togglePanel} />
     </View>}
-    <View onLayout={e => { const l = e.nativeEvent.layout; setCanvasBox(b => b.x === l.x && b.y === l.y && b.width === l.width && b.height === l.height ? b : { x: l.x, y: l.y, width: l.width, height: l.height }); }} style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
+    <View ref={canvasHost} onLayout={e => { const l = e.nativeEvent.layout; setCanvasBox(b => b.x === l.x && b.y === l.y && b.width === l.width && b.height === l.height ? b : { x: l.x, y: l.y, width: l.width, height: l.height }); measureCanvas(); safeArea.remeasure(); }} style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState art={<MateDrawing size={112} />} title="Pour yourself a mate." description="Then start a Lienzo, or ask your agent to draw what it is explaining.">
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}<Button label="Import…" icon="FileInput" variant="ghost" disabled={c.offline} onPress={() => { void importLienzo(); }} /></View>
-      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} veiled={veiled} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} obscuredRight={obscuredRight}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} veiled={veiled} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} freeZone={() => safeArea.free()} bare={immersive}
         overlay={view => <CommentLayer state={comments} view={view} groups={new Set(doc.groups.map(g => g.id))} titleOf={titleOf} hidden={immersive}
           clear={u.compact ? { top: 8, bottom: 8, right: 8 } : { top: tokens.island.inset + F.top.height + 8, bottom: F.toolbar.bottom + F.toolbar.height + 8, right: panelVisible ? F.rightPanel.width + F.rightPanel.inset + 8 : 8 }} />} />}
     </View>
@@ -926,14 +956,14 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <View pointerEvents="box-none" style={{ position: 'absolute', inset: 0 }}>
       {imagesBusy && <View pointerEvents="none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 31 }}><View nativeID="lienzo-images-busy" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><LoadingEgg /><Txt kind="small">Adding images…</Txt></View></View>}
       {!!undoLabel && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.bannerTop, left: 0, right: 0, alignItems: 'center', zIndex: 30 }}><View style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }]}><Txt kind="small">{undoLabel}</Txt><Button label="Undo" small variant="ghost" disabled={disabled || !c.view?.canUndo} onPress={() => { setUndoLabel(''); void changeRevision('undo'); }} /><IconButton label="Close notice" icon="X" onPress={() => setUndoLabel('')} /></View></View>}
-      {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, left: islandLeft, maxWidth: Math.max(0, width - 24 - 120 - u.inset.left) }}><View nativeID="lienzo-document-island" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
+      {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, left: islandLeft, maxWidth: Math.max(0, width - 24 - 120 - u.inset.left) }}><View ref={docIsland.ref} onLayout={docIsland.onLayout} nativeID="lienzo-document-island" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
         <Badged><IconButton icon="Menu" label="Menu" detail="Lienzos, history, agent, extensions and settings." size={36} onPress={() => { setAddOpen(false); setOverflow(true); }} /></Badged>
         <View style={{ flexShrink: 1, minWidth: 0, maxWidth: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth, ...(rename ? { width: width < 880 ? tokens.island.title.maxWidthTight : tokens.island.title.maxWidth } : {}) }}>{title}</View>
         {doc?.example && <Chip label="Example" tone="aviso" icon="FlaskConical" center style={{ marginRight: 6 }} />}
         {(saveSlow || c.failure) && <View accessibilityLabel={c.failure ? 'Not saved' : 'Saving'} style={{ width: 6, height: 6, borderRadius: 3, marginRight: 8, backgroundColor: c.failure ? u.c.statusDanger : u.c.statusWarning }} />}
         {!!doc && <><View style={{ width: 1, height: 20, marginHorizontal: 4, backgroundColor: u.c.border }} /><HojaControls copilot={copilot} shortcut={keyLabel} /></>}
       </View></View>}
-      {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, right: tokens.island.inset }}><View nativeID="lienzo-top-right" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
+      {!u.compact && !immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: tokens.island.inset, right: tokens.island.inset }}><View ref={actionsIsland.ref} onLayout={actionsIsland.onLayout} nativeID="lienzo-top-right" style={[islandStyle(u), { flexDirection: 'row', alignItems: 'center', height: F.top.height }]}>
         <IconButton icon="Search" label="Search and commands" shortcut={keyLabel('palette.open')} detail="Tools, actions, Sheets and Lienzos." size={36} onPress={() => { setAddOpen(false); setPaletteOpen(true); }} />
         <View><IconButton icon="MessageSquare" label="Comments" detail={comments.openCount ? `${comments.openCount} open on this Lienzo. Press C to add one.` : 'Notes pinned on this Lienzo. Press C to add one.'} size={36} disabled={!doc} active={panelVisible && activeTab === 'comments'} onPress={() => { if (panelVisible && activeTab === 'comments') { comments.setListOpen(false); } else showComments(); }} />
           {comments.openCount > 0 && <View pointerEvents="none" nativeID="lienzo-comments-count" style={{ position: 'absolute', right: 3, top: 3, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 8, backgroundColor: u.c.accent, alignItems: 'center', justifyContent: 'center' }}><Txt style={{ fontSize: 9, lineHeight: 11, fontWeight: '700', color: u.c.accentForeground }}>{comments.openCount > 99 ? '99+' : comments.openCount}</Txt></View>}</View>
@@ -943,7 +973,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
         <EmptyMate />
         <View pointerEvents="box-none" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}><Button label="Add something" icon="Plus" disabled={disabled} onPress={() => setAddOpen(true)} /></View>
       </View>}
-      {doc && !immersive && !u.compact && <View pointerEvents="box-none" style={{ position: 'absolute', bottom: toolbarBottom, left: tokens.island.inset, right: tokens.island.inset, alignItems: 'center' }}><View pointerEvents="box-none" onLayout={e => { const { x, width: w } = e.nativeEvent.layout; setToolbarBox({ x: x + tokens.island.inset, width: w }); }}>{toolbar}</View></View>}
+      {doc && !immersive && !u.compact && <View pointerEvents="box-none" style={{ position: 'absolute', bottom: toolbarBottom, left: tokens.island.inset, right: tokens.island.inset, alignItems: 'center' }}><View ref={toolbarIsland.ref} pointerEvents="box-none" onLayout={e => { const { x, width: w } = e.nativeEvent.layout; setToolbarBox({ x: x + tokens.island.inset, width: w }); toolbarIsland.onLayout(); }}>{toolbar}</View></View>}
       {panelVisible && !u.compact && <RightPanel tabs={tabs} active={activeTab} onTab={tab => setPanel(p => ({ ...p, tab }))} pinned={panel.pinned} onPin={pinned => setPanel(p => ({ ...p, pinned }))} onClose={togglePanel} top={panelTop} maxHeight={panelMax} shortcut={keyLabel('panel.right')} focusSection={panel.focus === 'instruction' ? 'Instructions for the agent' : undefined} scope={sectionScope(c.selection, linkId)} />}
       <View pointerEvents="box-none" style={{ position: 'absolute', top: u.compact ? tokens.size.topBarCompact + 8 : tokens.island.bannerTop, left: 12, right: panelVisible && !u.compact ? F.rightPanel.width + 24 : 12 }}>{doc && (c.failure || c.offline || reload) && <View pointerEvents="box-none" style={{ padding: 12, gap: 8 }}>
           {c.failure && <Banner title={c.failure.conflict ? 'The Lienzo changed while you were editing' : 'The change was not saved'} icon={c.failure.conflict ? 'GitCompareArrows' : 'CircleAlert'} color={c.failure.conflict ? u.c.statusWarning : u.c.statusDanger} message={c.failure.conflict ? 'Another edit changed the Lienzo and yours was not saved. You can apply it again on top of the current content, or discard it.' : c.failure.message}>
@@ -958,7 +988,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       {libraryOpen && !immersive && <View pointerEvents="box-none" style={u.compact ? { position: 'absolute', left: 8, right: 8, bottom: compactDock + 8, alignItems: 'center' } : { position: 'absolute', bottom: toolbarBottom + F.toolbar.height + 8, left: 0, right: 0, alignItems: 'center' }}>
         <LibraryPopover onInsert={insertSvg} onImport={() => { setLibraryOpen(false); setSvgOpen(true); }} error={libraryError} busy={disabled || svgBusy} onClose={() => setLibraryOpen(false)} recent={recentIcons} onRecent={list => savePrefs({ recentIcons: list })} online={!c.offline} maxHeight={Math.max(280, panelHeight - toolbarBottom - F.toolbar.height - 40)} />
       </View>}
-      {immersive && <View pointerEvents="box-none" style={{ position: 'absolute', top: 12, right: 12 }}><View style={islandStyle(u)}><IconButton icon="Minimize2" label="Show the interface" shortcut={keyLabel('ui.hide')} onPress={() => setImmersive(false)} /></View></View>}
+      {immersive && !immersiveOwner && <View pointerEvents="box-none" style={{ position: 'absolute', top: 12, right: 12 }}><View ref={restoreIsland.ref} onLayout={restoreIsland.onLayout} style={islandStyle(u)}><IconButton icon="Minimize2" label="Show the interface" shortcut={keyLabel('ui.hide')} onPress={() => setImmersive(false)} /></View></View>}
       <Kettle serial={kettle} bottom={u.compact ? compactDock + 12 : 60} />
     </View>
     {u.compact && doc && !immersive && selectionBar}
@@ -991,5 +1021,5 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <Onboarding open={guideOpen} close={closeGuide} panel={panelBox} />
     {AgentSheet ? <AgentSheet open={agentsOpen} close={() => setAgentsOpen(false)} connectedAgentId={c.view?.connection?.agentId ?? null} /> : <AgentModal controller={c} open={agentsOpen} close={() => setAgentsOpen(false)} onReload={() => setReload(true)} />}
     {screens}
-  </View></TooltipProvider>;
+  </View></TooltipProvider></SafeAreaContext.Provider>;
 }
