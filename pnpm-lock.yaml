@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@getpaseo/plugin':
-        specifier: 0.11.2
-        version: 0.11.2(@getpaseo/client@0.11.2)(@getpaseo/protocol@0.11.2)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.1.0))(react@19.1.0)(zod@4.6.5)
+        specifier: 0.12.0
+        version: 0.12.0(@getpaseo/client@0.12.0)(@getpaseo/protocol@0.12.0)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.1.0))(react@19.1.0)(zod@4.6.5)
       '@modelcontextprotocol/sdk':
         specifier: ^1.28.0
         version: 1.32.0(zod@4.6.5)
@@ -91,8 +91,8 @@ importers:
         version: 0.32.0
     devDependencies:
       '@getpaseo/plugin':
-        specifier: 0.11.2
-        version: 0.11.2(@getpaseo/client@0.11.2)(@getpaseo/protocol@0.11.2)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.1.0))(react@19.1.0)(zod@4.6.5)
+        specifier: 0.12.0
+        version: 0.12.0(@getpaseo/client@0.12.0)(@getpaseo/protocol@0.12.0)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.1.0))(react@19.1.0)(zod@4.6.5)
       '@tanstack/react-query':
         specifier: ^5.90.11
         version: 5.104.1(react@19.1.0)
@@ -476,14 +476,14 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@getpaseo/client@0.11.2':
-    resolution: {integrity: sha512-F5483GAkhbitCoJi3Xy+RbIS9ja6Hy+NToOl8J3b5bIFhrttO4sofETCW2Q2LVFDTyQq0v24z8ZQpvwuyV/IUg==}
+  '@getpaseo/client@0.12.0':
+    resolution: {integrity: sha512-FrszuQkG73mbU5nJcaWKjW2K1mDt6k1veCa2acV9V8HphPD7BtQLPiiUnXsSUdYeP8S54duGbuYfZgaVyUvd5g==}
 
-  '@getpaseo/plugin@0.11.2':
-    resolution: {integrity: sha512-AgTdbjCHdwzIJwL+vRz9j4lgcgemg8BszOwWEngLQ+L2ZRIgSaVVIrNXgKDoH2eC/QicUHTC1DysLqSYLpyy0A==}
+  '@getpaseo/plugin@0.12.0':
+    resolution: {integrity: sha512-LSwpGU3o6/SRAfzIIq9BA6aqEO6LRmbJTyyCRl+jWCsguL++klMpf6HBbAZJtQOlv5YuF21gjKZvLcSkngpxFg==}
     peerDependencies:
-      '@getpaseo/client': 0.11.2
-      '@getpaseo/protocol': 0.11.2
+      '@getpaseo/client': 0.12.0
+      '@getpaseo/protocol': 0.12.0
       react: ~19.1.0
       react-native: '>=0.81.5'
       zod: ^4.4.3
@@ -491,11 +491,11 @@ packages:
       react-native:
         optional: true
 
-  '@getpaseo/protocol@0.11.2':
-    resolution: {integrity: sha512-C+YZ5aZs+X3ygKJnpL1IZ9MvMcmGz7waPV0UYusaTFg+bPSl2jW2HOEYlxUALucwTnDYwsFgi+rAzKAihHWkXQ==}
+  '@getpaseo/protocol@0.12.0':
+    resolution: {integrity: sha512-05jivVDeG18jWTpvQZ3yETNxH/AfHpHy9CgnP7O5ZxQLUr3onJIAqaGNzv15dPnGf4fU342UHQBFAE2t2Yc7fQ==}
 
-  '@getpaseo/relay@0.11.2':
-    resolution: {integrity: sha512-eJ6/apJDWGyxdMbCH59DKhY4GcvbqQCFdeKQG3Rmy4jBvAeEuqC0XeuJd5lD5o2PcCeguzH37qeKFasODOpRSw==}
+  '@getpaseo/relay@0.12.0':
+    resolution: {integrity: sha512-ochmc4uIZWlSgMr9aJIEqnyiFrhcW+TjOWxnTYX4LCyiJMvLrhN4DJpZlReAqyWmSgEybjjRBq+7NBH64FIV3A==}
 
   '@hono/node-server@2.1.3':
     resolution: {integrity: sha512-TA//nWMqPhbfdfneACk6t5a9eqbS9lABEPyKn0/xZTah3H3U2XaVg85rJFl0/Fyit0I552YDHgXGVSf3GwqbUw==}
@@ -3018,32 +3018,32 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@getpaseo/client@0.11.2':
+  '@getpaseo/client@0.12.0':
     dependencies:
-      '@getpaseo/protocol': 0.11.2
-      '@getpaseo/relay': 0.11.2
+      '@getpaseo/protocol': 0.12.0
+      '@getpaseo/relay': 0.12.0
       zod: 4.6.5
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@getpaseo/plugin@0.11.2(@getpaseo/client@0.11.2)(@getpaseo/protocol@0.11.2)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.1.0))(react@19.1.0)(zod@4.6.5)':
+  '@getpaseo/plugin@0.12.0(@getpaseo/client@0.12.0)(@getpaseo/protocol@0.12.0)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.1.0))(react@19.1.0)(zod@4.6.5)':
     dependencies:
       '@agentclientprotocol/sdk': 1.7.0(zod@4.6.5)
-      '@getpaseo/client': 0.11.2
-      '@getpaseo/protocol': 0.11.2
+      '@getpaseo/client': 0.12.0
+      '@getpaseo/protocol': 0.12.0
       react: 19.1.0
       use-sync-external-store: 1.7.0(react@19.1.0)
       zod: 4.6.5
     optionalDependencies:
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.1.0)
 
-  '@getpaseo/protocol@0.11.2':
+  '@getpaseo/protocol@0.12.0':
     dependencies:
       semver: 7.8.5
       zod: 4.6.5
 
-  '@getpaseo/relay@0.11.2':
+  '@getpaseo/relay@0.12.0':
     dependencies:
       base64-js: 1.5.1
       tweetnacl: 1.0.3
