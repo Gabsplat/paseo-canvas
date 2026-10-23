@@ -3,7 +3,7 @@
 Plugin local de Paseo para construir documentos visuales junto a una conversación con un agente.
 Los agentes usan MCP y la interfaz usa RPC; ambas entradas comparten el mismo servicio y almacenamiento.
 
-Probado con Paseo 0.10.3 y tipado contra el SDK 0.11.0 (el plugin declara `>=0.10.3 <0.12.0`). Tras instalarlo, elige
+Probado con Paseo 0.10.3 a 0.12.0 y tipado contra el SDK 0.12.0 (el plugin declara `>=0.10.3 <0.13.0`). Tras instalarlo, elige
 **Abrir Lienzo** en el Command Center de cualquier workspace, o escribe `/lienzo` en el chat de un agente.
 
 ## Instalar
@@ -66,7 +66,7 @@ Diferencias con el plugin, cómo copiar un estado de Paseo y límites conocidos:
 
 ## Desarrollo
 
-Requiere pnpm y Paseo 0.10.3 o 0.11.x. El rango del plugin es `>=0.10.3 <0.12.0`.
+Requiere pnpm y Paseo 0.10.3 a 0.12.x. El rango del plugin es `>=0.10.3 <0.13.0`.
 
 ```sh
 pnpm install
