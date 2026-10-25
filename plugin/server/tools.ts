@@ -197,7 +197,8 @@ export class ToolRouter {
       case "canvas_create": {
         const args = rpc.createDocument.input.omit({ workspaceId: true }).parse(input);
         if (await this.paced(scope.agentId)) checkPace(args.content.blocks?.length ?? 0);
-        const current = await this.service.create({ ...args, workspaceId }, "agent", scope);
+        // The connection schema is strict: the scope's label (the conversation title) is not part of it.
+        const current = await this.service.create({ ...args, workspaceId }, "agent", { agentId: scope.agentId, workspaceId: scope.workspaceId });
         return { documentId: current.document.id, revision: current.document.revision, ...readable(current.document) };
       }
       case "canvas_read": {
