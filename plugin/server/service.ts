@@ -10,7 +10,7 @@ import { CanvasError } from "../shared/errors";
 import { isRetiredRenderer } from "../shared/renderers";
 import { CanvasStore, documentRecord, assertRevision, changedEntities, type RuntimeRecord, type DocumentRecord, type Actor, type HistoryEntry } from "./store";
 import { catalogView, extensionsHash, packDiff, packIssues, parsePack, validateExtension, validateType } from "./catalog";
-import { clone, newId, reduce, validateDocument, normalizeBlock, effectiveInstructions } from "./reducer";
+import { clone, newId, reduce, validateDocument, normalizeBlock, effectiveInstructions, pruneBundles } from "./reducer";
 import { nextSheetPlacement, sheetSummaries } from "./sheets";
 import { runExtensionAction } from "./actions";
 import { ExtensionUiChannel } from "./extension-ui";
@@ -37,7 +37,7 @@ const view = (record: DocumentRecord, actor: Actor = "user", agentId?: string): 
 export function latestAgent(record: Pick<DocumentRecord, "document" | "history">, agentId?: string): LatestAgent | null {
   const entry = [...record.history].reverse().find(entry => entry.actor === "agent" && (!agentId || entry.agentId === agentId));
   if (!entry) return null;
-  const present = new Set([...record.document.blocks, ...record.document.groups, ...record.document.links].map(entity => entity.id));
+  const present = new Set([...record.document.blocks, ...record.document.groups, ...record.document.links, ...(record.document.bundles ?? [])].map(entity => entity.id));
   return { transactionId: entry.id, revision: entry.revision, at: entry.at, ...(entry.agentId ? { agentId: entry.agentId } : {}), label: entry.label, kind: entry.kind, ids: entry.changed.filter(id => present.has(id)), removed: [...entry.removed] };
 }
 const touchRuntime = (record: RuntimeRecord) => { record.runtimeVersion++; };
@@ -152,7 +152,7 @@ export class CanvasService {
       const catalog = catalogView(state.catalog);
       for (const block of document.blocks) if (!catalog.blockTypes.some(type => type.id === block.typeId)) throw new CanvasError("UNKNOWN_TYPE", `Unknown block type ${block.typeId}.`);
       for (const block of document.blocks) normalizeBlock(block, catalog.blockTypes.find(type => type.id === block.typeId)!);
-      validateDocument(document, catalog);
+      validateDocument(document, catalog); pruneBundles(document);
       if (Buffer.byteLength(JSON.stringify(document)) > 1024 * 1024) throw new CanvasError("TOO_LARGE", "A document cannot exceed 1 MiB.");
       state.documents[id] = { document, history: [], connection, selectionVersion: 0, runtimeVersion: 0, runtime: { blocks: {}, scopes: {} }, ...(actor === "agent" && connection ? { ownerAgentId: connection.agentId } : {}) };
       return view(state.documents[id], actor);
@@ -208,6 +208,7 @@ export class CanvasService {
       next.blocks = restore(next.blocks, snapshot.blocks);
       next.groups = restore(next.groups, snapshot.groups);
       next.links = restore(next.links, snapshot.links);
+      next.bundles = restore(next.bundles ?? [], snapshot.bundles ?? []); pruneBundles(next);
       if (affected.has("$document")) { next.title = snapshot.title; next.description = snapshot.description; next.example = snapshot.example; next.communication = clone(snapshot.communication); next.variables = clone(snapshot.variables); if (snapshot.layout) next.layout = clone(snapshot.layout); else delete next.layout; }
       const ids = new Set([...next.blocks, ...next.groups].map(entity => entity.id));
       next.selectedIds = next.selectedIds.filter(id => ids.has(id));

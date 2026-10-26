@@ -1864,3 +1864,46 @@ Extensions choose a presentation (`docs/extensions.md`, "Presentation"); the loo
   stand-in card drawn from the theme in a browser), released left to right with jitter over 1.3 s and drifting up and
   right; one grain in four turns 60 % toward the canvas' violet once it flies, so the dust reads on light and dark
   cards. The question card that follows uses the island look and the theme's accent for Delete.
+
+## 46. Link bundles (October 2026)
+
+Many links between the same two areas read as a tangle long before they are many. A bundle gathers them into one
+strand of parallel lanes between two clips, the way wires are tied into a loom, and fans them out again at each end.
+Each link stays a link (its colour, kind dash, label, arrowhead and meaning are its own); only its path changes.
+
+**Drawing.** From its source, a lane leaves the side of the card that faces the first clip along the strand's axis
+(a sideways strand makes every lane leave sideways, so the fan reads as one gesture) and curves softly into the clip,
+arriving along the spine. Between the clips the lanes run parallel, 4 world units apart, so the strand scales with the
+canvas exactly like every other line. Their order is fixed along the whole spine: by where the sources sit across the
+entry, then by where the targets sit across the exit. A wiring whose two orders agree never crosses anywhere (tested);
+when they disagree the crossing happens once, in the exit fan, never inside the strand. Out of the last clip each
+lane curves to its target; several lanes reaching one card spread along its side in lane order. Labels of bundled
+links sit near the target end, where the lane is its own again.
+
+**Colour.** At rest a lane keeps its tone at 0.72, never the grey of a loose connector: a strand reads as neat
+coloured wires, not a grey rope. In focus the lit lanes go to full tone and width 2, the rest fall to 0.12. The clips
+are small capsules (6 units thick, rounded ends, two grip dots) across the strand, in the amber tone (`aviso`) with a
+halo of the canvas colour, so they read as ties over the wires in both themes and never as a selection, which stays
+blue. A selected bundle rings its clips in the foreground colour and lays a soft accent band under its lanes; hovering
+the strand shows the band at a lower strength. Tokens: `graph.link.bundle`.
+
+**Hands.** Shift-click links to pick several (the bar shows "N links" and Bundle, ⌘B), or hold ⌥ and drag a straight
+cut across links (dashed accent line, solid once it crosses two). New clips land at about a third and two thirds of the
+way between the two sides, inside the gap when there is one, level with its middle; a bundle whose ends all sit in one
+Frame lives in that Frame and travels with it. A clip drags alone, the strand between the clips drags both; both
+follow the hand live and write once on release. Click the strand to select the bundle: Unbundle, Delete (the bundle
+with its links), and, with links Shift-clicked, add them or take them out. Double-click a clip to release. Hovering a
+lane outside the strand lights that whole link; the strand itself belongs to the bundle. A selected bundled link
+offers "Select its bundle" and "Leave bundle". Duplicating, copying and Alt-dragging cards copy a bundle only when
+every one of its links comes along; otherwise the copies are loose.
+
+**Not done.** The selection box does not catch links (Shift-click and the cut cover it); a spine with more than two
+points can come from an agent (`bundle.update`) but has no hand gesture to add a bend yet. Native (non-web) draws
+lanes as elbows and clips as plain capsules, and has no cut gesture.
+
+QA (`design/whiteboard-harness/bundles.cjs`, real pointer and keys, light and dark): four sensors wired to four
+targets by eight links; pick and ⌘B, drag a clip, the strand and a card, hover a lane, select and Unbundle, cut and
+double-click. Screenshots in `design/qa-bundles-2026-10/`. The harness host now answers `canvas.selection.set` with the
+selection result the real server returns (it returned a whole view, so every press that cleared a selection showed
+"not saved"); with that, `power.cjs` passes, and `frame-drag.cjs` shows one check that also fails on the base
+commit with the corrected host: a drawing inside a Frame does not drag after the hollow shape check.

@@ -24,12 +24,27 @@ export const linkSchema = z.object({
   id: idSchema, from: idSchema, to: idSchema, label: z.string().max(200).optional(),
   kind: z.enum(["flow", "depends", "reference"]).default("flow"),
   tone: z.enum(["neutro", "acento", "violeta", "turquesa", "aviso", "peligro"]).optional(),
+  // The bundle it travels in (bundleSchema): drawn as one lane of a strand of parallel wires between the bundle's clips.
+  bundleId: idSchema.optional(),
 }).strict();
+/**
+ * A link bundle gathers links that run between the same two areas into one strand of parallel lanes. `points` are the
+ * clips the strand runs between (2), or a spine through up to 8 points, in world coordinates; with parentGroupId they are
+ * relative to that Frame's top-left corner, so the strand moves with it. A bundle holds its links by their bundleId and
+ * is removed with its last link. Old documents have none.
+ */
+export const LINK_BUNDLE_LIMITS = { links: 64, bundles: 200, points: 8, extent: 100_000 } as const;
+export const bundleSchema = z.object({
+  id: idSchema, points: z.array(positionSchema).min(2).max(LINK_BUNDLE_LIMITS.points), parentGroupId: idSchema.nullable().optional(),
+}).strict();
+export const bundlePatchSchema = z.object({ points: bundleSchema.shape.points.optional(), parentGroupId: idSchema.nullable().optional() }).strict();
 // Like groupPatchSchema, omitted fields must not acquire their creation defaults.
 export const linkPatchSchema = z.object({
   from: idSchema.optional(), to: idSchema.optional(), label: z.string().max(200).optional(),
   kind: z.enum(["flow", "depends", "reference"]).optional(),
   tone: linkSchema.shape.tone,
+  // null takes the link out of its bundle.
+  bundleId: idSchema.nullable().optional(),
 }).strict();
 export const checklistItemSchema = z.union([z.string().max(2000), z.object({ label: z.string().max(2000), done: z.boolean() }).strict()]);
 export const checklistDataSchema = z.object({ items: z.array(checklistItemSchema).max(200) }).strict();
@@ -70,6 +85,7 @@ export const documentContentSchema = z.object({
   example: z.boolean().default(false),
   blocks: z.array(blockSchema).max(1000), groups: z.array(groupSchema).max(200),
   links: z.array(linkSchema).max(2000).default([]), layout: layoutSchema.optional(),
+  bundles: z.array(bundleSchema).max(LINK_BUNDLE_LIMITS.bundles).optional(),
   variables: variablesSchema.optional(),
   selectedIds: z.array(idSchema).max(1200).default([]),
   communication: communicationSchema,
@@ -200,6 +216,9 @@ export const operationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("link.create"), link: linkSchema }).strict(),
   z.object({ type: z.literal("link.update"), id: idSchema, patch: linkPatchSchema }).strict(),
   z.object({ type: z.literal("link.delete"), id: idSchema }).strict(),
+  z.object({ type: z.literal("bundle.create"), bundle: bundleSchema, linkIds: z.array(idSchema).min(1).max(LINK_BUNDLE_LIMITS.links) }).strict(),
+  z.object({ type: z.literal("bundle.update"), id: idSchema, patch: bundlePatchSchema }).strict(),
+  z.object({ type: z.literal("bundle.delete"), id: idSchema }).strict(),
   z.object({ type: z.literal("block.create"), block: blockSchema }).strict(),
   z.object({ type: z.literal("block.update"), id: idSchema, patch: blockSchema.omit({ id: true }).partial() }).strict(),
   z.object({ type: z.literal("block.delete"), id: idSchema }).strict(),
@@ -233,6 +252,7 @@ export const catalogMutateInputSchema = z.object({
 
 export type CanvasBlock = z.infer<typeof blockSchema>;
 export type CanvasLink = z.infer<typeof linkSchema>;
+export type CanvasBundle = z.infer<typeof bundleSchema>;
 export type CanvasGroup = z.infer<typeof groupSchema>;
 export type CanvasSheet = z.infer<typeof sheetSchema>;
 export type LatestAgent = z.infer<typeof latestAgentSchema>;

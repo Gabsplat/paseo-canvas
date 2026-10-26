@@ -5,16 +5,17 @@
  * transaction of creates with fresh ids; nothing of the source Lienzo is referenced.
  */
 import { z } from 'zod';
-import { blockSchema, groupSchema, linkSchema, type CanvasBlock, type CanvasCatalog, type CanvasDocument, type CanvasGroup, type CanvasLink, type CanvasOperation } from '../shared/model';
+import { blockSchema, bundleSchema, groupSchema, linkSchema, type CanvasBlock, type CanvasBundle, type CanvasCatalog, type CanvasDocument, type CanvasGroup, type CanvasLink, type CanvasOperation } from '../shared/model';
 import { getRendererSpec } from '../shared/renderers';
-import { newId, topSelection, type Point, type Rect } from './logic';
+import { bundleWorld, newId, topSelection, type Point, type Rect } from './logic';
 
 export const CLIP_FORMAT = 'lienzo-clipboard';
 export type ClipTop = { id: string; x: number; y: number; width: number; height: number; parentGroupId: string | null };
-export type Clip = { format: typeof CLIP_FORMAT; version: 1; blocks: CanvasBlock[]; groups: CanvasGroup[]; links: CanvasLink[]; tops: ClipTop[] };
+/** `bundles`: the bundles all of whose links were copied, their points in world coordinates (no Frame). */
+export type Clip = { format: typeof CLIP_FORMAT; version: 1; blocks: CanvasBlock[]; groups: CanvasGroup[]; links: CanvasLink[]; tops: ClipTop[]; bundles?: CanvasBundle[] };
 const clipSchema = z.object({
   format: z.literal(CLIP_FORMAT), version: z.literal(1),
-  blocks: z.array(blockSchema).max(1000), groups: z.array(groupSchema).max(200), links: z.array(linkSchema).max(2000),
+  blocks: z.array(blockSchema).max(1000), groups: z.array(groupSchema).max(200), links: z.array(linkSchema).max(2000), bundles: z.array(bundleSchema).max(200).optional(),
   tops: z.array(z.object({ id: z.string(), x: z.number().finite(), y: z.number().finite(), width: z.number().finite(), height: z.number().finite(), parentGroupId: z.string().nullable() })).min(1).max(1200),
 });
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -27,10 +28,13 @@ export function copyClip(doc: CanvasDocument, rects: ReadonlyMap<string, Rect>, 
   const blocks = new Map(doc.blocks.map(b => [b.id, b])), groups = new Map(doc.groups.map(g => [g.id, g])), seen = new Set<string>();
   const add = (id: string) => { if (seen.has(id)) return; seen.add(id); const g = groups.get(id); if (g) [...g.groupIds, ...g.blockIds].forEach(add); };
   tops.forEach(e => add(e.id));
+  const links = doc.links.filter(l => seen.has(l.from) && seen.has(l.to)), copied = new Set(links.map(l => l.id));
+  // A bundle comes along only whole: when one of its links stays behind, the copies are loose links.
+  const bundles = (doc.bundles ?? []).filter(b => { const members = doc.links.filter(l => l.bundleId === b.id); return members.length && members.every(l => copied.has(l.id)); }).map(b => ({ id: b.id, points: bundleWorld(b, { rects: rects as Map<string, Rect> }) }));
   return {
-    format: CLIP_FORMAT, version: 1,
+    format: CLIP_FORMAT, version: 1, ...(bundles.length ? { bundles } : {}),
     blocks: doc.blocks.filter(b => seen.has(b.id)).map(clone), groups: doc.groups.filter(g => seen.has(g.id)).map(g => { const { sheet: _sheet, ...rest } = clone(g); return rest; }),
-    links: doc.links.filter(l => seen.has(l.from) && seen.has(l.to)).map(clone),
+    links: links.map(clone),
     tops: tops.map(e => { const r = rects.get(e.id)!; return { id: e.id, x: r.x, y: r.y, width: r.width, height: r.height, parentGroupId: (blocks.get(e.id) ?? groups.get(e.id))?.parentGroupId ?? null }; }),
   };
 }
@@ -55,7 +59,9 @@ export type PasteOptions = {
   /** Bindings stay only where their variables are sure to exist: the same Lienzo and container (duplicate). */
   keepBindings?: boolean;
   /** Fresh ids; tests pass a counter. */
-  idFor?(kind: 'block' | 'group' | 'link', old: string): string;
+  idFor?(kind: 'block' | 'group' | 'link' | 'bundle', old: string): string;
+  /** How far the copy lands from where it was copied, in world units: a copied bundle's clips move by it. */
+  offset?: Point;
 };
 /**
  * One transaction that creates a copy: Frames first, each followed by what it holds in order, then the links. Every id
@@ -63,7 +69,7 @@ export type PasteOptions = {
  * A block of a type this catalog lacks is left out with its links; `skipped` counts them.
  */
 export function pasteOperations(clip: Clip, options: PasteOptions): { operations: CanvasOperation[]; tops: string[]; skipped: number } {
-  const idFor = options.idFor ?? ((kind: string) => newId(kind === 'group' ? 'group' : kind === 'link' ? 'link' : 'block'));
+  const idFor = options.idFor ?? ((kind: string) => newId(kind === 'group' ? 'group' : kind === 'link' ? 'link' : kind === 'bundle' ? 'bundle' : 'block'));
   const known = (b: CanvasBlock) => !options.catalog || options.catalog.blockTypes.some(t => t.id === b.typeId);
   const blocks = new Map(clip.blocks.map(b => [b.id, b])), groups = new Map(clip.groups.map(g => [g.id, g])), ids = new Map<string, string>();
   for (const b of clip.blocks) if (known(b)) ids.set(b.id, idFor('block', b.id));
@@ -97,7 +103,9 @@ export function pasteOperations(clip: Clip, options: PasteOptions): { operations
     tops.push(ids.get(top.id)!);
   }
   // A drawing that follows a card shares the card's container; the reducer settles it, so its op names any parent.
-  for (const link of clip.links) if (ids.has(link.from) && ids.has(link.to)) operations.push({ type: 'link.create', link: { ...clone(link), id: idFor('link', link.id), from: ids.get(link.from)!, to: ids.get(link.to)! } });
+  const kept = new Map((clip.bundles ?? []).map(b => [b.id, [] as string[]])), offset = options.offset ?? { x: 0, y: 0 };
+  for (const { bundleId, ...link } of clip.links) if (ids.has(link.from) && ids.has(link.to)) { const id = idFor('link', link.id); operations.push({ type: 'link.create', link: { ...clone(link), id, from: ids.get(link.from)!, to: ids.get(link.to)! } }); if (bundleId) kept.get(bundleId)?.push(id); }
+  for (const b of clip.bundles ?? []) { const linkIds = kept.get(b.id)!; if (linkIds.length) operations.push({ type: 'bundle.create', bundle: { id: idFor('bundle', b.id), points: b.points.map(p => ({ x: Math.round(p.x + offset.x), y: Math.round(p.y + offset.y) })) }, linkIds }); }
   return { operations, tops, skipped: clip.blocks.length - clip.blocks.filter(known).length };
 }
 
@@ -110,7 +118,7 @@ export function placeAt(rects: ReadonlyMap<string, Rect>, offset: Point, parentO
 export function duplicateOperations(doc: CanvasDocument, rects: ReadonlyMap<string, Rect>, ids: readonly string[], offset: Point, options: { catalog?: CanvasCatalog | null; parentOf?(top: ClipTop): string | null; idFor?: PasteOptions['idFor'] } = {}) {
   const clip = copyClip(doc, rects, ids); if (!clip) return null;
   const same = !options.parentOf;
-  return pasteOperations(clip, { catalog: options.catalog, idFor: options.idFor, keepBindings: same, place: placeAt(rects, offset, options.parentOf ?? (top => top.parentGroupId)) });
+  return pasteOperations(clip, { catalog: options.catalog, idFor: options.idFor, keepBindings: same, offset, place: placeAt(rects, offset, options.parentOf ?? (top => top.parentGroupId)) });
 }
 
 /** The last copy made in this client: pasted when the system clipboard cannot be read. */

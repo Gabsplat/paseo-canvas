@@ -3,7 +3,7 @@ import { isWhiteboardRenderer, whiteboardMinSize } from '../shared/whiteboard';
 import { randomUUID } from "node:crypto";
 import {
   documentSchema, checklistDataSchema, type CanvasDocument, type CanvasOperation, type CanvasCatalog,
-  type CanvasBlock, type CanvasGroup, type CanvasLink, type GroupTemplate, type BlockType,
+  type CanvasBlock, type CanvasGroup, type CanvasLink, type CanvasBundle, type GroupTemplate, type BlockType, LINK_BUNDLE_LIMITS,
 } from "../shared/model";
 import { CanvasError } from "../shared/errors";
 import { isLocalImage } from "../shared/media";
@@ -115,6 +115,7 @@ export function validateDocument(document: CanvasDocument, catalog?: CanvasCatal
   safeJson(document);
   validateTree(document.blocks, document.groups);
   validateLinks(document.blocks, document.groups, document.links);
+  validateBundles(document);
   validateSheets(document.groups);
   const ids = new Set([...document.blocks, ...document.groups].map(entity => entity.id));
   if (new Set(document.selectedIds).size !== document.selectedIds.length || document.selectedIds.some(id => !ids.has(id)))
@@ -151,6 +152,57 @@ export function validateLinks(blocks: CanvasBlock[], groups: CanvasGroup[], link
   }
 }
 
+/**
+ * Bundles share the id namespace with entities and links; a link names an existing bundle, a bundle holds at most
+ * LINK_BUNDLE_LIMITS.links links and its points stay finite and on the board. A bundle may be empty only inside a
+ * transaction: reduce removes it at the end (pruneBundles).
+ */
+export function validateBundles(document: Pick<CanvasDocument, "blocks" | "groups" | "links" | "bundles">): void {
+  const bundles = document.bundles ?? [], L = LINK_BUNDLE_LIMITS;
+  if (bundles.length > L.bundles) throw new CanvasError("INVARIANT", `A Lienzo holds at most ${L.bundles} link bundles.`);
+  const taken = new Set([...document.blocks, ...document.groups, ...document.links].map(item => item.id)), groups = new Set(document.groups.map(group => group.id)), counts = new Map<string, number>();
+  for (const bundle of bundles) {
+    if (taken.has(bundle.id)) throw new CanvasError("INVARIANT", `Duplicate bundle ID ${bundle.id}: it is already used by a block, group, link or bundle.`);
+    taken.add(bundle.id); counts.set(bundle.id, 0);
+    if (bundle.points.length < 2 || bundle.points.length > L.points) throw new CanvasError("VALIDATION", `Bundle ${bundle.id} needs 2 to ${L.points} points.`);
+    if (bundle.points.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y) || Math.abs(point.x) > L.extent || Math.abs(point.y) > L.extent)) throw new CanvasError("VALIDATION", `Bundle ${bundle.id} points must be finite, between -${L.extent} and ${L.extent}.`);
+    if (bundle.parentGroupId && !groups.has(bundle.parentGroupId)) throw new CanvasError("INVARIANT", `Bundle ${bundle.id} names a missing Frame ${bundle.parentGroupId}.`);
+  }
+  for (const link of document.links) {
+    if (link.bundleId === undefined) continue;
+    const count = counts.get(link.bundleId);
+    if (count === undefined) throw new CanvasError("NOT_FOUND", `Link ${link.id} names bundle ${link.bundleId}, which does not exist. Create it with bundle.create.`);
+    if (count + 1 > L.links) throw new CanvasError("VALIDATION", `Bundle ${link.bundleId} holds at most ${L.links} links.`);
+    counts.set(link.bundleId, count + 1);
+  }
+}
+/** A bundle without links is gone; a document without bundles carries no bundles field, as before bundles existed. */
+export function pruneBundles(document: CanvasDocument): void {
+  if (!document.bundles) return;
+  const used = new Set(document.links.map(link => link.bundleId).filter(Boolean));
+  document.bundles = document.bundles.filter(bundle => used.has(bundle.id));
+  if (!document.bundles.length) delete document.bundles;
+}
+function bundleOf(document: CanvasDocument, id: string): CanvasBundle {
+  const found = document.bundles?.find(bundle => bundle.id === id);
+  if (!found) throw new CanvasError("NOT_FOUND", `Bundle ${id} does not exist.`);
+  return found;
+}
+/**
+ * Copies made in one transaction (entity.duplicate): a bundle all of whose links were copied is copied with them, its
+ * points unchanged (the copy is moved afterwards like its cards); a copied link whose bundle was not wholly copied is loose.
+ */
+function copyBundles(document: CanvasDocument, copied: Map<string, string>, remap: (id: string) => string): void {
+  const links = new Map(document.links.map(link => [link.id, link]));
+  for (const [source, copy] of copied) {
+    const original = links.get(source), made = links.get(copy); if (!original?.bundleId || !made) continue;
+    const members = document.links.filter(link => link.bundleId === original.bundleId && !copied.has(link.id) && ![...copied.values()].includes(link.id));
+    if (members.length) { delete made.bundleId; continue; }
+    const id = remap(original.bundleId), bundle = bundleOf(document, original.bundleId);
+    if (!document.bundles!.some(item => item.id === id)) document.bundles!.push({ ...clone(bundle), id, ...(bundle.parentGroupId && copied.has(bundle.parentGroupId) ? { parentGroupId: copied.get(bundle.parentGroupId) } : {}) });
+    made.bundleId = id;
+  }
+}
 function removeTouchingLinks(document: CanvasDocument, removed: string[]): void {
   const ids = new Set(removed);
   document.links = document.links.filter(link => !ids.has(link.from) && !ids.has(link.to));
@@ -220,7 +272,7 @@ function synchronizeChildren(document: CanvasDocument, group: CanvasGroup, block
   }
 }
 
-function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefix: string, catalog: CanvasCatalog): void {
+function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefix: string, catalog: CanvasCatalog): Map<string, string> {
   const remap = (id: string) => `${prefix}.${id}`;
   const copied = new Set([...template.blocks, ...template.groups].map(entity => entity.id));
   const ids = new Map([...copied, ...template.links.map(link => link.id)].map(id => [id, remap(id)]));
@@ -232,7 +284,10 @@ function insertTemplate(document: CanvasDocument, template: GroupTemplate, prefi
   }
   // A copy of a Sheet is an ordinary group: the chapter mark and its number stay with the original.
   for (const { sheet: _sheet, ...group } of template.groups) document.groups.push({ ...clone(group), id: remap(group.id), parentGroupId: group.parentGroupId ? remap(group.parentGroupId) : null, blockIds: group.blockIds.map(remap), groupIds: group.groupIds.map(remap), templateId: template.id });
-  for (const link of template.links) if (copied.has(link.from) && copied.has(link.to)) document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) });
+  // A template brings no bundles: its links arrive loose (entity.duplicate restores whole bundles with copyBundles).
+  const links = new Map<string, string>();
+  for (const { bundleId: _bundle, ...link } of template.links) if (copied.has(link.from) && copied.has(link.to)) { document.links.push({ ...clone(link), id: remap(link.id), from: remap(link.from), to: remap(link.to) }); links.set(link.id, remap(link.id)); }
+  return links;
 }
 
 /**
@@ -277,7 +332,30 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
       case "link.update": {
         const link = next.links.find(link => link.id === operation.id);
         if (!link) throw new CanvasError("NOT_FOUND", `Link ${operation.id} does not exist.`);
-        Object.assign(link, clone(operation.patch));
+        const { bundleId, ...patch } = clone(operation.patch);
+        Object.assign(link, patch);
+        if (bundleId === null) delete link.bundleId; else if (bundleId !== undefined) link.bundleId = bundleId;
+        break;
+      }
+      case "bundle.create": {
+        if (new Set(operation.linkIds).size !== operation.linkIds.length) throw new CanvasError("VALIDATION", `Bundle ${operation.bundle.id} lists a link twice.`);
+        const links = operation.linkIds.map(id => next.links.find(link => link.id === id) ?? (() => { throw new CanvasError("NOT_FOUND", `Link ${id} does not exist.`); })());
+        const { parentGroupId, ...bundle } = clone(operation.bundle);
+        (next.bundles ??= []).push(parentGroupId ? { ...bundle, parentGroupId } : bundle);
+        // A link already in another bundle moves to this one; a bundle it leaves empty is removed with the transaction.
+        for (const link of links) link.bundleId = bundle.id;
+        break;
+      }
+      case "bundle.update": {
+        const bundle = bundleOf(next, operation.id), { points, parentGroupId } = clone(operation.patch);
+        if (points) bundle.points = points;
+        if (parentGroupId === null) delete bundle.parentGroupId; else if (parentGroupId !== undefined) bundle.parentGroupId = parentGroupId;
+        break;
+      }
+      case "bundle.delete": {
+        bundleOf(next, operation.id);
+        next.bundles = next.bundles!.filter(bundle => bundle.id !== operation.id);
+        for (const link of next.links) if (link.bundleId === operation.id) delete link.bundleId;
         break;
       }
       case "link.delete": {
@@ -351,6 +429,8 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
         next.blocks = next.blocks.filter(block => !removed.includes(block.id));
         next.groups = next.groups.filter(group => !removed.includes(group.id));
         removeTouchingLinks(next, removed);
+        // A strand placed in a Frame that is gone keeps its points, now read from the root.
+        for (const bundle of next.bundles ?? []) if (bundle.parentGroupId && removed.includes(bundle.parentGroupId)) delete bundle.parentGroupId;
         break;
       }
       case "entity.move": {
@@ -364,7 +444,9 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
           const subtree = new Set(groupSubtree(next, source.id));
           const template: GroupTemplate = { id: "duplicate", name: source.title, description: source.description, blocks: clone(next.blocks.filter(block => subtree.has(block.id))), groups: clone(next.groups.filter(group => subtree.has(group.id))), links: clone(next.links.filter(link => subtree.has(link.from) && subtree.has(link.to))) };
           template.groups.find(group => group.id === source.id)!.parentGroupId = null;
-          insertTemplate(next, template, operation.idPrefix, catalog);
+          const links = insertTemplate(next, template, operation.idPrefix, catalog);
+          for (const id of subtree) links.set(id, `${operation.idPrefix}.${id}`);
+          copyBundles(next, links, id => `${operation.idPrefix}.${id}`);
           attach(next, `${operation.idPrefix}.${source.id}`, source.parentGroupId ?? null);
         } else {
           const cloned = clone(source), renderer = catalog.blockTypes.find(type => type.id === source.typeId)?.renderer;
@@ -385,6 +467,7 @@ export function reduce(document: CanvasDocument, operations: CanvasOperation[], 
     for (const block of next.blocks) known.add(block.id);
   }
   removeOrphanedStrokeLayers(next, known, catalog);
+  pruneBundles(next);
   checkNewBindings(document, next);
   return next;
 }

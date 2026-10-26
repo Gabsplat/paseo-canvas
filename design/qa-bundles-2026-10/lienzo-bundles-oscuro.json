@@ -1,0 +1,33 @@
+{
+ "checks": [
+  {
+   "name": "Shift-click eight links, ⌘B bundles them into one strand between two clips",
+   "result": "pass"
+  },
+  {
+   "name": "Drag a clip: it follows live, one write on release",
+   "result": "pass"
+  },
+  {
+   "name": "Drag the spine: both clips move",
+   "result": "pass"
+  },
+  {
+   "name": "Moving a card re-routes its lanes live",
+   "result": "pass"
+  },
+  {
+   "name": "Hovering a lane lights that whole link",
+   "result": "pass"
+  },
+  {
+   "name": "Click the strand selects the bundle; Unbundle releases the links",
+   "result": "pass"
+  },
+  {
+   "name": "Alt-drag a cut across the links gathers them; double-click a clip lets go",
+   "result": "pass"
+  }
+ ],
+ "uncaught": 0
+}

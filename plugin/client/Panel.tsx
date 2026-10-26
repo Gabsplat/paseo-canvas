@@ -12,7 +12,7 @@ import { VariablesEditor } from './PropertyEditors';
 import { DOCUMENT_SCOPE } from '../shared/learning';
 import { AgentModal } from './AgentModal';
 import { requestTitleEdit, visual } from './Blocks';
-import { connectOperations, groupOperations, layoutDocument, movable, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
+import { bundleOperations, connectOperations, graphIndex, groupOperations, layoutDocument, movable, moveOperations, newId, releaseOperations, topSelection, type Point, type Rect } from './logic';
 import { attachClipboard, attachFileDrop, attachFilePaste, isMacPlatform, isTyping, keyboard, onEscapeKey, readClipboardText, runCopyCommand, trackPointer, type PanelKey } from './web';
 import { ARRANGE_COMMANDS, alignDeltas, arrangeOperations, distributeDeltas, flipOperations, nudgeBurst, nudgeDelta, selectionBoxes, type AlignKind, type DistributeKind, type FlipAxis } from './arrange';
 import { clipBounds, clipText, copyClip, duplicateOperations, parseClip, pasteOperations, placeAt, rememberClip, rememberedClip, type Clip } from './clipboard';
@@ -180,7 +180,11 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   }, [c.catalog, c.loading, settings]);
   const closeGuide = () => setGuideOpen(false);
   // A selected link is view state, like the selection highlight; every change to the link itself goes through c.edit.
-  const [linkId, setLinkId] = useState<string | null>(null);
+  // Links and bundles are picked here, beside the entity selection the server keeps: one link, several (Shift-click), or
+  // a bundle, possibly with links to add to it or take out of it (docs/design.md §46).
+  const [linkPick, setLinkPick] = useState<{ links: string[]; bundle: string | null }>({ links: [], bundle: null });
+  const linkId = linkPick.links.length === 1 && !linkPick.bundle ? linkPick.links[0] : null, linkPicked = !!linkPick.links.length || !!linkPick.bundle;
+  const setLinkId = (id: string | null) => setLinkPick(old => !id && !old.links.length && !old.bundle ? old : { links: id ? [id] : [], bundle: null });
   const addRef = useRef<View>(null);
   const root = useRef<View>(null), canvas = useRef<CanvasApi>(null), geometry = useRef<{ rects: Map<string, Rect>; center: Point }>({ rects: new Map(), center: { x: 24, y: 24 } });
   const disabled = c.busy || c.offline || c.loading;
@@ -259,10 +263,36 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   useEffect(() => { if (c.arrival) toast.show(`New Lienzo: “${c.arrival.title}”`, { variant: 'info' }); }, [c.arrival?.id]);
   useEffect(() => { setReload(false); setLinkId(null); setOpened([]); setHighlight(null); geometry.current = { rects: new Map(), center: { x: 24, y: 24 } }; }, [doc?.id]);
   useEffect(() => { setAddOpen(false); }, [u.compact]);
-  useEffect(() => { if (linkId && (c.selection.length || !doc?.links.some(l => l.id === linkId))) setLinkId(null); }, [linkId, c.selection, doc?.links]);
+  useEffect(() => {
+    if (!linkPicked) return;
+    if (c.selection.length) { setLinkId(null); return; }
+    const links = linkPick.links.filter(id => doc?.links.some(l => l.id === id)), bundle = linkPick.bundle && doc?.bundles?.some(b => b.id === linkPick.bundle) ? linkPick.bundle : null;
+    if (links.length !== linkPick.links.length || bundle !== linkPick.bundle) setLinkPick({ links, bundle });
+  }, [linkPick, c.selection, doc?.links, doc?.bundles]);
   // A new selection brings the panel back if the person had hidden it, and a section asked for earlier is forgotten.
-  useEffect(() => { if (c.selection.length || linkId) setPanel(p => p.hidden || p.focus ? { ...p, hidden: false, focus: null } : p); }, [c.selection.join('|'), linkId]);
-  const selectLink = (id: string | null) => { setLinkId(id); };
+  useEffect(() => { if (c.selection.length || linkPicked) setPanel(p => p.hidden || p.focus ? { ...p, hidden: false, focus: null } : p); }, [c.selection.join('|'), linkPick]);
+  const selectLink = (id: string | null, add = false) => {
+    if (!add || !id) { setLinkId(id); return; }
+    setLinkPick(old => ({ bundle: old.bundle, links: old.links.includes(id) ? old.links.filter(x => x !== id) : [...old.links, id] }));
+  };
+  const selectBundle = (id: string | null) => setLinkPick({ links: [], bundle: id });
+  /** ⌘B and Bundle: the picked links become one bundle; picked links of the selected bundle join it or leave it. */
+  function bundleLinks() {
+    if (!doc || disabled) return;
+    const { links, bundle } = linkPick;
+    if (bundle) {
+      if (!links.length) { void c.edit([{ type: 'bundle.delete', id: bundle }], 'Unbundle links').then(next => { if (next) { selectBundle(null); noticeUndo('Unbundled'); } }); return; }
+      const inside = links.filter(id => doc.links.find(l => l.id === id)?.bundleId === bundle), outside = links.filter(id => !inside.includes(id));
+      const operations: CanvasOperation[] = outside.length ? outside.map(id => ({ type: 'link.update', id, patch: { bundleId: bundle } })) : inside.map(id => ({ type: 'link.update', id, patch: { bundleId: null } }));
+      void c.edit(operations, outside.length ? `Add ${outside.length} to bundle` : `Take ${inside.length} out of bundle`).then(next => { if (next) selectBundle(next.document.bundles?.some(b => b.id === bundle) ? bundle : null); });
+      return;
+    }
+    const picked = links.length ? links : linkId ? [linkId] : [], shared = picked.map(id => doc.links.find(l => l.id === id)?.bundleId);
+    if (picked.length && shared.every(b => b && b === shared[0])) { void c.edit([{ type: 'bundle.delete', id: shared[0]! }], 'Unbundle links').then(next => { if (next) { setLinkId(null); noticeUndo('Unbundled'); } }); return; }
+    const made = bundleOperations(doc, { rects: rectsNow(), index: graphIndex(doc, c.catalog), lanes: new Map() }, picked);
+    if ('error' in made) { toast.error(made.error); return; }
+    void c.edit(made.operations, `Bundle ${picked.length} links`).then(next => { if (next) selectBundle(made.id); });
+  }
   function connectSelection() {
     if (!doc || disabled || c.selection.length !== 2) return false; const [from, to] = c.selection, name = (id: string) => [...doc.blocks, ...doc.groups].find(e => e.id === id)?.title || 'Untitled';
     const { existing, operations, id } = connectOperations(doc, from, to);
@@ -339,7 +369,14 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     void (async () => { const result = await c.edit(operations, `Wrap ${operations.length - 1} in a Frame`); if (result) await c.select([id]); })();
   }
   function removeSelection(cut?: string) { if (doc && !disabled) { const items = topSelection(doc, c.selection); if (items.length > 200) { toast.error('Delete at most 200 things at a time.'); return; } if (items.length) void c.edit(items.map(e => ({ type: 'groupIds' in e ? 'group.delete' : 'block.delete', id: e.id } as CanvasOperation)), cut ? 'Cut selection' : 'Delete selection').then(next => { if (next) noticeUndo(cut ? 'Cut' : 'Deleted'); }); } }
-  const removeLinkOrSelection = () => { if (linkId && !c.selection.length) { if (!disabled) void c.edit([{ type: 'link.delete', id: linkId }], 'Delete link').then(next => { if (next) { setLinkId(null); noticeUndo('Deleted'); } }); } else removeSelection(); };
+  const removeLinkOrSelection = () => {
+    // A bundle goes with its links; several picked links go together. One undo step each.
+    if (!c.selection.length && doc && (linkPick.bundle || linkPick.links.length > 1)) {
+      const ids = linkPick.bundle ? doc.links.filter(l => l.bundleId === linkPick.bundle).map(l => l.id) : linkPick.links;
+      if (!disabled && ids.length) void c.edit(ids.slice(0, 200).map(id => ({ type: 'link.delete', id }) as CanvasOperation), linkPick.bundle ? 'Delete bundle' : `Delete ${ids.length} links`).then(next => { if (next) { setLinkId(null); noticeUndo('Deleted'); } });
+      return;
+    }
+    if (linkId && !c.selection.length) { if (!disabled) void c.edit([{ type: 'link.delete', id: linkId }], 'Delete link').then(next => { if (next) { setLinkId(null); noticeUndo('Deleted'); } }); } else removeSelection(); };
   /** ⌘D: copies a step down and to the right, with the links among them; the copies become the selection. */
   function duplicateSelection() {
     if (!doc || disabled) return; nudges.flush();
@@ -364,7 +401,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     if (!doc || disabled) return;
     const bounds = clipBounds(clip), page = pointerAt.current?.last(), at = inPlace ? null : (page && canvas.current?.worldAt(page)) || canvas.current?.viewportCenter() || geometry.current.center;
     const offset = at ? { x: Math.round(at.x - bounds.x - bounds.width / 2), y: Math.round(at.y - bounds.y - bounds.height / 2) } : { x: 0, y: 0 };
-    const made = pasteOperations(clip, { catalog: c.catalog, place: placeAt(new Map(), offset, () => null) });
+    const made = pasteOperations(clip, { catalog: c.catalog, offset, place: placeAt(new Map(), offset, () => null) });
     if (!made.operations.length) { toast.error(made.skipped ? 'Nothing to paste: those block types are not in this catalog.' : 'Nothing to paste.'); return; }
     if (made.operations.length > 200) { toast.error('Paste at most 200 things at a time.'); return; }
     void c.edit(made.operations, made.tops.length === 1 ? 'Paste' : `Paste ${made.tops.length} things`).then(next => { if (!next) return; void c.select(made.tops); if (made.skipped) toast.show(`${made.skipped} of a type this catalog lacks left out.`, { variant: 'warning' }); });
@@ -644,9 +681,9 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const togglePin = (id: string) => { const next = pinnedIds.includes(id) ? pinnedIds.filter(x => x !== id) : [...pinnedIds, id].slice(-F.toolbar.maxPinned); savePrefs({ pinned: next }); };
   const pinnedTools: PinnedTool[] = pinnedEntries.map(e => ({ id: e.id, label: e.name, icon: e.icon, color: e.color ?? (e.tone && e.tone !== 'neutro' ? u.tone(e.tone) : undefined), detail: e.description, active: e.active, onPress: e.run }));
   // ---- The right panel: Properties of the selection, the tool's options, extension tools; the document when asked.
-  const hasSelection = !!doc && (!!c.selection.length || !!linkId), toolOptions = !!doc && ['text', 'shape', 'draw', 'eraser'].includes(tool);
+  const hasSelection = !!doc && (!!c.selection.length || linkPicked), toolOptions = !!doc && ['text', 'shape', 'draw', 'eraser'].includes(tool);
   const styleNode = (selectionKinds.size > 0 || toolOptions) ? <StyleIsland bare tool={tool} selectionKinds={selectionKinds} value={displayedStyle} onChange={changeStyle} orientation="vertical" touch={u.compact} disabled={disabled} myStrokes={myLayers.reduce((sum, layer) => sum + layer.strokes, 0)} onClearMyStrokes={clearMyStrokes} /> : null;
-  const selectionProperties = doc && hasSelection ? <SelectionProperties controller={c} panelRoot={root} disabled={disabled} linkId={linkId} onLink={selectLink} focus={panel.focus}
+  const selectionProperties = doc && hasSelection ? <SelectionProperties controller={c} panelRoot={root} disabled={disabled} linkId={linkId} linkPick={linkPick} onBundle={bundleLinks} onSelectBundle={selectBundle} onLink={selectLink} focus={panel.focus}
     add={() => setAddOpen(true)} duplicate={duplicateSelection} remove={removeLinkOrSelection} groupSelection={groupSelection} connectSelection={connectSelection} release={release}
     rects={rectsNow} editText={editSelectedText} interact={() => canvas.current?.beginInteraction()} undoNotice={noticeUndo}
     style={selectionKinds.size > 0 ? styleNode : undefined} /> : null;
@@ -758,6 +795,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
       case 'edit.undo': void changeRevision('undo'); return true;
       case 'edit.redo': void changeRevision('redo'); return true;
       case 'edit.duplicate': duplicateSelection(); return true;
+      case 'edit.bundle': if (!linkPicked) return false; bundleLinks(); return true;
       case 'edit.wrap': groupSelection(); return true;
       case 'edit.unwrap': ungroupSelection(); return true;
       case 'edit.delete': removeLinkOrSelection(); return true;
@@ -802,7 +840,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     setOverflow(false); setLinkId(null); void c.select([]); return true;
   };
   const modalOpen = guideOpen || paletteOpen || !!screen || agentsOpen || (overflow && u.compact) || !!ventana || svgOpen || !!fileFlow;
-  const keyState = { document: !!doc, canvas: mode === 'canvas', selection: !!c.selection.length || !!linkId };
+  const keyState = { document: !!doc, canvas: mode === 'canvas', selection: !!c.selection.length || linkPicked };
   const reservedKey = (key: string) => { const combo = eventCombo({ key, shift: false, command: false }); return !!combo && resolved.byCombo.has(combo); };
   // The handlers are read through a ref so the listener is attached once and always sees this render's state.
   const keys = useRef<{ main(e: PanelKey): boolean; field(e: PanelKey): boolean }>({ main: () => false, field: () => false });
@@ -879,7 +917,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
   const colour = selectedWhiteboard.length && !linkId ? { kind: 'whiteboard' as const, value: displayedStyle.color, set: (color: ToolStyle['color']) => changeStyle({ color }) } : undefined;
   const link = linkId ? doc?.links.find(l => l.id === linkId) : undefined;
   const linkColour = link ? { kind: 'link' as const, link, set: (tone: typeof link.tone) => { if (tone) void c.edit([{ type: 'link.update', id: link.id, patch: { tone } }], 'Change link colour'); else if (link.tone) { const { tone: _tone, ...rest } = link; void c.edit([{ type: 'link.delete', id: link.id }, { type: 'link.create', link: rest }], 'Clear link colour'); } } } : undefined;
-  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} split={splittable.length ? splitStrokes : undefined} keyLabel={keyLabel} onProperties={!roomy ? () => showPanel() : undefined} arrange={id => { runShortcut(id); }} /> : undefined;
+  const selectionBar = doc && !immersive && hasSelection ? <SelectionBar controller={c} disabled={disabled} linkId={linkId} linkPick={linkPick} onBundle={bundleLinks} onSelectBundle={selectBundle} colour={linkColour ?? colour} duplicate={duplicateSelection} remove={removeLinkOrSelection} wrap={groupSelection} unwrap={ungroupSelection} split={splittable.length ? splitStrokes : undefined} keyLabel={keyLabel} onProperties={!roomy ? () => showPanel() : undefined} arrange={id => { runShortcut(id); }} /> : undefined;
   const title = doc ? rename ? <Field key={doc.id} hideLabel label="Lienzo title" value={doc.title} disabled={disabled} inputStyle={u.font('groupTitle')} onSave={async value => {
     if (!value.trim() || value.trim().length > 300) throw new Error('Write a title of up to 300 characters.');
     await c.settle(); if (c.current.current?.document.id !== doc.id) return;
@@ -948,7 +986,7 @@ function Panel({ workspaceId, hostId }: { workspaceId: string; hostId: string })
     <View ref={canvasHost} onLayout={e => { const l = e.nativeEvent.layout; setCanvasBox(b => b.x === l.x && b.y === l.y && b.width === l.width && b.height === l.height ? b : { x: l.x, y: l.y, width: l.width, height: l.height }); measureCanvas(); safeArea.remeasure(); }} style={u.compact ? { flex: 1, minHeight: 0 } : { position: 'absolute', inset: 0 }}>
       {c.loading ? <LoadingDocument /> : !doc && c.failure ? <EmptyState title="The Lienzo could not be opened" error={c.failure.message}><Button label="Retry" variant="primary" disabled={c.busy} onPress={() => { void c.failure?.retry?.().catch(c.fail); }} /></EmptyState> : !doc ? <EmptyState art={<MateDrawing size={112} />} title="Pour yourself a mate." description="Then start a Lienzo, or ask your agent to draw what it is explaining.">
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><Button label="New Lienzo" variant="primary" disabled={disabled} onPress={() => { void newCanvas(); }} />{c.documents.length > 0 && <Button label="All Lienzos" icon="LayoutGrid" onPress={openDocuments} />}<Button label="Import…" icon="FileInput" variant="ghost" disabled={c.offline} onPress={() => { void importLienzo(); }} /></View>
-      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} onLink={id => { if (id === null) setLibraryOpen(false); selectLink(id); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} veiled={veiled} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} freeZone={() => safeArea.free()} bare={immersive}
+      </EmptyState> : <Canvas key={doc.id} api={canvas} glowIds={copilot.glowIds} onUserCamera={copilot.userMoved} tool={tool} onToolChange={setTool} toolStyle={toolStyle} toolLocked={toolLocked} onInteractionChange={setInteractionId} selectionToolbar={u.compact ? undefined : selectionBar} onRelease={release} controller={c} mode={mode} linkId={linkId} linkIds={linkPick.links} bundleId={linkPick.bundle} onBundle={selectBundle} onLink={(id, add) => { if (id === null) setLibraryOpen(false); selectLink(id, add); }} onInspect={() => showPanel()} onPacks={openExtensions} reorder={reorder} onGeometry={(rects, center) => { geometry.current = { rects, center }; viewSubs.current.forEach(listener => listener()); }} highlight={highlight} veiled={veiled} reservedKey={reservedKey} lensShortcut={keyLabel('lens.cycle')} freeZone={() => safeArea.free()} bare={immersive}
         overlay={view => <CommentLayer state={comments} view={view} groups={new Set(doc.groups.map(g => g.id))} titleOf={titleOf} hidden={immersive}
           clear={u.compact ? { top: 8, bottom: 8, right: 8 } : { top: tokens.island.inset + F.top.height + 8, bottom: F.toolbar.bottom + F.toolbar.height + 8, right: panelVisible ? F.rightPanel.width + F.rightPanel.inset + 8 : 8 }} />} />}
     </View>
