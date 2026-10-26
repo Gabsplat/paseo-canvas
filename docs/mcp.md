@@ -140,6 +140,30 @@ undo, and a later link depending on an entity prevents undo from removing that e
 Duplication remaps links as `idPrefix.oldId`, including their endpoints, and keeps only links
 whose endpoints are both in the copied set. Duplicating a lone block copies no incident links.
 
+### Link bundles
+
+A bundle gathers links that run between the same two areas into one strand of parallel lanes. The
+document carries optional `bundles: [{ id, points: [{x,y}, ...], parentGroupId? }]` (at most 200;
+absent in documents without bundles, so older documents load unchanged), and a link names its
+bundle with optional `bundleId`. `points` are the two clips the strand runs between, or a spine of
+up to 8 points, in world coordinates; with `parentGroupId` they are relative to that Frame's
+top-left corner and travel with it. Points stay finite and within ±100 000.
+
+Operations: `bundle.create {bundle, linkIds}` (1..64 existing links; a link already in another
+bundle moves over), `bundle.update {id, patch: {points?, parentGroupId?}}` (`parentGroupId: null`
+returns it to the root), `bundle.delete {id}` (releases its links; they stay) and
+`link.update {id, patch: {bundleId}}` (`null` takes the link out). Bundle ids share the namespace
+of blocks, groups and links. A bundle holds at most 64 links and is removed with the transaction
+that leaves it without links (deleting its links, or the cards they join); deleting the Frame it
+sits in keeps its points and moves it to the root. Bundles appear by id in history, write results,
+conflict details and undo/redo, which restores a bundle and its memberships together.
+`entity.duplicate` of a Frame copies a bundle when all of its links are copied (as
+`idPrefix.oldId`); links whose bundle was only partly copied arrive loose. The client's copy, paste,
+⌘D and Alt-drag follow the same rule. `.lienzo` files carry bundles both ways. `canvas_read`
+outline and full views list `bundles`; an `ids` read of a bundle returns it with its `linkIds`.
+The legibility report suggests bundling when four or more loose links join the same two areas, and
+bundled links no longer count toward the cross-area tangle limit.
+
 The built-in `node` type uses renderer `node` and four optional text properties: `kind`, `status`,
 `summary`, `details`. Use the block title and a short summary for the compact card; longer
 explanations belong in details. Build systems, flows and lessons with node blocks joined by links,
@@ -147,7 +171,7 @@ inside area groups with `layout.mode: "graph"`. Avoid stacking more than a few p
 Teach by adding actual nodes
 and links through confirmed transactions. Lienzo ships no example documents, templates or example packs.
 
-`canvas_read` outline and full views include links and root/group layouts. An `ids` read can
+`canvas_read` outline and full views include links, link bundles and root/group layouts. An `ids` read can
 retrieve links too; links have document communication instructions because they have no own
 instruction field. Full UI RPC reads retain graph data. Persisted
 `paseo-canvas-state/1` and `paseo-canvas-pack` version 1 are unchanged. Strict pre-v1.1 documents,

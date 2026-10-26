@@ -786,6 +786,22 @@ const baseTokens = {
       "strands": {
         "max": 4,
         "gap": 5
+      },
+      "bundle": {
+        "$doc": "Link bundles (docs/design.md §46): lanes in world units, so the strand scales with the canvas like every line.",
+        "gap": 4,
+        "width": 1.5,
+        "widthActive": 2,
+        "alpha": { "rest": 0.72, "dim": 0.12 },
+        "hitWidth": 7,
+        "reach": { "min": 36, "max": 170 },
+        "corner": 28,
+        "label": { "at": 0.68 },
+        "clip": { "thickness": 6, "pad": 4, "min": 16, "halo": 2.5, "hit": 22, "tone": "aviso" },
+        "spine": { "hit": 16, "bandPad": 5, "bandAlpha": 0.1 },
+        "place": [0.36, 0.64],
+        "maxLinks": 64,
+        "doubleTapMs": 360
       }
     },
     "dim": {

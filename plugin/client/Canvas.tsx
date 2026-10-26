@@ -3,14 +3,14 @@ import { Animated, PanResponder, Pressable, View, type GestureResponderEvent, ty
 import { Icon, ScrollView } from './host';
 import type { CanvasBlock, CanvasDocument, CanvasGroup } from '../shared/model';
 import type { CanvasController } from './useCanvas';
-import { alignmentGuides, boundLook, boundSize, sizeBoundTo, anchorCard, boundsOf, connectOperations, descriptionKey, minimumKey, textWidthKey, dropTarget, movable, pressRole, edgePan, fitCameraIn, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
+import { alignmentGuides, boundLook, boundSize, sizeBoundTo, anchorCard, boundsOf, connectOperations, descriptionKey, minimumKey, textWidthKey, dropTarget, movable, pressRole, edgePan, fitCameraIn, hasCommunication, initialCamera, layoutCanvas, linkFocus, linkMagnet, linkRoutes, bundleOperations, bundleRelative, bundleShapes, bundleWorld, crossedLinks, type LinkRoute, manual, marqueeSelection, moveOperations, minimumBlockSize, resizeBlockSize, snap, topSelection, travellers, zoomAround, type Camera, type Guide, type Point, type Rect, type FrameShift, type MagnetTarget, type Side } from './logic';
 import { tokens } from './tokens';
 import { isDark, withAlpha } from './color';
 import { BlockCard, ConnectionRows, requestTitleEdit } from './Blocks';
 import { usePresentation } from './usePresentation';
 import { prepareLinkMotion } from './link-motion';
 import { getClientRenderer } from './renderers';
-import { LinkLayer, type LinkLayerHandle, type LinkDraft } from './Links';
+import { LinkLayer, type BundleMove, type LinkLayerHandle, type LinkDraft } from './Links';
 import { MagnetCue } from './MagnetCue';
 import { Chip, Tooltip, Txt, useUI } from './ui';
 import { attachEntityDrag, attachResizeHandles, attachMiddlePan, attachPressCursor, attachWheel, holdCursor, isDragHandle, isTextTarget, swallowClick, type CanvasPointer } from './web';
@@ -31,7 +31,7 @@ import { resizeWhiteboardBox, resizeLineBox, lineEnds, shapeInteriorAt, scaleTex
 import { axisLock } from './arrange';
 import { duplicateOperations } from './clipboard';
 import { islandStyle } from './whiteboard-visuals';
-import { attachToolPointer, attachCanvasKeys } from './web';
+import { attachToolPointer, attachCanvasKeys, attachCutGesture } from './web';
 export type { CanvasTool } from './whiteboard-tools';
 export type { Camera } from './logic';
 /** What the panel can ask of the canvas: camera moves, and "the next change is a keystroke, do not animate it". */
@@ -54,7 +54,7 @@ export type CanvasOverlay = { camera(): Camera; subscribe(listener: () => void):
 /** An extension's highlight (lienzo.highlight): an outline in one tone, optionally dimming every other card. Never saved. */
 export type CanvasHighlight = { ids: string[]; dim: boolean; tone: 'accent' | 'success' | 'warning' | 'violet' };
 const HIGHLIGHT_TONES = { accent: 'acento', success: 'exito', warning: 'aviso', violet: 'violeta' } as const;
-const G = tokens.graph, M = tokens.motion, C = tokens.motion.camera;
+const G = tokens.graph, M = tokens.motion, C = tokens.motion.camera, BN = tokens.graph.link.bundle;
 type Page = { pageX?: number; pageY?: number; target?: unknown };
 type Box = { x: number; y: number; width: number; height: number };
 /**
@@ -113,7 +113,9 @@ const BlockItem = React.memo(function BlockItem({ left, top, width, resizeHandle
     {ringed && <View pointerEvents="none" style={{ position: 'absolute', inset: -4, borderRadius: tokens.radius.block + 4, borderWidth: 2, borderColor: accent }} />}
   </Animated.View>;
 }, (a, b) => a.left === b.left && a.top === b.top && a.width === b.width && a.anim === b.anim && a.dim === b.dim && a.ringed === b.ringed && a.handlers === b.handlers && a.resizeHandlers === b.resizeHandlers && a.resizeCursor === b.resizeCursor && a.accent === b.accent && a.shadow === b.shadow && sameCard(a, b));
-export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, freeZone, bare = false, glowIds = [], onUserCamera, highlight, veiled, overlay }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
+export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeometry, linkId, onLink, linkIds, bundleId = null, onBundle, api, onRelease, tool, onToolChange, toolStyle = DEFAULT_TOOL_STYLE, toolLocked = false, onInteractionChange, selectionToolbar, reservedKey, lensShortcut, freeZone, bare = false, glowIds = [], onUserCamera, highlight, veiled, overlay }: CanvasToolProps & { controller: CanvasController; mode: 'canvas' | 'outline'; onInspect: () => void; onPacks: () => void; reorder: (id: string, d: number) => void; onGeometry: (rects: Map<string, Rect>, center: Point) => void; linkId: string | null; onLink: (id: string | null, add?: boolean) => void;
+  /** Links picked together (Shift-click) and the selected bundle: kept by the panel beside the entity selection. */
+  linkIds?: readonly string[]; bundleId?: string | null; onBundle?: (id: string | null) => void; api?: React.Ref<CanvasApi>; onRelease?: (ids: string[]) => void; onInteractionChange?: (id: string | null) => void; selectionToolbar?: React.ReactNode;
   /** Keys the panel's shortcut registry owns: the canvas lets them through instead of typing them into a selected label. */
   reservedKey?: (key: string) => boolean; lensShortcut?: string;
   /**
@@ -139,6 +141,11 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   useReducedMotion();
   const motionSources = useMemo(() => c.catalog ? prepareLinkMotion(c.view!.document, c.catalog, getClientRenderer) : undefined, [c.view!.document, c.catalog]);
   const linkMotion = useCallback((epochMs: number) => motionSources?.(c.learning.getSnapshot(), epochMs, presentation?.hiddenBy ?? new Map()) ?? { tokens: [], playing: false }, [motionSources, c.learning, presentation?.hiddenBy]);
+  // Alt-drag on the background: a straight cut whose crossed links become one bundle (docs/design.md §46).
+  const cut = useRef<{ origin: Point; from: Point; to: Point; count: number } | null>(null), routesRef = useRef<LinkRoute[]>([]);
+  // A bundle's clips or spine in the hand: drawn by the link layer from this ref, written once on release.
+  const bundleMove = useRef<BundleMove>(null), bundleGesture = useRef<{ id: string; index: number | null; start: Point; world: Point[]; moved: boolean; documentId: string } | null>(null), lastTap = useRef<{ key: string; at: number } | null>(null);
+  const [bundleHover, setBundleHover] = useState<string | null>(null);
   const marquee = useRef<{ x: number; y: number; origin: Point; add: boolean } | null>(null), marqueeOn = useRef(false), box = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), w: new Animated.Value(0), h: new Animated.Value(0), o: new Animated.Value(0) }).current;
   marqueeOn.current = web && !u.compact;
   const cursorsRef = useRef<CanvasCursors | null>(null);
@@ -338,6 +345,13 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   useEffect(() => {
     if (!web || mode !== 'canvas') return;
     measureViewport();
+    // The cut line (Alt-drag over the empty canvas or across links): what it crosses becomes one bundle.
+    const cutting = attachCutGesture(viewport.current, {
+      begin: p => { const { c } = latest.current; if (toolRef.current !== 'select' || c.offline || c.busy || gesture.current || resize.current || linkGesture.current) return false;
+        halt(); measureViewport(); const origin = vp.current ?? { x: 0, y: 0 }, at = toWorld(p, origin); cut.current = { origin, from: at, to: at, count: 0 }; busyHands.current = true; links.current?.preview({ from: at, to: at, side: 'right', valid: false, cut: true }); return true; },
+      move: p => { const k = cut.current; if (!k) return; k.to = toWorld(p, k.origin); k.count = crossedLinks(routesRef.current, k.from, k.to).length; links.current?.preview({ from: k.from, to: k.to, side: 'right', valid: k.count >= 2, cut: true }); },
+      end: (p, cancelled) => { const k = cut.current; cut.current = null; busyHands.current = false; links.current?.preview(null); if (k && !cancelled) gather(crossedLinks(routesRef.current, k.from, toWorld(p, k.origin))); },
+    });
     const tools = attachToolPointer(viewport.current, { begin: p => { measureViewport(); return wbRef.current.begin(p); }, move: p => wbRef.current.move(p), end: (p, cancelled) => { void wbRef.current.finish(p, cancelled); } });
     const keys = attachCanvasKeys(viewport.current, (key, typing) => {
       if (key === 'Escape') { cancelAll(); chooseTool('select'); return true; }
@@ -347,7 +361,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       if (typing && latest.current.c.selection.length === 1) { const b = latest.current.doc.blocks.find(b => b.id === latest.current.c.selection[0]); if (b && ['wb-text','wb-shape'].includes(latest.current.c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer ?? '')) { wbRef.current.edit(b.id, key); return true; } }
       return false;
     }, active => { if (active) { spaceTool.current = toolRef.current; chooseTool('hand'); } else if (spaceTool.current) { const old = spaceTool.current; spaceTool.current = null; chooseTool(old); } });
-    return () => { tools(); keys(); };
+    return () => { cutting(); tools(); keys(); };
   }, [web, mode, doc.id]);
   const pointer = (event: GestureResponderEvent, g: PanResponderGestureState): Point => { const page = event.nativeEvent as Page; return { x: page.pageX ?? g.moveX, y: page.pageY ?? g.moveY }; };
   function showGuides(guides: Guide[]) {
@@ -701,19 +715,73 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   const calls = useRef({ select, onInspect, onPacks, reorder }); calls.current = { select, onInspect, onPacks, reorder };
   const stable = useMemo(() => ({ onSelect: (id: string, event?: GestureResponderEvent, long?: boolean) => calls.current.select(id, event, long), onInspect: () => calls.current.onInspect(), onPacks: () => calls.current.onPacks(), onReorder: (id: string, d: number) => calls.current.reorder(id, d) }), []);
   const blockProps = { controller: c, onSelect: select, onInspect, onPacks, onReorder: reorder };
-  const routes = useMemo(() => mode === 'canvas' ? linkRoutes(doc, layout).filter(r => !veil(r.from) && !veil(r.to)) : [], [doc, layout, mode, veiled]);
+  const routes = useMemo(() => mode === 'canvas' ? linkRoutes(doc, layout).filter(r => !veil(r.from) && !veil(r.to)) : [], [doc, layout, mode, veiled]); routesRef.current = routes;
+  const shapes = useMemo(() => bundleShapes(doc, layout, routes), [doc, layout, routes]);
+  const picked = useMemo(() => new Set(linkIds ?? []), [linkIds]);
+  /** Focus on a set of connectors: their frames stay lit with them. */
+  const focusOn = (chosen: LinkRoute[]) => chosen.length ? { lit: new Set(chosen.flatMap(r => [r.from, r.to, ...r.links.flatMap(l => [l.from, l.to])])), routes: new Set(chosen.map(r => r.key)), links: new Set(chosen.flatMap(r => r.links.map(l => l.id))) } : null;
   // Focus, strongest first: a link under the pointer, a linked card under the pointer, the selected link, the selection.
   const focus = useMemo(() => {
     if (linkDraft || drag?.live) return null;
     const hovered = routes.find(r => r.key === linkHover);
-    return hovered ? { lit: new Set([hovered.from, hovered.to, ...hovered.links.flatMap(l => [l.from, l.to])]), routes: new Set([hovered.key]), links: new Set(hovered.links.map(l => l.id)) } : (hover ? linkFocus(routes, [hover]) : null) ?? (linkId ? linkFocus(routes, [], linkId) : linkFocus(routes, c.selection));
-  }, [routes, hover, linkHover, linkId, c.selection, linkDraft, drag?.live]);
+    const bundled = (id: string | null) => id ? focusOn(routes.filter(r => r.bundle?.id === id)) : null;
+    return hovered ? focusOn([hovered]) : bundled(bundleHover) ?? (hover ? linkFocus(routes, [hover]) : null) ?? (linkId ? linkFocus(routes, [], linkId) : null) ?? (picked.size ? focusOn(routes.filter(r => r.links.some(l => picked.has(l.id)))) : null) ?? bundled(bundleId) ?? linkFocus(routes, c.selection);
+  }, [routes, hover, linkHover, linkId, picked, bundleId, bundleHover, c.selection, linkDraft, drag?.live]);
   const lit = (id: string) => !focus || index.chain(id).some(x => focus.lit.has(x));
   // An extension's highlight with dim on overrides the focus: what it names, and what is inside it, stays lit.
   const highlighted = useMemo(() => highlight?.ids.length ? new Set(highlight.ids) : null, [highlight]);
   const shines = (id: string) => highlighted && highlight!.dim ? index.chain(id).some(x => highlighted.has(x)) : lit(id);
   const region = (g: CanvasGroup) => index.mode(g.id) === 'graph' || index.mode(g.parentGroupId ?? null) === 'graph';
-  const pressLink = (key: string) => { const route = routes.find(r => r.key === key); if (!route) return; const at = route.links.findIndex(l => l.id === linkId); onLink(route.links[(at + 1) % route.links.length].id); void c.select([]); };
+  const pressLink = (key: string, add = false) => {
+    const route = routes.find(r => r.key === key); if (!route) return;
+    // Links are picked beside the entity selection: clear that one only when it holds something (no write otherwise).
+    const clear = () => { if (c.selection.length) void c.select([]); };
+    if (add) { const next = route.links.find(l => !picked.has(l.id) && l.id !== linkId) ?? route.links[0]; onLink(next.id, true); clear(); return; }
+    const at = route.links.findIndex(l => l.id === linkId); onLink(route.links[(at + 1) % route.links.length].id); clear();
+  };
+  /** Gathers links into a new bundle in one transaction and selects it (the cut line, and the panel through the same helper). */
+  function gather(ids: string[]) {
+    const { doc, layout, c } = latest.current; if (ids.length < 2 || c.offline || c.busy) return;
+    const made = bundleOperations(doc, layout, ids); if ('error' in made) return;
+    void c.edit(made.operations, `Bundle ${ids.length} links`).then(next => { if (next) { if (latest.current.c.selection.length) void latest.current.c.select([]); onBundle?.(made.id); } });
+  }
+  const unbundle = (id: string) => { void c.edit([{ type: 'bundle.delete', id }], 'Unbundle links').then(next => { if (next) onBundle?.(null); }); };
+  /**
+   * A clip (`index`: the first or last point) or the spine (`null`: every point) follows the hand; one write on release.
+   * A press without a move selects the bundle; a second press on a clip within a moment releases its links.
+   */
+  const grips = useRef(new Map<string, GestureResponderHandlers>());
+  function bundleGrip(id: string, index: number | null): GestureResponderHandlers {
+    const key = `${id}|${index}`, cached = grips.current.get(key); if (cached) return cached;
+    const handlers = PanResponder.create({ onStartShouldSetPanResponder: () => true, onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (event, g) => {
+        const { doc, layout, c } = latest.current, bundle = doc.bundles?.find(b => b.id === id); if (!bundle || c.offline || resize.current || gesture.current) return;
+        halt(); measureViewport(); busyHands.current = true; bundleGesture.current = { id, index, start: pointer(event, g), world: bundleWorld(bundle, layout), moved: false, documentId: doc.id };
+      },
+      onPanResponderMove: (event, g) => {
+        const state = bundleGesture.current; if (!state) return; const page = pointer(event, g);
+        if (!state.moved && Math.abs(page.x - state.start.x) + Math.abs(page.y - state.start.y) < M.drag.threshold) return;
+        if (!state.moved && (latest.current.c.busy || latest.current.c.offline)) return;
+        state.moved = true; const dx = (page.x - state.start.x) / cam.current.scale, dy = (page.y - state.start.y) / cam.current.scale;
+        bundleMove.current = { id, points: state.world.map((p, i) => state.index === null || state.index === i ? { x: p.x + dx, y: p.y + dy } : p) }; links.current?.follow();
+      },
+      onPanResponderRelease: () => {
+        const state = bundleGesture.current; bundleGesture.current = null; busyHands.current = false; if (!state) return;
+        const { doc, layout, c } = latest.current, bundle = doc.bundles?.find(b => b.id === id);
+        if (!state.moved) {
+          const now = Date.now(), again = state.index !== null && lastTap.current?.key === key && now - lastTap.current.at < BN.doubleTapMs;
+          lastTap.current = again ? null : { key, at: now }; if (again && !c.offline && !c.busy) unbundle(id); else { if (c.selection.length) void c.select([]); onBundle?.(id); }
+          return;
+        }
+        swallowClick(); const points = bundleMove.current?.id === id ? bundleMove.current.points : null;
+        if (!points || !bundle || state.documentId !== doc.id) { bundleMove.current = null; links.current?.follow(); return; }
+        onBundle?.(id);
+        void c.edit([{ type: 'bundle.update', id, patch: { points: bundleRelative(bundle, layout, points) } }], state.index === null ? 'Move bundle' : 'Move bundle clip').then(next => { if (bundleMove.current?.id === id) bundleMove.current = null; if (!next) links.current?.follow(); });
+      },
+      onPanResponderTerminate: () => { bundleGesture.current = null; busyHands.current = false; bundleMove.current = null; links.current?.follow(); },
+    }).panHandlers;
+    grips.current.set(key, handlers); return handlers;
+  }
   const excludedLink = (id: string) => { const b = doc.blocks.find(b => b.id === id), kind = b && c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer; return kind === 'wb-draw' || kind === 'wb-shape' && b?.data.shape === 'line'; };
   const handleFor = linkDraft?.from ?? (toolRef.current !== 'select' || u.compact || c.offline || c.busy || drag || resizeId ? null : hover && !excludedLink(hover) && doc.blocks.some(b => b.id === hover) ? hover : c.selection.length === 1 && !excludedLink(c.selection[0]) ? c.selection[0] : null);
   const handleRect = handleFor ? rects.get(handleFor) : undefined, handleSide = handleFor && index.direction(index.parent.get(handleFor) || null) === 'right' ? 'right' as const : 'bottom' as const;
@@ -806,7 +874,17 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       </Animated.View>; })}
       {!drag && doc.groups.filter(g => g.layout?.mode === 'flow' && !g.collapsed && !rects.get(g.id)?.hidden).flatMap(g => [...g.blockIds, ...g.groupIds].filter(id => !index.entities.get(id)?.position).slice(0, -1).map(id => { const r = rects.get(id)!; return <View key={`${g.id}:${id}`} pointerEvents="none" style={{ position: 'absolute', left: r.x + r.width + 7 - bound.x, top: r.y + 20 - bound.y }}><Icon name="ChevronRight" size={14} color={u.c.foregroundMuted} /></View>; }))}
       {whiteboardItems(['wb-shape','wb-svg'])}
-      <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
+      <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} picked={picked} bundles={{ selected: bundleId, hot: bundleHover }} moving={bundleMove} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
+      {/* Bundles: the spine and the two clips take the pointer (select, drag, double-click a clip to release). */}
+      {!u.compact && shapes.map(shape => <React.Fragment key={shape.id}>
+        {shape.points.slice(1).map((q, i) => { const p = shape.points[i], length = Math.hypot(q.x - p.x, q.y - p.y), h = Math.max(BN.spine.hit, shape.span + 8);
+          return <Pressable key={`s${i}`} nativeID={`lienzo-bundle-spine-${shape.id}-${i}`} accessibilityRole="button" accessibilityLabel={`Bundle of ${shape.linkIds.length} links`} onHoverIn={() => setBundleHover(shape.id)} onHoverOut={() => setBundleHover(old => old === shape.id ? null : old)} style={{ position: 'absolute', left: (p.x + q.x) / 2 - bound.x - length / 2, top: (p.y + q.y) / 2 - bound.y - h / 2, width: length, height: h, zIndex: 1, transform: [{ rotate: `${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg` }], ...(web ? { cursor: 'grab' } as object : null) }}>
+            <View {...bundleGrip(shape.id, null)} style={{ position: 'absolute', inset: 0 }} />
+          </Pressable>; })}
+        {shape.ties.map((tie, i) => <Pressable key={`t${i}`} nativeID={`lienzo-bundle-clip-${shape.id}-${i}`} accessibilityRole="button" accessibilityLabel={i ? 'Bundle exit clip' : 'Bundle entry clip'} accessibilityHint="Drag to move it; double-click to release the links." onHoverIn={() => setBundleHover(shape.id)} onHoverOut={() => setBundleHover(old => old === shape.id ? null : old)} style={{ position: 'absolute', left: tie.x - bound.x - (tie.length + 10) / 2, top: tie.y - bound.y - BN.clip.hit / 2, width: tie.length + 10, height: BN.clip.hit, zIndex: 1, transform: [{ rotate: `${tie.angle}deg` }], ...(web ? { cursor: 'move' } as object : null) }}>
+          <View {...bundleGrip(shape.id, i ? shape.points.length - 1 : 0)} style={{ position: 'absolute', inset: 0 }} />
+        </Pressable>)}
+      </React.Fragment>)}
       {drag?.copy?.map(id => { const r = rects.get(id); return r && !r.hidden ? <View key={'copy-ghost-' + id} nativeID={'lienzo-copy-ghost-' + id} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: r.width, height: r.height, borderRadius: 6, borderWidth: 1.5, borderStyle: 'dashed', borderColor: withAlpha(u.c.accent, .7), backgroundColor: withAlpha(u.c.accent, .05) }} /> : null; })}
       {doc.blocks.filter(b => !rects.get(b.id)!.hidden && !veil(b.id) && !isWhiteboardRenderer(c.catalog?.blockTypes.find(t => t.id === b.typeId)?.renderer)).map(b => { const r = rects.get(b.id)!, lifted = !!drag?.ids.has(b.id), a = animOf(b.id, NATIVE);
         return <BlockItem key={b.id} interacting={interaction === b.id} block={b} left={r.x - bound.x} top={r.y - bound.y} width={r.width} height={b.size || boundSize(b, 'height') !== undefined || resizeId === b.id ? a.h : undefined} resizeHandlers={canDrag && !linkDraft && c.selection.length === 1 && c.selection.includes(b.id) && !sizeBoundTo(doc, b) ? resizeHandlers(b.id) : undefined} resizeCursor={web ? cursors.resizeNWSE : undefined} anim={a} selected={c.selection.includes(b.id)} lifted={lifted} dim={!shines(b.id)} ringed={linkDraft?.target === b.id} detailsSide={index.direction(b.parentGroupId ?? null) === 'right' ? 'bottom' : 'right'} cursor={cursor(lifted)} handlers={canDrag ? dragHandlers(b.id) : noHandlers} controller={c} accent={u.c.accent} shadow={shadow} {...stable} onHover={hovering} onMeasure={measure} />; })}
@@ -831,9 +909,12 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     {overlay && ready && size.width > 0 && overlay({ camera: () => cam.current, subscribe: subscribeCamera, rects, size, toWorld: page => toWorld(page, vp.current ?? { x: 0, y: 0 }) })}
     {!ready && <View pointerEvents="none" style={{ position: 'absolute', inset: 24, gap: 16 }}><Txt kind="small" muted>Preparing the Lienzo…</Txt><View style={{ width: 288, height: 96, backgroundColor: u.c.surface2, borderRadius: 10 }} /></View>}
     {interaction && rects.get(interaction) && <Animated.View style={{ position:'absolute', zIndex:20, transform:[{translateX:Animated.add(camX,Animated.multiply(camS,rects.get(interaction)!.x+rects.get(interaction)!.width))},{translateY:Animated.add(camY,Animated.multiply(camS,rects.get(interaction)!.y))}], marginTop:-30, marginLeft:-148 }}><Pressable nativeID={`lienzo-interaction-exit-${interaction}`} accessibilityRole="button" accessibilityLabel="Leave interaction mode" onPress={() => setInteractionMode(null)} style={[islandStyle(u),{height:24,paddingHorizontal:8,justifyContent:'center',borderRadius:12}]}><Txt kind="label">Interacting · Esc</Txt></Pressable></Animated.View>}
-    {selectionToolbar && interaction === null && !linkLabel && !wb.editor && (selectedBounds || linkId) && (() => {
-      const route = routes.find(r => r.links.some(l => l.id === linkId)), box = selectedBounds ?? (route ? { ...route.labelPoint, width: 0, height: 0, depth: 0 } : null);
-      return box ? <SelectionOverlay box={box} link={!!route && !selectedBounds} camera={() => cam.current} subscribe={subscribeCamera} pointer={selectionPointer.current} busy={() => !!(busyHands.current || gesture.current || resize.current || linkGesture.current || goal.current || coast.current !== null || wbRef.current.store.snapshot())} viewport={size}>{selectionToolbar}</SelectionOverlay> : null;
+    {selectionToolbar && interaction === null && !linkLabel && !wb.editor && (selectedBounds || linkId || linkIds?.length || bundleId) && (() => {
+      // Picked links: the bar sits at the last one picked. A bundle: over its spine.
+      const strand = bundleId && !selectedBounds ? shapes.find(s => s.id === bundleId) : undefined, last = linkId ?? linkIds?.[linkIds.length - 1];
+      const route = strand ? undefined : routes.find(r => r.links.some(l => l.id === last)), xs = strand?.points.map(p => p.x) ?? [], ys = strand?.points.map(p => p.y) ?? [];
+      const box = selectedBounds ?? (strand ? { x: Math.min(...xs), y: Math.min(...ys) - strand.span / 2, width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) + strand.span, depth: 0 } : route ? { ...route.labelPoint, width: 0, height: 0, depth: 0 } : null);
+      return box ? <SelectionOverlay box={box} link={!!(route || strand) && !selectedBounds} camera={() => cam.current} subscribe={subscribeCamera} pointer={selectionPointer.current} busy={() => !!(busyHands.current || gesture.current || resize.current || linkGesture.current || goal.current || coast.current !== null || wbRef.current.store.snapshot())} viewport={size}>{selectionToolbar}</SelectionOverlay> : null;
     })()}
     {linkLabel && (() => { const route = routes.find(r => r.links.some(l => l.id === linkLabel.linkId)); if (!route) return null; return <LinkLabelEditor key={linkLabel.linkId} session={linkLabel} at={{ x: cam.current.offset.x + route.labelPoint.x * cam.current.scale, y: cam.current.offset.y + route.labelPoint.y * cam.current.scale }} disabled={c.offline || c.busy} cancel={() => setLinkLabel(null)} save={async label => {
       const controller = latest.current.c; await controller.settle(); if (controller.current.current?.document.id !== linkLabel.documentId || !controller.current.current.document.links.some(l => l.id === linkLabel.linkId)) return false;

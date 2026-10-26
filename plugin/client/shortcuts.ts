@@ -44,6 +44,7 @@ export const DEFAULT_SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'edit.duplicate', label: 'Duplicate', group: 'Editing', keys: ['mod+d'], when: 'selection' },
   { id: 'edit.wrap', label: 'Wrap in a Frame', group: 'Editing', keys: ['mod+g'], when: 'selection' },
   { id: 'edit.unwrap', label: 'Unwrap Frame', group: 'Editing', keys: ['mod+shift+g'], when: 'selection' },
+  { id: 'edit.bundle', label: 'Bundle or unbundle links', group: 'Editing', keys: ['mod+b'], when: 'selection' },
   { id: 'edit.delete', label: 'Delete', group: 'Editing', keys: ['delete', 'backspace'], when: 'selection' },
   { id: 'edit.escape', label: 'Deselect, cancel or close', group: 'Editing', keys: ['escape'], when: 'always', fixed: true },
   { id: 'edit.selectAll', label: 'Select all', group: 'Editing', keys: ['mod+a'], when: 'document' },

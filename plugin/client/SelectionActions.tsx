@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Icon, TextInput } from './host';
-import type { CanvasGroup, CanvasLink, CanvasOperation } from '../shared/model';
+import type { CanvasBundle, CanvasDocument, CanvasGroup, CanvasLink, CanvasOperation } from '../shared/model';
 import type { CanvasController } from './useCanvas';
 import { Button, CheckRow, Field, IconButton, Segments, Txt, useTooltip, useUI } from './ui';
 import { ancestors, connectOperations, containerMode, hasCommunication, instructionLevels, pinnedChildren, type Rect } from './logic';
@@ -37,12 +37,31 @@ function BarButton({ label, icon, onPress, disabled, shortcut, detail, active, d
   </Pressable>;
 }
 
+export type LinkPick = { links: string[]; bundle: string | null };
+/**
+ * What the Bundle action does for the links and bundle picked now: gather several links into a new bundle, release a
+ * bundle (or links that all share one), or add picked links to the selected bundle and take them out of it.
+ */
+export function bundleAction(doc: CanvasDocument, pick: LinkPick | undefined): { label: string; icon: string; detail: string; count: number; bundle?: CanvasBundle } | null {
+  if (!pick || (!pick.bundle && pick.links.length < 2)) return null;
+  const bundle = pick.bundle ? doc.bundles?.find(b => b.id === pick.bundle) : undefined, members = (id: string) => doc.links.filter(l => l.bundleId === id).length;
+  if (bundle) {
+    const count = members(bundle.id), outside = pick.links.filter(id => doc.links.find(l => l.id === id)?.bundleId !== bundle.id);
+    if (!pick.links.length) return { label: 'Unbundle', icon: 'Unlink', detail: 'Releases its links; they stay, each drawn on its own again.', count, bundle };
+    return outside.length ? { label: `Add ${outside.length} to bundle`, icon: 'Cable', detail: 'The picked links join this strand.', count, bundle } : { label: `Take ${pick.links.length} out`, icon: 'Unlink', detail: 'The picked links leave this strand.', count, bundle };
+  }
+  const shared = pick.links.map(id => doc.links.find(l => l.id === id)?.bundleId);
+  if (shared.every(b => b && b === shared[0])) return { label: 'Unbundle', icon: 'Unlink', detail: 'Releases the bundle these links travel in.', count: pick.links.length };
+  return { label: 'Bundle', icon: 'Cable', detail: 'Gathers these links into one strand of parallel lanes between two clips.', count: pick.links.length };
+}
 /**
  * The small bar over the selection: colour, Frame, duplicate, delete. Detail lives in the right panel.
  * A selected link gets its own: colour, kind, reverse, delete.
  */
-export function SelectionBar({ controller: c, disabled, linkId, colour, duplicate, remove, wrap, unwrap, split, keyLabel, onProperties, arrange }: {
-  controller: CanvasController; disabled: boolean; linkId?: string | null; colour?: Colour; duplicate(): void; remove(): void; wrap(): void; unwrap(): void; split?(): void; keyLabel(id: string): string | undefined; onProperties?(): void;
+export function SelectionBar({ controller: c, disabled, linkId, linkPick, onBundle, onSelectBundle, colour, duplicate, remove, wrap, unwrap, split, keyLabel, onProperties, arrange }: {
+  controller: CanvasController; disabled: boolean; linkId?: string | null; colour?: Colour;
+  /** Several links, or a bundle (with links to add or take out): Bundle / Unbundle and Delete (docs/design.md §46). */
+  linkPick?: LinkPick; onBundle?(): void; onSelectBundle?(id: string | null): void; duplicate(): void; remove(): void; wrap(): void; unwrap(): void; split?(): void; keyLabel(id: string): string | undefined; onProperties?(): void;
   /** Align, distribute and flip, by shortcut id (arrange.ts ARRANGE_COMMANDS); shown for two things or more. */
   arrange?(id: string): void;
 }) {
@@ -50,14 +69,20 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, duplicat
   const selected = [...doc.groups, ...doc.blocks].filter(e => c.selection.includes(e.id)), link = linkId ? doc.links.find(l => l.id === linkId) : undefined;
   const single = selected.length === 1 ? selected[0] : undefined, group = single && 'groupIds' in single ? single : undefined;
   useEffect(() => { setSwatches(false); setAligning(false); }, [c.selection.join('|'), linkId]);
-  if (!selected.length && !link) return null;
+  const gathering = !selected.length && !link ? bundleAction(doc, linkPick) : null;
+  if (!selected.length && !link && !gathering) return null;
   const current = colour?.kind === 'whiteboard' ? wbColor(colour.value, u) : colour?.kind === 'link' ? u.tone(linkTone(colour.link)) : undefined;
   const choices = colour?.kind === 'whiteboard' ? WB_COLORS.map(color => ({ id: color, name: tokens.whiteboard.colors.find(x => x.id === color)!.label, value: wbColor(color, u), on: colour.value === color, pick: () => colour.set(color) }))
     : colour?.kind === 'link' ? [{ id: 'auto', name: 'Automatic', value: u.c.surface2, on: !colour.link.tone, pick: () => colour.set(undefined) }, ...tokens.graph.tones.map(tone => ({ id: tone, name: toneNames[tone], value: u.tone(linkTone({ kind: colour.link.kind, tone })), on: colour.link.tone === tone, pick: () => colour.set(tone) }))] : [];
   return <View pointerEvents="box-none" style={{ alignItems: 'center' }}>
     <View nativeID="lienzo-interactive-selection-toolbar" accessibilityRole="toolbar" accessibilityLabel="Selection" style={u.compact ? { height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderTopWidth: 1, borderColor: u.c.border, backgroundColor: u.c.surface1, alignSelf: 'stretch' } : [islandStyle(u, true), { flexDirection: 'row', alignItems: 'center', gap: 2 }]}>
       {colour && <BarButton nativeID="lienzo-selection-colour" label="Colour" active={swatches} disabled={disabled} onPress={() => setSwatches(v => !v)}><View style={{ width: tokens.face.selectionBar.swatch, height: tokens.face.selectionBar.swatch, borderRadius: 9, backgroundColor: current, borderWidth: 1, borderColor: u.c.border }} /></BarButton>}
-      {link ? <>
+      {gathering ? <>
+        <View style={{ paddingHorizontal: 8, justifyContent: 'center' }}><Txt kind="label" muted>{gathering.bundle ? `Bundle · ${gathering.count} links` : `${gathering.count} links`}</Txt></View>
+        <BarButton nativeID="lienzo-selection-bundle" label={gathering.label} icon={gathering.icon} shortcut={keyLabel('edit.bundle')} detail={gathering.detail} disabled={disabled} onPress={() => onBundle?.()} />
+      </> : link ? <>
+        {link.bundleId && <BarButton nativeID="lienzo-selection-link-bundle" label="Select its bundle" icon="Cable" detail="The strand this link travels in: move its clips, or release it." onPress={() => onSelectBundle?.(link.bundleId!)} />}
+        {link.bundleId && <BarButton nativeID="lienzo-selection-leave-bundle" label="Leave bundle" icon="Unlink" detail="This link is drawn on its own again." disabled={disabled} onPress={() => { void c.edit([{ type: 'link.update', id: link.id, patch: { bundleId: null } }], 'Take link out of bundle'); }} />}
         <BarButton label={link.kind === 'flow' ? 'Kind: flow' : link.kind === 'depends' ? 'Kind: needs' : 'Kind: mention'} icon={link.kind === 'flow' ? 'Minus' : link.kind === 'depends' ? 'MoreHorizontal' : 'Ellipsis'} detail="Press to change what this link means." disabled={disabled} onPress={() => { const kinds = ['flow', 'depends', 'reference'] as const; void c.edit([{ type: 'link.update', id: link.id, patch: { kind: kinds[(kinds.indexOf(link.kind) + 1) % kinds.length] } }], 'Change link kind'); }} />
         <BarButton label="Reverse" icon="ArrowLeftRight" disabled={disabled} onPress={() => { void c.edit([{ type: 'link.update', id: link.id, patch: { from: link.to, to: link.from } }], 'Reverse link'); }} />
       </> : <>
@@ -68,7 +93,7 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, duplicat
         <BarButton nativeID="lienzo-selection-duplicate" label="Duplicate" icon="CopyPlus" shortcut={keyLabel('edit.duplicate')} disabled={disabled} onPress={duplicate} />
         {arrange && selected.length > 1 && <BarButton nativeID="lienzo-selection-align" label="Align and distribute" icon="AlignStartVertical" active={aligning} disabled={disabled} onPress={() => { setSwatches(false); setAligning(v => !v); }} />}
       </>}
-      <BarButton nativeID="lienzo-selection-delete" label="Delete" icon="Trash2" danger shortcut={keyLabel('edit.delete')} disabled={disabled} onPress={remove} />
+      <BarButton nativeID="lienzo-selection-delete" label={gathering?.bundle && !linkPick?.links.length ? 'Delete bundle and its links' : 'Delete'} icon="Trash2" danger shortcut={keyLabel('edit.delete')} disabled={disabled} onPress={remove} />
       {onProperties && <BarButton label="Properties" icon="SlidersHorizontal" shortcut={keyLabel('panel.right')} onPress={onProperties} />}
     </View>
     {aligning && arrange && <View nativeID="lienzo-selection-arrange" accessibilityRole="toolbar" accessibilityLabel="Align and distribute" style={[islandStyle(u, true), { position: 'absolute', top: (u.compact ? 52 : tokens.face.selectionBar.button + 10) + 6, flexDirection: 'row', alignItems: 'center', gap: 2, padding: 4 }]}>
@@ -88,9 +113,10 @@ export function SelectionBar({ controller: c, disabled, linkId, colour, duplicat
  * What the right panel shows for the selection: its content fields, style, instructions, connections and every
  * other action, in collapsible sections. Each edit is one transaction, labelled for history and undo.
  */
-export function SelectionProperties({ controller: c, panelRoot, disabled, add, duplicate, remove, groupSelection, connectSelection, release, rects, editText, undoNotice, linkId, onLink, interact, style, focus }: {
+export function SelectionProperties({ controller: c, panelRoot, disabled, add, duplicate, remove, groupSelection, connectSelection, release, rects, editText, undoNotice, linkId, linkPick, onBundle, onSelectBundle, onLink, interact, style, focus }: {
   controller: CanvasController; panelRoot: React.RefObject<View | null>; disabled: boolean; add(): void; duplicate(): void; remove(): void; groupSelection(): void; connectSelection(): void; release(ids: string[], label?: string): void; rects(): Map<string, Rect>; editText(): void; interact(): void; undoNotice(label: string): void;
   linkId?: string | null; onLink(id: string | null): void; style?: React.ReactNode;
+  linkPick?: LinkPick; onBundle?(): void; onSelectBundle?(id: string | null): void;
   /** A section to open and scroll to: `instruction` from the menu. */
   focus?: string | null;
 }) {
@@ -144,6 +170,24 @@ export function SelectionProperties({ controller: c, panelRoot, disabled, add, d
 
   if (gate) return <View>{head}<PanelSection title="Data"><RegisteredRenderer block={block!} id={type!.renderer!} controller={c} readOnly={disabled} /></PanelSection></View>;
   if (concealed?.length) return <View>{head}<View style={{ padding: 12 }}><HiddenResult gateIds={concealed} open={id => { void c.select([id]); }} /></View></View>;
+  const gathering = !selected.length && !link ? bundleAction(doc, linkPick) : null;
+  if (gathering) {
+    const rows = gathering.bundle ? doc.links.filter(l => l.bundleId === gathering.bundle!.id) : doc.links.filter(l => linkPick!.links.includes(l.id));
+    return <View nativeID="lienzo-properties-bundle">
+      <View style={{ paddingHorizontal: tokens.face.rightPanel.padding, paddingVertical: 10, gap: 2 }}><Txt kind="label" muted>{gathering.bundle ? 'Bundle' : 'Links'}</Txt><Txt kind="bodyStrong">{gathering.bundle ? `${gathering.count} links in one strand` : `${gathering.count} links selected`}</Txt></View>
+      <PanelSection title={gathering.bundle ? 'Bundle' : 'Links'}>
+        <Txt kind="small" muted>{gathering.bundle ? 'Drag a clip to move it, or the strand between the clips to move both. Shift-click links to add them or take them out. Double-click a clip to release the links.' : 'Bundle them to draw them as one strand of parallel lanes, each in its own colour.'}</Txt>
+        {rows.map(l => <Pressable key={l.id} accessibilityRole="button" accessibilityLabel={`Link ${shownTitle(l.from)} to ${shownTitle(l.to)}`} onPress={() => onLink(l.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28 }}>
+          <View style={{ width: 18, height: 0, borderTopWidth: 2, borderColor: u.tone(linkTone(l)), borderStyle: l.kind === 'flow' ? 'solid' : 'dashed' }} />
+          <Txt kind="small" numberOfLines={1} style={{ flexShrink: 1 }}>{shownTitle(l.from)} → {shownTitle(l.to)}{l.label ? ` · ${l.label}` : ''}</Txt>
+        </Pressable>)}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Button label={gathering.label} icon={gathering.icon} small disabled={disabled} onPress={() => onBundle?.()} />
+          <Button label={gathering.bundle && !linkPick!.links.length ? 'Delete bundle' : 'Delete links'} icon="Trash2" small variant="danger" disabled={disabled} onPress={remove} />
+        </View>
+      </PanelSection>
+    </View>;
+  }
   if (link) return <View nativeID="lienzo-properties-link">{head}
     <PanelSection title="Link">
       <Field key={link.id + ':label'} label="Label" value={link.label ?? ''} disabled={disabled} placeholder="What travels along it (optional)" helper="Drawn on the line. Up to 200 characters." onSave={label => { if (label.length > 200) throw new Error('Up to 200 characters.'); return updateLink({ label }, 'Edit link label'); }} />

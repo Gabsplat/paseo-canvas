@@ -84,7 +84,7 @@ async function invoke(contract:any, raw:any) {
      else if(name==='canvas.comments.delete'){c.threads=c.threads.filter((t:any)=>t.id!==thread.id);c.version++;output=commentsView();}
      else throw Error('QA host does not implement '+name);}
  }
- else if(name==='canvas.selection.set'){if(input.expectedSelectionVersion!==selectionVersion)throw Error('selection version conflict');doc={...doc,selectedIds:input.ids};selectionVersion++;output=snapshot();}
+ else if(name==='canvas.selection.set'){if(input.expectedSelectionVersion!==selectionVersion)throw Error('selection version conflict');doc={...doc,selectedIds:input.ids};selectionVersion++;output={documentId:doc.id,revision:doc.revision,selectionVersion,runtimeVersion,selectedIds:[...doc.selectedIds]};}
  else if(name==='canvas.mutate'){
    await new Promise(r=>setTimeout(r,45));
    if(fail){fail=false;throw Error('QA simulated rejected save');}

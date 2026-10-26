@@ -1,7 +1,7 @@
 import type { CanvasDocument } from './model';
 
 /** What a person can still follow on one canvas. Past these, the report asks the author to restructure. */
-export const LEGIBILITY_LIMITS = { crossAreaLinks: 12, areaNodes: 9, nodeLinks: 6, labelledLinks: 16 } as const;
+export const LEGIBILITY_LIMITS = { crossAreaLinks: 12, areaNodes: 9, nodeLinks: 6, labelledLinks: 16, bundlePair: 4 } as const;
 export type Legibility = { links: number; crossAreaLinks: number; warnings: string[] };
 type Content = Pick<CanvasDocument, 'blocks' | 'groups' | 'links'>;
 
@@ -17,11 +17,17 @@ export function legibility(document: Content): Legibility {
   // The area a link end belongs to: the group itself for a group end, the containing group for a block end.
   const groups = new Set(document.groups.map(g => g.id)), area = (id: string) => groups.has(id) ? id : parent.get(id) ?? null;
   const cross = links.filter(l => !groups.has(l.from) && !groups.has(l.to) && area(l.from) !== area(l.to)), warnings: string[] = [];
-  if (cross.length > L.crossAreaLinks) {
-    const pairs = new Map<string, number>(); for (const l of cross) { const key = [area(l.from) ?? '', area(l.to) ?? ''].sort().join('\u0000'); pairs.set(key, (pairs.get(key) ?? 0) + 1); }
+  // A bundle (link.bundleId) gathers links into one strand: they no longer tangle, so only loose ones count against the limit.
+  const loose = cross.filter(l => !l.bundleId);
+  if (loose.length > L.crossAreaLinks) {
+    const pairs = new Map<string, number>(); for (const l of loose) { const key = [area(l.from) ?? '', area(l.to) ?? ''].sort().join('\u0000'); pairs.set(key, (pairs.get(key) ?? 0) + 1); }
     const [worst, count] = [...pairs].sort((a, b) => b[1] - a[1])[0], [a, b] = worst.split('\u0000');
-    warnings.push(`${cross.length} links join blocks in different areas; beyond ${L.crossAreaLinks} the canvas is a tangle nobody can follow. Link the areas themselves: from/to accept group IDs, so one group-to-group link replaces many (${count} run between ${a ? name(a) : 'the root'} and ${b ? name(b) : 'the root'}). Keep block-to-block links inside one area, or split the document into one canvas per question.`);
+    warnings.push(`${loose.length} links join blocks in different areas; beyond ${L.crossAreaLinks} the canvas is a tangle nobody can follow. Link the areas themselves: from/to accept group IDs, so one group-to-group link replaces many (${count} run between ${a ? name(a) : 'the root'} and ${b ? name(b) : 'the root'}). Keep block-to-block links inside one area, bundle the ones that must stay (bundle.create draws them as one strand), or split the document into one canvas per question.`);
   }
+  // Several loose links between the same two areas read as one strand when bundled (bundle.create), keeping each link.
+  const runs = new Map<string, number>(); for (const l of loose) { const a = area(l.from), b = area(l.to); if (a && b) { const key = [a, b].sort().join('\u0000'); runs.set(key, (runs.get(key) ?? 0) + 1); } }
+  const run = [...runs].filter(([, n]) => n >= L.bundlePair).sort((a, b) => b[1] - a[1])[0];
+  if (run && loose.length <= L.crossAreaLinks) { const [a, b] = run[0].split('\u0000'); warnings.push(`${run[1]} separate links run between ${name(a)} and ${name(b)}. Bundle them (bundle.create {bundle:{id, points:[two clips in the gap between the areas]}, linkIds}) so they travel as one strand of parallel lanes, or link the two areas once.`); }
   const crowded = document.groups.map(g => ({ g, n: g.blockIds.length + g.groupIds.length })).filter(x => x.n > L.areaNodes).sort((a, b) => b.n - a.n)[0];
   if (crowded) warnings.push(`Area ${name(crowded.g.id)} holds ${crowded.n} items; keep areas to ${L.areaNodes} or fewer by splitting it or moving detail into a node's details.`);
   const degree = new Map<string, number>(); for (const l of links) for (const id of [l.from, l.to]) degree.set(id, (degree.get(id) ?? 0) + 1);

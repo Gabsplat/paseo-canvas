@@ -87,7 +87,14 @@ export const corePages: readonly WikiPage[] = [
     byHand: ["Select a card and drag from one of the round handles on its edges onto another card or Frame.", "Or press a handle once to add a new card already linked on that side.", "Or select two things and choose Connect the two in ⌘K.", "Select a link to give it a label, a kind, a colour, or to reverse it."],
     askAgent: ["Link the API to the database, labelled \"reads\".", "Join the two Frames with one link instead of the many links between their cards."],
     tips: ["One link between two Frames reads better than many links between their cards.", "Deleting a card removes its links."],
-    related: ["text.card", "frames.frame"], keywords: "connect arrow edge relation flow depends reference connector" },
+    related: ["text.card", "frames.frame", "drawing.bundles"], keywords: "connect arrow edge relation flow depends reference connector" },
+  { id: "drawing.bundles", section: "drawing", title: "Link bundles", icon: "Cable", art: "links", shortcut: "edit.bundle",
+    summary: "Many links between two areas, gathered into one tidy strand.",
+    purpose: "When several links run between the same two areas, a bundle gathers them into one strand of parallel lanes between two clips, like wires tied together, and fans them out again at each end. Every link keeps its own colour, kind and label, and stays a link: the agent reads it as before.",
+    byHand: ["Select a link, then Shift-click the others, and press ⌘B or Bundle in the selection bar. The clips land between the two sides.", "Or hold ⌥ and drag a straight line across the links you want: the links it crosses become one bundle.", "Drag a clip to move it, or drag the strand between the clips to move both. Cards that move take their lanes with them.", "Click the strand to select the bundle: Unbundle releases the links, Delete removes the bundle with its links. With the bundle selected, Shift-click links to add them or take them out.", "Double-click a clip to release the links at once."],
+    askAgent: ["Bundle the links between the sensors and the services.", "Release the bundle between Frontend and API."],
+    tips: ["Hover a lane to light its whole link, from source to target.", "A bundle holds up to 64 links. Deleting all its links removes it too.", "Duplicating every card of a bundle copies the bundle; copying only some leaves the copied links loose."],
+    related: ["drawing.links", "frames.frame"], keywords: "bundle strand wires cable tie gather group links clip unbundle tidy" },
 
   // ---- Shapes
   { id: "shapes.shapes", section: "shapes", title: "Shapes", icon: "Shapes", art: "shapes", shortcut: "tool.rectangle", blockTypes: ["wb-shape"],

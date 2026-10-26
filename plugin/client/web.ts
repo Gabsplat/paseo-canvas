@@ -550,35 +550,45 @@ export function focusInput(element: unknown) {
 export type LinkDraw = {
   linkIds?: readonly string[];
   key: string; d: string; color: string; width: number; dash: string; opacity: number; interactive: boolean; title: string; shift?: { x: number; y: number };
+  /** Width of the pointer target when it differs from the scene's (a lane of a bundle is narrow). */
+  hit?: number;
   arrow: { x: number; y: number; side: 'top' | 'bottom' | 'left' | 'right'; length: number; width: number } | null;
   label: { x: number; y: number; text: string; color: string } | null;
   badge: { x: number; y: number; text: string; fill: string; color: string; radius: number } | null;
 };
-export type LinkScene = { draws: LinkDraw[]; origin: { x: number; y: number }; halo: string; font: string; labelSize: number; badgeSize: number; hitWidth: number; motion?: (epochMs: number) => LinkMotionSample };
+/** A bundle's clip: a capsule across the strand, centred on (x, y), its long side turned `angle` degrees. */
+export type TieDraw = { key: string; x: number; y: number; angle: number; length: number; thickness: number; fill: string; halo: string; haloWidth: number; grip: string; opacity: number };
+/** A soft band under a bundle's lanes between its clips, shown while the bundle is in focus. */
+export type BandDraw = { key: string; d: string; width: number; color: string; opacity: number };
+export type LinkScene = { draws: LinkDraw[]; origin: { x: number; y: number }; halo: string; font: string; labelSize: number; badgeSize: number; hitWidth: number; motion?: (epochMs: number) => LinkMotionSample; ties?: TieDraw[]; bands?: BandDraw[] };
 interface SvgNode {
   setAttribute(name: string, value: string): void; removeAttribute(name: string): void; appendChild(child: SvgNode): void; remove(): void;
-  addEventListener(name: string, listener: (event: { stopPropagation(): void; preventDefault(): void }) => void): void; textContent: string | null;
+  addEventListener(name: string, listener: (event: { stopPropagation(): void; preventDefault(): void; shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }) => void): void; textContent: string | null;
   getTotalLength?(): number; getPointAtLength?(distance: number): { x: number; y: number };
 }
 type SvgHost = { document?: { createElementNS(namespace: string, tag: string): SvgNode } };
 /** `element` holds the lines (under the cards); `marksElement`, when given, holds labels and counts (over the cards). */
-export function mountLinkLayer(element: unknown, handlers: { onPress(key: string): void; onHover(key: string | null): void }, marksElement?: unknown): { update(scene: LinkScene): void; preview(draw: Pick<LinkDraw, 'd' | 'color' | 'width' | 'opacity' | 'dash'> | null): void; destroy(): void } | null {
+export function mountLinkLayer(element: unknown, handlers: { onPress(key: string, add: boolean): void; onHover(key: string | null): void }, marksElement?: unknown): { update(scene: LinkScene): void; preview(draw: Pick<LinkDraw, 'd' | 'color' | 'width' | 'opacity' | 'dash'> | null): void; destroy(): void } | null {
   if (Platform.OS !== 'web') return null;
   type Host = { appendChild?(child: SvgNode): void } | null;
   const doc = (globalThis as unknown as SvgHost).document, host = element as Host, marksHost = marksElement as Host;
   if (!doc?.createElementNS || !host?.appendChild) return null;
   const make = (tag: string, attributes: Record<string, string> = {}) => { const node = doc.createElementNS('http://www.w3.org/2000/svg', tag); for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value); return node; };
   const surface = () => make('svg', { width: '100%', height: '100%', style: 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none', 'aria-hidden': 'true' });
-  const svg = surface(), root = make('g'), lines = make('g'), marks = make('g'), draft = make('path', { fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'pointer-events': 'none', 'data-lienzo-draft': 'true' }); root.appendChild(lines); root.appendChild(draft); svg.appendChild(root); host.appendChild(svg);
+  const svg = surface(), root = make('g'), lines = make('g'), marks = make('g'), draft = make('path', { fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'pointer-events': 'none', 'data-lienzo-draft': 'true' });
+  // Bundles: a band under the lanes, the clips over them (still under the cards and the labels).
+  const bands = make('g', { 'pointer-events': 'none', 'data-lienzo-bands': 'true' }), ties = make('g', { 'pointer-events': 'none', 'data-lienzo-ties': 'true' });
+  root.appendChild(bands); root.appendChild(lines); root.appendChild(ties); root.appendChild(draft); svg.appendChild(root); host.appendChild(svg);
+  let tiesDrawn = '';
   const above = marksHost?.appendChild ? surface() : null;
   if (above) { above.appendChild(marks); marksHost!.appendChild!(above); } else root.appendChild(marks);
   type Entry = { group: SvgNode; line: SvgNode; hit: SvgNode; head: SvgNode; mark: SvgNode; label: SvgNode; badge: SvgNode; badgeDisc: SvgNode; badgeText: SvgNode; tip: SvgNode; seen: boolean; drawn: string };
   const entries = new Map<string, Entry>();
   const entry = (key: string): Entry => {
     let e = entries.get(key); if (e) return e;
-    const group = make('g'), line = make('path', { fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }), head = make('path'), tip = make('title');
+    const group = make('g', { 'data-link-key': key }), line = make('path', { fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }), head = make('path'), tip = make('title');
     const hit = make('path', { fill: 'none', stroke: 'transparent', 'stroke-linecap': 'round' });
-    hit.addEventListener('click', event => { event.stopPropagation(); handlers.onPress(key); });
+    hit.addEventListener('click', event => { event.stopPropagation(); handlers.onPress(key, !!(event.shiftKey || event.metaKey || event.ctrlKey)); });
     hit.addEventListener('pointerenter', () => handlers.onHover(key)); hit.addEventListener('pointerleave', () => handlers.onHover(null));
     hit.appendChild(tip); group.appendChild(line); group.appendChild(head); group.appendChild(hit); lines.appendChild(group);
     // Text sits in a later group so no connector ever paints over a label.
@@ -588,6 +598,7 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
     e = { group, line, hit, head, mark, label, badge, badgeDisc, badgeText, tip, seen: true, drawn: '' }; entries.set(key, e); return e;
   };
   const n = (value: number) => String(Math.round(value * 10) / 10);
+  const clear = (node: SvgNode) => { (node as unknown as { replaceChildren?(): void }).replaceChildren?.(); };
   const motionRoot = make('g', { 'pointer-events': 'none', 'data-lienzo-motion': 'true' }); marks.appendChild(motionRoot);
   type MotionEntry = { group: SvgNode; symbol: SvgNode; label: SvgNode };
   const motionEntries: MotionEntry[] = [], paths = new Map<string, { entry: Entry; draw: LinkDraw; length?: number }>();
@@ -653,7 +664,7 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
         e.group.setAttribute('transform', draw.shift ? `translate(${n(draw.shift.x)} ${n(draw.shift.y)})` : '');
         e.line.setAttribute('d', draw.d); e.line.setAttribute('stroke', draw.color); e.line.setAttribute('stroke-width', n(draw.width)); e.line.setAttribute('opacity', n(draw.opacity));
         if (draw.dash) e.line.setAttribute('stroke-dasharray', draw.dash); else e.line.removeAttribute('stroke-dasharray');
-        e.hit.setAttribute('d', draw.d); e.hit.setAttribute('stroke-width', n(scene.hitWidth)); e.hit.setAttribute('style', draw.interactive ? 'pointer-events:stroke;cursor:pointer' : 'pointer-events:none'); e.tip.textContent = draw.title;
+        e.hit.setAttribute('d', draw.d); e.hit.setAttribute('stroke-width', n(draw.hit ?? scene.hitWidth)); e.hit.setAttribute('style', draw.interactive ? 'pointer-events:stroke;cursor:pointer' : 'pointer-events:none'); e.tip.textContent = draw.title;
         if (draw.arrow) {
           const { x, y, side, length, width } = draw.arrow, w = width / 2;
           // The tip touches the frame; the base points back along the side the connector arrives on.
@@ -671,9 +682,23 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
         } else { e.badge.setAttribute('opacity', '0'); e.badgeText.textContent = ''; }
       }
       for (const [key, e] of entries) if (!e.seen) { e.group.remove(); e.mark.remove(); entries.delete(key); }
+      // Few and small: redrawn whole when anything about them changed.
+      const bundled = JSON.stringify([scene.ties ?? [], scene.bands ?? []]);
+      if (bundled !== tiesDrawn) {
+        tiesDrawn = bundled; clear(bands); clear(ties);
+        for (const band of scene.bands ?? []) bands.appendChild(make('path', { d: band.d, fill: 'none', stroke: band.color, 'stroke-width': n(band.width), 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: n(band.opacity), 'data-bundle': band.key }));
+        for (const tie of scene.ties ?? []) {
+          const g = make('g', { transform: `translate(${n(tie.x)} ${n(tie.y)}) rotate(${n(tie.angle)})`, opacity: n(tie.opacity), 'data-bundle-tie': tie.key });
+          const w = tie.length, h = tie.thickness;
+          g.appendChild(make('rect', { x: n(-w / 2), y: n(-h / 2), width: n(w), height: n(h), rx: n(h / 2), fill: tie.fill, stroke: tie.halo, 'stroke-width': n(tie.haloWidth), 'paint-order': 'stroke' }));
+          // Two grip notches read as a clamp around the wires.
+          for (const x of [-w / 2 + h * .9, w / 2 - h * .9]) g.appendChild(make('circle', { cx: n(x), cy: '0', r: n(h * .18), fill: tie.grip }));
+          ties.appendChild(g);
+        }
+      }
       renderMotion();
     },
-    destroy() { destroyed = true; stop(); observer?.disconnect(); page?.removeEventListener('visibilitychange', visibility); clearMotion(); svg.remove(); above?.remove(); entries.clear(); paths.clear(); },
+    destroy() { tiesDrawn = ''; destroyed = true; stop(); observer?.disconnect(); page?.removeEventListener('visibilitychange', visibility); clearMotion(); svg.remove(); above?.remove(); entries.clear(); paths.clear(); },
   };
 }
 
@@ -1124,4 +1149,26 @@ export function trackPointer(onDown?: () => void): { last(): { x: number; y: num
   const move = (e: BrowserKeyEvent) => { at = { x: e.clientX, y: e.clientY }; }, down = (e: BrowserKeyEvent) => { move(e); onDown?.(); };
   doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerdown', down, true);
   return { last: () => at, stop: () => { doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerdown', down, true); } };
+}
+/**
+ * Alt-drag on the empty canvas (or over links): a straight cut that gathers the links it crosses into a bundle. By
+ * pointer events, since react-native-web drops a press or move with Alt held. Cards, Frames, controls and the
+ * bundle's own clips keep their Alt-drag (a copy) and their presses.
+ */
+export function attachCutGesture(element: unknown, handlers: { begin(point: CanvasPointer): boolean; move(point: CanvasPointer): void; end(point: CanvasPointer, cancelled: boolean): void }): () => void {
+  const node = element as BrowserElement | null, doc = browser().document; if (!doc || !node?.addEventListener) return () => {};
+  type Event = BrowserKeyEvent & { button?: number; pointerId?: number };
+  let current: CanvasPointer | null = null;
+  const point = (e: Event): CanvasPointer => ({ x: e.clientX, y: e.clientY, shift: e.shiftKey, command: e.ctrlKey || e.metaKey, alt: !!e.altKey, pointerId: e.pointerId ?? 0 });
+  const down = (e: Event) => {
+    if (e.button !== 0 || !e.altKey || pointerElement(e.target)?.closest?.('[id^="lienzo-entity-"],[id^="lienzo-bundle-"],[id^="lienzo-tools"],[id^="lienzo-interactive-"],[role="toolbar"],[role="dialog"]')) return;
+    const p = point(e); if (!handlers.begin(p)) return;
+    current = p; try { node.setPointerCapture?.(p.pointerId); } catch {} e.preventDefault(); e.stopPropagation();
+  };
+  const move = (e: Event) => { if (!current || current.pointerId !== (e.pointerId ?? 0)) return; current = point(e); handlers.move(current); e.preventDefault(); e.stopPropagation(); };
+  const finish = (cancelled: boolean) => { const p = current; current = null; if (!p) return; try { node.releasePointerCapture?.(p.pointerId); } catch {} handlers.end(p, cancelled); if (!cancelled) swallowClick(); };
+  const up = (e: Event) => { if (!current || current.pointerId !== (e.pointerId ?? 0)) return; current = point(e); finish(false); e.preventDefault(); e.stopPropagation(); };
+  const cancel = () => finish(true), key = (e: BrowserKeyEvent) => { if (e.key === 'Escape' && current) { cancel(); e.preventDefault(); e.stopPropagation(); } };
+  node.addEventListener('pointerdown', down, true); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', cancel, true); doc.addEventListener('keydown', key, true);
+  return () => { cancel(); node.removeEventListener('pointerdown', down, true); doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', cancel, true); doc.removeEventListener('keydown', key, true); };
 }

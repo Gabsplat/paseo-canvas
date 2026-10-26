@@ -2,7 +2,7 @@ import { isWhiteboardRenderer, whiteboardMinSize } from '../shared/whiteboard';
 import { getRendererVisual } from "./renderer-visuals";
 import { getRendererSpec } from "../shared/renderers";
 import { boundOf } from '../shared/bindings';
-import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasOperation, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
+import type { CanvasDocument, CanvasBlock, CanvasGroup, CanvasLink, CanvasBundle, CanvasOperation, DocumentContent, CanvasCatalog, CanvasPack, BlockType } from '../shared/model';
 import { tokens } from './tokens';
 import { wbTextType, fitText, estimateLine } from './whiteboard-geometry';
 export type Entity = CanvasBlock | CanvasGroup;
@@ -78,7 +78,7 @@ export function instructionLevels(doc: CanvasDocument, entity?: Entity) {
 }
 export function documentContent(doc: CanvasDocument, own = false): DocumentContent {
   const { title, description, blocks, groups, links, layout, variables, selectedIds, communication, example } = doc;
-  return { title: own ? `${title} · copia` : title, description, blocks, groups, links: links ?? [], ...(layout ? { layout } : {}), ...(variables ? { variables } : {}), selectedIds, communication, example: own ? false : example };
+  return { title: own ? `${title} · copia` : title, description, blocks, groups, links: links ?? [], ...(doc.bundles?.length ? { bundles: doc.bundles } : {}), ...(layout ? { layout } : {}), ...(variables ? { variables } : {}), selectedIds, communication, example: own ? false : example };
 }
 export type Segment = { from: Point; to: Point };
 export const descriptionKey = (groupId: string) => `${groupId}#description`;
@@ -451,6 +451,8 @@ export type LinkRoute = {
   /** Joins two different containers: the long connectors that tangle a dense canvas. */
   across: boolean;
   d: string; elbow: Segment[]; start: Point; end: Point; endSide: Side; labelPoint: Point; badgePoint: Point;
+  /** A link in a bundle is drawn alone, as lane `lane` of `lanes` between the bundle's clips. */
+  bundle?: { id: string; lane: number; lanes: number };
 };
 const cubicAt = (p: Point, c1: Point, c2: Point, q: Point, t: number): Point => { const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t; return { x: a * p.x + b * c1.x + c * c2.x + d * q.x, y: a * p.y + b * c1.y + c * c2.y + d * q.y }; };
 const fixed = (n: number) => String(Math.round(n * 10) / 10);
@@ -487,17 +489,139 @@ export function linkMagnet(layout: CanvasLayout, from: string, point: Point, sca
   if (held && distance(held) <= tokens.motion.magnet.releaseRadius / factor) return held;
   return groups.flatMap(ports).filter(p => distance(p) <= tokens.motion.magnet.radius / factor).sort((a, b) => distance(a) - distance(b))[0] ?? null;
 }
-export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (id: string) => FrameShift | undefined): LinkRoute[] {
-  const { index, rects } = layout, L = tokens.graph.link, bundles = new Map<string, CanvasLink[]>();
+// ---- Link bundles (docs/design.md §46): links gathered into one strand of parallel lanes between two clips. ----
+const unit = (p: Point): Point => { const l = Math.hypot(p.x, p.y) || 1; return { x: p.x / l, y: p.y / l }; };
+const minus = (p: Point, q: Point): Point => ({ x: p.x - q.x, y: p.y - q.y });
+const dot = (p: Point, q: Point) => p.x * q.x + p.y * q.y;
+const centre = (r: Box): Point => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+/** Where a bundle's points are now: from its Frame's corner when it has one (and with that Frame while it travels). */
+export function bundleWorld(bundle: Pick<CanvasBundle, 'points' | 'parentGroupId'>, layout: Pick<CanvasLayout, 'rects'>, shift?: (id: string) => FrameShift | undefined): Point[] {
+  const parent = bundle.parentGroupId ?? null, r = parent ? layout.rects.get(parent) : undefined, d = parent ? shift?.(parent) : undefined;
+  const ox = (r?.x ?? 0) + (d?.x ?? 0), oy = (r?.y ?? 0) + (d?.y ?? 0);
+  return bundle.points.map(p => ({ x: p.x + ox, y: p.y + oy }));
+}
+/** The normal of each segment, turned a quarter to the left of travel: lanes with a larger offset lie on that side. */
+const segmentNormals = (P: Point[]) => P.slice(1).map((q, i) => { const t = unit(minus(q, P[i])); return { x: -t.y, y: t.x }; });
+/** One lane: the spine moved `offset` along its normals, mitred at bends (never more than 3× the offset). */
+export function laneLine(P: Point[], offset: number): Point[] {
+  const n = segmentNormals(P);
+  return P.map((p, j) => { const a = n[Math.max(0, j - 1)], b = n[Math.min(n.length - 1, j)], m = unit({ x: a.x + b.x, y: a.y + b.y }), k = Math.min(3, 1 / Math.max(.33, dot(m, a))); return { x: p.x + m.x * offset * k, y: p.y + m.y * offset * k }; });
+}
+/**
+ * The order of the lanes, first (most negative offset) to last. Lanes keep one order along the whole spine, so they are
+ * sorted by where their sources sit across the entry, then by where their targets sit across the exit: when the two
+ * orders agree (a monotonic wiring) no two links cross anywhere.
+ */
+export function laneOrder(P: Point[], items: { id: string; from: Point; to: Point }[]): string[] {
+  const n = segmentNormals(P), n0 = n[0], nn = n[n.length - 1], first = P[0], last = P[P.length - 1];
+  const keyed = items.map(item => ({ id: item.id, a: dot(minus(item.from, first), n0), b: dot(minus(item.to, last), nn) }));
+  return keyed.sort((p, q) => p.a - q.a || p.b - q.b || (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)).map(item => item.id);
+}
+/**
+ * The side of a frame a lane leaves from (or arrives at) toward a clip. It favours the strand's own axis (`along`), so
+ * every lane of a sideways strand leaves its card sideways and the fan reads as one gesture; only a clip that sits
+ * within the card's span on that axis turns it to the other one.
+ */
+function facing(r: Box, p: Point, along: Point): Side {
+  const h = Math.max(p.x - r.x - r.width, r.x - p.x), v = Math.max(p.y - r.y - r.height, r.y - p.y), sideways = Math.abs(along.x) >= Math.abs(along.y);
+  return (sideways ? h > 0 || h >= v : !(v > 0 || v >= h)) ? p.x >= r.x + r.width / 2 ? 'right' : 'left' : p.y >= r.y + r.height / 2 ? 'bottom' : 'top';
+}
+/**
+ * Clips for a new bundle: at about a third and two thirds of the way from the sources' centre to the targets' centre.
+ * When the two sides leave a clear gap along that way, the clips sit inside the gap instead, so they never land on a card.
+ */
+export function bundlePlacement(sources: Box[], targets: Box[]): [Point, Point] {
+  const [p, q] = tokens.graph.link.bundle.place, mean = (boxes: Box[]) => boxes.map(centre).reduce((s, c) => ({ x: s.x + c.x / boxes.length, y: s.y + c.y / boxes.length }), { x: 0, y: 0 });
+  const a = mean(sources), b = mean(targets), along = (t: number): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y), forward = horizontal ? b.x >= a.x : b.y >= a.y;
+  const edge = (boxes: Box[], far: boolean) => { const ends = boxes.map(r => horizontal ? far ? r.x + r.width : r.x : far ? r.y + r.height : r.y); return far ? Math.max(...ends) : Math.min(...ends); };
+  const from = edge(sources, forward), to = edge(targets, !forward), gap = forward ? to - from : from - to;
+  // In a clear gap the strand runs straight along the axis, level with the middle of the two sides.
+  const place = (t: number): Point => { if (gap > 0) { const v = from + (to - from) * t; return horizontal ? { x: v, y: (a.y + b.y) / 2 } : { x: (a.x + b.x) / 2, y: v }; } return along(t); };
+  const round = (v: Point) => ({ x: Math.round(v.x), y: Math.round(v.y) });
+  return [round(place(p)), round(place(q))];
+}
+/** Points held in world coordinates, written back the way the bundle stores them (from its Frame's corner, if it has one). */
+export function bundleRelative(bundle: Pick<CanvasBundle, 'parentGroupId'>, layout: Pick<CanvasLayout, 'rects'>, points: Point[]): Point[] {
+  const r = bundle.parentGroupId ? layout.rects.get(bundle.parentGroupId) : undefined;
+  return points.map(p => ({ x: Math.round(p.x - (r?.x ?? 0)), y: Math.round(p.y - (r?.y ?? 0)) }));
+}
+/**
+ * One transaction that gathers `linkIds` into a new bundle, its clips placed between the links' two sides. The bundle
+ * lives in the deepest Frame that holds every end, so it travels with that Frame. Links already in a bundle move over.
+ */
+export function bundleOperations(doc: CanvasDocument, layout: CanvasLayout, linkIds: readonly string[], id = newId('bundle')): { id: string; operations: CanvasOperation[] } | { error: string } {
+  const B = tokens.graph.link.bundle, wanted = new Set(linkIds), links = (doc.links ?? []).filter(l => wanted.has(l.id));
+  if (links.length < 2) return { error: 'Pick at least two links to bundle.' };
+  if (links.length > B.maxLinks) return { error: `A bundle holds at most ${B.maxLinks} links.` };
+  const box = (end: string) => layout.rects.get(visibleEnd(layout.index, end)), sources = links.map(l => box(l.from)), targets = links.map(l => box(l.to));
+  if ([...sources, ...targets].some(r => !r || r.hidden)) return { error: 'Show both ends of every link before bundling them.' };
+  const [a, b] = bundlePlacement(sources as Box[], targets as Box[]);
+  const chains = links.flatMap(l => [l.from, l.to]).map(end => layout.index.chain(end).slice(1, -1)), common = chains[0].find(g => chains.every(chain => chain.includes(g)));
+  const bundle = { id, points: bundleRelative({ parentGroupId: common }, layout, [a, b]), ...(common ? { parentGroupId: common } : {}) };
+  return { id, operations: [{ type: 'bundle.create', bundle, linkIds: links.map(l => l.id) }] };
+}
+/** The points of a connector path (M, L, C and Q commands), each curve sampled in `steps` pieces. */
+export function pathPoints(d: string, steps = 12): Point[] {
+  const parts = d.match(/[MLCQ]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? [], out: Point[] = []; let i = 0, command = 'M';
+  const num = () => Number(parts[i++]), at = (): Point => ({ x: num(), y: num() });
+  while (i < parts.length) {
+    if (/^[MLCQ]$/i.test(parts[i])) command = parts[i++].toUpperCase();
+    const p = out[out.length - 1] ?? { x: 0, y: 0 };
+    if (command === 'M' || command === 'L') out.push(at());
+    else if (command === 'C') { const c1 = at(), c2 = at(), q = at(); for (let k = 1; k <= steps; k++) out.push(cubicAt(p, c1, c2, q, k / steps)); }
+    else if (command === 'Q') { const c = at(), q = at(); for (let k = 1; k <= steps; k++) { const t = k / steps, u = 1 - t; out.push({ x: u * u * p.x + 2 * u * t * c.x + t * t * q.x, y: u * u * p.y + 2 * u * t * c.y + t * t * q.y }); } }
+    else i++;
+  }
+  return out;
+}
+const crosses = (p: Point, q: Point, a: Point, b: Point) => {
+  const side = (o: Point, s: Point, t: Point) => (s.x - o.x) * (t.y - o.y) - (s.y - o.y) * (t.x - o.x);
+  const d1 = side(p, q, a), d2 = side(p, q, b), d3 = side(a, b, p), d4 = side(a, b, q);
+  return d1 * d2 <= 0 && d3 * d4 <= 0 && (d1 !== 0 || d2 !== 0) && (d3 !== 0 || d4 !== 0);
+};
+/** The links a straight cut from `a` to `b` passes over (the Alt-drag that gathers links into a bundle). */
+export function crossedLinks(routes: readonly LinkRoute[], a: Point, b: Point): string[] {
+  const out: string[] = [];
+  for (const route of routes) { const points = pathPoints(route.d); if (points.slice(1).some((q, i) => crosses(points[i], q, a, b))) out.push(...route.links.map(l => l.id)); }
+  return [...new Set(out)];
+}
+/** What the canvas draws for a bundle besides its lanes: the spine, its clips (ties across it) and how wide the strand is. */
+export type BundleShape = { id: string; points: Point[]; linkIds: string[]; span: number; spine: string; ties: { x: number; y: number; angle: number; length: number }[] };
+export function bundleShapes(doc: CanvasDocument, layout: CanvasLayout, routes: LinkRoute[], shift?: (id: string) => FrameShift | undefined, moved?: (id: string) => Point[] | undefined): BundleShape[] {
+  const B = tokens.graph.link.bundle, members = new Map<string, string[]>();
+  for (const route of routes) if (route.bundle) (members.get(route.bundle.id) ?? members.set(route.bundle.id, []).get(route.bundle.id)!).push(route.links[0].id);
+  return (doc.bundles ?? []).flatMap(bundle => {
+    const linkIds = members.get(bundle.id); if (!linkIds?.length) return [];
+    const P = moved?.(bundle.id) ?? bundleWorld(bundle, layout, shift), n = segmentNormals(P), span = (linkIds.length - 1) * B.gap + B.width;
+    const tie = (p: Point, normal: Point) => ({ x: p.x, y: p.y, angle: Math.atan2(normal.y, normal.x) * 180 / Math.PI, length: Math.max(B.clip.min, span + 2 * B.clip.pad) });
+    return [{ id: bundle.id, points: P, linkIds, span, spine: `M${P.map(p => `${fixed(p.x)} ${fixed(p.y)}`).join(' L')}`, ties: [tie(P[0], n[0]), tie(P[P.length - 1], n[n.length - 1])] }];
+  });
+}
+export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (id: string) => FrameShift | undefined, moved?: (id: string) => Point[] | undefined): LinkRoute[] {
+  const { index, rects } = layout, L = tokens.graph.link, bundles = new Map<string, CanvasLink[]>(), strands = new Map<string, CanvasLink[]>(), held = new Map((doc.bundles ?? []).map(b => [b.id, b]));
   for (const link of doc.links ?? []) {
     if (!rects.has(link.from) || !rects.has(link.to)) continue;
     const from = visibleEnd(index, link.from), to = visibleEnd(index, link.to);
     if (from === to || index.chain(from).includes(to) || index.chain(to).includes(from)) continue;
+    if (link.bundleId && held.has(link.bundleId)) { (strands.get(link.bundleId) ?? strands.set(link.bundleId, []).get(link.bundleId)!).push(link); continue; }
     const key = `${from}>${to}`; (bundles.get(key) ?? bundles.set(key, []).get(key)!).push(link);
   }
   const box = (id: string): Box => { const r = rects.get(id)!, delta = shift?.(id); return delta ? { ...r, x: r.x + delta.x, y: r.y + delta.y, width: delta.width ?? r.width, height: delta.height ?? r.height } : r; };
-  type Draft = { key: string; links: CanvasLink[]; from: string; to: string; a: Box; b: Box; sides: [Side, Side]; lane?: Point[]; vertical: boolean };
+  type Strand = { id: string; lane: number; lanes: number; Q: Point[]; t0: Point; tn: Point };
+  type Draft = { key: string; links: CanvasLink[]; from: string; to: string; a: Box; b: Box; sides: [Side, Side]; lane?: Point[]; vertical: boolean; strand?: Strand };
   const drafts: Draft[] = [];
+  // A bundled link is its own connector: from its source into the first clip, along its lane, out of the last clip.
+  for (const [id, links] of strands) {
+    const P = moved?.(id) ?? bundleWorld(held.get(id)!, layout, shift), ends = new Map(links.map(link => [link.id, { from: visibleEnd(index, link.from), to: visibleEnd(index, link.to) }]));
+    const order = laneOrder(P, links.map(link => ({ id: link.id, from: centre(box(ends.get(link.id)!.from)), to: centre(box(ends.get(link.id)!.to)) })));
+    const t0 = unit(minus(P[1], P[0])), tn = unit(minus(P[P.length - 1], P[P.length - 2]));
+    order.forEach((linkId, lane) => {
+      const link = links.find(l => l.id === linkId)!, { from, to } = ends.get(linkId)!, a = box(from), b = box(to), Q = laneLine(P, (lane - (order.length - 1) / 2) * L.bundle.gap);
+      const sides: [Side, Side] = [facing(a, P[0], t0), facing(b, P[P.length - 1], tn)];
+      drafts.push({ key: `${id}~${linkId}`, links: [link], from, to, a, b, sides, vertical: sides[1] === 'top' || sides[1] === 'bottom', strand: { id, lane, lanes: order.length, Q, t0, tn } });
+    });
+  }
   for (const [key, links] of bundles) {
     const [from, to] = key.split('>'), a = box(from), b = box(to), steady = !shift?.(from) && !shift?.(to);
     const container = index.parent.get(from) === index.parent.get(to) ? index.parent.get(from)! : undefined;
@@ -512,8 +636,8 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
   // Connectors sharing a side fan out along it, ordered by where they come from, so they do not cross at the frame.
   const ports = new Map<string, { draft: Draft; end: 0 | 1; sort: number }[]>();
   for (const draft of drafts) ([0, 1] as const).forEach(end => {
-    const id = end ? draft.to : draft.from, other = end ? draft.a : draft.b, near = end ? draft.lane?.at(-1) : draft.lane?.[0];
-    const sort = draft.vertical ? near?.x ?? other.x + other.width / 2 : near?.y ?? other.y + other.height / 2, key = `${id}|${draft.sides[end]}`;
+    const id = end ? draft.to : draft.from, other = end ? draft.a : draft.b, near = draft.strand ? end ? draft.strand.Q.at(-1) : draft.strand.Q[0] : end ? draft.lane?.at(-1) : draft.lane?.[0];
+    const across = draft.sides[end] === 'top' || draft.sides[end] === 'bottom', sort = across ? near?.x ?? other.x + other.width / 2 : near?.y ?? other.y + other.height / 2, key = `${id}|${draft.sides[end]}`;
     (ports.get(key) ?? ports.set(key, []).get(key)!).push({ draft, end, sort });
   });
   const anchors = new Map<string, Point>();
@@ -525,8 +649,10 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
       anchors.set(`${draft.key}|${end}`, side === 'top' ? { x: r.x + r.width / 2 + offset, y: r.y } : side === 'bottom' ? { x: r.x + r.width / 2 + offset, y: r.y + r.height } : side === 'left' ? { x: r.x, y: r.y + r.height / 2 + offset } : { x: r.x + r.width, y: r.y + r.height / 2 + offset });
     });
   }
-  return drafts.map(({ key, links, from, to, sides, lane, vertical }) => {
-    const start = anchors.get(`${key}|0`)!, end = anchors.get(`${key}|1`)!, points = [start, ...(lane ?? []), end];
+  return drafts.map(({ key, links, from, to, sides, lane, vertical, strand }) => {
+    const start = anchors.get(`${key}|0`)!, end = anchors.get(`${key}|1`)!;
+    if (strand) return strandRoute(key, links[0], from, to, sides, start, end, strand, index.parent.get(from) !== index.parent.get(to));
+    const points = [start, ...(lane ?? []), end];
     const forward = (p: Point, q: Point): Point => vertical ? { x: 0, y: q.y >= p.y ? 1 : -1 } : { x: q.x >= p.x ? 1 : -1, y: 0 };
     const tangent = points.map((p, i) => i === 0 ? normals[sides[0]] : i === points.length - 1 ? { x: -normals[sides[1]].x, y: -normals[sides[1]].y } : forward(points[i - 1], points[i + 1]));
     const curves = points.slice(1).map((q, i) => {
@@ -541,6 +667,26 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
     const at = cubicAt(middle.p, middle.c1, middle.c2, middle.q, .5), labelPoint = vertical ? at : { x: at.x, y: at.y - L.label.lift };
     return { key, links, from, to, kind: links[0].kind, tone: links[0].tone, label, count: links.length, across: index.parent.get(from) !== index.parent.get(to), d, elbow, start, end, endSide: sides[1], labelPoint, badgePoint: cubicAt(first.p, first.c1, first.c2, first.q, label ? .24 : .5) };
   });
+}
+/** One bundled link: a soft S into the first clip, its lane between the clips (rounded at bends), a soft S out to its target. */
+function strandRoute(key: string, link: CanvasLink, from: string, to: string, sides: [Side, Side], start: Point, end: Point, strand: { id: string; lane: number; lanes: number; Q: Point[]; t0: Point; tn: Point }, across: boolean): LinkRoute {
+  const B = tokens.graph.link.bundle, L = tokens.graph.link, { Q, t0, tn } = strand, entry = Q[0], exit = Q[Q.length - 1], ns = normals[sides[0]], ne = normals[sides[1]];
+  const reach = (p: Point, q: Point) => Math.max(B.reach.min, Math.min(B.reach.max, Math.hypot(q.x - p.x, q.y - p.y) / 2));
+  const r1 = reach(start, entry), r2 = reach(exit, end), f = (p: Point) => `${fixed(p.x)} ${fixed(p.y)}`;
+  const inbound = { p: start, c1: { x: start.x + ns.x * r1, y: start.y + ns.y * r1 }, c2: { x: entry.x - t0.x * r1, y: entry.y - t0.y * r1 }, q: entry };
+  const outbound = { p: exit, c1: { x: exit.x + tn.x * r2, y: exit.y + tn.y * r2 }, c2: { x: end.x + ne.x * r2, y: end.y + ne.y * r2 }, q: end };
+  let spine = '';
+  for (let j = 1; j < Q.length - 1; j++) {
+    const a = Q[j - 1], p = Q[j], b = Q[j + 1], din = unit(minus(p, a)), dout = unit(minus(b, p)), r = Math.min(B.corner, Math.hypot(p.x - a.x, p.y - a.y) / 2, Math.hypot(b.x - p.x, b.y - p.y) / 2);
+    spine += ` L${f({ x: p.x - din.x * r, y: p.y - din.y * r })} Q${f(p)} ${f({ x: p.x + dout.x * r, y: p.y + dout.y * r })}`;
+  }
+  const d = `M${f(start)} C${f(inbound.c1)} ${f(inbound.c2)} ${f(entry)}${spine} L${f(exit)} C${f(outbound.c1)} ${f(outbound.c2)} ${f(end)}`;
+  // The native fallback draws only straight runs: an elbow between each pair of points along the way.
+  const path = [start, ...Q, end], elbow = path.slice(1).flatMap((q, i) => { const p = path[i], mid = { x: q.x, y: p.y }; return [{ from: p, to: mid }, { from: mid, to: q }]; }).filter(s => s.from.x !== s.to.x || s.from.y !== s.to.y);
+  // A bundled link is named near its target, where its lane has left the strand and is its own again.
+  const at = cubicAt(outbound.p, outbound.c1, outbound.c2, outbound.q, B.label.at), sideways = sides[1] === 'left' || sides[1] === 'right';
+  const label = link.label?.trim() ?? '';
+  return { key, links: [link], from, to, kind: link.kind, tone: link.tone, label, count: 1, across, d, elbow, start, end, endSide: sides[1], labelPoint: sideways ? { x: at.x, y: at.y - L.label.lift } : at, badgePoint: at, bundle: { id: strand.id, lane: strand.lane, lanes: strand.lanes } };
 }
 /** What stays lit when something is in focus. `null` means nothing to emphasise, so nothing is dimmed either. */
 export function linkFocus(routes: LinkRoute[], ids: string[], linkId?: string | null): { lit: Set<string>; routes: Set<string>; links: Set<string> } | null {
