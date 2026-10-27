@@ -56,6 +56,7 @@ omabox run -- node "$PWD/dist/panel-qa/lienzo-file.cjs" http://127.0.0.1:7422/ d
 omabox run -- node "$PWD/dist/panel-qa/power.cjs" papel   # §42: Alt-drag duplicate with links, Shift-drag axis, ⌘D, ⌘C/⌘V, align left/right, ? → Shortcuts (CDP, HTTP, OUT)
 omabox run -- node "$PWD/dist/panel-qa/frame-drag.cjs" papel   # Frames move only by their header: children, empty body (selection box), lock (CDP, HTTP, OUT)
 omabox run -- node "$PWD/dist/panel-qa/bundles.cjs" papel   # §46: Shift-click links + ⌘B bundles, drag a clip/the strand/a card, hover a lane, Unbundle, ⌥-drag cut, double-click a clip; `oscuro` too (CDP, HTTP, OUT)
+omabox run -- node "$PWD/dist/panel-qa/bundles-rack.cjs" papel   # §46 rack look at 2×: four by four, two cards stacked close, a long strand, a tie off the axis, mid-morph, unbundling; `oscuro` too (CDP, HTTP, OUT)
 omabox run -- node "$PWD/dist/panel-qa/text-edit.cjs" papel    # §43: free text, a hollow label and a card title grow as typed (no inner scroll, no jump); corner scales text 2×, Alt from the centre, side rewraps; shape Shift/Alt (CDP, HTTP, OUT)
 omabox run -- node "$PWD/dist/panel-qa/extension-ui.cjs" papel   # §45: Snap (example) opened by an agent request turns two cards to dust in an overlay and deletes them; a chromeless centred panel, a popover at a card, a panel switched to fullscreen (needs --disable-site-isolation-trials; CDP 9352, HTTP 8792, OUT)
 ```

@@ -13,7 +13,7 @@ function ToolbarEntrance({ children, above }: { children: React.ReactNode; above
   return <Animated.View pointerEvents="box-none" style={{ opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [tokens.toolbar.enterOffset * (above ? -1 : 1), 0] }) }] }}>{children}</Animated.View>;
 }
 export const SelectionGeometry = createContext<{ top: number; height: number } | null>(null);
-export function SelectionOverlay({ children, box, link, camera, subscribe, busy, viewport, pointer }: { children: React.ReactNode; box: Pick<Rect, 'x' | 'y' | 'width' | 'height'>; link: boolean; camera(): Camera; subscribe(listener: () => void): () => void; busy(): boolean; viewport: { width: number; height: number }; pointer?: Point | null }) {
+export function SelectionOverlay({ children, box, link, beside = false, camera, subscribe, busy, viewport, pointer }: { children: React.ReactNode; box: Pick<Rect, 'x' | 'y' | 'width' | 'height'>; link: boolean; beside?: boolean; camera(): Camera; subscribe(listener: () => void): () => void; busy(): boolean; viewport: { width: number; height: number }; pointer?: Point | null }) {
   const [width, setWidth] = useState(360), [shown, setShown] = useState(false), [, redraw] = useState(0), latest = useRef({ busy, box }); latest.current = { busy, box };
   useEffect(() => {
     setShown(false);
@@ -22,7 +22,7 @@ export function SelectionOverlay({ children, box, link, camera, subscribe, busy,
     const timer = setInterval(check, 40), cleanup = subscribe(() => { check(); redraw(v => v + 1); });
     return () => { clearInterval(timer); cleanup(); };
   }, [subscribe, box.x, box.y, box.width, box.height]);
-  const position = toolbarPosition(camera(), box, viewport, width, link, pointer);
+  const position = toolbarPosition(camera(), box, viewport, width, link, pointer, beside);
   if (!shown) return null;
   const cam = camera(), above = position.top < cam.offset.y + cam.scale * box.y;
   return <View pointerEvents="box-none" style={{ position: 'absolute', zIndex: 10, ...position, maxWidth: Math.max(0, viewport.width - 16) }}><ToolbarEntrance above={above}><View pointerEvents="box-none" onLayout={e => setWidth(e.nativeEvent.layout.width)} style={{ maxWidth: Math.max(0, viewport.width - 16) }}><SelectionGeometry.Provider value={{ top: position.top, height: viewport.height }}>{children}</SelectionGeometry.Provider></View></ToolbarEntrance></View>;

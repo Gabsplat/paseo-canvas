@@ -1871,39 +1871,64 @@ Many links between the same two areas read as a tangle long before they are many
 strand of parallel lanes between two clips, the way wires are tied into a loom, and fans them out again at each end.
 Each link stays a link (its colour, kind dash, label, arrowhead and meaning are its own); only its path changes.
 
-**Drawing.** From its source, a lane leaves the side of the card that faces the first clip along the strand's axis
-(a sideways strand makes every lane leave sideways, so the fan reads as one gesture) and curves softly into the clip,
-arriving along the spine. Between the clips the lanes run parallel, 4 world units apart, so the strand scales with the
-canvas exactly like every other line. Their order is fixed along the whole spine: by where the sources sit across the
-entry, then by where the targets sit across the exit. A wiring whose two orders agree never crosses anywhere (tested);
-when they disagree the crossing happens once, in the exit fan, never inside the strand. Out of the last clip each
-lane curves to its target; several lanes reaching one card spread along its side in lane order. Labels of bundled
-links sit near the target end, where the lane is its own again.
+**Drawing: dressed like cables in a rack.** Every lane is square: straight runs joined by arcs of one bend radius
+(14 world units), never an S that wanders. Between the two ties the strand is a straight trunk of parallel lanes,
+3 units apart. Outside the ties lanes run a comb apart (7 units); a short taper on each side gathers and releases
+them, every lane on the same curve, so the spacing is even at every point and nothing crosses (tested). The trunk's
+axis is the one nearest to its ties' direction; a tie dragged off the axis turns the trunk into a square step whose
+bends nest (the inner lane turns tightest, each next lane's radius one spacing larger), or a short soft step when it
+is too small to bend square.
 
-**Colour.** At rest a lane keeps its tone at 0.72, never the grey of a loose connector: a strand reads as neat
-coloured wires, not a grey rope. In focus the lit lanes go to full tone and width 2, the rest fall to 0.12. The clips
-are small capsules (6 units thick, rounded ends, two grip dots) across the strand, in the amber tone (`aviso`) with a
-halo of the canvas colour, so they read as ties over the wires in both themes and never as a selection, which stays
-blue. A selected bundle rings its clips in the foreground colour and lays a soft accent band under its lanes; hovering
-the strand shows the band at a lower strength. Tokens: `graph.link.bundle`.
+Into the entry, a card behind the line sends its lanes out of the side that faces the tie, as a comb, each lined up
+with its own lane when it can be: those run dead straight. The others step across in a channel beside the tie: a
+square stub, a bend, a run across, a bend into the line. Lanes stepping the same way bend about one centre, so they
+nest and never touch; a lane whose step is too small to nest gets its own channel just outside them. A card beside
+the line sends its lanes out of the side facing it with one bend each, also nested; anything else (a card past the
+tie) takes one soft curve. The exit mirrors the entry, and into each target the lanes land as a comb: arrowheads
+(6 × 4.5, smaller than a loose link's) a comb apart, each after a straight run of the same length. Lane order is
+fixed along the whole strand: by where the sources sit across it, then by where the targets sit. A wiring whose two
+orders agree never crosses; when they disagree the crossing is square and happens once, in the exit fan.
+
+**Short bundles.** When the ties are closer than two bends, or the cards in line with the strand are closer than
+220 units, the strand folds into a single tie in the gap: the lanes run straight and parallel through it, a comb
+apart, no taper, no loops (two cards stacked close read as three straight wires with one strap). It opens again into
+two ties when the cards move apart. New ties land inside the clear gap, far enough from the sources for the lanes to
+turn in and from the targets for their comb, and across the axis in line with the target (or the source) when every
+one of them can take the strand straight.
+
+**Colour.** At rest a lane keeps its tone at 0.8, never the grey of a loose connector: a strand reads as neat coloured
+wires. In focus the lit lanes go to full tone and width 2, the rest fall to 0.12. A tie is a thin flat strap across
+the trunk: 3 units thick, the trunk's width plus 2 each side, rounded ends, in the quiet foreground-muted neutral with
+a 1-unit halo of the canvas colour, so it reads as a strap over the wires and never as a control or a selection. Hover
+firms it (foreground colour, a little thicker) and the cursor offers the drag; a selected bundle turns its ties
+accent and draws a thin accent outline (1 unit, 3 outside the lanes, its corners nested like the lanes) around the
+trunk: an outline, never a fill. The selection bar sits above a sideways trunk and beside an upright one, so it never
+covers the ties or the short fans. Tokens: `graph.link.bundle`.
+
+**Motion.** Bundling morphs: each link eases from the path it had to its lane (both sampled to 96 points by length,
+ease-out cubic, 320 ms, lanes 15 ms apart in lane order) while the new ties grow in; unbundling and undo play the same
+way back, the old ties shrinking away. Dragging a tie or the trunk, or a card, re-routes every lane on each frame,
+still dressed. Reduced motion: no morph, the new paths at once.
 
 **Hands.** Shift-click links to pick several (the bar shows "N links" and Bundle, ⌘B), or hold ⌥ and drag a straight
-cut across links (dashed accent line, solid once it crosses two). New clips land at about a third and two thirds of the
-way between the two sides, inside the gap when there is one, level with its middle; a bundle whose ends all sit in one
-Frame lives in that Frame and travels with it. A clip drags alone, the strand between the clips drags both; both
-follow the hand live and write once on release. Click the strand to select the bundle: Unbundle, Delete (the bundle
-with its links), and, with links Shift-clicked, add them or take them out. Double-click a clip to release. Hovering a
+cut across links (dashed accent line, solid once it crosses two). A bundle whose ends all sit in one Frame lives in
+that Frame and travels with it. A tie drags alone, the trunk between the ties drags both (the single tie of a folded
+strand drags the whole bundle); both follow the hand live and write once on release. Click the strand to select the bundle: Unbundle, Delete (the bundle
+with its links), and, with links Shift-clicked, add them or take them out. Double-click a tie to release. Hovering a
 lane outside the strand lights that whole link; the strand itself belongs to the bundle. A selected bundled link
 offers "Select its bundle" and "Leave bundle". Duplicating, copying and Alt-dragging cards copy a bundle only when
 every one of its links comes along; otherwise the copies are loose.
 
 **Not done.** The selection box does not catch links (Shift-click and the cut cover it); a spine with more than two
-points can come from an agent (`bundle.update`) but has no hand gesture to add a bend yet. Native (non-web) draws
-lanes as elbows and clips as plain capsules, and has no cut gesture.
+points can come from an agent (`bundle.update`) but has no hand gesture to add a bend yet. Lanes do not route around
+cards other than their own ends, and loose links sharing a card side with a comb are not moved aside. The lane gap
+is in world units, so far out it merges into one line (no screen-pixel minimum). Native (non-web) draws lanes as
+elbows and ties as plain straps, with no morph and no cut gesture.
 
-QA (`design/whiteboard-harness/bundles.cjs`, real pointer and keys, light and dark): four sensors wired to four
-targets by eight links; pick and ⌘B, drag a clip, the strand and a card, hover a lane, select and Unbundle, cut and
-double-click. Screenshots in `design/qa-bundles-2026-10/`. The harness host now answers `canvas.selection.set` with the
-selection result the real server returns (it returned a whole view, so every press that cleared a selection showed
-"not saved"); with that, `power.cjs` passes, and `frame-drag.cjs` shows one check that also fails on the base
-commit with the corrected host: a drawing inside a Frame does not drag after the hollow shape check.
+QA (real pointer and keys, light and dark): `design/whiteboard-harness/bundles.cjs` picks and ⌘B-bundles four sensors
+wired to four targets by eight links, drags a tie, the trunk and a card, hovers a lane, selects and Unbundles, cuts and
+double-clicks. `bundles-rack.cjs` takes the 2× screenshots in `design/qa-bundles-rack/`: (a) four by four, (b) two
+cards stacked close with three links, and three sources over one target, (c) a long sideways bundle, (d) its exit tie
+dragged off the axis, (e) frames in the middle of the morph, (f) unbundling. The routing maths (nested bends, no
+crossing or touching for a monotonic wiring, the comb and its equal final runs, the folded short bundle, the port
+packing and the morph) is in `tests/link-bundles.test.ts`.

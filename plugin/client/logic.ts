@@ -452,7 +452,7 @@ export type LinkRoute = {
   across: boolean;
   d: string; elbow: Segment[]; start: Point; end: Point; endSide: Side; labelPoint: Point; badgePoint: Point;
   /** A link in a bundle is drawn alone, as lane `lane` of `lanes` between the bundle's clips. */
-  bundle?: { id: string; lane: number; lanes: number };
+  bundle?: { id: string; lane: number; lanes: number; frame?: StrandFrame };
 };
 const cubicAt = (p: Point, c1: Point, c2: Point, q: Point, t: number): Point => { const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t; return { x: a * p.x + b * c1.x + c * c2.x + d * q.x, y: a * p.y + b * c1.y + c * c2.y + d * q.y }; };
 const fixed = (n: number) => String(Math.round(n * 10) / 10);
@@ -489,11 +489,21 @@ export function linkMagnet(layout: CanvasLayout, from: string, point: Point, sca
   if (held && distance(held) <= tokens.motion.magnet.releaseRadius / factor) return held;
   return groups.flatMap(ports).filter(p => distance(p) <= tokens.motion.magnet.radius / factor).sort((a, b) => distance(a) - distance(b))[0] ?? null;
 }
-// ---- Link bundles (docs/design.md §46): links gathered into one strand of parallel lanes between two clips. ----
+// ---- Link bundles (docs/design.md §46): links dressed like cables in a rack. Short square stubs out of the cards, one
+// consistent bend radius, concentric turns, a straight trunk of evenly spaced lanes between small ties, a neat comb of
+// arrowheads at the targets. Every number is in world units, so the strand scales with the canvas like every line. ----
 const unit = (p: Point): Point => { const l = Math.hypot(p.x, p.y) || 1; return { x: p.x / l, y: p.y / l }; };
 const minus = (p: Point, q: Point): Point => ({ x: p.x - q.x, y: p.y - q.y });
+const plus = (p: Point, q: Point): Point => ({ x: p.x + q.x, y: p.y + q.y });
+const times = (p: Point, k: number): Point => ({ x: p.x * k, y: p.y * k });
 const dot = (p: Point, q: Point) => p.x * q.x + p.y * q.y;
+const clampTo = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const centre = (r: Box): Point => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+/** The axis (±x or ±y) nearest to a direction. */
+const axisOf = (d: Point): Point => Math.abs(d.x) >= Math.abs(d.y) ? { x: d.x >= 0 ? 1 : -1, y: 0 } : { x: 0, y: d.y >= 0 ? 1 : -1 };
+/** A quarter turn from the direction of travel: lanes with a larger offset lie on this side. */
+const normalOf = (e: Point): Point => ({ x: -e.y, y: e.x });
+const sideOf = (v: Point): Side => Math.abs(v.x) >= Math.abs(v.y) ? v.x >= 0 ? 'right' : 'left' : v.y >= 0 ? 'bottom' : 'top';
 /** Where a bundle's points are now: from its Frame's corner when it has one (and with that Frame while it travels). */
 export function bundleWorld(bundle: Pick<CanvasBundle, 'points' | 'parentGroupId'>, layout: Pick<CanvasLayout, 'rects'>, shift?: (id: string) => FrameShift | undefined): Point[] {
   const parent = bundle.parentGroupId ?? null, r = parent ? layout.rects.get(parent) : undefined, d = parent ? shift?.(parent) : undefined;
@@ -501,45 +511,78 @@ export function bundleWorld(bundle: Pick<CanvasBundle, 'points' | 'parentGroupId
   return bundle.points.map(p => ({ x: p.x + ox, y: p.y + oy }));
 }
 /** The normal of each segment, turned a quarter to the left of travel: lanes with a larger offset lie on that side. */
-const segmentNormals = (P: Point[]) => P.slice(1).map((q, i) => { const t = unit(minus(q, P[i])); return { x: -t.y, y: t.x }; });
+const segmentNormals = (P: Point[]) => P.slice(1).map((q, i) => normalOf(unit(minus(q, P[i]))));
 /** One lane: the spine moved `offset` along its normals, mitred at bends (never more than 3× the offset). */
 export function laneLine(P: Point[], offset: number): Point[] {
   const n = segmentNormals(P);
   return P.map((p, j) => { const a = n[Math.max(0, j - 1)], b = n[Math.min(n.length - 1, j)], m = unit({ x: a.x + b.x, y: a.y + b.y }), k = Math.min(3, 1 / Math.max(.33, dot(m, a))); return { x: p.x + m.x * offset * k, y: p.y + m.y * offset * k }; });
 }
 /**
- * The order of the lanes, first (most negative offset) to last. Lanes keep one order along the whole spine, so they are
- * sorted by where their sources sit across the entry, then by where their targets sit across the exit: when the two
- * orders agree (a monotonic wiring) no two links cross anywhere.
+ * The order of the lanes, first (most negative offset) to last, across the strand's axis (`axis`, by default the one
+ * nearest to the clips' direction). Lanes keep one order along the whole strand, so they are sorted by where their
+ * sources sit across it, then by where their targets sit: when the two orders agree no two links cross anywhere.
  */
-export function laneOrder(P: Point[], items: { id: string; from: Point; to: Point }[]): string[] {
-  const n = segmentNormals(P), n0 = n[0], nn = n[n.length - 1], first = P[0], last = P[P.length - 1];
-  const keyed = items.map(item => ({ id: item.id, a: dot(minus(item.from, first), n0), b: dot(minus(item.to, last), nn) }));
+export function laneOrder(P: Point[], items: { id: string; from: Point; to: Point }[], axis?: Point): string[] {
+  const n = normalOf(axis ?? axisOf(minus(P[P.length - 1], P[0]))), first = P[0], last = P[P.length - 1];
+  const keyed = items.map(item => ({ id: item.id, a: dot(minus(item.from, first), n), b: dot(minus(item.to, last), n) }));
   return keyed.sort((p, q) => p.a - q.a || p.b - q.b || (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)).map(item => item.id);
 }
 /**
- * The side of a frame a lane leaves from (or arrives at) toward a clip. It favours the strand's own axis (`along`), so
- * every lane of a sideways strand leaves its card sideways and the fan reads as one gesture; only a clip that sits
- * within the card's span on that axis turns it to the other one.
+ * The side of a frame a lane leaves from (or arrives at) when it cannot be dressed square: it favours the strand's own
+ * axis (`along`); only a point within the card's span on that axis turns it to the other one.
  */
 function facing(r: Box, p: Point, along: Point): Side {
   const h = Math.max(p.x - r.x - r.width, r.x - p.x), v = Math.max(p.y - r.y - r.height, r.y - p.y), sideways = Math.abs(along.x) >= Math.abs(along.y);
   return (sideways ? h > 0 || h >= v : !(v > 0 || v >= h)) ? p.x >= r.x + r.width / 2 ? 'right' : 'left' : p.y >= r.y + r.height / 2 ? 'bottom' : 'top';
 }
 /**
- * Clips for a new bundle: at about a third and two thirds of the way from the sources' centre to the targets' centre.
- * When the two sides leave a clear gap along that way, the clips sit inside the gap instead, so they never land on a card.
+ * Positions as near as possible to `want` (ascending), at least `gap` apart and inside [lo, hi]; squeezed evenly when
+ * they do not fit. Neighbours that would collide move together, centred on what they want (a comb of ports).
  */
-export function bundlePlacement(sources: Box[], targets: Box[]): [Point, Point] {
-  const [p, q] = tokens.graph.link.bundle.place, mean = (boxes: Box[]) => boxes.map(centre).reduce((s, c) => ({ x: s.x + c.x / boxes.length, y: s.y + c.y / boxes.length }), { x: 0, y: 0 });
+export function packPorts(want: number[], gap: number, lo: number, hi: number): number[] {
+  const n = want.length; if (!n) return [];
+  if (hi < lo) lo = hi = (lo + hi) / 2;
+  const g = n > 1 ? Math.min(gap, (hi - lo) / (n - 1)) : gap, clusters: { size: number; sum: number }[] = [];
+  for (const w of want) {
+    clusters.push({ size: 1, sum: w });
+    while (clusters.length > 1) {
+      const a = clusters[clusters.length - 2], b = clusters[clusters.length - 1];
+      if (a.sum / a.size + a.size * g <= b.sum / b.size + 1e-9) break;
+      a.sum += b.sum - b.size * a.size * g; a.size += b.size; clusters.pop();
+    }
+  }
+  const out: number[] = []; for (const c of clusters) for (let j = 0; j < c.size; j++) out.push(c.sum / c.size + j * g);
+  for (let i = 0; i < n; i++) out[i] = Math.max(out[i], lo + i * g);
+  for (let i = n - 1; i >= 0; i--) out[i] = Math.min(out[i], hi - (n - 1 - i) * g);
+  return out;
+}
+/**
+ * Clips for a new bundle, inside the clear gap between the two sides when there is one: the entry clip far enough from
+ * the sources for the lanes to turn in, the exit clip far enough from the targets for their comb. Across the axis the
+ * strand lines up with its target (or its source) when every one of them can take it straight; otherwise it runs
+ * level with the middle of the two sides. With no gap, at about a third and two thirds of the way between them.
+ */
+export function bundlePlacement(sources: Box[], targets: Box[], lanes = 2): [Point, Point] {
+  const B = tokens.graph.link.bundle, [p, q] = B.place, mean = (boxes: Box[]) => boxes.map(centre).reduce((s, c) => ({ x: s.x + c.x / boxes.length, y: s.y + c.y / boxes.length }), { x: 0, y: 0 });
   const a = mean(sources), b = mean(targets), along = (t: number): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
   const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y), forward = horizontal ? b.x >= a.x : b.y >= a.y;
   const edge = (boxes: Box[], far: boolean) => { const ends = boxes.map(r => horizontal ? far ? r.x + r.width : r.x : far ? r.y + r.height : r.y); return far ? Math.max(...ends) : Math.min(...ends); };
   const from = edge(sources, forward), to = edge(targets, !forward), gap = forward ? to - from : from - to;
-  // In a clear gap the strand runs straight along the axis, level with the middle of the two sides.
-  const place = (t: number): Point => { if (gap > 0) { const v = from + (to - from) * t; return horizontal ? { x: v, y: (a.y + b.y) / 2 } : { x: (a.x + b.x) / 2, y: v }; } return along(t); };
+  // Across the axis: straight into the targets (then out of the sources) when one line fits them all.
+  const half = (lanes - 1) / 2 * B.comb + B.margin, across = (boxes: Box[]): [number, number] => [Math.max(...boxes.map(r => (horizontal ? r.y : r.x) + half)), Math.min(...boxes.map(r => (horizontal ? r.y + r.height : r.x + r.width) - half))];
+  let level = horizontal ? (a.y + b.y) / 2 : (a.x + b.x) / 2;
+  const [tlo, thi] = across(targets), [slo, shi] = across(sources);
+  if (tlo <= thi) { level = clampTo(level, tlo, thi); if (slo <= shi && Math.max(slo, tlo) <= Math.min(shi, thi)) level = clampTo(level, Math.max(slo, tlo), Math.min(shi, thi)); }
+  else if (slo <= shi) level = clampTo(level, slo, shi);
+  const sign = forward ? 1 : -1, taper = clampTo(B.taper.slope * (lanes - 1) / 2 * (B.comb - B.gap), B.taper.min, B.taper.max);
+  const inNeed = taper + 2 * B.radius + B.stub, outNeed = taper + 2 * B.radius + B.approach;
+  const place = (t: number, need: number, fromStart: boolean): Point => {
+    if (gap <= 0) return along(t);
+    const v = fromStart ? from + sign * Math.min(gap / 2, Math.max(gap * t, need)) : to - sign * Math.min(gap / 2, Math.max(gap * (1 - t), need));
+    return horizontal ? { x: v, y: level } : { x: level, y: v };
+  };
   const round = (v: Point) => ({ x: Math.round(v.x), y: Math.round(v.y) });
-  return [round(place(p)), round(place(q))];
+  return [round(place(p, inNeed, true)), round(place(q, outNeed, false))];
 }
 /** Points held in world coordinates, written back the way the bundle stores them (from its Frame's corner, if it has one). */
 export function bundleRelative(bundle: Pick<CanvasBundle, 'parentGroupId'>, layout: Pick<CanvasLayout, 'rects'>, points: Point[]): Point[] {
@@ -556,7 +599,7 @@ export function bundleOperations(doc: CanvasDocument, layout: CanvasLayout, link
   if (links.length > B.maxLinks) return { error: `A bundle holds at most ${B.maxLinks} links.` };
   const box = (end: string) => layout.rects.get(visibleEnd(layout.index, end)), sources = links.map(l => box(l.from)), targets = links.map(l => box(l.to));
   if ([...sources, ...targets].some(r => !r || r.hidden)) return { error: 'Show both ends of every link before bundling them.' };
-  const [a, b] = bundlePlacement(sources as Box[], targets as Box[]);
+  const [a, b] = bundlePlacement(sources as Box[], targets as Box[], links.length);
   const chains = links.flatMap(l => [l.from, l.to]).map(end => layout.index.chain(end).slice(1, -1)), common = chains[0].find(g => chains.every(chain => chain.includes(g)));
   const bundle = { id, points: bundleRelative({ parentGroupId: common }, layout, [a, b]), ...(common ? { parentGroupId: common } : {}) };
   return { id, operations: [{ type: 'bundle.create', bundle, linkIds: links.map(l => l.id) }] };
@@ -575,6 +618,28 @@ export function pathPoints(d: string, steps = 12): Point[] {
   }
   return out;
 }
+/** `count` points evenly spaced by length along a connector path: both ends of a morph are sampled the same way. */
+export function resamplePath(d: string, count: number): Point[] {
+  const P = pathPoints(d, 12); if (!P.length) return [];
+  const cumulative = [0]; for (let i = 1; i < P.length; i++) cumulative.push(cumulative[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+  const total = cumulative[cumulative.length - 1], out: Point[] = []; let j = 1;
+  for (let i = 0; i < count; i++) {
+    const want = count > 1 ? total * i / (count - 1) : 0; while (j < P.length - 1 && cumulative[j] < want) j++;
+    const span = cumulative[j] - cumulative[j - 1], t = span > 0 ? clampTo((want - cumulative[j - 1]) / span, 0, 1) : 0;
+    out.push(P.length > 1 ? plus(P[j - 1], times(minus(P[j], P[j - 1]), t)) : P[0]);
+  }
+  return out;
+}
+/** Ease-out cubic: quick to leave, gentle to land. */
+export const easeOutCubic = (t: number) => 1 - Math.pow(1 - clampTo(t, 0, 1), 3);
+/**
+ * One frame of a lane easing from its old path to its new one (both sampled alike): `elapsed` ms since the morph
+ * began, the lane starting `delay` ms late, over `duration` ms, eased out. Returns the path and where it ends.
+ */
+export function morphFrame(from: Point[], to: Point[], elapsed: number, delay: number, duration: number): { d: string; end: Point; done: boolean } {
+  const k = easeOutCubic((elapsed - delay) / Math.max(1, duration)), points = to.map((q, i) => { const p = from[i] ?? q; return { x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k }; });
+  return { d: points.length ? `M${points.map(fx).join(' L')}` : '', end: points[points.length - 1] ?? { x: 0, y: 0 }, done: elapsed - delay >= duration };
+}
 const crosses = (p: Point, q: Point, a: Point, b: Point) => {
   const side = (o: Point, s: Point, t: Point) => (s.x - o.x) * (t.y - o.y) - (s.y - o.y) * (t.x - o.x);
   const d1 = side(p, q, a), d2 = side(p, q, b), d3 = side(a, b, p), d4 = side(a, b, q);
@@ -586,18 +651,260 @@ export function crossedLinks(routes: readonly LinkRoute[], a: Point, b: Point): 
   for (const route of routes) { const points = pathPoints(route.d); if (points.slice(1).some((q, i) => crosses(points[i], q, a, b))) out.push(...route.links.map(l => l.id)); }
   return [...new Set(out)];
 }
-/** What the canvas draws for a bundle besides its lanes: the spine, its clips (ties across it) and how wide the strand is. */
-export type BundleShape = { id: string; points: Point[]; linkIds: string[]; span: number; spine: string; ties: { x: number; y: number; angle: number; length: number }[] };
-export function bundleShapes(doc: CanvasDocument, layout: CanvasLayout, routes: LinkRoute[], shift?: (id: string) => FrameShift | undefined, moved?: (id: string) => Point[] | undefined): BundleShape[] {
-  const B = tokens.graph.link.bundle, members = new Map<string, string[]>();
-  for (const route of routes) if (route.bundle) (members.get(route.bundle.id) ?? members.set(route.bundle.id, []).get(route.bundle.id)!).push(route.links[0].id);
+/** A piece of a lane: straight runs whose corners are arcs of their own radius, or one cubic (a taper, a soft step). */
+type Run = { pts: Point[]; radii?: number[]; cubic?: boolean };
+const reverseRun = (run: Run): Run => ({ pts: [...run.pts].reverse(), ...(run.radii ? { radii: [...run.radii].reverse() } : {}), ...(run.cubic ? { cubic: true } : {}) });
+const fx = (p: Point) => `${fixed(p.x)} ${fixed(p.y)}`;
+/**
+ * SVG path of a lane. Each corner is an arc of its radius (drawn as a cubic, so `pathPoints` reads it); when two
+ * corners share a segment too short for both, both shrink in proportion, so they still meet without a kink.
+ */
+export function runsPath(runs: Run[]): string {
+  let d = `M${fx(runs[0].pts[0])}`;
+  for (const run of runs) {
+    const P = run.pts;
+    if (run.cubic) { d += ` C${fx(P[1])} ${fx(P[2])} ${fx(P[3])}`; continue; }
+    const corners = P.map((p, i) => {
+      if (i === 0 || i === P.length - 1) return null;
+      const a = P[i - 1], b = P[i + 1], lin = Math.hypot(p.x - a.x, p.y - a.y), lout = Math.hypot(b.x - p.x, b.y - p.y);
+      if (lin < 1e-6 || lout < 1e-6) return null;
+      const din = times(minus(p, a), 1 / lin), dout = times(minus(b, p), 1 / lout), theta = Math.acos(clampTo(dot(din, dout), -1, 1));
+      if (theta < 1e-3 || theta > Math.PI - 1e-3) return null;
+      const tan = Math.tan(theta / 2); return { din, dout, theta, tan, t: Math.max(0, run.radii?.[i] ?? 0) * tan };
+    });
+    // Fit the tangent lengths into the segments: a segment at an end of the run is all the corner's, a shared one is split.
+    for (let i = 1; i < P.length; i++) {
+      const a = corners[i - 1], b = corners[i], length = Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y), need = (a?.t ?? 0) + (b?.t ?? 0);
+      if (need > length && need > 0) { const k = length / need; if (a) a.t *= k; if (b) b.t *= k; }
+    }
+    corners.forEach((c, i) => {
+      if (!c) return; const p = P[i];
+      if (c.t < .05) { d += ` L${fx(p)}`; return; }
+      const r = c.t / c.tan, k = 4 / 3 * Math.tan(c.theta / 4) * r, A = minus(p, times(c.din, c.t)), Z = plus(p, times(c.dout, c.t));
+      d += ` L${fx(A)} C${fx(plus(A, times(c.din, k)))} ${fx(minus(Z, times(c.dout, k)))} ${fx(Z)}`;
+    });
+    d += ` L${fx(P[P.length - 1])}`;
+  }
+  return d;
+}
+/** Every corner point of a lane, in order (a cubic counts by its two ends): for the native elbows and for labels. */
+const runsVertices = (runs: Run[]): Point[] => runs.flatMap((run, i) => (run.cubic ? [run.pts[0], run.pts[3]] : run.pts).slice(i ? 1 : 0));
+/** The point `distance` along a polyline. */
+function alongPolyline(P: Point[], distance: number): Point {
+  let left = distance;
+  for (let i = 1; i < P.length; i++) { const l = Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y); if (left <= l && l > 0) return plus(P[i - 1], times(minus(P[i], P[i - 1]), left / l)); left -= l; }
+  return P[P.length - 1];
+}
+/** Lanes dressed into one end of a strand: lane `k` reaches `O + n·f` travelling along `e` (toward the clip). */
+type FanLane = { k: number; f: number; box: Box; end: string };
+type FanWay = { runs: Run[]; port: Point; side: Side };
+/**
+ * One end of a strand, in the frame of its arrival line (s along `e`, toward the clip; w along `n`, across it).
+ *
+ * A card behind the line sends its lanes out of the side that faces the clip, as a comb (`comb` apart), each lined up
+ * with its lane when it can be: those run dead straight. The rest step across in a channel: a square stub, a bend,
+ * a run across, a bend into the line. Lanes stepping the same way bend about one centre (radii grow by exactly the
+ * spacing), so they nest and never touch; the lane nearest the line turns tightest. A card beside the line sends its
+ * lanes out of the side that faces it, one bend each, also nested. Anything else (a card past the clip) takes one soft
+ * curve from the side that faces it. At a target the final straight run is the same length for every lane of a card.
+ */
+function fanEnd(O: Point, e: Point, n: Point, lanes: FanLane[], target: boolean, lead: number): Map<number, FanWay> {
+  const B = tokens.graph.link.bundle, R = B.radius, rmin = B.minRadius, C = B.comb, stub = target ? B.approach : B.stub;
+  const world = (s: number, w: number): Point => plus(O, plus(times(e, s), times(n, w)));
+  const out = new Map<number, FanWay>(), cards = new Map<string, FanLane[]>();
+  for (const lane of lanes) (cards.get(lane.end) ?? cards.set(lane.end, []).get(lane.end)!).push(lane);
+  type Jog = { lane: FanLane; p: number; s1: number; dir: 1 | -1; card: string };
+  const jogs: Jog[] = [], soft: { lane: FanLane; box: Box }[] = [];
+  /** A soft step for a lane that has no room to turn square: straight out, one S just before the line. */
+  const step = (lane: FanLane, s1: number, p: number): FanWay => {
+    const room = -lead - s1, radius = Math.min(R, Math.abs(lane.f - p) / 2);
+    // Square when there is room: a rounded Z in the middle of the free run (it may cross a neighbour square, never slant).
+    if (radius >= .75 && room >= 2 * radius + stub + 2) {
+      const c = s1 + stub + radius + (room - stub - 2 * radius) / 2;
+      return { runs: [{ pts: [world(s1, p), world(c, p), world(c, lane.f), world(0, lane.f)], radii: [0, radius, radius, 0] }], port: world(s1, p), side: sideOf(e) };
+    }
+    const length = clampTo(3 * Math.abs(lane.f - p), Math.min(16, room), Math.max(Math.min(16, room), room - stub)), from = -lead - length;
+    const runs: Run[] = [{ pts: [world(s1, p), world(from, p)] }, { pts: [world(from, p), world(from + length / 2, p), world(-lead - length / 2, lane.f), world(-lead, lane.f)], cubic: true }];
+    if (lead > 0) runs.push({ pts: [world(-lead, lane.f), world(0, lane.f)] });
+    return { runs, port: world(s1, p), side: sideOf(e) };
+  };
+  for (const [end, group] of cards) {
+    group.sort((a, b) => a.f - b.f);
+    const r = group[0].box, corners = [{ x: r.x, y: r.y }, { x: r.x + r.width, y: r.y + r.height }].map(p => ({ s: dot(minus(p, O), e), w: dot(minus(p, O), n) }));
+    const s0 = Math.min(corners[0].s, corners[1].s), s1 = Math.max(corners[0].s, corners[1].s), w0 = Math.min(corners[0].w, corners[1].w), w1 = Math.max(corners[0].w, corners[1].w);
+    // Behind the line: out of the side that faces the clip.
+    if (s1 <= -lead - stub) {
+      const inset = Math.min(B.margin, (w1 - w0) / 4), straight = group.every(l => l.f >= w0 + 1.5 && l.f <= w1 - 1.5) && group.every((l, i) => !i || l.f - group[i - 1].f >= C - .01);
+      // Every lane of the card lands on its face on its own line: all straight, even if close to a corner.
+      const ports = straight ? group.map(l => l.f) : packPorts(group.map(l => l.f), C, w0 + inset, w1 - inset);
+      // A port nudged only a little by the margin takes its lane's own line instead: a straight lane beats a notch.
+      ports.forEach((p, i) => { const f = group[i].f; if (Math.abs(f - p) < 2 * rmin + 2 && f >= w0 + 2 && f <= w1 - 2 && (i === 0 || f - ports[i - 1] >= C - .01) && (i === ports.length - 1 || ports[i + 1] - f >= C - .01)) ports[i] = f; });
+      group.forEach((lane, i) => {
+        const p = ports[i];
+        if (Math.abs(lane.f - p) < .5) out.set(lane.k, { runs: [{ pts: [world(s1, lane.f), world(0, lane.f)] }], port: world(s1, lane.f), side: sideOf(e) });
+        else jogs.push({ lane, p, s1, dir: lane.f > p ? 1 : -1, card: end });
+      });
+      continue;
+    }
+    // Beside the line: out of the side that faces it, one bend each, nested about one centre.
+    const dir = w1 <= group[0].f - stub - rmin ? 1 : w0 >= group[group.length - 1].f + stub + rmin ? -1 : 0;
+    if (dir) {
+      const ordered = dir === 1 ? group : [...group].reverse(), near = ordered[0].f, wall = dir === 1 ? w1 : w0;
+      const Rb = Math.max(rmin, Math.min(R, Math.abs(near - wall) - stub)), radii = ordered.map(l => Rb + Math.abs(l.f - near));
+      const inset = Math.min(B.margin, (s1 - s0) / 4), Q = Math.min(-lead, s1 - inset + Rb);
+      if (Q - radii[radii.length - 1] >= s0 + inset) {
+        ordered.forEach((lane, j) => { const q = Q - radii[j], runs: Run[] = [{ pts: [world(q, wall), world(q, lane.f), world(0, lane.f)], radii: [0, radii[j], 0] }]; out.set(lane.k, { runs, port: world(q, wall), side: sideOf(times(n, dir)) }); });
+        continue;
+      }
+    }
+    group.forEach(lane => soft.push({ lane, box: r }));
+  }
+  // The channel: lanes stepping the same way turn about one centre where they join the line, so they nest.
+  for (const dir of [1, -1] as const) {
+    let group = jogs.filter(j => j.dir === dir), outer = -lead;
+    const spill: Jog[] = [];
+    for (let pass = 0; pass < 8 && group.length; pass++) {
+      group.sort((a, b) => dir * (a.lane.f - b.lane.f));
+      const f0 = group[0].lane.f, last = new Map<string, number>();
+      for (const j of group) last.set(j.card, dir === 1 ? Math.max(last.get(j.card) ?? -Infinity, j.p) : Math.min(last.get(j.card) ?? Infinity, j.p));
+      const extra = group.map(j => ({ r: dir * (j.lane.f - f0), rho: dir * (last.get(j.card)! - j.p) }));
+      // The largest common radius every lane has room for: across (its step) and along (its stub out of the card).
+      const bound = group.map((j, i) => Math.min((Math.abs(j.lane.f - j.p) - extra[i].r - extra[i].rho) / 2, (-lead - j.s1 - stub - extra[i].r - extra[i].rho) / 2));
+      const Rb = Math.min(R, ...bound);
+      if (Rb < rmin) { const worst = bound.indexOf(Math.min(...bound)); spill.push(group[worst]); group = group.filter((_, i) => i !== worst); continue; }
+      group.forEach((j, i) => {
+        const r = Rb + extra[i].r, rho = Rb + extra[i].rho, c = -lead - r; outer = Math.min(outer, c);
+        out.set(j.lane.k, { runs: [{ pts: [world(j.s1, j.p), world(c, j.p), world(c, j.lane.f), world(0, j.lane.f)], radii: [0, rho, r, 0] }], port: world(j.s1, j.p), side: sideOf(e) });
+      });
+      group = [];
+    }
+    for (const j of group) spill.push(j);
+    // Steps too small to nest: each in its own channel just outside the nested ones, with a radius that fits its step.
+    // Taken nearest-the-line first, each a comb space further out, they cross nothing (a lane's run across ends
+    // before the next lane's turn, and its run along stays clear of the channels further out).
+    spill.sort((a, b) => dir * (a.lane.f - b.lane.f)).forEach((j, i) => {
+      const radius = Math.min(R, Math.abs(j.lane.f - j.p) / 2), c = Math.max(outer - C * (i + 1) - Math.max(0, radius - rmin), j.s1 + stub + radius);
+      if (radius < .75 || c + radius > -lead) { out.set(j.lane.k, step(j.lane, j.s1, j.p)); return; }
+      out.set(j.lane.k, { runs: [{ pts: [world(j.s1, j.p), world(c, j.p), world(c, j.lane.f), world(0, j.lane.f)], radii: [0, radius, radius, 0] }], port: world(j.s1, j.p), side: sideOf(e) });
+    });
+  }
+  // Past the clip or across the line: one soft curve from the side that faces the arrival.
+  const bySide = new Map<string, { lane: FanLane; box: Box; side: Side }[]>();
+  for (const item of soft) { const side = facing(item.box, world(0, item.lane.f), e), key = `${item.lane.end}|${side}`; (bySide.get(key) ?? bySide.set(key, []).get(key)!).push({ ...item, side }); }
+  for (const list of bySide.values()) {
+    const { box: r, side } = list[0], v = normals[side], tangent = { x: Math.abs(v.y), y: Math.abs(v.x) }, mid = centre(r);
+    list.sort((a, b) => dot(world(0, a.lane.f), tangent) - dot(world(0, b.lane.f), tangent));
+    const length = side === 'top' || side === 'bottom' ? r.width : r.height, gap = Math.min(C, length * .6 / Math.max(1, list.length - 1));
+    list.forEach((item, i) => {
+      const offset = (i - (list.length - 1) / 2) * gap, edge = side === 'top' ? { x: mid.x, y: r.y } : side === 'bottom' ? { x: mid.x, y: r.y + r.height } : side === 'left' ? { x: r.x, y: mid.y } : { x: r.x + r.width, y: mid.y };
+      const port = plus(edge, times(tangent, offset)), arrive = world(-lead, item.lane.f), h = clampTo(Math.hypot(arrive.x - port.x, arrive.y - port.y) / 2, 12, 80);
+      const runs: Run[] = [{ pts: [port, plus(port, times(v, h)), minus(arrive, times(e, h)), arrive], cubic: true }];
+      if (lead > 0) runs.push({ pts: [arrive, world(0, item.lane.f)] });
+      out.set(item.lane.k, { runs, port, side });
+    });
+  }
+  return out;
+}
+/**
+ * Where a strand runs. Its axis is the one nearest to the clips' direction (the sources-to-targets one while the clips
+ * sit close). Between the clips it is straight; clips dragged off the axis are joined by a square step with nested
+ * bends (a soft S when the step is too small to bend square). Lanes run `gap` apart between the clips and `comb`
+ * apart outside them; a short taper on each side gathers and releases them, every lane on the same curve, so the
+ * spacing stays even at every point and nothing crosses. A strand with no room (clips closer than two bends, or the
+ * cards in line with it closer than `collapse`) folds into one tie with its lanes straight and parallel through it.
+ */
+export type StrandFrame = { e: Point; n: Point; collapsed: boolean; taper: number; inAt: Point; outAt: Point; points: Point[]; trunk: Point[]; ties: Point[] };
+export function strandFrame(P: Point[], sources: Box[], targets: Box[], lanes: number): StrandFrame {
+  const B = tokens.graph.link.bundle, first = P[0], last = P[P.length - 1], chord = minus(last, first), mean = (boxes: Box[]) => times(boxes.map(centre).reduce(plus, { x: 0, y: 0 }), 1 / Math.max(1, boxes.length));
+  const e = axisOf(Math.hypot(chord.x, chord.y) >= 2 * B.radius ? chord : minus(mean(targets), mean(sources))), n = normalOf(e), half = (lanes - 1) / 2;
+  const mid = times(plus(first, last), .5), reach = half * B.comb + B.margin;
+  // Cards straight in line with the strand bound the room it has along its axis.
+  const span = (r: Box) => { const c = [{ x: r.x, y: r.y }, { x: r.x + r.width, y: r.y + r.height }].map(p => minus(p, mid)); return { s0: Math.min(dot(c[0], e), dot(c[1], e)), s1: Math.max(dot(c[0], e), dot(c[1], e)), w0: Math.min(dot(c[0], n), dot(c[1], n)), w1: Math.max(dot(c[0], n), dot(c[1], n)) }; };
+  const inline = (boxes: Box[]) => boxes.map(span).filter(s => s.w1 >= -reach && s.w0 <= reach);
+  const behind = inline(sources).map(s => s.s1).filter(s => s <= 0), ahead = inline(targets).map(s => s.s0).filter(s => s >= 0);
+  const from = behind.length ? Math.max(...behind) : -Infinity, to = ahead.length ? Math.min(...ahead) : Infinity;
+  const collapsed = dot(chord, e) < 2 * B.radius || to - from < B.collapse;
+  if (collapsed) {
+    const s = clampTo(0, from + B.tie.clear + B.stub, to - B.tie.clear - B.approach), M = Number.isFinite(s) ? plus(mid, times(e, s)) : mid;
+    return { e, n, collapsed, taper: 0, inAt: M, outAt: M, points: [M], trunk: [minus(M, times(e, B.tie.hit / 2)), plus(M, times(e, B.tie.hit / 2))], ties: [M] };
+  }
+  const taper = clampTo(B.taper.slope * half * (B.comb - B.gap), B.taper.min, B.taper.max);
+  const trunk = [first]; for (let i = 1; i < P.length; i++) { const a = P[i - 1], b = P[i], jog = dot(minus(b, a), n), run = dot(minus(b, a), e); if (Math.abs(jog) >= .5 && run > 0) { const m = plus(a, times(e, run / 2)); trunk.push(m, plus(m, times(n, jog))); } trunk.push(b); }
+  return { e, n, collapsed, taper, inAt: minus(first, times(e, taper)), outAt: plus(last, times(e, taper)), points: P, trunk, ties: [first, last] };
+}
+/** One lane between the clips: the trunk moved `o` across, bends nested about the trunk's own (radius ∓ the offset). */
+function trunkRuns(frame: StrandFrame, o: number, omax: number): Run[] {
+  const B = tokens.graph.link.bundle, { e, n, points: P } = frame, runs: Run[] = [];
+  for (let i = 1; i < P.length; i++) {
+    const a = P[i - 1], b = P[i], jog = dot(minus(b, a), n), run = dot(minus(b, a), e), A = plus(a, times(n, o)), Z = plus(b, times(n, o));
+    if (Math.abs(jog) < .5) { runs.push({ pts: [A, Z] }); continue; }
+    const Rc = Math.min(B.radius + omax, Math.abs(jog) / 2, Math.max(0, run) / 4);
+    if (run > 0 && Rc - omax >= B.minRadius) {
+      const m = plus(a, times(e, run / 2)), centreLine = [a, m, plus(m, times(n, jog)), b], lane = laneLine(centreLine, o), normals = segmentNormals(centreLine);
+      const radii = lane.map((_, j) => j === 0 || j === lane.length - 1 ? 0 : Rc - o * Math.sign(dot(unit(minus(centreLine[j + 1], centreLine[j])), normals[j - 1])));
+      runs.push({ pts: lane, radii });
+    } else if (run > 0) {
+      const length = clampTo(3 * Math.abs(jog), Math.min(16, run), run), start = plus(A, times(e, (run - length) / 2)), stop = plus(start, plus(times(e, length), times(n, jog)));
+      runs.push({ pts: [A, start] }, { pts: [start, plus(start, times(e, length / 2)), minus(stop, times(e, length / 2)), stop], cubic: true }, { pts: [stop, Z] });
+    } else runs.push({ pts: [A, plus(A, times(e, B.radius)), minus(Z, times(e, B.radius)), Z], cubic: true });
+  }
+  return runs;
+}
+/** The pointer and focus geometry of a bundle: its trunk (the outline around it), its ties and which points each moves. */
+export type BundleShape = {
+  id: string; points: Point[]; linkIds: string[]; span: number; collapsed: boolean; axis: Point; trunk: Point[]; outline: string;
+  /** `grip`: the point a tie drags (the first or the last), or null when it is the only tie and drags them all. */
+  ties: { x: number; y: number; angle: number; length: number; grip: number | null }[];
+};
+/** A rounded outline `pad` outside a strand of width `span` along `trunk` (a thin ring for focus, never a fill). */
+function outlinePath(trunk: Point[], span: number, pad: number): string {
+  const h = span / 2 + pad, left = laneLine(trunk, h), right = laneLine(trunk, -h).reverse(), normals = segmentNormals(trunk), Rc = tokens.graph.link.bundle.radius + h;
+  // Corners nest like the lanes: the outline's radius is the trunk's, minus or plus its distance.
+  const radii = (offset: number) => trunk.map((_, j) => j === 0 || j === trunk.length - 1 ? 0 : Math.max(1, Rc - offset * Math.sign(dot(unit(minus(trunk[j + 1], trunk[j])), normals[j - 1]))));
+  const side = (pts: Point[], r: number[]) => runsPath([{ pts, radii: r }]).replace(/^M[^LC]*/, '');
+  const t0 = unit(minus(trunk[1], trunk[0])), tn = unit(minus(trunk[trunk.length - 1], trunk[trunk.length - 2]));
+  const sweep = (from: Point, to: Point, along: Point) => (from.x - to.x) * along.y - (from.y - to.y) * along.x > 0 ? 1 : 0;
+  const lastL = left[left.length - 1], firstR = right[0], lastR = right[right.length - 1];
+  return `M${fx(left[0])}${side(left, radii(h))} A${fixed(h)} ${fixed(h)} 0 0 ${sweep(lastL, firstR, tn)} ${fx(firstR)}${side(right, radii(-h).reverse())} A${fixed(h)} ${fixed(h)} 0 0 ${sweep(lastR, left[0], times(t0, -1))} ${fx(left[0])} Z`;
+}
+export function bundleShapes(doc: CanvasDocument, _layout: CanvasLayout, routes: LinkRoute[]): BundleShape[] {
+  const B = tokens.graph.link.bundle, members = new Map<string, { ids: string[]; frame?: StrandFrame }>();
+  for (const route of routes) if (route.bundle) { const m = members.get(route.bundle.id) ?? members.set(route.bundle.id, { ids: [] }).get(route.bundle.id)!; m.ids.push(route.links[0].id); m.frame ??= route.bundle.frame; }
   return (doc.bundles ?? []).flatMap(bundle => {
-    const linkIds = members.get(bundle.id); if (!linkIds?.length) return [];
-    const P = moved?.(bundle.id) ?? bundleWorld(bundle, layout, shift), n = segmentNormals(P), span = (linkIds.length - 1) * B.gap + B.width;
-    const tie = (p: Point, normal: Point) => ({ x: p.x, y: p.y, angle: Math.atan2(normal.y, normal.x) * 180 / Math.PI, length: Math.max(B.clip.min, span + 2 * B.clip.pad) });
-    return [{ id: bundle.id, points: P, linkIds, span, spine: `M${P.map(p => `${fixed(p.x)} ${fixed(p.y)}`).join(' L')}`, ties: [tie(P[0], n[0]), tie(P[P.length - 1], n[n.length - 1])] }];
+    const member = members.get(bundle.id), frame = member?.frame; if (!member?.ids.length || !frame) return [];
+    const count = member.ids.length, span = (count - 1) * (frame.collapsed ? B.comb : B.gap) + B.width, angle = Math.atan2(frame.n.y, frame.n.x) * 180 / Math.PI;
+    const ties = frame.ties.map((p, i) => ({ x: p.x, y: p.y, angle, length: span + 2 * B.tie.pad, grip: frame.collapsed ? null : i ? frame.points.length - 1 : 0 }));
+    return [{ id: bundle.id, points: frame.points, linkIds: member.ids, span, collapsed: frame.collapsed, axis: frame.e, trunk: frame.trunk, outline: outlinePath(frame.trunk, span, B.outline.pad), ties }];
   });
 }
+/**
+ * The lanes of one bundle: each link out of its source (dressed into the entry), gathered by the taper, along the
+ * trunk at its offset, released by the second taper, and into its target as one tooth of a comb.
+ */
+function strandRoutes(id: string, P: Point[], links: { link: CanvasLink; from: string; to: string; a: Box; b: Box; across: boolean }[]): LinkRoute[] {
+  const B = tokens.graph.link.bundle, frame = strandFrame(P, links.map(l => l.a), links.map(l => l.b), links.length), { e, n } = frame;
+  const order = laneOrder(P, links.map(l => ({ id: l.link.id, from: centre(l.a), to: centre(l.b) })), e), half = (order.length - 1) / 2, byId = new Map(links.map(l => [l.link.id, l]));
+  const lanes = order.map((linkId, k) => ({ ...byId.get(linkId)!, k, f: (k - half) * B.comb, o: (k - half) * (frame.collapsed ? B.comb : B.gap) }));
+  const lead = frame.collapsed ? B.tie.clear : 0, back = times(e, -1);
+  const entry = fanEnd(frame.inAt, e, n, lanes.map(l => ({ k: l.k, f: l.f, box: l.a, end: l.from })), false, lead);
+  const exit = fanEnd(frame.outAt, back, normalOf(back), lanes.map(l => ({ k: l.k, f: -l.f, box: l.b, end: l.to })), true, lead);
+  return lanes.map(lane => {
+    const into = entry.get(lane.k)!, out = exit.get(lane.k)!, gathered = plus(P[0], times(n, lane.o)), released = plus(P[P.length - 1], times(n, lane.o));
+    const fanIn = plus(frame.inAt, times(n, lane.f)), fanOut = plus(frame.outAt, times(n, lane.f)), h = frame.taper / 2;
+    const middle: Run[] = frame.collapsed ? [] : [
+      { pts: [fanIn, plus(fanIn, times(e, h)), minus(gathered, times(e, h)), gathered], cubic: true },
+      ...trunkRuns(frame, lane.o, half * B.gap),
+      { pts: [released, plus(released, times(e, h)), minus(fanOut, times(e, h)), fanOut], cubic: true },
+    ];
+    const tail = [...out.runs].reverse().map(reverseRun), runs = [...into.runs, ...middle, ...tail], d = runsPath(runs), vertices = runsVertices(runs);
+    const elbow = vertices.slice(1).flatMap((q, i) => { const p = vertices[i], corner = { x: q.x, y: p.y }; return [{ from: p, to: corner }, { from: corner, to: q }]; }).filter(s => s.from.x !== s.to.x || s.from.y !== s.to.y);
+    // A bundled link is named near its target, where its lane is its own again.
+    const near = runsVertices(out.runs), at = alongPolyline(near, Math.min(B.label.at, polylineLength(near) / 2)), sideways = out.side === 'left' || out.side === 'right';
+    const label = lane.link.label?.trim() ?? '', L = tokens.graph.link;
+    return { key: `${id}~${lane.link.id}`, links: [lane.link], from: lane.from, to: lane.to, kind: lane.link.kind, tone: lane.link.tone, label, count: 1, across: lane.across, d, elbow, start: into.port, end: out.port, endSide: out.side, labelPoint: sideways ? { x: at.x, y: at.y - L.label.lift } : at, badgePoint: at, bundle: { id, lane: lane.k, lanes: order.length, frame } };
+  });
+}
+const polylineLength = (P: Point[]) => P.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - P[i].x, q.y - P[i].y), 0);
 export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (id: string) => FrameShift | undefined, moved?: (id: string) => Point[] | undefined): LinkRoute[] {
   const { index, rects } = layout, L = tokens.graph.link, bundles = new Map<string, CanvasLink[]>(), strands = new Map<string, CanvasLink[]>(), held = new Map((doc.bundles ?? []).map(b => [b.id, b]));
   for (const link of doc.links ?? []) {
@@ -608,19 +915,12 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
     const key = `${from}>${to}`; (bundles.get(key) ?? bundles.set(key, []).get(key)!).push(link);
   }
   const box = (id: string): Box => { const r = rects.get(id)!, delta = shift?.(id); return delta ? { ...r, x: r.x + delta.x, y: r.y + delta.y, width: delta.width ?? r.width, height: delta.height ?? r.height } : r; };
-  type Strand = { id: string; lane: number; lanes: number; Q: Point[]; t0: Point; tn: Point };
-  type Draft = { key: string; links: CanvasLink[]; from: string; to: string; a: Box; b: Box; sides: [Side, Side]; lane?: Point[]; vertical: boolean; strand?: Strand };
-  const drafts: Draft[] = [];
-  // A bundled link is its own connector: from its source into the first clip, along its lane, out of the last clip.
+  type Draft = { key: string; links: CanvasLink[]; from: string; to: string; a: Box; b: Box; sides: [Side, Side]; lane?: Point[]; vertical: boolean };
+  const drafts: Draft[] = [], strandsDrawn: LinkRoute[] = [];
+  // A bundled link is its own connector, dressed into its bundle's strand (docs/design.md §46).
   for (const [id, links] of strands) {
-    const P = moved?.(id) ?? bundleWorld(held.get(id)!, layout, shift), ends = new Map(links.map(link => [link.id, { from: visibleEnd(index, link.from), to: visibleEnd(index, link.to) }]));
-    const order = laneOrder(P, links.map(link => ({ id: link.id, from: centre(box(ends.get(link.id)!.from)), to: centre(box(ends.get(link.id)!.to)) })));
-    const t0 = unit(minus(P[1], P[0])), tn = unit(minus(P[P.length - 1], P[P.length - 2]));
-    order.forEach((linkId, lane) => {
-      const link = links.find(l => l.id === linkId)!, { from, to } = ends.get(linkId)!, a = box(from), b = box(to), Q = laneLine(P, (lane - (order.length - 1) / 2) * L.bundle.gap);
-      const sides: [Side, Side] = [facing(a, P[0], t0), facing(b, P[P.length - 1], tn)];
-      drafts.push({ key: `${id}~${linkId}`, links: [link], from, to, a, b, sides, vertical: sides[1] === 'top' || sides[1] === 'bottom', strand: { id, lane, lanes: order.length, Q, t0, tn } });
-    });
+    const P = moved?.(id) ?? bundleWorld(held.get(id)!, layout, shift);
+    strandsDrawn.push(...strandRoutes(id, P, links.map(link => { const from = visibleEnd(index, link.from), to = visibleEnd(index, link.to); return { link, from, to, a: box(from), b: box(to), across: index.parent.get(from) !== index.parent.get(to) }; })));
   }
   for (const [key, links] of bundles) {
     const [from, to] = key.split('>'), a = box(from), b = box(to), steady = !shift?.(from) && !shift?.(to);
@@ -636,7 +936,7 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
   // Connectors sharing a side fan out along it, ordered by where they come from, so they do not cross at the frame.
   const ports = new Map<string, { draft: Draft; end: 0 | 1; sort: number }[]>();
   for (const draft of drafts) ([0, 1] as const).forEach(end => {
-    const id = end ? draft.to : draft.from, other = end ? draft.a : draft.b, near = draft.strand ? end ? draft.strand.Q.at(-1) : draft.strand.Q[0] : end ? draft.lane?.at(-1) : draft.lane?.[0];
+    const id = end ? draft.to : draft.from, other = end ? draft.a : draft.b, near = end ? draft.lane?.at(-1) : draft.lane?.[0];
     const across = draft.sides[end] === 'top' || draft.sides[end] === 'bottom', sort = across ? near?.x ?? other.x + other.width / 2 : near?.y ?? other.y + other.height / 2, key = `${id}|${draft.sides[end]}`;
     (ports.get(key) ?? ports.set(key, []).get(key)!).push({ draft, end, sort });
   });
@@ -649,9 +949,8 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
       anchors.set(`${draft.key}|${end}`, side === 'top' ? { x: r.x + r.width / 2 + offset, y: r.y } : side === 'bottom' ? { x: r.x + r.width / 2 + offset, y: r.y + r.height } : side === 'left' ? { x: r.x, y: r.y + r.height / 2 + offset } : { x: r.x + r.width, y: r.y + r.height / 2 + offset });
     });
   }
-  return drafts.map(({ key, links, from, to, sides, lane, vertical, strand }) => {
+  return [...strandsDrawn, ...drafts.map(({ key, links, from, to, sides, lane, vertical }): LinkRoute => {
     const start = anchors.get(`${key}|0`)!, end = anchors.get(`${key}|1`)!;
-    if (strand) return strandRoute(key, links[0], from, to, sides, start, end, strand, index.parent.get(from) !== index.parent.get(to));
     const points = [start, ...(lane ?? []), end];
     const forward = (p: Point, q: Point): Point => vertical ? { x: 0, y: q.y >= p.y ? 1 : -1 } : { x: q.x >= p.x ? 1 : -1, y: 0 };
     const tangent = points.map((p, i) => i === 0 ? normals[sides[0]] : i === points.length - 1 ? { x: -normals[sides[1]].x, y: -normals[sides[1]].y } : forward(points[i - 1], points[i + 1]));
@@ -666,27 +965,7 @@ export function linkRoutes(doc: CanvasDocument, layout: CanvasLayout, shift?: (i
     // Along a sideways connector the label rides above the line, so a long label never hides a short link.
     const at = cubicAt(middle.p, middle.c1, middle.c2, middle.q, .5), labelPoint = vertical ? at : { x: at.x, y: at.y - L.label.lift };
     return { key, links, from, to, kind: links[0].kind, tone: links[0].tone, label, count: links.length, across: index.parent.get(from) !== index.parent.get(to), d, elbow, start, end, endSide: sides[1], labelPoint, badgePoint: cubicAt(first.p, first.c1, first.c2, first.q, label ? .24 : .5) };
-  });
-}
-/** One bundled link: a soft S into the first clip, its lane between the clips (rounded at bends), a soft S out to its target. */
-function strandRoute(key: string, link: CanvasLink, from: string, to: string, sides: [Side, Side], start: Point, end: Point, strand: { id: string; lane: number; lanes: number; Q: Point[]; t0: Point; tn: Point }, across: boolean): LinkRoute {
-  const B = tokens.graph.link.bundle, L = tokens.graph.link, { Q, t0, tn } = strand, entry = Q[0], exit = Q[Q.length - 1], ns = normals[sides[0]], ne = normals[sides[1]];
-  const reach = (p: Point, q: Point) => Math.max(B.reach.min, Math.min(B.reach.max, Math.hypot(q.x - p.x, q.y - p.y) / 2));
-  const r1 = reach(start, entry), r2 = reach(exit, end), f = (p: Point) => `${fixed(p.x)} ${fixed(p.y)}`;
-  const inbound = { p: start, c1: { x: start.x + ns.x * r1, y: start.y + ns.y * r1 }, c2: { x: entry.x - t0.x * r1, y: entry.y - t0.y * r1 }, q: entry };
-  const outbound = { p: exit, c1: { x: exit.x + tn.x * r2, y: exit.y + tn.y * r2 }, c2: { x: end.x + ne.x * r2, y: end.y + ne.y * r2 }, q: end };
-  let spine = '';
-  for (let j = 1; j < Q.length - 1; j++) {
-    const a = Q[j - 1], p = Q[j], b = Q[j + 1], din = unit(minus(p, a)), dout = unit(minus(b, p)), r = Math.min(B.corner, Math.hypot(p.x - a.x, p.y - a.y) / 2, Math.hypot(b.x - p.x, b.y - p.y) / 2);
-    spine += ` L${f({ x: p.x - din.x * r, y: p.y - din.y * r })} Q${f(p)} ${f({ x: p.x + dout.x * r, y: p.y + dout.y * r })}`;
-  }
-  const d = `M${f(start)} C${f(inbound.c1)} ${f(inbound.c2)} ${f(entry)}${spine} L${f(exit)} C${f(outbound.c1)} ${f(outbound.c2)} ${f(end)}`;
-  // The native fallback draws only straight runs: an elbow between each pair of points along the way.
-  const path = [start, ...Q, end], elbow = path.slice(1).flatMap((q, i) => { const p = path[i], mid = { x: q.x, y: p.y }; return [{ from: p, to: mid }, { from: mid, to: q }]; }).filter(s => s.from.x !== s.to.x || s.from.y !== s.to.y);
-  // A bundled link is named near its target, where its lane has left the strand and is its own again.
-  const at = cubicAt(outbound.p, outbound.c1, outbound.c2, outbound.q, B.label.at), sideways = sides[1] === 'left' || sides[1] === 'right';
-  const label = link.label?.trim() ?? '';
-  return { key, links: [link], from, to, kind: link.kind, tone: link.tone, label, count: 1, across, d, elbow, start, end, endSide: sides[1], labelPoint: sideways ? { x: at.x, y: at.y - L.label.lift } : at, badgePoint: at, bundle: { id: strand.id, lane: strand.lane, lanes: strand.lanes } };
+  })];
 }
 /** What stays lit when something is in focus. `null` means nothing to emphasise, so nothing is dimmed either. */
 export function linkFocus(routes: LinkRoute[], ids: string[], linkId?: string | null): { lit: Set<string>; routes: Set<string>; links: Set<string> } | null {
