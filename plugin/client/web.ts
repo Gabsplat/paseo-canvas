@@ -556,9 +556,9 @@ export type LinkDraw = {
   label: { x: number; y: number; text: string; color: string } | null;
   badge: { x: number; y: number; text: string; fill: string; color: string; radius: number } | null;
 };
-/** A bundle's clip: a capsule across the strand, centred on (x, y), its long side turned `angle` degrees. */
-export type TieDraw = { key: string; x: number; y: number; angle: number; length: number; thickness: number; fill: string; halo: string; haloWidth: number; grip: string; opacity: number };
-/** A soft band under a bundle's lanes between its clips, shown while the bundle is in focus. */
+/** A bundle's tie: a thin rounded band across the strand, centred on (x, y), its long side turned `angle` degrees; `scale` grows it in. */
+export type TieDraw = { key: string; x: number; y: number; angle: number; length: number; thickness: number; fill: string; halo: string; haloWidth: number; opacity: number; scale?: number };
+/** A thin outline around a bundle's trunk (`d` a closed path, stroked, never filled), shown while the bundle is in focus. */
 export type BandDraw = { key: string; d: string; width: number; color: string; opacity: number };
 export type LinkScene = { draws: LinkDraw[]; origin: { x: number; y: number }; halo: string; font: string; labelSize: number; badgeSize: number; hitWidth: number; motion?: (epochMs: number) => LinkMotionSample; ties?: TieDraw[]; bands?: BandDraw[] };
 interface SvgNode {
@@ -576,7 +576,7 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
   const make = (tag: string, attributes: Record<string, string> = {}) => { const node = doc.createElementNS('http://www.w3.org/2000/svg', tag); for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value); return node; };
   const surface = () => make('svg', { width: '100%', height: '100%', style: 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none', 'aria-hidden': 'true' });
   const svg = surface(), root = make('g'), lines = make('g'), marks = make('g'), draft = make('path', { fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'pointer-events': 'none', 'data-lienzo-draft': 'true' });
-  // Bundles: a band under the lanes, the clips over them (still under the cards and the labels).
+  // Bundles: the focus outline under the lanes, the ties over them (still under the cards and the labels).
   const bands = make('g', { 'pointer-events': 'none', 'data-lienzo-bands': 'true' }), ties = make('g', { 'pointer-events': 'none', 'data-lienzo-ties': 'true' });
   root.appendChild(bands); root.appendChild(lines); root.appendChild(ties); root.appendChild(draft); svg.appendChild(root); host.appendChild(svg);
   let tiesDrawn = '';
@@ -686,13 +686,12 @@ export function mountLinkLayer(element: unknown, handlers: { onPress(key: string
       const bundled = JSON.stringify([scene.ties ?? [], scene.bands ?? []]);
       if (bundled !== tiesDrawn) {
         tiesDrawn = bundled; clear(bands); clear(ties);
-        for (const band of scene.bands ?? []) bands.appendChild(make('path', { d: band.d, fill: 'none', stroke: band.color, 'stroke-width': n(band.width), 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: n(band.opacity), 'data-bundle': band.key }));
+        for (const band of scene.bands ?? []) bands.appendChild(make('path', { d: band.d, fill: 'none', stroke: band.color, 'stroke-width': n(band.width), 'stroke-linejoin': 'round', opacity: n(band.opacity), 'data-bundle': band.key }));
         for (const tie of scene.ties ?? []) {
-          const g = make('g', { transform: `translate(${n(tie.x)} ${n(tie.y)}) rotate(${n(tie.angle)})`, opacity: n(tie.opacity), 'data-bundle-tie': tie.key });
+          const scale = tie.scale ?? 1, g = make('g', { transform: `translate(${n(tie.x)} ${n(tie.y)}) rotate(${n(tie.angle)})${scale < 1 ? ` scale(${Math.round(scale * 1000) / 1000})` : ''}`, opacity: n(tie.opacity), 'data-bundle-tie': tie.key });
           const w = tie.length, h = tie.thickness;
+          // A strap over the wires: the canvas colour as a thin halo keeps it apart from the lanes it holds.
           g.appendChild(make('rect', { x: n(-w / 2), y: n(-h / 2), width: n(w), height: n(h), rx: n(h / 2), fill: tie.fill, stroke: tie.halo, 'stroke-width': n(tie.haloWidth), 'paint-order': 'stroke' }));
-          // Two grip notches read as a clamp around the wires.
-          for (const x of [-w / 2 + h * .9, w / 2 - h * .9]) g.appendChild(make('circle', { cx: n(x), cy: '0', r: n(h * .18), fill: tie.grip }));
           ties.appendChild(g);
         }
       }

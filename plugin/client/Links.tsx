@@ -1,7 +1,8 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import type { CanvasLink } from '../shared/model';
-import { bundleShapes, linkRoutes, type BundleShape, type CanvasLayout, type FrameShift, type LinkRoute, type Point, type Side } from './logic';
+import { bundleShapes, linkRoutes, morphFrame, easeOutCubic, resamplePath, type BundleShape, type CanvasLayout, type FrameShift, type LinkRoute, type Point, type Side } from './logic';
+import { reducedMotion } from './motion';
 import type { CanvasDocument } from '../shared/model';
 import { tokens } from './tokens';
 import { withAlpha, type Tone } from './color';
@@ -23,7 +24,7 @@ export type LinkDraft = { from: Point; to: Point; side: Side; endSide?: Side; va
 export type LinkLayerHandle = { follow(): void; preview(draft: LinkDraft | null): void };
 /** A bundle's clips while the hand holds them: drawn there before the one write on release. */
 export type BundleMove = { id: string; points: Point[] } | null;
-/** What a bundle shows: `selected` rings its clips and lays a band under its lanes; `hot` (hover) lays the band only. */
+/** What a bundle shows: `selected` draws a thin accent outline around its trunk and tints its ties; `hot` (hover) a fainter outline and firmer ties. */
 export type BundleFocus = { selected: string | null; hot: string | null };
 /**
  * `routes` is the geometry at rest. While frames are away from their place (`shift` returns their offset: a drag, a
@@ -50,13 +51,38 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
     const color = active ? tone : route.tone && route.tone !== 'neutro' ? tone : u.c.foregroundMuted;
     return { route, active, color, opacity: dimmed ? L.alpha.dim : calm ? L.calm.alpha : active ? 1 : route.tone && route.tone !== 'neutro' ? L.alpha.toned : L.alpha.rest, width: active ? L.widthActive : L.width, text: dense && !active ? '' : route.label.length > L.label.maxChars ? `${route.label.slice(0, L.label.maxChars - 1)}…` : route.label };
   }), [routes, focus, selected, picked, u, dense]);
-  /** Clips and bands for the bundles drawn now; `current` is the re-routed geometry while something is away. */
-  const bundleDraws = (current: Map<string, LinkRoute> | null): { shapes: BundleShape[]; ties: TieDraw[]; bands: BandDraw[] } => {
-    if (!doc?.bundles?.length || !layout) return { shapes: [], ties: [], bands: [] };
-    const shapes = bundleShapes(doc, layout, current ? [...current.values()] : routes, shift, held), lit = new Set(styled.filter(s => s.active && s.route.bundle).map(s => s.route.bundle!.id));
-    const ties = shapes.flatMap(shape => { const chosen = bundles?.selected === shape.id, faded = !!focus && !lit.has(shape.id) && !chosen;
-      return shape.ties.map((tie, i): TieDraw => ({ key: `${shape.id}#${i}`, ...tie, length: tie.length + (chosen ? 2 : 0), thickness: B.clip.thickness + (chosen ? 1.5 : 0), fill: u.tone(B.clip.tone), halo: chosen ? u.c.foreground : u.c.surface0, haloWidth: chosen ? 1.5 : B.clip.halo, grip: u.c.accentForeground, opacity: faded ? .4 : 1 })); });
-    const bands = shapes.filter(shape => bundles?.selected === shape.id || bundles?.hot === shape.id).map((shape): BandDraw => ({ key: shape.id, d: shape.spine, width: shape.span + 2 * B.spine.bandPad, color: u.c.accent, opacity: B.spine.bandAlpha * (bundles?.selected === shape.id ? 1.6 : 1) }));
+  /**
+   * Bundling and unbundling morph (docs/design.md §46): each link whose bundle changed eases from the path it had to
+   * the one it has now, lanes a beat apart, and new ties grow in (old ones shrink away). Ghost paths carry the motion;
+   * the real connectors stay hidden until their links have landed. Reduced motion: no morph, the new paths at once.
+   */
+  type Morph = { start: number; lanes: { linkId: string; from: Point[]; to: Point[]; delay: number; color: string; dash: string; side: Side }[]; hide: Set<string>; grow: Set<string>; shrink: TieDraw[]; end: number };
+  const morph = useRef<Morph | null>(null), seen = useRef<{ docId?: string; member: Map<string, string>; paths: Map<string, string>; ties: TieDraw[] } | null>(null), tick = useRef<number | null>(null);
+  useEffect(() => {
+    if (!web) return;
+    const member = new Map<string, string>(); for (const route of routes) for (const link of route.links) member.set(link.id, route.bundle?.id ?? '');
+    // Only this effect acknowledges a new membership; draws in between (a follow() before it runs) keep the old paths.
+    const before = seen.current; seen.current = { docId: doc?.id, member, paths: before && before.docId === doc?.id ? before.paths : new Map(), ties: before && before.docId === doc?.id ? before.ties : [] };
+    if (!before || before.docId !== doc?.id || reducedMotion.current) { morph.current = null; return; }
+    const changed = [...member].filter(([id, bundle]) => before.member.has(id) && before.member.get(id) !== bundle).map(([id]) => id);
+    if (!changed.length || changed.length > B.maxLinks) return;
+    const routeOf = new Map<string, LinkRoute>(); for (const route of routes) for (const link of route.links) routeOf.set(link.id, route);
+    const M = B.morph, moving = changed.flatMap(id => { const route = routeOf.get(id), old = before.paths.get(id), link = route?.links.find(l => l.id === id); return route && old && link ? [{ id, route, link, old }] : []; });
+    moving.sort((p, q) => (p.route.bundle?.lane ?? 0) - (q.route.bundle?.lane ?? 0) || (p.id < q.id ? -1 : 1));
+    const lanes = moving.map(({ id, route, link, old }, i) => ({ linkId: id, from: resamplePath(old, M.samples), to: resamplePath(route.d, M.samples), delay: i * M.stagger, color: u.tone(linkTone(link)), dash: L.dash[link.kind], side: route.endSide }));
+    const moved = new Set(changed), hide = new Set(routes.filter(route => route.links.every(link => moved.has(link.id))).map(route => route.key));
+    const now = new Set(member.values()), was = new Set(before.member.values());
+    morph.current = { start: Date.now(), lanes, hide, grow: new Set([...now].filter(id => id && !was.has(id))), shrink: before.ties.filter(tie => !now.has(tie.key.split('#')[0])), end: Math.max(M.ms + lanes.length * M.stagger, M.tieMs * 2) };
+  }, [routes]);
+  /** Ties and outlines for the bundles drawn now; `current` is the re-routed geometry while something is away. */
+  const bundleDraws = (current: Map<string, LinkRoute> | null, elapsed: number | null): { shapes: BundleShape[]; ties: TieDraw[]; bands: BandDraw[] } => {
+    if (!layout) return { shapes: [], ties: [], bands: [] };
+    const shapes = doc?.bundles?.length ? bundleShapes(doc, layout, current ? [...current.values()] : routes) : [], lit = new Set(styled.filter(s => s.active && s.route.bundle).map(s => s.route.bundle!.id));
+    const m = morph.current, grown = (id: string) => m && elapsed !== null && m.grow.has(id) ? easeOutCubic((elapsed - B.morph.ms * .35) / B.morph.tieMs) : 1;
+    const ties = shapes.flatMap(shape => { const chosen = bundles?.selected === shape.id, hot = bundles?.hot === shape.id, faded = !!focus && !lit.has(shape.id) && !chosen;
+      return shape.ties.map((tie, i): TieDraw => ({ key: `${shape.id}#${i}`, x: tie.x, y: tie.y, angle: tie.angle, length: tie.length, thickness: B.tie.thickness + (chosen || hot ? B.tie.hover : 0), fill: chosen ? u.c.accent : hot ? u.c.foreground : u.c.foregroundMuted, halo: u.c.surface0, haloWidth: B.tie.halo, opacity: faded ? .45 : 1, scale: grown(shape.id) })); });
+    if (m && elapsed !== null) ties.push(...m.shrink.map(tie => ({ ...tie, key: `gone:${tie.key}`, scale: 1 - easeOutCubic(elapsed / B.morph.tieMs) })).filter(tie => tie.scale! > .01));
+    const bands = shapes.filter(shape => bundles?.selected === shape.id || bundles?.hot === shape.id).map((shape): BandDraw => ({ key: shape.id, d: shape.outline, width: B.outline.width, color: u.c.accent, opacity: bundles?.selected === shape.id ? B.outline.alpha.selected : B.outline.alpha.hot }));
     return { shapes, ties, bands };
   };
   useEffect(() => {
@@ -66,21 +92,38 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
   }, [web]);
   const draw = (current: Map<string, LinkRoute> | null) => {
     if (!layer.current) return;
-    const draws: LinkDraw[] = styled.flatMap(({ route: rest, active, color, opacity, width, text }) => {
-      const route = current?.get(rest.key) ?? rest;
+    const m = morph.current, elapsed = m ? Date.now() - m.start : null;
+    if (m && elapsed! >= m.end) morph.current = null;
+    const morphing = morph.current;
+    const draws: LinkDraw[] = styled.flatMap(({ route: rest, active, color, opacity: resting, width, text }) => {
+      const route = current?.get(rest.key) ?? rest, hidden = !!morphing?.hide.has(route.key) && morphing.lanes.some(lane => elapsed! < lane.delay + B.morph.ms && route.links.some(l => l.id === lane.linkId)), opacity = hidden ? 0 : resting;
       // A lit bundle opens into one strand per link, each in its own tone and line style. The bundle's own path stays
       // underneath, invisible, so the pointer target never changes while hovering.
       const strands = active && route.count > 1 && route.count <= L.strands.max, across = route.endSide === 'top' || route.endSide === 'bottom';
       return [{
       key: route.key, linkIds: strands ? [] : route.links.map(link => link.id), d: route.d, color, width, opacity: strands ? 0 : opacity, dash: L.dash[route.kind], interactive: true, title: linkTitle(route), ...(route.bundle ? { hit: B.hitWidth } : {}),
-      arrow: { ...route.end, side: route.endSide, length: L.arrow.length, width: L.arrow.width },
-      label: text ? { ...route.labelPoint, text, color: active ? u.c.foreground : u.c.foregroundMuted } : null,
+      arrow: hidden ? null : { ...route.end, side: route.endSide, ...(route.bundle ? B.arrow : L.arrow) },
+      label: text && !hidden ? { ...route.labelPoint, text, color: active ? u.c.foreground : u.c.foregroundMuted } : null,
       badge: route.count > 1 ? { ...route.badgePoint, text: String(route.count), fill: active ? u.c.foreground : u.c.surface2, color: active ? u.c.surface0 : u.c.foreground, radius: L.badge.radius } : null,
       }, ...(strands ? route.links.map((link, i): LinkDraw => { const offset = (i - (route.count - 1) / 2) * L.strands.gap; return { key: `${route.key}#${i}`, linkIds: [link.id], d: route.d, color: u.tone(linkTone(link)), width, opacity: 1, dash: L.dash[link.kind], interactive: false, title: '', shift: across ? { x: offset, y: 0 } : { x: 0, y: offset }, arrow: { ...route.end, side: route.endSide, length: L.arrow.length, width: L.arrow.width }, label: null, badge: null }; }) : [])];
     });
+    // Lanes still travelling to their new place: one ghost path each, its arrowhead riding its end.
+    if (morphing) for (const lane of morphing.lanes) {
+      const frame = morphFrame(lane.from, lane.to, elapsed!, lane.delay, B.morph.ms); if (frame.done || !frame.d) continue;
+      draws.push({ key: `morph:${lane.linkId}`, linkIds: [], d: frame.d, color: lane.color, width: B.width, opacity: B.alpha.rest, dash: lane.dash, interactive: false, title: '', arrow: { ...frame.end, side: lane.side, ...B.arrow }, label: null, badge: null });
+    }
     const currentDraft = draftRef ? draftRef.current : draft;
     layer.current.preview(draftDraw(currentDraft));
-    const { ties, bands } = bundleDraws(current);
+    const { ties, bands } = bundleDraws(current, morphing ? elapsed : null);
+    // What the next morph starts from: every link's path as drawn now, and the ties.
+    // Only for links whose bundle is the acknowledged one, so a change not yet seen keeps its old path to morph from.
+    const known = seen.current;
+    if (known && known.docId === doc?.id) {
+      for (const { route: rest } of styled) { const route = current?.get(rest.key) ?? rest; for (const link of route.links) if (known.member.get(link.id) === (route.bundle?.id ?? '')) known.paths.set(link.id, route.d); }
+      const held = new Set(known.member.values()), fresh = ties.filter(tie => !tie.key.startsWith('gone:') && held.has(tie.key.split('#')[0])).map(tie => ({ ...tie, scale: 1 })), drawn = new Set(fresh.map(tie => tie.key.split('#')[0]));
+      known.ties = [...fresh, ...known.ties.filter(tie => held.has(tie.key.split('#')[0]) && !drawn.has(tie.key.split('#')[0]))];
+    }
+    if (morphing && tick.current === null) tick.current = requestAnimationFrame(() => { tick.current = null; const { draw, doc, layout, shift, away, held } = latest.current; draw(away() ? new Map(linkRoutes(doc!, layout!, shift, held).map(route => [route.key, route])) : null); });
     layer.current.update({ draws, origin, halo: u.c.surface0, font: 'system-ui, -apple-system, "Segoe UI", sans-serif', labelSize: L.label.size, badgeSize: L.badge.size, hitWidth: L.hitWidth, motion, ties, bands });
   };
   function draftDraw(value: LinkDraft | null) {
@@ -98,6 +141,7 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
     draw(away() ? new Map(linkRoutes(doc!, layout!, shift, held).map(route => [route.key, route])) : null);
   }, preview(value) { if (layer.current) layer.current.preview(latest.current.draftDraw(value)); else setTick(n => n + 1); } }), []);
   useEffect(() => { draw(moved); }, [styled, draft, origin.x, origin.y, u, motion, bundles?.selected, bundles?.hot, doc?.bundles]);
+  useEffect(() => () => { if (tick.current !== null) cancelAnimationFrame(tick.current); }, []);
   // Native fallback (also covers a web host without SVG): elbow segments made of Views.
   const fallback = !web;
   return <View ref={host} pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width, height, zIndex: 1 }}>
@@ -115,7 +159,7 @@ export function LinkLayer({ routes, doc, layout, shift, handle, origin, width, h
         </Pressable>
       </React.Fragment>;
     })}
-    {fallback && bundleDraws(moved).ties.map(tie => <View key={tie.key} pointerEvents="none" style={{ position: 'absolute', left: tie.x - origin.x - tie.length / 2, top: tie.y - origin.y - tie.thickness / 2, width: tie.length, height: tie.thickness, borderRadius: tie.thickness / 2, backgroundColor: tie.fill, borderWidth: 1, borderColor: tie.halo, opacity: tie.opacity, transform: [{ rotate: `${tie.angle}deg` }] }} />)}
+    {fallback && bundleDraws(moved, null).ties.map(tie => <View key={tie.key} pointerEvents="none" style={{ position: 'absolute', left: tie.x - origin.x - tie.length / 2, top: tie.y - origin.y - tie.thickness / 2, width: tie.length, height: tie.thickness, borderRadius: tie.thickness / 2, backgroundColor: tie.fill, borderWidth: 1, borderColor: tie.halo, opacity: tie.opacity, transform: [{ rotate: `${tie.angle}deg` }] }} />)}
     {fallback && draft && <View pointerEvents="none" style={{ position: 'absolute', left: draft.to.x - origin.x - 5, top: draft.to.y - origin.y - 5, width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: withAlpha(u.c.accent, draft.valid ? 1 : .5) }} />}
   </View>;
 }

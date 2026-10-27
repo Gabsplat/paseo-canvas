@@ -747,8 +747,9 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
   }
   const unbundle = (id: string) => { void c.edit([{ type: 'bundle.delete', id }], 'Unbundle links').then(next => { if (next) onBundle?.(null); }); };
   /**
-   * A clip (`index`: the first or last point) or the spine (`null`: every point) follows the hand; one write on release.
-   * A press without a move selects the bundle; a second press on a clip within a moment releases its links.
+   * A tie (`index`: the first or last point; -1 the single tie of a folded strand, which moves every point) or the
+   * trunk (`null`: every point) follows the hand; one write on release. A press without a move selects the bundle; a
+   * second press on a tie within a moment releases its links.
    */
   const grips = useRef(new Map<string, GestureResponderHandlers>());
   function bundleGrip(id: string, index: number | null): GestureResponderHandlers {
@@ -763,7 +764,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
         if (!state.moved && Math.abs(page.x - state.start.x) + Math.abs(page.y - state.start.y) < M.drag.threshold) return;
         if (!state.moved && (latest.current.c.busy || latest.current.c.offline)) return;
         state.moved = true; const dx = (page.x - state.start.x) / cam.current.scale, dy = (page.y - state.start.y) / cam.current.scale;
-        bundleMove.current = { id, points: state.world.map((p, i) => state.index === null || state.index === i ? { x: p.x + dx, y: p.y + dy } : p) }; links.current?.follow();
+        bundleMove.current = { id, points: state.world.map((p, i) => state.index === null || state.index === -1 || state.index === i ? { x: p.x + dx, y: p.y + dy } : p) }; links.current?.follow();
       },
       onPanResponderRelease: () => {
         const state = bundleGesture.current; bundleGesture.current = null; busyHands.current = false; if (!state) return;
@@ -776,7 +777,7 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
         swallowClick(); const points = bundleMove.current?.id === id ? bundleMove.current.points : null;
         if (!points || !bundle || state.documentId !== doc.id) { bundleMove.current = null; links.current?.follow(); return; }
         onBundle?.(id);
-        void c.edit([{ type: 'bundle.update', id, patch: { points: bundleRelative(bundle, layout, points) } }], state.index === null ? 'Move bundle' : 'Move bundle clip').then(next => { if (bundleMove.current?.id === id) bundleMove.current = null; if (!next) links.current?.follow(); });
+        void c.edit([{ type: 'bundle.update', id, patch: { points: bundleRelative(bundle, layout, points) } }], state.index === null || state.index === -1 ? 'Move bundle' : 'Move bundle tie').then(next => { if (bundleMove.current?.id === id) bundleMove.current = null; if (!next) links.current?.follow(); });
       },
       onPanResponderTerminate: () => { bundleGesture.current = null; busyHands.current = false; bundleMove.current = null; links.current?.follow(); },
     }).panHandlers;
@@ -877,12 +878,12 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
       <LinkLayer motion={linkMotion} handle={links} doc={doc} layout={layout} shift={shift} routes={routes} origin={bound} width={bound.width} height={bound.height} focus={focus} selected={routes.find(r => r.links.some(l => l.id === linkId))?.key ?? null} picked={picked} bundles={{ selected: bundleId, hot: bundleHover }} moving={bundleMove} draft={draftLive.current} draftRef={draftLive} marks={marks} onPress={pressLink} onHover={setLinkHover} />
       {/* Bundles: the spine and the two clips take the pointer (select, drag, double-click a clip to release). */}
       {!u.compact && shapes.map(shape => <React.Fragment key={shape.id}>
-        {shape.points.slice(1).map((q, i) => { const p = shape.points[i], length = Math.hypot(q.x - p.x, q.y - p.y), h = Math.max(BN.spine.hit, shape.span + 8);
+        {!shape.collapsed && shape.trunk.slice(1).map((q, i) => { const p = shape.trunk[i], length = Math.hypot(q.x - p.x, q.y - p.y), h = Math.max(BN.spine.hit, shape.span + 8);
           return <Pressable key={`s${i}`} nativeID={`lienzo-bundle-spine-${shape.id}-${i}`} accessibilityRole="button" accessibilityLabel={`Bundle of ${shape.linkIds.length} links`} onHoverIn={() => setBundleHover(shape.id)} onHoverOut={() => setBundleHover(old => old === shape.id ? null : old)} style={{ position: 'absolute', left: (p.x + q.x) / 2 - bound.x - length / 2, top: (p.y + q.y) / 2 - bound.y - h / 2, width: length, height: h, zIndex: 1, transform: [{ rotate: `${Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI}deg` }], ...(web ? { cursor: 'grab' } as object : null) }}>
             <View {...bundleGrip(shape.id, null)} style={{ position: 'absolute', inset: 0 }} />
           </Pressable>; })}
-        {shape.ties.map((tie, i) => <Pressable key={`t${i}`} nativeID={`lienzo-bundle-clip-${shape.id}-${i}`} accessibilityRole="button" accessibilityLabel={i ? 'Bundle exit clip' : 'Bundle entry clip'} accessibilityHint="Drag to move it; double-click to release the links." onHoverIn={() => setBundleHover(shape.id)} onHoverOut={() => setBundleHover(old => old === shape.id ? null : old)} style={{ position: 'absolute', left: tie.x - bound.x - (tie.length + 10) / 2, top: tie.y - bound.y - BN.clip.hit / 2, width: tie.length + 10, height: BN.clip.hit, zIndex: 1, transform: [{ rotate: `${tie.angle}deg` }], ...(web ? { cursor: 'move' } as object : null) }}>
-          <View {...bundleGrip(shape.id, i ? shape.points.length - 1 : 0)} style={{ position: 'absolute', inset: 0 }} />
+        {shape.ties.map((tie, i) => <Pressable key={`t${i}`} nativeID={`lienzo-bundle-clip-${shape.id}-${i}`} accessibilityRole="button" accessibilityLabel={shape.collapsed ? 'Bundle tie' : i ? 'Bundle exit tie' : 'Bundle entry tie'} accessibilityHint="Drag to move it; double-click to release the links." onHoverIn={() => setBundleHover(shape.id)} onHoverOut={() => setBundleHover(old => old === shape.id ? null : old)} style={{ position: 'absolute', left: tie.x - bound.x - (tie.length + 10) / 2, top: tie.y - bound.y - BN.tie.hit / 2, width: tie.length + 10, height: BN.tie.hit, zIndex: 1, transform: [{ rotate: `${tie.angle}deg` }], ...(web ? { cursor: 'move' } as object : null) }}>
+          <View {...bundleGrip(shape.id, tie.grip ?? -1)} style={{ position: 'absolute', inset: 0 }} />
         </Pressable>)}
       </React.Fragment>)}
       {drag?.copy?.map(id => { const r = rects.get(id); return r && !r.hidden ? <View key={'copy-ghost-' + id} nativeID={'lienzo-copy-ghost-' + id} pointerEvents="none" style={{ position: 'absolute', left: r.x - bound.x, top: r.y - bound.y, width: r.width, height: r.height, borderRadius: 6, borderWidth: 1.5, borderStyle: 'dashed', borderColor: withAlpha(u.c.accent, .7), backgroundColor: withAlpha(u.c.accent, .05) }} /> : null; })}
@@ -912,9 +913,10 @@ export function Canvas({ controller: c, mode, onInspect, onPacks, reorder, onGeo
     {selectionToolbar && interaction === null && !linkLabel && !wb.editor && (selectedBounds || linkId || linkIds?.length || bundleId) && (() => {
       // Picked links: the bar sits at the last one picked. A bundle: over its spine.
       const strand = bundleId && !selectedBounds ? shapes.find(s => s.id === bundleId) : undefined, last = linkId ?? linkIds?.[linkIds.length - 1];
-      const route = strand ? undefined : routes.find(r => r.links.some(l => l.id === last)), xs = strand?.points.map(p => p.x) ?? [], ys = strand?.points.map(p => p.y) ?? [];
-      const box = selectedBounds ?? (strand ? { x: Math.min(...xs), y: Math.min(...ys) - strand.span / 2, width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) + strand.span, depth: 0 } : route ? { ...route.labelPoint, width: 0, height: 0, depth: 0 } : null);
-      return box ? <SelectionOverlay box={box} link={!!(route || strand) && !selectedBounds} camera={() => cam.current} subscribe={subscribeCamera} pointer={selectionPointer.current} busy={() => !!(busyHands.current || gesture.current || resize.current || linkGesture.current || goal.current || coast.current !== null || wbRef.current.store.snapshot())} viewport={size}>{selectionToolbar}</SelectionOverlay> : null;
+      // A bundle's bar sits clear of its ties and lanes: above a sideways trunk, beside an upright one.
+      const route = strand ? undefined : routes.find(r => r.links.some(l => l.id === last)), around = strand ? [...strand.trunk, ...strand.ties] : [], xs = around.map(p => p.x), ys = around.map(p => p.y), pad = strand ? strand.span / 2 + BN.tie.pad : 0;
+      const box = selectedBounds ?? (strand ? { x: Math.min(...xs) - pad, y: Math.min(...ys) - pad, width: Math.max(...xs) - Math.min(...xs) + 2 * pad, height: Math.max(...ys) - Math.min(...ys) + 2 * pad, depth: 0 } : route ? { ...route.labelPoint, width: 0, height: 0, depth: 0 } : null);
+      return box ? <SelectionOverlay box={box} beside={!!strand && !selectedBounds && strand.axis.x === 0} link={!!(route || strand) && !selectedBounds} camera={() => cam.current} subscribe={subscribeCamera} pointer={selectionPointer.current} busy={() => !!(busyHands.current || gesture.current || resize.current || linkGesture.current || goal.current || coast.current !== null || wbRef.current.store.snapshot())} viewport={size}>{selectionToolbar}</SelectionOverlay> : null;
     })()}
     {linkLabel && (() => { const route = routes.find(r => r.links.some(l => l.id === linkLabel.linkId)); if (!route) return null; return <LinkLabelEditor key={linkLabel.linkId} session={linkLabel} at={{ x: cam.current.offset.x + route.labelPoint.x * cam.current.scale, y: cam.current.offset.y + route.labelPoint.y * cam.current.scale }} disabled={c.offline || c.busy} cancel={() => setLinkLabel(null)} save={async label => {
       const controller = latest.current.c; await controller.settle(); if (controller.current.current?.document.id !== linkLabel.documentId || !controller.current.current.document.links.some(l => l.id === linkLabel.linkId)) return false;

@@ -155,7 +155,8 @@ test('legibility suggests bundling many loose links between two areas, and bundl
 });
 
 // ---- Client geometry (plugin/client/logic.ts) and copies (clipboard.ts). ----
-import { bundleOperations, bundlePlacement, crossedLinks, laneOrder, layoutCanvas, linkRoutes, pathPoints, bundleShapes } from '../plugin/client/logic';
+import { bundleOperations, bundlePlacement, crossedLinks, laneOrder, layoutCanvas, linkRoutes, pathPoints, bundleShapes, packPorts, resamplePath, morphFrame, easeOutCubic, strandFrame } from '../plugin/client/logic';
+import { tokens } from '../plugin/client/tokens';
 import { copyClip, duplicateOperations, pasteOperations, placeAt } from '../plugin/client/clipboard';
 const segmentsCross = (p: { x: number; y: number }[], q: { x: number; y: number }[]) => {
   const side = (o: { x: number; y: number }, s: { x: number; y: number }, t: { x: number; y: number }) => (s.x - o.x) * (t.y - o.y) - (s.y - o.y) * (t.x - o.x);
@@ -174,13 +175,90 @@ test('lanes follow the sources across the entry; a monotonic wiring never crosse
   assert.deepEqual([...routes].sort((p, q) => p.bundle!.lane - q.bundle!.lane).map(r => r.links[0].id), ['m0', 'm1', 'm2', 'm3']);
   const lines = routes.map(r => pathPoints(r.d));
   for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) assert.equal(segmentsCross(lines[i], lines[j]), false, `${routes[i].key} × ${routes[j].key}`);
-  // Between the clips each lane is the spine moved by its lane offset (4 world units apart), and arrows still end at the targets.
-  const ys = [...routes].sort((p, q) => p.bundle!.lane - q.bundle!.lane).map(r => pathPoints(r.d).find(pt => Math.abs(pt.x - a.x) < .01)?.y ?? NaN);
-  assert.ok(ys.every(Number.isFinite)); ys.slice(1).forEach((y, i) => assert.ok(Math.abs(y - ys[i] - 4) < .01));
+  // Between the clips each lane is the trunk moved by its offset: `gap` apart, parallel; arrows still end at the targets.
+  const B = tokens.graph.link.bundle, mid = (a.x + b.x) / 2;
+  const ys = [...routes].sort((p, q) => p.bundle!.lane - q.bundle!.lane).map(r => resamplePath(r.d, 800).filter(pt => Math.abs(pt.x - mid) < (b.x - a.x) / 2 - 1).map(pt => pt.y));
+  for (const lane of ys) assert.ok(lane.length && lane.every(y => Math.abs(y - lane[0]) < .01), 'straight between the ties');
+  ys.slice(1).forEach((lane, i) => assert.ok(Math.abs(lane[0] - ys[i][0] - B.gap) < .01, 'evenly spaced'));
   for (const r of routes) assert.equal(r.end.x, layout.rects.get(r.to)!.x, 'the arrow touches its target on the side facing the clip');
   const [shape] = bundleShapes(bundled, layout, routes);
-  assert.equal(shape.ties.length, 2); assert.equal(Math.round(shape.ties[0].angle), 90, 'a clip lies across a horizontal strand');
-  assert.ok(shape.ties[0].length >= 3 * 4 + 1.5);
+  assert.equal(shape.ties.length, 2); assert.equal(Math.round(shape.ties[0].angle), 90, 'a tie lies across a horizontal strand');
+  assert.equal(shape.ties[0].length, 3 * B.gap + B.width + 2 * B.tie.pad, 'trunk width plus a little each side');
+  assert.deepEqual(shape.ties.map(t => t.grip), [0, 1]); assert.ok(!shape.collapsed); assert.doesNotMatch(shape.outline, /NaN/);
+});
+
+/** Sampled lanes of every route of a bundle, the sample spacing about one world unit. */
+const lanesOf = (routes: ReturnType<typeof linkRoutes>) => routes.filter(r => r.bundle).sort((p, q) => p.bundle!.lane - q.bundle!.lane).map(r => ({ route: r, points: resamplePath(r.d, 600) }));
+/** The closest two different lanes come, away from the cards (where a shared port may legitimately meet). */
+const closest = (lanes: { points: { x: number; y: number }[] }[]) => { let min = Infinity; for (let i = 0; i < lanes.length; i++) for (let j = i + 1; j < lanes.length; j++) for (const p of lanes[i].points.slice(30, -30)) for (const q of lanes[j].points.slice(30, -30)) min = Math.min(min, Math.hypot(p.x - q.x, p.y - q.y)); return min; };
+
+test('dressed lanes: square stubs, nested bends, no crossing and no touching for a monotonic wiring; a comb at the target', () => {
+  const B = tokens.graph.link.bundle;
+  const doc = { ...wiring(), links: [0, 1, 2, 3].flatMap(i => [{ id: `m${i}`, from: `s${i + 1}`, to: 't2', kind: 'flow' as const }]) };
+  const layout = layoutCanvas(doc, {}, catalog), made = bundleOperations(doc, layout, doc.links.map(l => l.id), 'bn') as { operations: CanvasOperation[] };
+  const bundled = reduce(doc, made.operations, catalog), lanes = lanesOf(linkRoutes(bundled, layoutCanvas(bundled, {}, catalog)));
+  assert.equal(lanes.length, 4);
+  for (let i = 0; i < lanes.length; i++) for (let j = i + 1; j < lanes.length; j++) assert.equal(segmentsCross(lanes[i].points, lanes[j].points), false, `lane ${i} × lane ${j}`);
+  assert.ok(closest(lanes) >= B.gap - .2, `lanes keep at least the trunk spacing apart (${closest(lanes)})`);
+  // Every lane leaves its source square: the first stretch is straight along the side's normal.
+  for (const { route, points } of lanes) { const a = points[0], b = points[4]; assert.ok(Math.abs(a.y - b.y) < .01 && b.x > a.x, `${route.key} leaves sideways`); }
+  // The comb: four arrowheads on one side of t2, `comb` apart, each after a straight run of the same length.
+  const ends = lanes.map(l => l.route.end), t2 = bundled.blocks.find(b => b.id === 't2')!;
+  assert.ok(ends.every(e => e.x === layoutCanvas(bundled, {}, catalog).rects.get('t2')!.x), `all into the left side of ${t2.id}`);
+  const ys = ends.map(e => e.y).sort((p, q) => p - q); ys.slice(1).forEach((y, i) => assert.ok(Math.abs(y - ys[i] - B.comb) < .01, 'teeth evenly spaced'));
+  const finals = lanes.map(({ points }) => { let n = points.length - 1; while (n > 0 && Math.abs(points[n - 1].y - points[points.length - 1].y) < .01) n--; return points[points.length - 1].x - points[n].x; });
+  finals.forEach(f => assert.ok(Math.abs(f - finals[0]) < 2.5 && f >= B.approach - .5, `same final run (${finals})`));
+});
+
+test('bends nest about one centre: radii grow by exactly the spacing', () => {
+  const B = tokens.graph.link.bundle, doc = { ...wiring(), links: [{ id: 'a', from: 's1', to: 't4', kind: 'flow' as const }, { id: 'b', from: 's1', to: 't4', kind: 'depends' as const }, { id: 'c', from: 's1', to: 't4', kind: 'reference' as const }] };
+  const layout = layoutCanvas(doc, {}, catalog), made = bundleOperations(doc, layout, ['a', 'b', 'c'], 'bn') as { operations: CanvasOperation[] }, bundled = reduce(doc, made.operations, catalog);
+  const lanes = lanesOf(linkRoutes(bundled, layoutCanvas(bundled, {}, catalog)));
+  // Where each lane turns from across back into the strand's axis, the centres of the turns coincide.
+  const arcs = lanes.map(({ route }) => { const m = [...route.d.matchAll(/C([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)/g)].map(x => x.slice(1).map(Number)); return m; });
+  assert.ok(arcs.every(a => a.length >= 2), 'each lane has bends');
+  assert.ok(closest(lanes) >= B.gap - .2);
+});
+
+test('a short bundle folds into one tie with straight parallel lanes; the clips land in the gap', () => {
+  const B = tokens.graph.link.bundle, doc = documentSchema.parse({ ...wiring(), blocks: [card('up', 100, 100), card('down', 100, 330)], links: (['flow', 'depends', 'reference'] as const).map((kind, i) => ({ id: `k${i}`, from: 'up', to: 'down', kind })) });
+  const layout = layoutCanvas(doc, {}, catalog), made = bundleOperations(doc, layout, ['k0', 'k1', 'k2'], 'bn') as { operations: CanvasOperation[] }, bundled = reduce(doc, made.operations, catalog);
+  const l2 = layoutCanvas(bundled, {}, catalog), routes = linkRoutes(bundled, l2), [shape] = bundleShapes(bundled, l2, routes), up = l2.rects.get('up')!, down = l2.rects.get('down')!;
+  assert.ok(shape.collapsed); assert.equal(shape.ties.length, 1); assert.equal(shape.ties[0].grip, null, 'the one tie drags the whole bundle');
+  assert.ok(shape.ties[0].y > up.y + up.height && shape.ties[0].y < down.y, 'the tie sits in the gap, off both cards');
+  const lanes = lanesOf(routes); for (const { points } of lanes) assert.ok(points.every(p => Math.abs(p.x - points[0].x) < .01), 'a straight vertical lane');
+  const xs = lanes.map(l => l.points[0].x); xs.slice(1).forEach((x, i) => assert.ok(Math.abs(Math.abs(x - xs[i]) - B.comb) < .01, 'parallel, a comb apart'));
+  assert.equal(shape.ties[0].length, 2 * B.comb + B.width + 2 * B.tie.pad);
+  // Pulled apart, the same bundle opens into a trunk between two ties.
+  const far = { ...bundled, blocks: bundled.blocks.map(b => b.id === 'down' ? { ...b, position: { x: 100, y: 900 } } : b), bundles: [{ id: 'bn', points: [{ x: 220, y: 400 }, { x: 220, y: 700 }] }] };
+  const l3 = layoutCanvas(far, {}, catalog), [open] = bundleShapes(far, l3, linkRoutes(far, l3)); assert.ok(!open.collapsed); assert.equal(open.ties.length, 2);
+});
+
+test('clips dragged off the axis: a square step with nested bends, never a crossing; the frame names the axis', () => {
+  const frame = strandFrame([{ x: 300, y: 200 }, { x: 600, y: 260 }], [{ x: 0, y: 150, width: 200, height: 100 }], [{ x: 900, y: 200, width: 200, height: 100 }], 4);
+  assert.deepEqual(frame.e, { x: 1, y: 0 }); assert.ok(!frame.collapsed); assert.equal(frame.trunk.length, 4, 'a Z: out, across, on');
+  assert.ok(frame.trunk.slice(1).every((q, i) => q.x === frame.trunk[i].x || q.y === frame.trunk[i].y), 'every trunk run is square');
+  const doc = { ...wiring(), links: [0, 1, 2, 3].map(i => ({ id: `m${i}`, from: `s${i + 1}`, to: `t${i + 1}`, kind: 'flow' as const })) }, layout = layoutCanvas(doc, {}, catalog);
+  const bundled = { ...doc, bundles: [{ id: 'bn', points: [{ x: 360, y: 230 }, { x: 600, y: 330 }] }], links: doc.links.map(l => ({ ...l, bundleId: 'bn' })) }, lanes = lanesOf(linkRoutes(bundled, layout));
+  for (let i = 0; i < lanes.length; i++) for (let j = i + 1; j < lanes.length; j++) assert.equal(segmentsCross(lanes[i].points, lanes[j].points), false);
+  assert.ok(closest(lanes) >= tokens.graph.link.bundle.gap - .2, `nested, never touching (${closest(lanes)})`);
+});
+
+test('ports pack into a comb: their own lines when they fit, neighbours moved together, squeezed when the side is short', () => {
+  assert.deepEqual(packPorts([0, 7, 14], 7, -100, 100), [0, 7, 14]);
+  assert.deepEqual(packPorts([0, 2], 7, -100, 100), [-2.5, 4.5], 'a collision moves both, centred');
+  assert.deepEqual(packPorts([95, 102], 7, -100, 100), [93, 100], 'kept inside the side');
+  assert.deepEqual(packPorts([0, 0, 0], 7, 0, 6), [0, 3, 6], 'squeezed evenly');
+});
+
+test('the bundling morph: both paths sampled alike, eased out, each lane a beat later', () => {
+  const from = resamplePath('M0 0 L100 0', 5), to = resamplePath('M0 0 C0 50 100 50 100 100', 5);
+  assert.equal(from.length, 5); assert.deepEqual(from[2], { x: 50, y: 0 }); assert.deepEqual(to[0], { x: 0, y: 0 }); assert.deepEqual(to[4], { x: 100, y: 100 });
+  assert.equal(easeOutCubic(0), 0); assert.equal(easeOutCubic(1), 1); assert.ok(easeOutCubic(.5) > .5, 'quick to leave');
+  assert.equal(morphFrame(from, to, 0, 0, 300).d, 'M0 0 L25 0 L50 0 L75 0 L100 0');
+  const half = morphFrame(from, to, 150, 0, 300); assert.ok(half.end.y > 50 && half.end.y < 100 && !half.done);
+  const late = morphFrame(from, to, 150, 150, 300); assert.equal(late.end.y, 0, 'a staggered lane has not left yet');
+  const done = morphFrame(from, to, 300, 0, 300); assert.ok(done.done); assert.deepEqual(done.end, { x: 100, y: 100 });
 });
 
 test('clips land between the two sides, inside the gap; the bundle sits in the Frame that holds both ends', () => {
@@ -188,6 +266,7 @@ test('clips land between the two sides, inside the gap; the bundle sits in the F
   const [a, b] = bundlePlacement([box(0, 0), box(0, 200)], [box(900, 0), box(900, 200)]);
   assert.ok(a.x > 200 && b.x < 900 && a.x < b.x, 'inside the gap, in reading order'); assert.equal(a.y, 140); assert.equal(b.y, 140);
   const [c, d] = bundlePlacement([box(0, 0)], [box(0, 600)]); assert.ok(c.y > 80 && d.y < 600 && c.x === 100, 'vertical when the targets are below');
+  const [e] = bundlePlacement([box(0, 0)], [box(60, 600)], 3); assert.ok(e.x >= 60 + 7 + 6 && e.x <= 200 - 7 - 6, 'lined up with the target so its lanes run straight');
   const base = wiring(), doc = { ...base, blocks: base.blocks.map(b => ({ ...b, parentGroupId: 'f' })), groups: [{ id: 'f', title: 'F', description: '', blockIds: base.blocks.map(b => b.id), groupIds: [], position: { x: 100, y: 50 }, layout: { mode: 'free' as const } }] };
   const layout = layoutCanvas(doc, {}, catalog), made = bundleOperations(doc, layout, ['l1', 'l2', 'l3'], 'bn');
   assert.ok(!('error' in made)); const op = made.operations[0] as Extract<CanvasOperation, { type: 'bundle.create' }>;

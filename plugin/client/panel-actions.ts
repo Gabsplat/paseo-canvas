@@ -62,8 +62,14 @@ export function panelShortcut(key: string, command: boolean, shift: boolean, cou
   if (!command && !shift && key.toLowerCase() === 'l' && count === 2) return 'connect';
 }
 
-export function toolbarPosition(camera: Camera, box: Pick<Rect, 'x' | 'y' | 'width' | 'height'>, viewport: { width: number; height: number }, width: number, link = false, pointer?: { x: number; y: number } | null) {
+export function toolbarPosition(camera: Camera, box: Pick<Rect, 'x' | 'y' | 'width' | 'height'>, viewport: { width: number; height: number }, width: number, link = false, pointer?: { x: number; y: number } | null, beside = false) {
   const clamp = tokens.toolbar.clamp, safeTop = 68;
+  // Beside the box (an upright bundle): to its right, or its left when the right has no room, centred on its middle.
+  if (beside) {
+    const right = camera.offset.x + camera.scale * (box.x + box.width) + tokens.toolbar.offset, leftSide = camera.offset.x + camera.scale * box.x - tokens.toolbar.offset - width;
+    const left = right + width <= viewport.width - clamp || leftSide < clamp ? Math.max(clamp, Math.min(viewport.width - width - clamp, right)) : leftSide;
+    return { left, top: Math.max(safeTop, Math.min(viewport.height - tokens.toolbar.height - clamp, camera.offset.y + camera.scale * (box.y + box.height / 2) - tokens.toolbar.height / 2)) };
+  }
   const left = Math.max(clamp, Math.min(viewport.width - width - clamp, camera.offset.x + camera.scale * (box.x + box.width / 2) - width / 2));
   const above = camera.offset.y + camera.scale * box.y - tokens.toolbar.height - (link ? tokens.toolbar.offsetLink : tokens.toolbar.offset);
   const below = camera.offset.y + camera.scale * (box.y + box.height) + tokens.toolbar.offset;
